@@ -1,0 +1,215 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Deep analytics dashboard — dark slate + electric blue accent */
+    --background: 220 20% 97%;
+    --foreground: 220 25% 10%;
+    --card: 220 20% 99%;
+    --card-foreground: 220 25% 10%;
+    --popover: 220 20% 99%;
+    --popover-foreground: 220 25% 10%;
+    --primary: 217 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 25% 10%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 25% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 217 91% 55%;
+    --radius: 0.5rem;
+    --chart-1: 217 91% 55%;
+    --chart-2: 262 83% 58%;
+    --chart-3: 160 60% 45%;
+    --chart-4: 43 96% 56%;
+    --chart-5: 350 75% 55%;
+  }
+
+  .dark {
+    --background: 222 25% 8%;
+    --foreground: 220 15% 90%;
+    --card: 222 20% 11%;
+    --card-foreground: 220 15% 90%;
+    --popover: 222 20% 11%;
+    --popover-foreground: 220 15% 90%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 15% 16%;
+    --secondary-foreground: 220 15% 90%;
+    --muted: 222 15% 16%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 222 15% 16%;
+    --accent-foreground: 220 15% 90%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 12% 18%;
+    --input: 222 12% 18%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 60%;
+    --chart-2: 262 83% 65%;
+    --chart-3: 160 60% 50%;
+    --chart-4: 43 96% 60%;
+    --chart-5: 350 75% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.3); }
+
+/* Smooth animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
+}
+
+/* Progress bar animation */
+@keyframes progress-stripe {
+  0% { background-position: 1rem 0; }
+  100% { background-position: 0 0; }
+}
+.progress-stripe {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255,255,255,0.1) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255,255,255,0.1) 50%,
+    rgba(255,255,255,0.1) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 1rem 1rem;
+  animation: progress-stripe 0.5s linear infinite;
+}
+
+/* Glassmorphism utilities */
+.glass-panel {
+  @apply backdrop-blur-md bg-card/60 border-border/40;
+}
+
+.glass-card {
+  @apply backdrop-blur-xl bg-card/60 border-primary/20 shadow-lg shadow-primary/5 transition-all duration-300;
+}
+.glass-card:hover {
+  @apply border-primary/40 shadow-xl shadow-primary/10;
+}
+
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-chart-2 to-chart-1 animate-gradient-x;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Background animated mesh gradient system */
+@keyframes gradient-x {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+.animate-gradient-x {
+  animation: gradient-x 15s ease infinite;
+  background-size: 200% 200%;
+}
+
+.mesh-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  overflow: hidden;
+  background-color: hsl(var(--background));
+}
+
+.mesh-bg::before,
+.mesh-bg::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.5;
+  animation: float 20s infinite ease-in-out alternate;
+  pointer-events: none;
+}
+
+.mesh-bg::before {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, hsl(var(--primary) / 0.15) 0%, transparent 70%);
+}
+
+.mesh-bg::after {
+  bottom: -20%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, hsl(var(--chart-2) / 0.1) 0%, transparent 70%);
+  animation-delay: -10s;
+}
+
+.dark .mesh-bg::before {
+  background: radial-gradient(circle, hsl(var(--primary) / 0.25) 0%, transparent 70%);
+}
+.dark .mesh-bg::after {
+  background: radial-gradient(circle, hsl(var(--chart-2) / 0.15) 0%, transparent 70%);
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(5%, 5%) scale(1.05);
+  }
+  66% {
+    transform: translate(-5%, 8%) scale(0.95);
+  }
+  100% {
+    transform: translate(0, -5%) scale(1);
+  }
+}

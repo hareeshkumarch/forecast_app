@@ -1,0 +1,30 @@
+# ─── Stage 1: Build Frontend ───
+FROM node:20-slim AS frontend-build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# ─── Stage 2: Express Server ───
+FROM node:20-slim
+WORKDIR /app
+
+# Install production dependencies
+COPY package.json package-lock.json ./
+RUN npm install --omit=dev
+
+# Copy built frontend + server code
+COPY --from=frontend-build /app/dist ./dist
+COPY server/ ./server/
+COPY shared/ ./shared/
+COPY tsconfig.json ./
+
+# Environment variables
+ENV NODE_ENV=production
+ENV ML_ENGINE_URL=http://ml-engine:8001
+
+EXPOSE 5000
+
+# Start Express server directly (bypassing cross-env dependency)
+CMD ["node", "dist/index.cjs"]

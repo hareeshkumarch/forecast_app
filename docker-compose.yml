@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "5000:5000"
+    environment:
+      - ML_ENGINE_URL=http://ml-engine:8001
+      - NODE_ENV=production
+    depends_on:
+      - ml-engine
+    restart: unless-stopped
+
+  ml-engine:
+    build:
+      context: ./ml_engine
+    ports:
+      - "8001:8001"
+    volumes:
+      - forecast-data:/app/uploads
+      - forecast-db:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/forecast.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ./ml_engine
+    command: celery -A app.workers.celery_worker.celery_app worker --loglevel=info
+    volumes:
+      - forecast-data:/app/uploads
+      - forecast-db:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/forecast.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - ml-engine
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  mlflow-server:
+    image: python:3.11-slim
+    ports:
+      - "5001:5001"
+    command: >
+      bash -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5001"
+    restart: unless-stopped
+
+volumes:
+  forecast-data:
+  forecast-db:
