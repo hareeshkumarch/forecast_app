@@ -40,8 +40,8 @@ export default function HistoryPage() {
     onMutate: async (jobId) => {
       await queryClient.cancelQueries({ queryKey: ["/api/jobs"] });
       const previous = queryClient.getQueryData<Job[]>(["/api/jobs"]);
-      queryClient.setQueryData<Job[]>(["/api/jobs"], (old) =>
-        (old || []).filter((j) => j.id !== jobId)
+      queryClient.setQueryData<Job[]>(["/api/jobs"], (old: Job[] | undefined) =>
+        (old || []).filter((j: Job) => j.id !== jobId)
       );
       return { previous };
     },

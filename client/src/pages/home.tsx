@@ -634,7 +634,7 @@ export default function HomePage() {
           <h1 className="text-3xl font-extrabold tracking-tight gradient-text mb-1">New Forecast</h1>
           <p className="text-sm text-muted-foreground mt-0.5 font-medium">Upload your time series data or try an interactive demo dataset</p>
         </div>
-        {lastJobId && (
+        {lastJobId && typeof lastJobId === "string" && (
           <Button variant="outline" size="sm" onClick={() => navigate(`/results/${lastJobId}`)} className="gap-1.5 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
             <ArrowUpRight className="w-3.5 h-3.5" /> View Last Job {lastJobId.slice(0, 8)}
           </Button>
