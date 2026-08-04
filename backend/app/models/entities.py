@@ -362,6 +362,8 @@ class RegionalForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     prior_year_value: Mapped[float | None] = mapped_column(Float)
     change_vs_last_year: Mapped[float | None] = mapped_column(Float)
     accuracy: Mapped[float | None] = mapped_column(Float)
+    model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "segment_model"))
+    accuracy_measured: Mapped[bool] = mapped_column(Boolean, default=False)
     share: Mapped[float | None] = mapped_column(Float)
 
     run: Mapped[ForecastRun] = relationship(back_populates="regional")
@@ -383,6 +385,8 @@ class CategoryForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     share: Mapped[float] = mapped_column(Float, default=0.0)
     change_vs_last_year: Mapped[float | None] = mapped_column(Float)
     accuracy: Mapped[float | None] = mapped_column(Float)
+    model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "segment_model"))
+    accuracy_measured: Mapped[bool] = mapped_column(Boolean, default=False)
     rank: Mapped[int] = mapped_column(Integer, default=0)
 
     run: Mapped[ForecastRun] = relationship(back_populates="categories")

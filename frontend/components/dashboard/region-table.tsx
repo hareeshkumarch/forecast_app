@@ -3,11 +3,12 @@
 
 import { Globe2 } from "lucide-react";
 
+import { AccuracyCell } from "@/components/dashboard/accuracy-cell";
 import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
 import { SortableHeader, useSortedRows } from "@/components/ui/sortable-header";
 import { useRegions } from "@/hooks/use-dashboard";
 import type { RegionRow } from "@/types/api";
-import { formatCompact, formatPercent, formatSignedPercent } from "@/lib/format";
+import { formatCompact, formatSignedPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type RegionSortKey = "region" | "forecast_value" | "change_vs_last_year" | "accuracy";
@@ -69,8 +70,12 @@ export function RegionTable() {
                     >
                       {formatSignedPercent(row.change_vs_last_year)}
                     </td>
-                    <td className="cell px-3 text-right text-meta text-text-secondary num">
-                      {formatPercent(row.accuracy)}
+                    <td className="cell px-3 text-right text-meta">
+                      <AccuracyCell
+                        value={row.accuracy}
+                        measured={row.accuracy_measured}
+                        model={row.model}
+                      />
                     </td>
                   </tr>
                 ))}

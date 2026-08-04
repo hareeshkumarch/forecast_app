@@ -159,6 +159,10 @@ class SegmentTotals:
     current_total: float
     prior_total: float | None
     series: list[float]
+    # The segment's whole history on the shared calendar, so it can be
+    # forecast in its own right rather than split off the top line.
+    periods: list[date] = field(default_factory=list)
+    values: list[float] = field(default_factory=list)
 
 
 def aggregate_segments(
@@ -220,12 +224,21 @@ def aggregate_segments(
     for label, series in by_label.items():
         current = sum(value for period, value in series if period in current_window)
         prior = sum(value for period, value in series if period in prior_window)
+
+        # Reindexed onto the shared calendar: a segment that sold nothing in a
+        # period genuinely sold nothing, and leaving the hole would misalign
+        # its seasonality against every other segment.
+        observed = dict(series)
+        values = [float(observed.get(period, 0.0)) for period in all_periods]
+
         totals.append(
             SegmentTotals(
                 label=label,
                 current_total=current,
                 prior_total=prior if prior_window else None,
                 series=[value for period, value in series if period in current_window],
+                periods=list(all_periods),
+                values=values,
             )
         )
 
@@ -233,6 +246,9 @@ def aggregate_segments(
 
     if len(totals) > max_segments:
         head, tail = totals[: max_segments - 1], totals[max_segments - 1 :]
+        # The tail is pooled rather than dropped, and it is pooled as a series
+        # so it can be forecast like any other segment.
+        pooled = [sum(values) for values in zip(*(t.values for t in tail), strict=True)]
         others = SegmentTotals(
             label="Others",
             current_total=sum(t.current_total for t in tail),
@@ -241,7 +257,9 @@ def aggregate_segments(
                 if any(t.prior_total is not None for t in tail)
                 else None
             ),
-            series=[],
+            series=[sum(window) for window in zip(*(t.series for t in tail), strict=False)],
+            periods=list(all_periods),
+            values=pooled,
         )
         totals = [*head, others]
 
