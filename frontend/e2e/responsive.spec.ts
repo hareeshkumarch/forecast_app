@@ -91,3 +91,62 @@ test("the header keeps its controls reachable at every width", async ({ page }) 
 
   await expect(page.getByRole("button", { name: "Export" })).toBeVisible();
 });
+
+test("the logo collapses the rail on desktop and opens the sheet below it", async ({ page }) => {
+  await load(page);
+
+  const width = page.viewportSize()?.width ?? 0;
+  const rail = appNavigation(page);
+  const railWidth = async () => (await rail.boundingBox())?.width ?? 0;
+
+  if (width < 1024) {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    return;
+  }
+
+  expect(await railWidth()).toBeGreaterThan(160);
+
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(rail).toHaveAttribute("data-collapsed", "");
+  // The width is animated, so poll rather than reading it mid-transition.
+  await expect.poll(railWidth, { timeout: 3000 }).toBeLessThan(90);
+
+  // Labels give way to icons, but every destination stays reachable.
+  await expect(page.getByRole("link", { name: "Connectors" })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await expect(rail).toHaveAttribute("data-collapsed", "", { timeout: 5000 });
+
+  await page.getByRole("button", { name: "Expand navigation" }).click();
+  await expect(rail).not.toHaveAttribute("data-collapsed", "");
+  await expect.poll(railWidth, { timeout: 3000 }).toBeGreaterThan(160);
+});
+
+test("a rich selector shows why to pick each option and commits the choice", async ({ page }) => {
+  await load(page);
+
+  await page.getByRole("button", { name: /new forecast/i }).first().click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+
+  const frequency = dialog.getByRole("combobox").nth(1);
+  await expect(frequency).toHaveText(/Monthly/);
+
+  await frequency.click();
+  const listbox = page.getByRole("listbox");
+  await expect(listbox).toBeVisible();
+
+  // Every option carries the reason to pick it, not just its name.
+  const quarterly = listbox.getByRole("option", { name: /Quarterly/ });
+  await expect(quarterly).toContainText("One point per quarter");
+
+  await quarterly.click();
+  await expect(listbox).toBeHidden();
+  await expect(frequency).toHaveText(/Quarterly/);
+
+  await page.keyboard.press("Escape");
+});

@@ -21,14 +21,19 @@ beforeEach(() => {
   usePrefsStore.setState({
     theme: "system",
     density: "comfortable",
+    sidebarCollapsed: false,
     resolvedTheme: "light",
     revision: 0,
   });
 });
 
 describe("stored preferences", () => {
-  it("defaults to following the system theme", () => {
-    expect(readPrefs()).toEqual({ theme: "system", density: "comfortable" });
+  it("defaults to following the system theme with the rail open", () => {
+    expect(readPrefs()).toEqual({
+      theme: "system",
+      density: "comfortable",
+      sidebarCollapsed: false,
+    });
   });
 
   it("ignores a corrupted or unknown entry", () => {
@@ -42,8 +47,39 @@ describe("stored preferences", () => {
   it("round-trips through the store", () => {
     usePrefsStore.getState().setTheme("dark");
     usePrefsStore.getState().setDensity("compact");
+    usePrefsStore.getState().toggleSidebar();
 
-    expect(readPrefs()).toEqual({ theme: "dark", density: "compact" });
+    expect(readPrefs()).toEqual({
+      theme: "dark",
+      density: "compact",
+      sidebarCollapsed: true,
+    });
+  });
+});
+
+describe("the navigation rail", () => {
+  it("collapses and expands, and survives a reload", () => {
+    expect(usePrefsStore.getState().sidebarCollapsed).toBe(false);
+
+    usePrefsStore.getState().toggleSidebar();
+    expect(usePrefsStore.getState().sidebarCollapsed).toBe(true);
+    expect(readPrefs().sidebarCollapsed).toBe(true);
+
+    usePrefsStore.getState().hydrate();
+    expect(usePrefsStore.getState().sidebarCollapsed).toBe(true);
+
+    usePrefsStore.getState().toggleSidebar();
+    expect(readPrefs().sidebarCollapsed).toBe(false);
+  });
+
+  it("keeps the theme and density when the rail is toggled", () => {
+    usePrefsStore.getState().setTheme("dark");
+    usePrefsStore.getState().setDensity("compact");
+    usePrefsStore.getState().toggleSidebar();
+
+    const stored = readPrefs();
+    expect(stored.theme).toBe("dark");
+    expect(stored.density).toBe("compact");
   });
 });
 

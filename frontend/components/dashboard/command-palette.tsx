@@ -9,6 +9,8 @@ import {
   Download,
   FileBarChart2,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Rows3,
   Search,
@@ -63,6 +65,8 @@ export function CommandPalette() {
   const density = usePrefsStore((state) => state.density);
   const setDensity = usePrefsStore((state) => state.setDensity);
   const resolvedTheme = usePrefsStore((state) => state.resolvedTheme);
+  const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
+  const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
 
   const { data: summary } = useSummary();
   const runId = summary?.run_id ?? null;
@@ -181,6 +185,15 @@ export function CommandPalette() {
         run: () => setDensity(density === "compact" ? "comfortable" : "compact"),
       },
       {
+        id: "sidebar",
+        label: sidebarCollapsed ? "Expand the navigation rail" : "Collapse the navigation rail",
+        hint: "[",
+        group: "Preferences",
+        icon: sidebarCollapsed ? PanelLeftOpen : PanelLeftClose,
+        keywords: "sidebar nav rail hide show width",
+        run: toggleSidebar,
+      },
+      {
         id: "settings",
         label: "Open settings",
         group: "Preferences",
@@ -198,6 +211,8 @@ export function CommandPalette() {
     ];
   }, [
     density,
+    sidebarCollapsed,
+    toggleSidebar,
     openModal,
     resolvedTheme,
     router,

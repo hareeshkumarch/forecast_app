@@ -11,9 +11,10 @@ const STORAGE_KEY = "forecast_hub_prefs";
 interface StoredPrefs {
   theme: ThemeChoice;
   density: Density;
+  sidebarCollapsed: boolean;
 }
 
-const DEFAULTS: StoredPrefs = { theme: "system", density: "comfortable" };
+const DEFAULTS: StoredPrefs = { theme: "system", density: "comfortable", sidebarCollapsed: false };
 
 export function readPrefs(): StoredPrefs {
   if (typeof window === "undefined") return DEFAULTS;
@@ -29,6 +30,7 @@ export function readPrefs(): StoredPrefs {
           ? parsed.theme
           : DEFAULTS.theme,
       density: parsed.density === "compact" ? "compact" : DEFAULTS.density,
+      sidebarCollapsed: parsed.sidebarCollapsed === true,
     };
   } catch {
     return DEFAULTS;
@@ -69,6 +71,7 @@ export function applyPrefs(theme: ThemeChoice, density: Density): ResolvedTheme 
 interface PrefsState {
   theme: ThemeChoice;
   density: Density;
+  sidebarCollapsed: boolean;
   resolvedTheme: ResolvedTheme;
   /** Bumped on every applied change, so chart options can be recomputed. */
   revision: number;
@@ -76,6 +79,7 @@ interface PrefsState {
   setTheme: (theme: ThemeChoice) => void;
   setDensity: (density: Density) => void;
   toggleTheme: () => void;
+  toggleSidebar: () => void;
   hydrate: () => void;
   syncSystemTheme: () => void;
 }
@@ -83,26 +87,36 @@ interface PrefsState {
 export const usePrefsStore = create<PrefsState>((set, get) => ({
   theme: DEFAULTS.theme,
   density: DEFAULTS.density,
+  sidebarCollapsed: DEFAULTS.sidebarCollapsed,
   resolvedTheme: "light",
   revision: 0,
 
   setTheme: (theme) => {
-    const { density } = get();
+    const { density, sidebarCollapsed } = get();
     const resolvedTheme = applyPrefs(theme, density);
-    writePrefs({ theme, density });
+    writePrefs({ theme, density, sidebarCollapsed });
     set((state) => ({ theme, resolvedTheme, revision: state.revision + 1 }));
   },
 
   setDensity: (density) => {
-    const { theme } = get();
+    const { theme, sidebarCollapsed } = get();
     const resolvedTheme = applyPrefs(theme, density);
-    writePrefs({ theme, density });
+    writePrefs({ theme, density, sidebarCollapsed });
     set((state) => ({ density, resolvedTheme, revision: state.revision + 1 }));
   },
 
   toggleTheme: () => {
     const next: ThemeChoice = get().resolvedTheme === "dark" ? "light" : "dark";
     get().setTheme(next);
+  },
+
+  toggleSidebar: () => {
+    const { theme, density, sidebarCollapsed } = get();
+    const next = !sidebarCollapsed;
+    writePrefs({ theme, density, sidebarCollapsed: next });
+    // The rails and panels are sized by container queries, so the workspace
+    // reflows on its own once the sidebar changes width.
+    set((state) => ({ sidebarCollapsed: next, revision: state.revision + 1 }));
   },
 
   hydrate: () => {

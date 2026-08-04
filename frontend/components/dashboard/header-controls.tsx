@@ -5,13 +5,20 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { Calendar, ChevronDown, Download, History, SlidersHorizontal } from "lucide-react";
 
-import { MENU_CONTENT, MENU_ITEM, Select } from "@/components/ui/primitives";
+import { Field, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { downloadExport, useForecastRuns, useHealth, useSummary } from "@/hooks/use-dashboard";
 import { formatDateRange, formatRelativeTime, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWindowEnd } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ExportFormat, ForecastRun, ForecastView } from "@/types/api";
+
+/**
+ * Radix reserves the empty string for "nothing selected", so the pinned-run
+ * control needs a real value to mean "follow the newest run".
+ */
+const LATEST_RUN = "__latest__";
 
 interface ViewOption {
   value: ForecastView;
@@ -277,38 +284,28 @@ export function CompactFilters() {
           collisionPadding={8}
           className="z-50 w-[290px] max-w-[calc(100vw-16px)] space-y-3 rounded-card border border-border bg-surface p-3 shadow-popover"
         >
-          <label className="block">
-            <span className="mb-1 block text-caption font-medium text-text-secondary">
-              Forecast run
-            </span>
+          <Field label="Forecast run">
             <Select
-              value={pinnedRunId ?? ""}
-              onChange={(event) => setRunId(event.target.value || null)}
-              
-            >
-              <option value="">Latest run</option>
-              {completed.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {runLabel(run)}
-                </option>
-              ))}
-            </Select>
-          </label>
+              value={pinnedRunId ?? LATEST_RUN}
+              onChange={(next) => setRunId(next === LATEST_RUN ? null : next)}
+              options={[
+                { value: LATEST_RUN, label: "Latest run", hint: "Follows the newest completed run" },
+                ...completed.map((run) => ({ value: run.id, label: runLabel(run) })),
+              ]}
+            />
+          </Field>
 
-          <label className="block">
-            <span className="mb-1 block text-caption font-medium text-text-secondary">Scenario</span>
+          <Field label="Scenario">
             <Select
               value={view}
-              onChange={(event) => setView(event.target.value as ForecastView)}
-              
-            >
-              {VIEWS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+              onChange={setView}
+              options={VIEWS.map((item) => ({
+                value: item.value,
+                label: item.label,
+                hint: item.description,
+              }))}
+            />
+          </Field>
 
           <div className="border-t border-border pt-1">
             <RangeFields />

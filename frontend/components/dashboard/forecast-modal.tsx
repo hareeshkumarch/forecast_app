@@ -1,12 +1,22 @@
 "use client";
 
 
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  Minus,
+  Sigma,
+  TrendingUp,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { DataQualityPanel } from "@/components/dashboard/data-quality-panel";
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, InlineError, Input, Select } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
+import { Select, type SelectOption } from "@/components/ui/select";
 import {
   useDataset,
   useDatasetQuality,
@@ -28,31 +38,44 @@ import type {
   OutlierTreatment,
 } from "@/types/api";
 
-const FREQUENCIES: ForecastFrequency[] = ["daily", "weekly", "monthly", "quarterly"];
 const NONE = "__none__";
 
-const AGGREGATIONS: { value: MeasureAggregation; label: string; hint: string }[] = [
-  { value: "sum", label: "Sum", hint: "Totals, units sold, revenue" },
-  { value: "mean", label: "Average", hint: "Rates, prices, utilisation" },
-  { value: "median", label: "Median", hint: "Averages with outliers" },
-  { value: "last", label: "Last value", hint: "Balances, stock on hand" },
-  { value: "min", label: "Minimum", hint: "Floors within the period" },
-  { value: "max", label: "Maximum", hint: "Peaks within the period" },
+const FREQUENCIES: SelectOption<ForecastFrequency>[] = [
+  { value: "daily", label: "Daily", hint: "One point per day" },
+  { value: "weekly", label: "Weekly", hint: "One point per week" },
+  { value: "monthly", label: "Monthly", hint: "One point per month" },
+  { value: "quarterly", label: "Quarterly", hint: "One point per quarter" },
 ];
 
-const GAP_FILLS: { value: GapFill; label: string }[] = [
-  { value: "auto", label: "Automatic" },
-  { value: "interpolate", label: "Interpolate" },
-  { value: "zero", label: "Treat as zero" },
-  { value: "none", label: "Leave gaps" },
+const AGGREGATIONS: SelectOption<MeasureAggregation>[] = [
+  { value: "sum", label: "Sum", hint: "Totals, units sold, revenue", icon: Sigma },
+  { value: "mean", label: "Average", hint: "Rates, prices, utilisation", icon: TrendingUp },
+  { value: "median", label: "Median", hint: "Averages with outliers", icon: TrendingUp },
+  { value: "last", label: "Last value", hint: "Balances, stock on hand", icon: CalendarDays },
+  { value: "min", label: "Minimum", hint: "Floors within the period", icon: Minus },
+  { value: "max", label: "Maximum", hint: "Peaks within the period", icon: Minus },
 ];
 
-const OUTLIER_TREATMENTS: { value: OutlierTreatment; label: string }[] = [
-  { value: "none", label: "Keep as-is" },
-  { value: "winsorise", label: "Damp extremes" },
+const GAP_FILLS: SelectOption<GapFill>[] = [
+  { value: "auto", label: "Automatic", hint: "Chosen from the shape of the data" },
+  { value: "interpolate", label: "Interpolate", hint: "Draw a line across the hole" },
+  { value: "zero", label: "Treat as zero", hint: "Nothing happened that period" },
+  { value: "none", label: "Leave gaps", hint: "Forecast the calendar as it arrives" },
+];
+
+const OUTLIER_TREATMENTS: SelectOption<OutlierTreatment>[] = [
+  { value: "none", label: "Keep as-is", hint: "Spikes stay in the history" },
+  { value: "winsorise", label: "Damp extremes", hint: "Pull one-off spikes toward the range" },
 ];
 
 type MetricFocus = "balanced" | "wmape" | "smape" | "rmse";
+
+const METRIC_FOCUS: SelectOption<MetricFocus>[] = [
+  { value: "balanced", label: "Balanced", hint: "wMAPE 50 · sMAPE 30 · RMSE 20" },
+  { value: "wmape", label: "Weighted MAPE", hint: "Favours accuracy on high-volume periods" },
+  { value: "smape", label: "Symmetric MAPE", hint: "Treats over- and under-forecasting alike" },
+  { value: "rmse", label: "RMSE", hint: "Punishes large misses hardest" },
+];
 
 const METRIC_WEIGHTS: Record<Exclude<MetricFocus, "balanced">, Record<string, number>> = {
   wmape: { wmape: 0.7, smape: 0.2, rmse: 0.1 },
@@ -242,159 +265,135 @@ export function ForecastModal() {
           <Field label="Dataset" required>
             <Select
               value={datasetId}
-              onChange={(event) => setDatasetId(event.target.value)}
-              
-            >
-              <option value="">Select a dataset…</option>
-              {(datasets ?? []).map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} ({item.row_count.toLocaleString()} rows)
-                </option>
-              ))}
-            </Select>
+              onChange={setDatasetId}
+              placeholder="Select a dataset…"
+              options={(datasets ?? []).map((item) => ({
+                value: item.id,
+                label: item.name,
+                hint: `${item.row_count.toLocaleString()} rows · ${item.column_count} columns`,
+              }))}
+            />
           </Field>
 
           <Field label="Run name">
             <Input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Frequency" required>
-              <Select
-                value={frequency}
-                onChange={(event) => setFrequency(event.target.value as ForecastFrequency)}
-                className="capitalize"
-              >
-                {FREQUENCIES.map((item) => (
-                  <option key={item} value={item} className="capitalize">
-                    {item}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+          <Section title="What to forecast">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Frequency" hint="Period the series is on" required>
+                <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
+              </Field>
 
-            <Field label="Horizon" required>
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={horizon}
-                onChange={(event) => setHorizon(Number(event.target.value) || 1)}
-              />
-            </Field>
+              <Field label="Horizon" hint="Periods ahead" required>
+                <Input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={horizon}
+                  onChange={(event) => setHorizon(Number(event.target.value) || 1)}
+                />
+              </Field>
 
-            <Field label="Confidence %" hint="Interval width">
-              <Input
-                type="number"
-                min={51}
-                max={99}
-                value={confidence}
-                onChange={(event) => setConfidence(Number(event.target.value) || 80)}
-              />
-            </Field>
-          </div>
+              <Field label="Confidence %" hint="Width of the band">
+                <Input
+                  type="number"
+                  min={51}
+                  max={99}
+                  value={confidence}
+                  onChange={(event) => setConfidence(Number(event.target.value) || 80)}
+                />
+              </Field>
+            </div>
+          </Section>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Region column">
-              <DimensionSelect
-                value={regionColumn}
-                onChange={setRegionColumn}
-                options={dimensions.map((column) => column.name)}
-              />
-            </Field>
-            <Field label="Category column">
-              <DimensionSelect
-                value={categoryColumn}
-                onChange={setCategoryColumn}
-                options={dimensions.map((column) => column.name)}
-              />
-            </Field>
-            <Field label="Weight column" hint="For weighted MAPE">
-              <DimensionSelect
-                value={weightColumn}
-                onChange={setWeightColumn}
-                options={numerics.map((column) => column.name)}
-              />
-            </Field>
-          </div>
+          <Section title="Break it down by" note="Optional">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Region" hint="Splits the total by geography">
+                <DimensionSelect
+                  value={regionColumn}
+                  onChange={setRegionColumn}
+                  options={dimensions.map((column) => column.name)}
+                />
+              </Field>
+              <Field label="Category" hint="Splits the total by product">
+                <DimensionSelect
+                  value={categoryColumn}
+                  onChange={setCategoryColumn}
+                  options={dimensions.map((column) => column.name)}
+                />
+              </Field>
+              <Field label="Weight" hint="Used for weighted MAPE">
+                <DimensionSelect
+                  value={weightColumn}
+                  onChange={setWeightColumn}
+                  options={numerics.map((column) => column.name)}
+                />
+              </Field>
+            </div>
+          </Section>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field
-              label="Combine rows by"
-              hint={AGGREGATIONS.find((item) => item.value === aggregation)?.hint}
-            >
-              <Select
-                value={aggregation}
-                onChange={(event) =>
-                  setAggregation(event.target.value as MeasureAggregation)
-                }
-              >
-                {AGGREGATIONS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+          <Section title="How to read the data">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Combine rows by" hint="Collapses duplicate periods">
+                <Select value={aggregation} onChange={setAggregation} options={AGGREGATIONS} />
+              </Field>
 
-            <Field label="Missing periods" hint="Keeps the calendar regular">
-              <Select
-                value={gapFill}
-                onChange={(event) => setGapFill(event.target.value as GapFill)}
-              >
-                {GAP_FILLS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+              <Field label="Missing periods" hint="Keeps the calendar regular">
+                <Select value={gapFill} onChange={setGapFill} options={GAP_FILLS} />
+              </Field>
 
-            <Field label="Outliers" hint="One-off spikes">
-              <Select
-                value={outlierTreatment}
-                onChange={(event) =>
-                  setOutlierTreatment(event.target.value as OutlierTreatment)
-                }
-              >
-                {OUTLIER_TREATMENTS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
+              <Field label="Outliers" hint="Handles one-off spikes">
+                <Select
+                  value={outlierTreatment}
+                  onChange={setOutlierTreatment}
+                  options={OUTLIER_TREATMENTS}
+                />
+              </Field>
+            </div>
 
-          {datasetId ? (
-            dataset && !dataset.time_column ? (
-              <p className="rounded-card border border-border bg-surface-muted px-3 py-2 text-caption text-text-secondary">
-                Pick a time column and a target for this dataset to see a data quality check before
-                you run.
-              </p>
-            ) : (
-              <DataQualityPanel
-                report={quality.data}
-                isLoading={quality.isLoading}
-                error={quality.error}
-              />
-            )
-          ) : null}
+            {datasetId ? (
+              dataset && !dataset.time_column ? (
+                <p className="mt-3 rounded-card border border-border bg-surface-muted px-3 py-2 text-caption text-text-secondary">
+                  Pick a time column and a target for this dataset to see a quality check before you
+                  run.
+                </p>
+              ) : (
+                <div className="mt-3">
+                  <DataQualityPanel
+                    report={quality.data}
+                    isLoading={quality.isLoading}
+                    error={quality.error}
+                  />
+                </div>
+              )
+            ) : null}
+          </Section>
 
-          <div className="pt-1">
+          <div className="border-t border-border pt-3">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="text-caption font-medium text-accent hover:underline focus:outline-none"
+              aria-expanded={showAdvanced}
+              aria-controls="advanced-model-settings"
+              className="flex items-center gap-1.5 rounded-input text-caption font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary"
             >
-              {showAdvanced ? "– Hide Advanced Model Settings" : "+ Show Advanced Model Settings"}
+              <ChevronRight
+                className={cn(
+                  "h-3.5 w-3.5 transition-transform duration-fast",
+                  showAdvanced && "rotate-90",
+                )}
+                aria-hidden
+              />
+              Advanced model settings
             </button>
-          </div>
 
-          {showAdvanced ? (
-            <div className="space-y-3 rounded-card border border-border bg-surface-muted/30 p-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Validation Folds" hint="1 to 10">
+            {showAdvanced ? (
+              <div
+                id="advanced-model-settings"
+                className="mt-3 grid grid-cols-1 gap-3 rounded-card border border-border bg-surface-muted/40 p-3 sm:grid-cols-3"
+              >
+                <Field label="Validation folds" hint="Backtest windows, 1 to 10">
                   <Input
                     type="number"
                     min={1}
@@ -404,19 +403,11 @@ export function ForecastModal() {
                   />
                 </Field>
 
-                <Field label="Metric Emphasis" hint="Scoring weights">
-                  <Select
-                    value={metricFocus}
-                    onChange={(event) => setMetricFocus(event.target.value as MetricFocus)}
-                  >
-                    <option value="balanced">Balanced (Default)</option>
-                    <option value="wmape">wMAPE Focus (70%)</option>
-                    <option value="smape">sMAPE Focus (70%)</option>
-                    <option value="rmse">RMSE Focus (70%)</option>
-                  </Select>
+                <Field label="Metric emphasis" hint="How candidates are scored">
+                  <Select value={metricFocus} onChange={setMetricFocus} options={METRIC_FOCUS} />
                 </Field>
 
-                <Field label="GBM Max Depth" hint="Tree depth">
+                <Field label="Tree depth" hint="Gradient boosting only">
                   <Input
                     type="number"
                     min={1}
@@ -426,8 +417,8 @@ export function ForecastModal() {
                   />
                 </Field>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
           <p className="text-caption text-text-muted">
             Insights are reworded by an LLM when one is configured in{" "}
@@ -445,6 +436,26 @@ export function ForecastModal() {
         </div>
       )}
     </Modal>
+  );
+}
+
+function Section({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-t border-border pt-3">
+      <div className="mb-2.5 flex items-baseline gap-2">
+        <h3 className="eyebrow">{title}</h3>
+        {note ? <span className="text-caption text-text-muted">{note}</span> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -469,16 +480,12 @@ function DimensionSelect({
   return (
     <Select
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      
-    >
-      <option value={NONE}>None</option>
-      {options.map((name) => (
-        <option key={name} value={name}>
-          {name}
-        </option>
-      ))}
-    </Select>
+      onChange={onChange}
+      options={[
+        { value: NONE, label: "None" },
+        ...options.map((name) => ({ value: name, label: name })),
+      ]}
+    />
   );
 }
 

@@ -2,13 +2,8 @@
 
 
 import { AlertTriangle, Loader2, type LucideIcon } from "lucide-react";
-import type {
-  ButtonHTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-} from "react";
-import { forwardRef } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import { createContext, forwardRef, useContext, useId } from "react";
 
 import { errorMessage, errorTitle, isRetryable } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -168,10 +163,14 @@ export function Badge({
 
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  function Input({ className, ...rest }, ref) {
+  function Input({ className, id, ...rest }, ref) {
+    const field = useContext(FieldContext);
     return (
       <input
         ref={ref}
+        id={id ?? field?.controlId}
+        aria-describedby={field?.describedBy}
+        aria-invalid={field?.invalid || undefined}
         className={cn(
           "h-11 w-full rounded-input border border-border bg-surface px-2.5 sm:h-8",
           "text-meta text-text-primary placeholder:text-text-muted",
@@ -185,25 +184,18 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   },
 );
 
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
-  function Select({ className, children, ...rest }, ref) {
-    return (
-      <select
-        ref={ref}
-        className={cn(
-          "h-11 w-full rounded-input border border-border bg-surface px-2 sm:h-8",
-          "text-meta text-text-primary",
-          "transition-colors duration-fast focus:border-accent focus:outline-none",
-          "disabled:bg-surface-muted disabled:text-text-muted",
-          className,
-        )}
-        {...rest}
-      >
-        {children}
-      </select>
-    );
-  },
-);
+/**
+ * Lets a control inside a Field pick up the label association without the
+ * caller repeating the label text. The Field renders a real <label htmlFor>,
+ * so this works for the button-based Select as well as native inputs.
+ */
+export interface FieldBinding {
+  controlId: string;
+  describedBy: string | undefined;
+  invalid: boolean;
+}
+
+export const FieldContext = createContext<FieldBinding | null>(null);
 
 export function Field({
   label,
@@ -218,19 +210,42 @@ export function Field({
   required?: boolean;
   children: ReactNode;
 }) {
+  const base = useId();
+  const controlId = `${base}-control`;
+  const messageId = `${base}-message`;
+  const message = error ?? hint;
+
   return (
-    <label className="block">
-      <span className="mb-1 flex items-center gap-1 text-caption font-medium text-text-secondary">
-        {label}
-        {required ? <span className="text-negative">*</span> : null}
-      </span>
-      {children}
-      {error ? (
-        <span className="mt-1 block text-caption text-negative">{error}</span>
-      ) : hint ? (
-        <span className="mt-1 block text-caption text-text-muted">{hint}</span>
-      ) : null}
-    </label>
+    <FieldContext.Provider
+      value={{
+        controlId,
+        describedBy: message ? messageId : undefined,
+        invalid: Boolean(error),
+      }}
+    >
+      <div className="block">
+        <label
+          htmlFor={controlId}
+          className="mb-1 flex items-center gap-1 text-caption font-medium text-text-secondary"
+        >
+          {label}
+          {required ? (
+            <span className="text-negative" aria-hidden>
+              *
+            </span>
+          ) : null}
+        </label>
+        {children}
+        {message ? (
+          <span
+            id={messageId}
+            className={cn("mt-1 block text-caption", error ? "text-negative" : "text-text-muted")}
+          >
+            {message}
+          </span>
+        ) : null}
+      </div>
+    </FieldContext.Provider>
   );
 }
 
