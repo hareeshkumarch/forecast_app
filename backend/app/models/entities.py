@@ -42,6 +42,7 @@ from app.models.enums import (
     OutlierTreatment,
     PointKind,
     RunStatus,
+    SeriesStatus,
 )
 
 JSONType = JSON().with_variant(JSONB(), "postgresql")
@@ -215,6 +216,11 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     region_column: Mapped[str | None] = mapped_column(String(200))
     category_column: Mapped[str | None] = mapped_column(String(200))
 
+    # The forecast grain, in order, outermost first. Empty means one
+    # aggregate series, which is what every run before grouped runs did.
+    group_by: Mapped[list] = mapped_column(JSONType, default=list)
+    series_count: Mapped[int] = mapped_column(Integer, default=0)
+
     frequency: Mapped[ForecastFrequency] = mapped_column(_enum(ForecastFrequency, "run_frequency"))
     horizon: Mapped[int] = mapped_column(Integer, nullable=False)
     confidence_level: Mapped[float] = mapped_column(Float, default=0.8)
@@ -256,6 +262,9 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     points: Mapped[list[ForecastPoint]] = relationship(
         back_populates="run", cascade="all, delete-orphan", order_by="ForecastPoint.period"
+    )
+    series: Mapped[list[ForecastSeries]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="ForecastSeries.level"
     )
     regional: Mapped[list[RegionalForecast]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
@@ -326,11 +335,69 @@ class ForecastMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (UniqueConstraint("run_id", "name", name="uq_forecast_metrics_run_name"),)
 
 
+class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """
+    One forecastable series in a grouped run, and its place in the tree.
+
+    A run with no grouping has none of these: its single series lives on the
+    run itself, and its points carry a NULL series_id.
+    """
+
+    __tablename__ = "forecast_series"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("forecast_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("forecast_series.id", ondelete="CASCADE")
+    )
+    # 0 is the run total; each grouping column adds a level.
+    level: Mapped[int] = mapped_column(Integer, default=0)
+
+    # {"sku": "A-1", "store": "North"} — the grouping columns that identify it.
+    key: Mapped[dict] = mapped_column(JSONType, default=dict)
+    label: Mapped[str] = mapped_column(String(400), nullable=False)
+
+    status: Mapped[SeriesStatus] = mapped_column(
+        _enum(SeriesStatus, "series_status"), default=SeriesStatus.FORECAST
+    )
+    blocked_reason: Mapped[str | None] = mapped_column(Text)
+
+    model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "series_model"))
+    wmape: Mapped[float | None] = mapped_column(Float)
+    mase: Mapped[float | None] = mapped_column(Float)
+    accuracy: Mapped[float | None] = mapped_column(Float)
+    accuracy_measured: Mapped[bool] = mapped_column(Boolean, default=False)
+    folds: Mapped[int] = mapped_column(Integer, default=0)
+
+    forecast_total: Mapped[float] = mapped_column(Float, default=0.0)
+    prior_total: Mapped[float | None] = mapped_column(Float)
+    share: Mapped[float | None] = mapped_column(Float)
+
+    run: Mapped[ForecastRun] = relationship(back_populates="series")
+    children: Mapped[list[ForecastSeries]] = relationship(
+        back_populates="parent", cascade="all, delete-orphan"
+    )
+    parent: Mapped[ForecastSeries | None] = relationship(
+        back_populates="children", remote_side="ForecastSeries.id"
+    )
+
+    __table_args__ = (
+        Index("ix_forecast_series_run_level", "run_id", "level"),
+        Index("ix_forecast_series_parent", "parent_id"),
+    )
+
+
 class ForecastPoint(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "forecast_points"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("forecast_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL is the run's own top line, which is what every point was before
+    # grouped runs and what the dashboard still reads.
+    series_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("forecast_series.id", ondelete="CASCADE")
     )
     period: Mapped[date] = mapped_column(Date, nullable=False)
     kind: Mapped[PointKind] = mapped_column(_enum(PointKind, "point_kind"))
@@ -346,8 +413,17 @@ class ForecastPoint(UUIDPrimaryKeyMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="points")
 
     __table_args__ = (
-        UniqueConstraint("run_id", "period", "kind", name="uq_forecast_points_run_period_kind"),
+        # series_id is part of the key: without it a grouped run could store
+        # only its first series, every later one colliding on the same period.
+        UniqueConstraint(
+            "run_id",
+            "series_id",
+            "period",
+            "kind",
+            name="uq_forecast_points_run_series_period_kind",
+        ),
         Index("ix_forecast_points_run_period", "run_id", "period"),
+        Index("ix_forecast_points_run_series_period", "run_id", "series_id", "period"),
     )
 
 

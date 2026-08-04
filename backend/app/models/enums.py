@@ -32,6 +32,15 @@ class DatasetStatus(StrEnum):
     FAILED = "failed"
 
 
+class SeriesStatus(StrEnum):
+    """How a series in a grouped run came by its numbers."""
+
+    FORECAST = "forecast"
+    ESTIMATED = "estimated"
+    POOLED = "pooled"
+    BLOCKED = "blocked"
+
+
 class ColumnRole(StrEnum):
     TIME = "time"
     TARGET = "target"

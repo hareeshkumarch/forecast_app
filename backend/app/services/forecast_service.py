@@ -786,8 +786,19 @@ async def points_for_run(
     *,
     start: date | None = None,
     end: date | None = None,
+    series_id: uuid.UUID | None = None,
 ) -> list[ForecastPoint]:
-    statement = select(ForecastPoint).where(ForecastPoint.run_id == run_id)
+    """
+    The run's own top line by default. A grouped run also stores a curve per
+    series, so pass series_id to scope to one of them; without it those rows
+    would be summed into the headline.
+    """
+    statement = select(ForecastPoint).where(
+        ForecastPoint.run_id == run_id,
+        ForecastPoint.series_id == series_id
+        if series_id is not None
+        else ForecastPoint.series_id.is_(None),
+    )
     if start is not None:
         statement = statement.where(ForecastPoint.period >= start)
     if end is not None:

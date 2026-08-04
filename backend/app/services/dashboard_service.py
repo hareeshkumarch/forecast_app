@@ -69,7 +69,9 @@ async def _scenario_total(
 ) -> float:
     column = getattr(ForecastPoint, VIEW_COLUMN.get(view, "forecast"))
     statement = select(column).where(
-        ForecastPoint.run_id == run_id, ForecastPoint.kind == PointKind.FORECAST
+        ForecastPoint.run_id == run_id,
+        ForecastPoint.series_id.is_(None),
+        ForecastPoint.kind == PointKind.FORECAST,
     )
     if start is not None:
         statement = statement.where(ForecastPoint.period >= start)
@@ -198,7 +200,9 @@ async def _actual_total(
     lower = start or ytd_start
 
     statement = select(ForecastPoint.actual).where(
-        ForecastPoint.run_id == run_id, ForecastPoint.kind == PointKind.ACTUAL
+        ForecastPoint.run_id == run_id,
+        ForecastPoint.series_id.is_(None),
+        ForecastPoint.kind == PointKind.ACTUAL,
     )
     if lower is not None:
         statement = statement.where(ForecastPoint.period >= lower)
@@ -225,6 +229,7 @@ async def _prior_year_actual_total(
     result = await session.execute(
         select(ForecastPoint.actual).where(
             ForecastPoint.run_id == run_id,
+            ForecastPoint.series_id.is_(None),
             ForecastPoint.kind == PointKind.ACTUAL,
             ForecastPoint.period >= prior_start,
             ForecastPoint.period <= prior_end,
