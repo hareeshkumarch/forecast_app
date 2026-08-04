@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -110,5 +109,5 @@ class DashboardQuery(BaseModel):
     run_id: uuid.UUID | None = None
     start: date | None = None
     end: date | None = None
-                                                                      
+
     view: str = "base"

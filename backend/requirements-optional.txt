@@ -1,0 +1,7 @@
+# Forecasters that are too heavy to install by default. The engine detects
+# what is present and reports the rest as unavailable rather than failing.
+#
+#   pip install -r requirements-optional.txt
+#
+# Prophet pulls in cmdstanpy and compiles a Stan model on first use.
+prophet==1.1.6

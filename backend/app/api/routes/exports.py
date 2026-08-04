@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/exports", tags=["exports"])
 async def export_forecast(
     forecast_id: uuid.UUID,
     session: SessionDep,
-    format: ExportFormat = Query(  # noqa: A002 — matches the public query-param name
+    format: ExportFormat = Query(
         default=ExportFormat.CSV, description="csv, xlsx or json."
     ),
 ) -> FileResponse:
@@ -34,7 +33,7 @@ async def export_forecast(
     if not job.file_path or not Path(job.file_path).exists():
         raise NotFoundError("The export file could not be found after generation.")
 
-                                                                               
+
     await session.commit()
 
     return FileResponse(

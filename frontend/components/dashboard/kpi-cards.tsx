@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Gauge,
+  Plus,
   Target,
   TrendingDown,
   TrendingUp,
@@ -13,9 +14,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Card, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useSummary } from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
+import { useUiStore } from "@/stores/ui-store";
 import type { KpiCard as KpiCardModel } from "@/types/api";
 
 
@@ -42,10 +44,11 @@ const TONE_BG = {
 
 export function KpiCards() {
   const { data, isLoading, isError, error, refetch } = useSummary();
+  const openModal = useUiStore((state) => state.openModal);
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid-kpi">
         {Array.from({ length: 6 }).map((_, index) => (
           <Card key={index} className="p-3">
             <Skeleton className="h-6 w-6 rounded-[7px]" />
@@ -68,17 +71,23 @@ export function KpiCards() {
 
   if (!data?.has_data || data.kpis.length === 0) {
     return (
-      <Card className="px-4 py-6">
-        <p className="text-body font-medium text-text-primary">No forecast yet</p>
-        <p className="mt-1 text-caption text-text-muted">
-          Upload a dataset and run a forecast to populate these metrics.
-        </p>
+      <Card>
+        <EmptyState
+          icon={Wallet}
+          title="No forecast yet"
+          message="Upload a dataset and run a forecast to populate these metrics."
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => openModal("configure-forecast")}>
+              New Forecast
+            </Button>
+          }
+        />
       </Card>
     );
   }
 
   return (
-    <div className="grid grid-cols-6 gap-3">
+    <div className="grid-kpi">
       {data.kpis.map((kpi) => (
         <KpiTile key={kpi.key} kpi={kpi} />
       ))}
@@ -115,9 +124,9 @@ function KpiTile({ kpi }: { kpi: KpiCardModel }) {
             className={cn(
               "inline-flex items-center gap-0.5 rounded-chip border px-1 py-px text-caption font-medium",
               kpi.tone === "positive"
-                ? "border-[#cfe6d9] bg-positive-soft text-positive"
+                ? "border-positive-border bg-positive-soft text-positive"
                 : kpi.tone === "negative"
-                  ? "border-[#f0cdcc] bg-negative-soft text-negative"
+                  ? "border-negative-border bg-negative-soft text-negative"
                   : "border-border bg-surface-muted text-text-secondary",
             )}
           >

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -40,8 +39,8 @@ async def connector_types() -> list[dict]:
     summary="Create a connector",
 )
 async def create_connector(payload: ConnectorCreate, session: SessionDep) -> ConnectorRead:
-                                                                                
-                                                             
+
+
     submission: dict[str, object] = {
         **payload.config.model_dump(exclude_none=True),
         **payload.credentials,
@@ -71,8 +70,8 @@ async def test_connection(
     if connector_type is not None:
         config, credentials = split_submission(connector_type, submission)
     else:
-                                                                             
-                                           
+
+
         config, credentials = submission, {}
 
     outcome = await connector_service.test_connector(

@@ -1,17 +1,18 @@
-
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import ConnectorStatus, ConnectorType
-from app.schemas.common import ORMModel
+from app.schemas.common import ORMModel, StrictModel
+
+RowLimit = Annotated[int, Field(ge=1, le=5_000_000)]
 
 
-class ConnectorConfig(BaseModel):
-
+class ConnectorConfig(StrictModel):
     host: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     database: str | None = None
@@ -26,12 +27,12 @@ class ConnectorConfig(BaseModel):
     options: dict[str, str] = Field(default_factory=dict)
 
 
-class ConnectorCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+class ConnectorCreate(StrictModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
     type: ConnectorType
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)
-                                                                                 
-    credentials: dict[str, str] = Field(default_factory=dict)
+
+    credentials: dict[str, str] = Field(default_factory=dict, repr=False)
 
     @field_validator("name")
     @classmethod
@@ -53,7 +54,7 @@ class ConnectorTestRequest(BaseModel):
     connector_id: uuid.UUID | None = None
     type: ConnectorType | None = None
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)
-    credentials: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, str] = Field(default_factory=dict, repr=False)
 
 
 class ConnectorTestResult(BaseModel):
@@ -74,7 +75,7 @@ class ConnectorRead(ORMModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
-                                                                         
+
     credential_keys: list[str] = Field(default_factory=list)
     supports_import: bool = False
 
@@ -100,7 +101,7 @@ class ConnectorSchemaList(BaseModel):
 class ConnectorImportRequest(BaseModel):
     schema_name: str | None = None
     table_name: str | None = None
-                                                                        
+
     query: str | None = None
     dataset_name: str | None = None
     row_limit: int = Field(default=500_000, ge=1, le=5_000_000)

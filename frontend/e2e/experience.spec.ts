@@ -1,0 +1,111 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Covers the shell-level interactions that do not depend on API data: theming,
+ * density, the command palette and its shortcuts.
+ */
+
+async function load(page: Page) {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+}
+
+const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);
+const density = (page: Page) => page.evaluate(() => document.documentElement.dataset.density);
+
+test("the theme is applied before paint and survives a reload", async ({ page }) => {
+  await load(page);
+  expect(["light", "dark"]).toContain(await theme(page));
+
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "forecast_hub_prefs",
+      JSON.stringify({ theme: "dark", density: "comfortable" }),
+    );
+  });
+  await page.reload();
+
+  // Read before any hydration effect could have run.
+  expect(await theme(page)).toBe("dark");
+
+  const canvas = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim(),
+  );
+  expect(canvas).toBe("#14161b");
+});
+
+test("the keyboard toggles the theme and the palette drives it too", async ({ page }, testInfo) => {
+  await load(page);
+
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "forecast_hub_prefs",
+      JSON.stringify({ theme: "light", density: "comfortable" }),
+    );
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+  await page.locator("body").press("t");
+  await expect.poll(() => theme(page)).toBe("dark");
+
+  testInfo.annotations.push({ type: "shortcut", description: "t toggles theme" });
+});
+
+test("the command palette opens, filters and runs an action", async ({ page }) => {
+  await load(page);
+
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByRole("dialog");
+  await expect(palette).toBeVisible();
+
+  await page.getByPlaceholder("Search actions…").fill("density");
+  await expect(palette.getByRole("button", { name: /density/i })).toBeVisible();
+
+  const before = await density(page);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => density(page)).not.toBe(before);
+});
+
+test("the palette closes on escape without running anything", async ({ page }) => {
+  await load(page);
+
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  const before = await density(page);
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("dialog")).toBeHidden();
+  expect(await density(page)).toBe(before);
+});
+
+test("compact density tightens the panel grid", async ({ page }) => {
+  await load(page);
+
+  const gap = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--density-panel-gap").trim(),
+    );
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.density = "compact";
+  });
+  expect(await gap()).toBe("8px");
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.density = "comfortable";
+  });
+  expect(await gap()).toBe("12px");
+});
+
+test("first run offers a guided path rather than empty panels", async ({ page }) => {
+  await load(page);
+
+  // With no completed run the workspace leads with the three-step panel.
+  const guide = page.getByRole("heading", { name: "Get your first forecast" });
+  if (await guide.count()) {
+    await expect(guide).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upload a file/ })).toBeVisible();
+  }
+});

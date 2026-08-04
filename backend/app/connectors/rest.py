@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import time
@@ -11,7 +10,6 @@ from app.connectors.base import ConnectorAdapter, FormField, TableInfo, TestOutc
 from app.core.errors import ConnectorError
 from app.models.enums import ConnectorStatus, ConnectorType
 
-                                            
 ARRAY_KEYS = ("data", "results", "items", "records", "rows", "value", "payload")
 
 REQUEST_TIMEOUT = httpx.Timeout(15.0, connect=8.0)
@@ -51,7 +49,7 @@ class RestApiAdapter(ConnectorAdapter):
         headers = {"Accept": "application/json"}
         token = self.credentials.get("token", "").strip()
         if token:
-                                                               
+
             headers["Authorization"] = token if " " in token else f"Bearer {token}"
         return headers
 
@@ -151,7 +149,7 @@ class RestApiAdapter(ConnectorAdapter):
                     records = body[key]
                     break
             else:
-                                                     
+
                 records = [body]
         else:
             raise ConnectorError(
@@ -201,7 +199,7 @@ class RestApiAdapter(ConnectorAdapter):
         if not records:
             raise ConnectorError("The endpoint returned no records.")
 
-                                                                              
+
         flattened = [
             {
                 key: (value if not isinstance(value, dict | list) else str(value))

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import numpy as np
@@ -23,7 +22,7 @@ FREQUENCY_LABEL: dict[ForecastFrequency, str] = {
     ForecastFrequency.QUARTERLY: "quarters",
 }
 
-                                                                             
+
 SEVERITY_BONUS: dict[InsightSeverity, float] = {
     InsightSeverity.CRITICAL: 30.0,
     InsightSeverity.WARNING: 15.0,
@@ -93,14 +92,14 @@ def generate_insights(context: InsightContext, *, limit: int = 8) -> list[Genera
     for generator in GENERATORS:
         try:
             insight = generator(context)
-        except Exception:  # noqa: BLE001 — one bad rule shouldn't blank the rail
+        except Exception:
             logger.exception("Insight generator %s failed", generator.__name__)
             continue
 
         if insight is None:
             continue
 
-                                                                           
+
         if not np.isfinite(insight.metric_value):
             logger.debug("Skipping %s: non-finite metric", generator.__name__)
             continue

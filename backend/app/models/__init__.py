@@ -1,4 +1,3 @@
-
 from app.models.entities import (
     CategoryForecast,
     Connector,

@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import date
 
@@ -42,9 +42,9 @@ async def create_from_upload(
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
-    ingested = persist_upload(content, filename, str(dataset_id))
-    profile = profile_frame(ingested.frame)
-    parquet_path = write_parquet(ingested.frame, str(dataset_id))
+    ingested = await asyncio.to_thread(persist_upload, content, filename, str(dataset_id))
+    profile = await asyncio.to_thread(profile_frame, ingested.frame)
+    parquet_path = await asyncio.to_thread(write_parquet, ingested.frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -66,7 +66,7 @@ async def create_from_upload(
         time_column=time_column,
         target_column=target_column,
         frequency=profile.detected_frequency,
-                                                                                 
+
         horizon=_default_horizon(profile.detected_frequency),
     )
     session.add(dataset)
@@ -75,7 +75,7 @@ async def create_from_upload(
     _attach_columns(session, dataset, profile)
     await session.flush()
 
-                                                                            
+
     return await get_dataset(session, dataset.id), profile
 
 
@@ -89,8 +89,8 @@ async def create_from_frame(
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
-    profile = profile_frame(frame)
-    parquet_path = write_parquet(frame, str(dataset_id))
+    profile = await asyncio.to_thread(profile_frame, frame)
+    parquet_path = await asyncio.to_thread(write_parquet, frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -186,7 +186,7 @@ async def configure(
     if name:
         dataset.name = name[:200]
 
-                                                                    
+
     for column in dataset.columns:
         if column.name == time_column:
             column.role = ColumnRole.TIME
@@ -229,7 +229,7 @@ def _suggestions(profile: DatasetProfileResult, role: str) -> list[ColumnSuggest
     ]
 
 
-def _column_payload(column) -> dict:  # noqa: ANN001 — ColumnProfile
+def _column_payload(column) -> dict:
     return {
         "id": uuid.uuid4(),
         "name": column.name,
@@ -258,8 +258,8 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
     columns = sorted(dataset.columns, key=lambda c: c.position)
 
     def rank(column: DatasetColumn, *, date_axis: bool) -> float:
-                                                                          
-                                                                  
+
+
         base = 0.9 if column.role in (ColumnRole.TIME, ColumnRole.TARGET) else 0.6
         return base if (column.is_date_candidate if date_axis else column.is_target_candidate) else 0.0
 
@@ -272,7 +272,7 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
         date_range_start=dataset.date_range_start,
         date_range_end=dataset.date_range_end,
         detected_frequency=dataset.frequency,
-        columns=[c for c in columns],  # type: ignore[misc] — Pydantic reads them via from_attributes
+        columns=list(columns),  # type: ignore[misc] — Pydantic reads them via from_attributes
         time_column_suggestions=[
             ColumnSuggestion(
                 name=c.name, kind=c.kind, confidence=rank(c, date_axis=True), reason=c.dtype
@@ -321,7 +321,7 @@ def guess_segment_columns(dataset: Dataset) -> tuple[str | None, str | None]:
         (c for c in dimensions if c != region and any(w in c.lower() for w in category_words)), None
     )
 
-                                                                      
+
     remaining = [c for c in dimensions if c not in (region, category)]
     if region is None and remaining:
         region = remaining.pop(0)

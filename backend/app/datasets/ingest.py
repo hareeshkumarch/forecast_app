@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import zipfile
@@ -14,10 +13,10 @@ CSV_SUFFIXES = {".csv", ".tsv", ".txt"}
 EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
 SUPPORTED_SUFFIXES = CSV_SUFFIXES | EXCEL_SUFFIXES
 
-                                                                         
+
 LEGACY_EXCEL_SUFFIXES = {".xls"}
 
-                                                                            
+
 OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
@@ -99,7 +98,7 @@ def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
             )
     except (ValidationError, UnsupportedFileError):
         raise
-    except Exception as exc:  # noqa: BLE001 — translated into a user-facing message
+    except Exception as exc:
         raise ValidationError(
             f"The file couldn't be parsed: {type(exc).__name__}. "
             "Check that it has a single header row and consistent column counts."
@@ -143,7 +142,7 @@ def persist_upload(content: bytes, filename: str, dataset_id: str) -> IngestResu
     try:
         frame = read_tabular(raw_path, suffix)
     except Exception:
-                                                         
+
         raw_path.unlink(missing_ok=True)
         raise
 

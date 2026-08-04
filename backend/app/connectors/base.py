@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import time
@@ -32,7 +31,7 @@ class FormField:
 
     key: str
     label: str
-                                                                        
+
     secret: bool = False
     required: bool = True
     kind: str = "text"                                                  
@@ -44,7 +43,7 @@ class ConnectorAdapter(ABC):
 
     type: ConnectorType
     display_name: str
-                                                              
+
     supports_import: bool = False
     form_fields: tuple[FormField, ...] = ()
     default_port: int | None = None
@@ -67,7 +66,7 @@ class ConnectorAdapter(ABC):
             f"{self.display_name} does not support importing data in this POC."
         )
 
-                                                                            
+
     def _value(self, key: str) -> str:
         if key in self.credentials:
             return str(self.credentials.get(key) or "")

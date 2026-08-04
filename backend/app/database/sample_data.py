@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import csv
@@ -28,7 +27,7 @@ CATEGORIES: dict[str, float] = {
     "Others": 0.09,
 }
 
-                                                                              
+
 REGION_GROWTH: dict[str, float] = {
     "North America": 0.11,
     "Europe": 0.05,
@@ -37,7 +36,7 @@ REGION_GROWTH: dict[str, float] = {
     "Middle East & Africa": 0.03,
 }
 
-                                                                           
+
 CATEGORY_GROWTH: dict[str, float] = {
     "Product A": 0.14,
     "Product B": 0.06,
@@ -62,7 +61,7 @@ def generate_rows() -> list[dict[str, object]]:
         period = add_periods(START, index, ForecastFrequency.MONTHLY)
         years_elapsed = index / 12.0
 
-                                                         
+
         seasonal = 1.0 + 0.09 * np.sin(2 * np.pi * (index - 2) / 12.0)
 
         for region, region_share in REGIONS.items():
@@ -81,7 +80,7 @@ def generate_rows() -> list[dict[str, object]]:
                     * (1.0 + rng.normal(0.0, 0.045))
                 )
 
-                                                                          
+
                 if index == MONTHS - 4 and category in ("Product A", "Product B"):
                     revenue *= 1.34
 

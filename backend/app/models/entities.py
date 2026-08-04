@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -39,7 +38,6 @@ from app.models.enums import (
     RunStatus,
 )
 
-                                                                          
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
@@ -55,7 +53,7 @@ class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[ConnectorStatus] = mapped_column(
         _enum(ConnectorStatus, "connector_status"), default=ConnectorStatus.NOT_CONFIGURED
     )
-                                                                        
+
     config: Mapped[dict] = mapped_column(JSONType, default=dict)
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -75,9 +73,9 @@ class ConnectorCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     connector_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("connectors.id", ondelete="CASCADE"), nullable=False, unique=True
     )
-                                                                        
+
     encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
-                                                                           
+
     key_names: Mapped[list] = mapped_column(JSONType, default=list)
 
     connector: Mapped[Connector] = relationship(back_populates="credential")
@@ -101,14 +99,14 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     column_count: Mapped[int] = mapped_column(Integer, default=0)
     missing_value_count: Mapped[int] = mapped_column(Integer, default=0)
 
-                                                                        
+
     parquet_path: Mapped[str | None] = mapped_column(String(600))
     raw_path: Mapped[str | None] = mapped_column(String(600))
 
     date_range_start: Mapped[date | None] = mapped_column(Date)
     date_range_end: Mapped[date | None] = mapped_column(Date)
 
-                                                                     
+
     time_column: Mapped[str | None] = mapped_column(String(200))
     target_column: Mapped[str | None] = mapped_column(String(200))
     frequency: Mapped[ForecastFrequency | None] = mapped_column(
@@ -148,7 +146,7 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mean_value: Mapped[float | None] = mapped_column(Float)
     sample_values: Mapped[list] = mapped_column(JSONType, default=list)
 
-                                                                            
+
     is_date_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
     is_target_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -184,7 +182,7 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     selected_model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "selected_model"))
     selection_rationale: Mapped[str | None] = mapped_column(Text)
-                                                               
+
     used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
     fallback_reason: Mapped[str | None] = mapped_column(Text)
 
@@ -267,7 +265,7 @@ class ForecastMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[str] = mapped_column(String(24), default="absolute")
-                                                                         
+
     previous_value: Mapped[float | None] = mapped_column(Float)
 
     run: Mapped[ForecastRun] = relationship(back_populates="metrics")
@@ -352,7 +350,7 @@ class ForecastDriver(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     impact_pct: Mapped[float] = mapped_column(Float, default=0.0)
     change_vs_last_year: Mapped[float | None] = mapped_column(Float)
     direction: Mapped[str] = mapped_column(String(16), default="flat")
-                                            
+
     trend: Mapped[list] = mapped_column(JSONType, default=list)
     rank: Mapped[int] = mapped_column(Integer, default=0)
     method: Mapped[str] = mapped_column(String(64), default="decomposition")
@@ -374,7 +372,7 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
 
-                                                                                 
+
     metric_name: Mapped[str] = mapped_column(String(80), nullable=False)
     metric_value: Mapped[float] = mapped_column(Float, nullable=False)
     metric_unit: Mapped[str] = mapped_column(String(24), default="absolute")

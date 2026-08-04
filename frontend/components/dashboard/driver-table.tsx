@@ -1,14 +1,26 @@
 "use client";
 
 
-import { Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { Activity } from "lucide-react";
+
+import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { SortableHeader, useSortedRows } from "@/components/ui/sortable-header";
 import { Sparkline } from "@/components/dashboard/sparkline";
 import { useDrivers } from "@/hooks/use-dashboard";
+import type { DriverRow } from "@/types/api";
 import { formatCompact, formatSignedPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type DriverSortKey = "driver" | "impact_value" | "change_vs_last_year";
+
 export function DriverTable() {
   const { data, isLoading, isError, error, refetch } = useDrivers();
+
+  const { sorted, sort, toggle } = useSortedRows<DriverRow, DriverSortKey>(
+    data?.rows ?? [],
+    { key: "impact_value", direction: "desc" },
+    (row, key) => row[key],
+  );
 
   return (
     <Card className="flex min-w-0 flex-col">
@@ -31,19 +43,19 @@ export function DriverTable() {
             <table className="w-full min-w-[440px] border-collapse">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="table-header px-3 pb-1.5 text-left font-medium">Driver</th>
-                  <th className="table-header px-3 pb-1.5 text-right font-medium">Impact</th>
-                  <th className="table-header px-3 pb-1.5 text-right font-medium">vs LY</th>
+                  <SortableHeader label="Driver" sortKey="driver" sort={sort} onToggle={toggle} className="text-left" />
+                  <SortableHeader label="Impact" sortKey="impact_value" sort={sort} onToggle={toggle} align="right" className="text-right" />
+                  <SortableHeader label="vs LY" sortKey="change_vs_last_year" sort={sort} onToggle={toggle} align="right" className="text-right" />
                   <th className="table-header px-3 pb-1.5 text-right font-medium">Trend</th>
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row) => (
+                {sorted.map((row) => (
                   <tr
                     key={row.driver}
                     className="border-b border-border last:border-0 transition-colors duration-fast hover:bg-surface-muted"
                   >
-                    <td className="px-3 py-[9px] text-meta text-text-primary">
+                    <td className="cell px-3 text-meta text-text-primary">
                       {row.driver}
                       <span className="ml-1.5 text-caption text-text-muted num">
                         {row.impact_pct >= 0 ? "+" : ""}
@@ -52,7 +64,7 @@ export function DriverTable() {
                     </td>
                     <td
                       className={cn(
-                        "px-3 py-[9px] text-right text-meta font-semibold num",
+                        "cell px-3 text-right text-meta font-semibold num",
                         row.impact_value >= 0 ? "text-text-primary" : "text-negative",
                       )}
                     >
@@ -60,7 +72,7 @@ export function DriverTable() {
                     </td>
                     <td
                       className={cn(
-                        "px-3 py-[9px] text-right text-meta font-medium num",
+                        "cell px-3 text-right text-meta font-medium num",
                         row.change_vs_last_year === null
                           ? "text-text-muted"
                           : row.change_vs_last_year >= 0
@@ -70,7 +82,7 @@ export function DriverTable() {
                     >
                       {formatSignedPercent(row.change_vs_last_year)}
                     </td>
-                    <td className="px-3 py-[7px]">
+                    <td className="cell px-3">
                       <div className="flex justify-end">
                         <Sparkline values={row.trend} direction={row.direction} />
                       </div>
@@ -81,11 +93,11 @@ export function DriverTable() {
             </table>
           </div>
         ) : (
-          <div className="flex h-[180px] items-center justify-center px-4">
-            <p className="text-center text-caption text-text-muted">
-              Driver decomposition needs a completed forecast run.
-            </p>
-          </div>
+          <EmptyState
+            icon={Activity}
+            title="No drivers yet"
+            message="Driver decomposition needs a completed forecast run."
+          />
         )}
       </div>
     </Card>

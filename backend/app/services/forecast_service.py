@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import date
 from pathlib import Path
@@ -150,7 +150,7 @@ async def create_run(
                 detail={"available_columns": sorted(available)},
             )
 
-                                                                             
+
     if region_column is None or category_column is None:
         guessed_region, guessed_category = dataset_service.guess_segment_columns(dataset)
         region_column = region_column or guessed_region
@@ -213,7 +213,7 @@ async def create_run(
 async def execute_run(run_id: uuid.UUID) -> None:
     try:
         await _execute(run_id)
-    except Exception as exc:  # noqa: BLE001 — recorded on the run, then published
+    except Exception as exc:
         logger.exception("Forecast run %s failed", run_id)
         await _mark_failed(run_id, exc)
 
@@ -229,9 +229,9 @@ async def _execute(run_id: uuid.UUID) -> None:
         await session.flush()
 
         parquet_path = Path(dataset.parquet_path or "")
-        payload = _build_payload(run, parquet_path)
+        payload = await asyncio.to_thread(_build_payload, run, parquet_path)
 
-                                                                               
+
     _publish(run_id, RunStatus.RUNNING, 0.30, "backtesting", "Backtesting candidate models...")
 
     try:
@@ -378,7 +378,7 @@ async def _persist_output(
             )
         )
 
-                                                                       
+
     for index, period in enumerate(output.history_periods):
         fitted = output.fitted_values[index] if index < len(output.fitted_values) else None
         session.add(
@@ -531,9 +531,9 @@ async def _clear_results(session: AsyncSession, run_id: uuid.UUID) -> None:
 
 
 def _metric_unit(name: str) -> str:
-    if name in ("smape", "wmape", "accuracy"):
+    if name in ("smape", "wmape", "accuracy", "seasonal_strength"):
         return "percent"
-    if name == "backtest_folds":
+    if name in ("backtest_folds", "seasonal_period"):
         return "count"
     return "absolute"
 
@@ -572,7 +572,7 @@ async def _mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
             run.error_message = message[:2000]
             run.completed_at = utcnow()
             await session.flush()
-    except Exception:  # noqa: BLE001 — the publish below still has to happen
+    except Exception:
         logger.exception("Could not record failure for run %s", run_id)
 
     progress_bus.publish(

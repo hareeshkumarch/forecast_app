@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { Badge } from "@/components/ui/primitives";
-import { formatMetric } from "@/lib/format";
+import { formatMetric, humanizeKey } from "@/lib/format";
 import { useUiStore } from "@/stores/ui-store";
 import type { InsightSeverity } from "@/types/api";
 
@@ -24,11 +24,6 @@ const SEVERITY_LABEL: Record<InsightSeverity, string> = {
 };
 
 
-function humanizeKey(key: string): string {
-  const spaced = key.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
 function formatSupportingValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "number") {
@@ -45,7 +40,7 @@ export function InsightDrawer() {
   return (
     <Dialog.Root open={Boolean(insight)} onOpenChange={(open) => !open && closeInsight()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-[#18202f]/20" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay" />
         <Dialog.Content
           className="fixed right-0 top-0 z-50 flex h-full w-[420px] flex-col border-l border-border bg-surface shadow-popover focus:outline-none"
           aria-describedby={undefined}
@@ -87,7 +82,7 @@ export function InsightDrawer() {
 
                 <section>
                   <h3 className="eyebrow">Suggested action</h3>
-                  <p className="mt-1.5 rounded-card border border-[#eeddba] bg-accent-soft px-3 py-2.5 text-body leading-[19px] text-text-primary">
+                  <p className="mt-1.5 rounded-card border border-accent-border bg-accent-soft px-3 py-2.5 text-body leading-[19px] text-text-primary">
                     {insight.suggested_action}
                   </p>
                 </section>

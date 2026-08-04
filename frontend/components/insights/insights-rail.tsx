@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Button, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Button, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useInsights } from "@/hooks/use-dashboard";
 import { formatMetric } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -39,7 +39,7 @@ const SEVERITY_STYLES: Record<
   { border: string; iconBg: string; iconText: string; title: string }
 > = {
   positive: {
-    border: "border-[#cfe6d9]",
+    border: "border-positive-border",
     iconBg: "bg-positive-soft",
     iconText: "text-positive",
     title: "text-positive",
@@ -51,40 +51,57 @@ const SEVERITY_STYLES: Record<
     title: "text-text-primary",
   },
   warning: {
-    border: "border-[#eddcbc]",
+    border: "border-warning-border",
     iconBg: "bg-warning-soft",
     iconText: "text-warning",
     title: "text-warning",
   },
   critical: {
-    border: "border-[#f0cdcc]",
+    border: "border-negative-border",
     iconBg: "bg-negative-soft",
     iconText: "text-negative",
     title: "text-negative",
   },
 };
 
+/**
+ * Fixed sidebar from `2xl` up. It is the first thing to go when space runs
+ * short: below that width the 320px it wants costs the workspace its
+ * side-by-side charts, and the same cards are one tap away in the header.
+ */
 export function InsightsRail() {
+  return (
+    <aside
+      aria-label="AI insights"
+      className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface 2xl:flex"
+    >
+      <InsightsRailBody />
+    </aside>
+  );
+}
+
+export function InsightsRailBody() {
   const { data, isLoading, isError, error, refetch } = useInsights();
   const openInsight = useUiStore((state) => state.openInsight);
+  const openModal = useUiStore((state) => state.openModal);
 
   const items = data?.items ?? [];
 
   return (
-    <aside
-      aria-label="AI insights"
-      className="flex w-insights shrink-0 flex-col border-l border-border bg-surface"
-    >
+    <>
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
           <h2 className="text-subhead font-semibold text-text-primary">AI Insights</h2>
+          {items.length > 0 ? (
+            <span className="ml-auto text-caption text-text-muted num">{items.length}</span>
+          ) : null}
         </div>
-        
+
         <div className="mt-2.5 h-px w-full bg-gradient-to-r from-accent/45 to-transparent" />
       </div>
 
-      <div className="scroll-thin flex-1 space-y-2.5 overflow-y-auto px-3 pb-3">
+      <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3">
         {isLoading ? (
           Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="rounded-card border border-border p-3" aria-hidden>
@@ -97,12 +114,12 @@ export function InsightsRail() {
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => void refetch()} />
         ) : items.length === 0 ? (
-          <div className="rounded-card border border-dashed border-border px-4 py-6 text-center">
-            <p className="text-body font-medium text-text-primary">No insights yet</p>
-            <p className="mt-1 text-caption text-text-muted">
-              Insights are derived from a completed forecast run.
-            </p>
-          </div>
+          <EmptyState
+            className="rounded-card border border-dashed border-border"
+            icon={Sparkles}
+            title="No insights yet"
+            message="Insights are derived from a completed forecast run."
+          />
         ) : (
           items.map((insight) => (
             <InsightCard key={insight.id} insight={insight} onOpen={() => openInsight(insight)} />
@@ -116,16 +133,16 @@ export function InsightsRail() {
           size="md"
           className="w-full"
           disabled={items.length === 0}
-          onClick={() => items[0] && openInsight(items[0])}
+          onClick={() => openModal("all-insights")}
         >
           View All Insights
         </Button>
       </div>
-    </aside>
+    </>
   );
 }
 
-function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () => void }) {
+export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () => void }) {
   const Icon = TYPE_ICONS[insight.type] ?? Sparkles;
   const style = SEVERITY_STYLES[insight.severity];
 
@@ -146,7 +163,7 @@ function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () => void
         </h3>
       </div>
 
-      
+
       <p className="mt-1.5 line-clamp-3 text-caption leading-[16px] text-text-secondary">
         {insight.explanation}
       </p>
@@ -158,7 +175,7 @@ function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () => void
         <button
           type="button"
           onClick={onOpen}
-          className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-[#a56e16]"
+          className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-accent-hover"
         >
           View Details →
         </button>

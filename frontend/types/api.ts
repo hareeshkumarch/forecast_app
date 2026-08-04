@@ -23,6 +23,8 @@ export type ModelKind =
   | "naive"
   | "seasonal_naive"
   | "holt_winters"
+  | "theta"
+  | "croston"
   | "sarimax"
   | "gradient_boosting";
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -19,18 +18,18 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path("./storage")
 
-                                                                            
+
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
-                                    
+
     max_upload_bytes: int = 20 * 1024 * 1024
 
     forecast_workers: int = 2
     run_seed_on_startup: bool = True
 
-                                               
+
     forecast_max_folds: int = 5
     metric_weight_wmape: float = 0.50
     metric_weight_smape: float = 0.30
@@ -41,13 +40,13 @@ class Settings(BaseSettings):
     gbm_max_depth: int = 3
     gbm_learning_rate: float = 0.06
 
-                                                       
+
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
     llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
 
-                                                  
+
     anthropic_api_key: str | None = None
     insight_llm_model: str = "claude-3-5-sonnet-20241022"
 

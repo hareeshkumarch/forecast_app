@@ -3,7 +3,7 @@
 
 import { useId } from "react";
 
-import { CHART_COLORS } from "@/lib/chart-theme";
+import { cn } from "@/lib/utils";
 
 export function Sparkline({
   values,
@@ -42,34 +42,35 @@ export function Sparkline({
   const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
   const area = `${line} L${width} ${height} L0 ${height} Z`;
 
-  const stroke =
+  // SVG inherits the theme through currentColor, so no palette lookup is needed.
+  const tone =
     direction === "up"
-      ? CHART_COLORS.positive
+      ? "text-positive"
       : direction === "down"
-        ? CHART_COLORS.negative
-        : CHART_COLORS.textMuted;
+        ? "text-negative"
+        : "text-text-muted";
 
   return (
     <svg
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="overflow-visible"
+      className={cn("overflow-visible", tone)}
       role="img"
       aria-label={`Trend ${direction}`}
       focusable="false"
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.18" />
-          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={area} fill={`url(#${gradientId})`} />
       <path
         d={line}
         fill="none"
-        stroke={stroke}
+        stroke="currentColor"
         strokeWidth="1.3"
         strokeLinecap="round"
         strokeLinejoin="round"

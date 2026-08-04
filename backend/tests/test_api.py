@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -8,6 +7,7 @@ from httpx import AsyncClient
 
 from app.database.sample_data import generate_csv_bytes
 from app.database.seed import seed_connectors
+from app.models.enums import ModelKind
 
 
 async def _seed_and_run(client: AsyncClient) -> dict:
@@ -30,7 +30,7 @@ async def _seed_and_run(client: AsyncClient) -> dict:
     assert run.status_code == 202, run.text
     run_id = run.json()["id"]
 
-                                                                              
+
     async with client.stream("GET", f"/api/forecasts/{run_id}/events") as stream:
         async for _ in stream.aiter_lines():
             pass
@@ -60,7 +60,7 @@ async def test_seeded_connectors_are_listed_in_rail_order(client: AsyncClient) -
     connectors = response.json()
     assert len(connectors) == 10
     assert [c["name"] for c in connectors][:3] == ["BigQuery", "Snowflake", "Amazon Redshift"]
-                                                 
+
     assert all(c["status"] == "not_configured" for c in connectors)
 
 
@@ -80,7 +80,7 @@ async def test_connector_create_never_returns_credentials(client: AsyncClient) -
     serialised = response.text
     assert "super-secret-value" not in serialised
     assert "reader" not in serialised
-                                     
+
     assert sorted(body["credential_keys"]) == ["password", "username"]
     assert "password" not in body["config"]
 
@@ -193,13 +193,7 @@ async def test_configure_rejects_identical_columns(client: AsyncClient) -> None:
 async def test_forecast_run_completes_and_selects_a_model(client: AsyncClient) -> None:
     run = await _seed_and_run(client)
 
-    assert run["selected_model"] in {
-        "naive",
-        "seasonal_naive",
-        "holt_winters",
-        "sarimax",
-        "gradient_boosting",
-    }
+    assert run["selected_model"] in {kind.value for kind in ModelKind}
     assert run["selection_rationale"]
     assert run["progress"] == 1.0
     assert run["forecast_start"] and run["forecast_end"]
@@ -213,7 +207,8 @@ async def test_metrics_expose_every_candidate_and_the_scoring_rule(client: Async
 
     body = response.json()
     assert "norm(wMAPE)" in body["scoring_rule"]
-    assert len(body["candidates"]) == 5
+    assert {c["model"] for c in body["candidates"]} <= {kind.value for kind in ModelKind}
+    assert len(body["candidates"]) >= 6
     assert sum(1 for c in body["candidates"] if c["selected"]) == 1
 
     metrics = {m["name"] for m in body["metrics"]}
@@ -303,7 +298,7 @@ async def test_regions_categories_and_drivers(client: AsyncClient) -> None:
     assert len(categories["rows"]) == 5
     assert len(drivers["rows"]) == 5
 
-                                                         
+
     assert sum(r["forecast_value"] for r in regions["rows"]) == pytest.approx(
         regions["total"], rel=1e-6
     )

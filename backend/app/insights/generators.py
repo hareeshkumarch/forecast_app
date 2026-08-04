@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -63,7 +62,7 @@ class GeneratedInsight:
     metric_unit: str
     supporting_data: dict
     generated_at: datetime = field(default_factory=utcnow)
-                                                                              
+
     weight: float = 0.0
 
 
@@ -86,7 +85,7 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
         return None
 
     if ctx.previous_accuracy is None or not np.isfinite(ctx.previous_accuracy):
-                                                                              
+
         if ctx.accuracy < 80:
             return GeneratedInsight(
                 type=InsightType.ACCURACY_CHANGE,
@@ -243,7 +242,7 @@ def confidence_widening(ctx: InsightContext) -> GeneratedInsight | None:
     if len(ctx.lower_bound) < 3 or len(ctx.upper_bound) < 3:
         return None
 
-    widths = [u - l for u, l in zip(ctx.upper_bound, ctx.lower_bound, strict=False)]
+    widths = [high - low for high, low in zip(ctx.upper_bound, ctx.lower_bound, strict=False)]
     if not widths or widths[0] <= 0:
         return None
 
@@ -292,7 +291,7 @@ def anomaly(ctx: InsightContext) -> GeneratedInsight | None:
     if sigma == 0:
         return None
 
-                                                                              
+
     tail = pairs[-6:]
     worst_index, worst_actual, worst_fit = max(
         tail, key=lambda item: abs(item[1] - item[2]) / sigma
@@ -454,7 +453,7 @@ def recommendation(ctx: InsightContext) -> GeneratedInsight | None:
     total = float(np.sum(ctx.point_forecast))
     top_region = max(ctx.regions, key=lambda r: r.forecast_value) if ctx.regions else None
 
-                                                                                     
+
     if np.isfinite(ctx.accuracy) and ctx.accuracy < 75:
         return GeneratedInsight(
             type=InsightType.RECOMMENDATION,

@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import date
@@ -49,16 +49,18 @@ async def create_export(
         if not rows:
             raise ValidationError("This run has no forecast points to export.")
 
-        settings.ensure_directories()
+        sheets = await _summary_sheets(session, run)
         path = settings.exports_dir / f"{run.id}-{job.id}.{export_format.value}"
-        _write(rows, path, export_format, run, await _summary_sheets(session, run))
+
+        await asyncio.to_thread(settings.ensure_directories)
+        await asyncio.to_thread(_write, rows, path, export_format, run, sheets)
 
         job.status = ExportStatus.READY
         job.file_path = str(path)
-        job.file_size_bytes = path.stat().st_size
+        job.file_size_bytes = (await asyncio.to_thread(path.stat)).st_size
         job.row_count = len(rows)
         job.completed_at = utcnow()
-    except Exception as exc:  # noqa: BLE001 — recorded on the job row
+    except Exception as exc:
         logger.exception("Export failed for run %s", run_id)
         job.status = ExportStatus.FAILED
         job.error_message = (getattr(exc, "message", None) or str(exc))[:1000]
@@ -151,8 +153,8 @@ def _write(
     frame = pl.DataFrame(rows, infer_schema_length=None)
 
     if export_format is ExportFormat.CSV:
-                                                                             
-                                                                          
+
+
         frame.write_csv(path)
         return
 
@@ -180,7 +182,7 @@ def _write(
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         return
 
-                                                                  
+
     try:
         import xlsxwriter
 

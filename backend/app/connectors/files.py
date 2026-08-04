@@ -1,8 +1,8 @@
-
 from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import polars as pl
 
@@ -16,17 +16,18 @@ from app.models.enums import ConnectorStatus, ConnectorType
 class FileAdapter(ConnectorAdapter):
 
     supports_import = True
-    suffixes: set[str] = set()
+    suffixes: ClassVar[set[str]] = set()
 
     def _resolve(self) -> Path:
         raw = str(self.config.get("file_path") or "").strip()
         if not raw:
             raise ConnectorError("No file path is configured for this connector.")
 
-        root = settings.uploads_dir.resolve()
-        candidate = (root / raw).resolve()
 
-                                                                      
+        root = settings.uploads_dir.resolve()
+        candidate = (root / raw.replace("\\", "/")).resolve()
+
+
         if not candidate.is_relative_to(root):
             raise ConnectorError(
                 "The file path must be inside the uploads directory. "
