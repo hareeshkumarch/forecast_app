@@ -27,16 +27,13 @@ import {
 } from "@/components/dashboard/header-controls";
 import { ICON_BUTTON, IconButton, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
 import { useInsights } from "@/hooks/use-dashboard";
-import { useMediaQuery } from "@/hooks/use-media-query";
+import { RAIL_MEDIA, useMediaQuery } from "@/hooks/use-media-query";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
 const DOCS_URL = `${API_BASE_URL}/docs`;
-
-/** The `lg` breakpoint the inline sidebar appears at. */
-const SIDEBAR_MEDIA = "(min-width: 1024px)";
 
 const SECTION_LABEL: Record<AppSection, string> = {
   dashboard: "Dashboard",
@@ -54,7 +51,7 @@ export function TopHeader({ section }: { section: AppSection }) {
   const toggleTheme = usePrefsStore((state) => state.toggleTheme);
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
   const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
-  const isDesktop = useMediaQuery(SIDEBAR_MEDIA);
+  const isDesktop = useMediaQuery(RAIL_MEDIA.navigation);
 
   const isDashboard = section === "dashboard";
   const insightCount = insights?.items.length ?? 0;
