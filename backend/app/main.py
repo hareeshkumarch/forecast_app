@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import connectors, dashboard, datasets, exports, forecasts, health
+from app.api.routes import connectors, dashboard, datasets, exports, forecasts, health, usage
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -72,6 +72,7 @@ api.include_router(forecasts.router)
 api.include_router(dashboard.router)
 api.include_router(dashboard.insights_router)
 api.include_router(exports.router)
+api.include_router(usage.router)
 
 app.include_router(api)
 

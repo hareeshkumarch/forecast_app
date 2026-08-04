@@ -9,13 +9,13 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
-    Enum,
     Float,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -44,8 +44,43 @@ from app.models.enums import (
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
-def _enum(enum_cls: type, name: str) -> Enum:
-    return Enum(enum_cls, name=name, native_enum=False, validate_strings=True, length=32)
+class RobustEnum(TypeDecorator):
+    impl = String(32)
+    cache_ok = True
+
+    def __init__(self, enum_cls: type, _name: str | None = None):
+        self.enum_cls = enum_cls
+        super().__init__()
+
+    def process_bind_param(self, value, _dialect):
+        if value is None:
+            return None
+        if isinstance(value, self.enum_cls):
+            return value.value
+        return str(value)
+
+    def process_result_value(self, value, _dialect):
+        if value is None:
+            return None
+        if isinstance(value, self.enum_cls):
+            return value
+        try:
+            return self.enum_cls(value)
+        except ValueError:
+            pass
+        try:
+            return self.enum_cls[value]
+        except KeyError:
+            pass
+        val_str = str(value).lower()
+        for member in self.enum_cls:
+            if member.value.lower() == val_str or member.name.lower() == val_str:
+                return member
+        raise LookupError(f"'{value}' is not among defined enum values for {self.enum_cls.__name__}")
+
+
+def _enum(enum_cls: type, name: str) -> RobustEnum:
+    return RobustEnum(enum_cls, name)
 
 
 class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -223,6 +258,9 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     insights: Mapped[list[Insight]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    llm_usage_events: Mapped[list[LlmUsageEvent]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
     exports: Mapped[list[ExportJob]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
@@ -388,6 +426,41 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="insights")
 
     __table_args__ = (Index("ix_insights_run_rank", "run_id", "rank"),)
+
+
+class LlmUsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One provider request, without credentials or prompt contents."""
+
+    __tablename__ = "llm_usage_events"
+
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("forecast_runs.id", ondelete="CASCADE"), nullable=True
+    )
+    purpose: Mapped[str] = mapped_column(String(64), default="insight_rewrite")
+    insight_type: Mapped[str | None] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    applied: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    cost_source: Mapped[str] = mapped_column(String(24), default="unavailable")
+    error_code: Mapped[str | None] = mapped_column(String(80))
+
+    run: Mapped[ForecastRun | None] = relationship(back_populates="llm_usage_events")
+
+    __table_args__ = (
+        Index("ix_llm_usage_created", "created_at"),
+        Index("ix_llm_usage_provider_model", "provider", "model"),
+        Index("ix_llm_usage_run", "run_id"),
+    )
 
 
 class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):

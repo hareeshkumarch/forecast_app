@@ -10,6 +10,7 @@ from app.models.entities import (
     ForecastPoint,
     ForecastRun,
     Insight,
+    LlmUsageEvent,
     ModelCandidate,
     RegionalForecast,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "Insight",
     "InsightSeverity",
     "InsightType",
+    "LlmUsageEvent",
     "ModelCandidate",
     "ModelKind",
     "PointKind",

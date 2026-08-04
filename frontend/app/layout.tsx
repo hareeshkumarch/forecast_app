@@ -13,8 +13,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Forecasting Dashboard",
-  description: "Forecast performance, scenarios and insights.",
+  title: "Forecast Hub",
+  description: "Forecast operations, reports, data connectors, and LLM usage analytics.",
 };
 
 export const viewport: Viewport = {

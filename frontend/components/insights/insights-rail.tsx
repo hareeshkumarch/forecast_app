@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Button, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Badge, Button, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useInsights } from "@/hooks/use-dashboard";
 import { formatMetric } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -72,8 +72,8 @@ const SEVERITY_STYLES: Record<
 export function InsightsRail() {
   return (
     <aside
-      aria-label="AI insights"
-      className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface 2xl:flex"
+   aria-label="Forecast insights"
+   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1720px]:flex"
     >
       <InsightsRailBody />
     </aside>
@@ -92,7 +92,7 @@ export function InsightsRailBody() {
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
-          <h2 className="text-subhead font-semibold text-text-primary">AI Insights</h2>
+     <h2 className="text-subhead font-semibold text-text-primary">Forecast Insights</h2>
           {items.length > 0 ? (
             <span className="ml-auto text-caption text-text-muted num">{items.length}</span>
           ) : null}
@@ -168,18 +168,19 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
         {insight.explanation}
       </p>
 
-      <div className="mt-2.5 flex items-center justify-between gap-2">
+   <div className="mt-2.5 flex items-center justify-between gap-2">
         <span className="truncate text-caption font-medium text-text-muted num">
           {formatMetric(insight.metric_value, insight.metric_unit)}
         </span>
-        <button
+    <button
           type="button"
           onClick={onOpen}
           className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-accent-hover"
         >
-          View Details →
-        </button>
-      </div>
-    </article>
+     View Details →
+    </button>
+   </div>
+   {insight.llm_rewritten ? <Badge tone="accent" className="mt-2">LLM enhanced</Badge> : null}
+  </article>
   );
 }

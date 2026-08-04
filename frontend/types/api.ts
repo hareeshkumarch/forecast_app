@@ -218,6 +218,9 @@ export interface ForecastRun {
   frequency: ForecastFrequency;
   horizon: number;
   confidence_level: number;
+  aggregation: MeasureAggregation;
+  gap_fill: GapFill;
+  outlier_treatment: OutlierTreatment;
   selected_model: ModelKind | null;
   selection_rationale: string | null;
   used_fallback: boolean;
@@ -436,6 +439,71 @@ export interface HealthResponse {
   max_upload_mb: number;
   using_default_credential_key: boolean;
   timestamp: string;
+}
+
+export interface LlmUsageTotals {
+  requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  rejected_requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  priced_requests: number;
+  average_latency_ms: number | null;
+  p95_latency_ms: number | null;
+}
+
+export interface LlmUsagePoint {
+  date: string;
+  requests: number;
+  successful_requests: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface LlmUsageBreakdown {
+  provider: string;
+  model: string;
+  requests: number;
+  successful_requests: number;
+  total_tokens: number;
+  cost_usd: number;
+  priced_requests: number;
+  average_latency_ms: number | null;
+}
+
+export interface LlmUsageEvent {
+  id: string;
+  run_id: string | null;
+  purpose: string;
+  insight_type: string | null;
+  provider: string;
+  model: string;
+  status: "success" | "error" | "rejected";
+  applied: boolean;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_input_tokens: number | null;
+  reasoning_tokens: number | null;
+  total_tokens: number | null;
+  latency_ms: number | null;
+  cost_usd: number | null;
+  cost_source: "provider" | "configured" | "unavailable";
+  error_code: string | null;
+  created_at: string;
+}
+
+export interface LlmUsageResponse {
+  days: number;
+  generated_at: string;
+  totals: LlmUsageTotals;
+  timeseries: LlmUsagePoint[];
+  by_model: LlmUsageBreakdown[];
+  recent: LlmUsageEvent[];
 }
 
 

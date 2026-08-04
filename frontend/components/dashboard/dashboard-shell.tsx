@@ -1,9 +1,11 @@
 "use client";
 
+import type { ComponentType } from "react";
 
 import { AddConnectorModal } from "@/components/connectors/add-connector-modal";
 import { ConnectorImportModal } from "@/components/connectors/connector-import-modal";
-import { ConnectorRail } from "@/components/connectors/connector-rail";
+import { ConnectorsWorkspace } from "@/components/connectors/connector-rail";
+import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { ForecastModal } from "@/components/dashboard/forecast-modal";
 import { ModelDetailModal } from "@/components/dashboard/model-detail-modal";
@@ -12,22 +14,40 @@ import { SettingsModal } from "@/components/dashboard/settings-modal";
 import { TopHeader } from "@/components/dashboard/top-header";
 import { UploadDatasetModal } from "@/components/dashboard/upload-dataset-modal";
 import { Workspace } from "@/components/dashboard/workspace";
+import { ReportsWorkspace } from "@/components/reports/reports-workspace";
+import { SettingsWorkspace } from "@/components/settings/settings-workspace";
 import { Toaster } from "@/components/ui/toaster";
 import { AllInsightsModal } from "@/components/insights/all-insights-modal";
 import { InsightDrawer } from "@/components/insights/insight-drawer";
 import { InsightsRail } from "@/components/insights/insights-rail";
+import { UsageWorkspace } from "@/components/usage/usage-workspace";
 
-export function DashboardShell() {
+const WORKSPACES: Record<AppSection, ComponentType> = {
+  dashboard: Workspace,
+  reports: ReportsWorkspace,
+  connectors: ConnectorsWorkspace,
+  usage: UsageWorkspace,
+  settings: SettingsWorkspace,
+};
+
+export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
+  const SectionWorkspace = WORKSPACES[section];
   return (
     // 100dvh rather than 100vh: mobile browsers shrink the visual viewport as
     // their chrome slides away, and vh does not follow.
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-canvas">
-      <TopHeader />
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-white focus:translate-y-0"
+      >
+        Skip to main content
+      </a>
+      <TopHeader section={section} />
 
       <div className="flex min-h-0 flex-1">
-        <ConnectorRail />
-        <Workspace />
-        <InsightsRail />
+        <AppSidebar />
+        <SectionWorkspace />
+        {section === "dashboard" ? <InsightsRail /> : null}
       </div>
 
       <RailDrawer />

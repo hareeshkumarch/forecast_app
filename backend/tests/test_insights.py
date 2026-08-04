@@ -194,6 +194,6 @@ def test_llm_rewrite_must_not_invent_numbers() -> None:
     assert not _numbers_preserved(original, "Revenue climbs 18.9% reaching $3.10M.")
 
 
-def test_llm_rewrite_may_drop_a_figure() -> None:
+def test_llm_rewrite_must_not_drop_a_figure() -> None:
     original = "Revenue grows 12.4% to $2.48M over 6 months."
-    assert _numbers_preserved(original, "Revenue grows to $2.48M.")
+    assert not _numbers_preserved(original, "Revenue grows to $2.48M.")

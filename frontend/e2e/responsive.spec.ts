@@ -3,15 +3,15 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * The layout contract, per breakpoint:
  *
- *   < 1024   both rails are drawers, opened from the header
- *   >= 1024  the connector rail is inline
- *   >= 1536  the insights rail joins it
+ *   < 1024   primary navigation is a drawer
+ *   >= 1024  application navigation is inline
+ *   >= 1720  the contextual insights rail joins it
  *
  * and at every width the page itself never scrolls sideways.
  */
 
-const connectorRail = (page: Page) => page.locator('aside[aria-label="Data connectors"]');
-const insightsRail = (page: Page) => page.locator('aside[aria-label="AI insights"]');
+const appNavigation = (page: Page) => page.locator('aside[aria-label="Primary navigation"]');
+const insightsRail = (page: Page) => page.locator('aside[aria-label="Forecast insights"]');
 
 async function load(page: Page) {
   await page.goto("/");
@@ -33,18 +33,18 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
   await load(page);
 
   const width = page.viewportSize()?.width ?? 0;
-  await expect(connectorRail(page)).toBeVisible({ visible: width >= 1024 });
-  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1536 });
+  await expect(appNavigation(page)).toBeVisible({ visible: width >= 1024 });
+  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1720 });
 
   if (width < 1024) {
-    await page.getByRole("button", { name: "Data connectors" }).click();
+    await page.getByRole("button", { name: "Open navigation" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add Connector" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Dashboard/ })).toBeVisible();
     await page.keyboard.press("Escape");
   }
 
-  if (width < 1536) {
-    await page.getByRole("button", { name: /AI insights/ }).click();
+  if (width < 1720) {
+    await page.getByRole("button", { name: /Forecast insights/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.keyboard.press("Escape");
   }

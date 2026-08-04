@@ -4,8 +4,10 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import {
   BookOpen,
+  Activity,
   Database,
   Download,
+  FileBarChart2,
   Moon,
   Plus,
   Rows3,
@@ -18,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { downloadExport, useSummary } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
@@ -50,10 +53,10 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+  const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
 
   const openModal = useUiStore((state) => state.openModal);
-  const openRail = useUiStore((state) => state.openRail);
   const setView = useUiStore((state) => state.setView);
   const setRunId = useUiStore((state) => state.setRunId);
   const toggleTheme = usePrefsStore((state) => state.toggleTheme);
@@ -106,7 +109,22 @@ export function CommandPalette() {
         label: "Browse data connectors",
         group: "Navigate",
         icon: Database,
-        run: () => openRail("connectors"),
+        run: () => router.push("/connectors"),
+      },
+      {
+        id: "reports",
+        label: "Open forecast reports",
+        group: "Navigate",
+        icon: FileBarChart2,
+        run: () => router.push("/reports"),
+      },
+      {
+        id: "usage",
+        label: "Open LLM usage",
+        group: "Navigate",
+        icon: Activity,
+        keywords: "tokens requests cost latency",
+        run: () => router.push("/usage"),
       },
       {
         id: "insights",
@@ -167,7 +185,7 @@ export function CommandPalette() {
         label: "Open settings",
         group: "Preferences",
         icon: Settings,
-        run: () => openModal("settings"),
+        run: () => router.push("/settings"),
       },
       {
         id: "docs",
@@ -181,8 +199,8 @@ export function CommandPalette() {
   }, [
     density,
     openModal,
-    openRail,
     resolvedTheme,
+    router,
     runId,
     setDensity,
     setRunId,

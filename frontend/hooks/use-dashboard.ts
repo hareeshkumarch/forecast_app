@@ -44,6 +44,7 @@ export const queryKeys = {
   categories: (f: DashboardFilters) => ["dashboard", "categories", filterKey(f)] as const,
   drivers: (f: DashboardFilters) => ["dashboard", "drivers", filterKey(f)] as const,
   insights: (f: DashboardFilters) => ["dashboard", "insights", filterKey(f)] as const,
+  llmUsage: (days: number) => ["usage", "llm", days] as const,
 };
 
 
@@ -99,6 +100,14 @@ export function useInsights() {
 
 export function useForecastRuns() {
   return useQuery({ queryKey: queryKeys.runs, queryFn: api.listForecastRuns });
+}
+
+export function useLlmUsage(days = 30) {
+  return useQuery({
+    queryKey: queryKeys.llmUsage(days),
+    queryFn: () => api.getLlmUsage(days),
+    refetchInterval: 30_000,
+  });
 }
 
 

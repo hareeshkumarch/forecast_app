@@ -8,6 +8,7 @@ import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { DriverTable } from "@/components/dashboard/driver-table";
 import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
+import { ModelHealthStrip } from "@/components/dashboard/model-health-strip";
 import { RegionTable } from "@/components/dashboard/region-table";
 import { Button } from "@/components/ui/primitives";
 import { useSummary } from "@/hooks/use-dashboard";
@@ -20,7 +21,7 @@ export function Workspace() {
   const openModal = useUiStore((state) => state.openModal);
 
   return (
-    <main className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
+    <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <h2 className="text-heading font-semibold tracking-[-0.015em] text-text-primary">
@@ -38,7 +39,7 @@ export function Workspace() {
               onClick={() => openModal("model-detail")}
               title="How this model was chosen"
               className={cn(
-                "inline-flex h-8 items-center gap-1 rounded-chip border border-border bg-surface-muted px-2",
+                "inline-flex h-11 items-center gap-1 rounded-chip border border-border bg-surface-muted px-2 sm:h-8",
                 "text-caption font-medium text-text-secondary",
                 "transition-colors duration-fast hover:border-border-strong hover:text-text-primary",
               )}
@@ -76,6 +77,8 @@ export function Workspace() {
       <div className="mt-4">
         <KpiCards />
       </div>
+
+      <ModelHealthStrip />
 
       <div className="grid-charts mt-3">
         <ForecastVsActual />

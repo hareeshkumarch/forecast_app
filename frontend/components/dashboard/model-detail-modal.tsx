@@ -6,7 +6,7 @@ import { Check, X } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Badge, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useForecastMetrics, useSummary } from "@/hooks/use-dashboard";
-import { formatMetric, humanizeKey, humanizeModel } from "@/lib/format";
+import { formatCompact, formatMetric, humanizeKey, humanizeModel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ModelCandidate } from "@/types/api";
@@ -149,7 +149,7 @@ function CandidateRow({ candidate }: { candidate: ModelCandidate }) {
         {candidate.smape === null ? "—" : `${candidate.smape.toFixed(1)}%`}
       </td>
       <td className="px-3 py-2 text-right text-meta text-text-secondary num">
-        {candidate.rmse === null ? "—" : candidate.rmse.toFixed(0)}
+    {candidate.rmse === null ? "—" : formatCompact(candidate.rmse)}
       </td>
       <td className="px-3 py-2 text-right text-meta font-medium text-text-primary num">
         {formatScore(candidate.score)}

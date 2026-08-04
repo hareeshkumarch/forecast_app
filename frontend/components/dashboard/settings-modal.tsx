@@ -1,11 +1,10 @@
 "use client";
 
-
-import { Monitor, Moon, Rows3, Rows4, Sun } from "lucide-react";
+import { Monitor, Moon, Rows3, Rows4, ShieldCheck, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Select } from "@/components/ui/primitives";
+import { Button, Card, Field, Input, Select } from "@/components/ui/primitives";
 import { API_BASE_URL } from "@/lib/api";
 import {
   EMPTY_LLM_CONFIG,
@@ -47,7 +46,11 @@ function SegmentedControl<T extends string>({
   return (
     <div>
       <span className="mb-1 block text-caption font-medium text-text-secondary">{label}</span>
-      <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-input border border-border bg-surface-muted p-0.5">
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="flex gap-1 rounded-input border border-border bg-surface-muted p-0.5"
+      >
         {options.map((option) => {
           const Icon = option.icon;
           const active = option.value === value;
@@ -59,7 +62,7 @@ function SegmentedControl<T extends string>({
               aria-checked={active}
               onClick={() => onChange(option.value)}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1.5",
+                "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 sm:min-h-8",
                 "text-meta font-medium transition-colors duration-fast",
                 active
                   ? "bg-surface text-text-primary shadow-card"
@@ -76,16 +79,13 @@ function SegmentedControl<T extends string>({
   );
 }
 
-/**
- * Home for settings that belong to the browser rather than to a single run —
- * the LLM credentials used to reword insights, which previously sat in the
- * middle of the Run Forecast dialog.
- */
-export function SettingsModal() {
-  const modal = useUiStore((state) => state.modal);
-  const closeModal = useUiStore((state) => state.closeModal);
-  const open = modal === "settings";
+function parseRate(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
 
+export function SettingsPanel({ className }: { className?: string }) {
   const theme = usePrefsStore((state) => state.theme);
   const density = usePrefsStore((state) => state.density);
   const setTheme = usePrefsStore((state) => state.setTheme);
@@ -94,12 +94,7 @@ export function SettingsModal() {
   const [config, setConfig] = useState<LlmConfig>(EMPTY_LLM_CONFIG);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setConfig(loadLlmConfig());
-      setSaved(false);
-    }
-  }, [open]);
+  useEffect(() => setConfig(loadLlmConfig()), []);
 
   function update(patch: Partial<LlmConfig>) {
     setConfig((previous) => ({ ...previous, ...patch }));
@@ -120,117 +115,157 @@ export function SettingsModal() {
   const models = PROVIDER_MODELS[config.provider] ?? [];
 
   return (
-    <Modal
-      open={open}
-      onClose={closeModal}
-      title="Settings"
-      description="Stored in this browser only."
-      footer={
-        <>
-          <Button variant="ghost" onClick={handleClear}>
-            Clear
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            {saved ? "Saved" : "Save"}
-          </Button>
-        </>
-      }
-    >
+    <div className={cn("grid gap-4 xl:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]", className)}>
       <div className="space-y-4">
-        <section className="space-y-3">
-          <h3 className="eyebrow">Appearance</h3>
-          <SegmentedControl label="Theme" value={theme} options={THEMES} onChange={setTheme} />
-          <SegmentedControl
-            label="Density"
-            value={density}
-            options={DENSITIES}
-            onChange={setDensity}
-          />
-        </section>
-
-        <section>
-          <h3 className="eyebrow">API</h3>
-          <div className="mt-2 flex items-center justify-between gap-3 rounded-card border border-border bg-surface-muted px-3 py-2">
-            <span className="text-caption text-text-secondary">Backend</span>
-            <code className="truncate text-caption text-text-primary">{API_BASE_URL}</code>
+        <Card className="p-4">
+          <h2 className="panel-title">Appearance</h2>
+          <p className="mt-0.5 text-caption text-text-muted">Personal to this browser.</p>
+          <div className="mt-4 space-y-3">
+            <SegmentedControl label="Theme" value={theme} options={THEMES} onChange={setTheme} />
+            <SegmentedControl
+              label="Density"
+              value={density}
+              options={DENSITIES}
+              onChange={setDensity}
+            />
           </div>
-          <p className="mt-1 text-caption text-text-muted">
-            Set at build time by NEXT_PUBLIC_API_BASE_URL.
-          </p>
-        </section>
+        </Card>
 
-        <section>
-          <h3 className="eyebrow">Insight rewriter</h3>
-          <p className="mt-1.5 text-caption text-text-muted">
-            Optional. Every figure in an insight is computed by the backend either way — an LLM
-            only rewords the explanation. Leave the key blank to use the server&apos;s own
-            configuration.
+        <Card className="p-4">
+          <h2 className="panel-title">Application API</h2>
+          <div className="mt-3 rounded-card border border-border bg-surface-muted px-3 py-2.5">
+            <span className="text-caption text-text-secondary">Backend</span>
+            <code className="mt-1 block break-all text-caption text-text-primary">{API_BASE_URL}</code>
+          </div>
+          <p className="mt-2 text-caption text-text-muted">
+            Configured at build time with NEXT_PUBLIC_API_BASE_URL.
           </p>
+        </Card>
+      </div>
 
-          <div className="mt-2.5 space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Provider">
-                <Select
-                  value={config.provider}
-                  onChange={(event) => {
-                    const provider = event.target.value;
-                    update({ provider, model: defaultModelFor(provider) });
-                  }}
-                  
-                >
-                  {PROVIDERS.map((provider) => (
-                    <option key={provider.value} value={provider.value}>
-                      {provider.label}
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-input bg-accent-soft">
+            <ShieldCheck className="h-4 w-4 text-accent" aria-hidden />
+          </span>
+          <div>
+            <h2 className="panel-title">Insight rewriter and pricing</h2>
+            <p className="mt-0.5 max-w-[68ch] text-caption text-text-muted">
+              Forecast numbers are computed by the platform. The LLM only rewrites explanations.
+              Token, latency, outcome, and cost metadata are recorded without prompts or API keys.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Provider">
+              <Select
+                value={config.provider}
+                onChange={(event) => {
+                  const provider = event.target.value;
+                  update({ provider, model: defaultModelFor(provider) });
+                }}
+              >
+                {PROVIDERS.map((provider) => (
+                  <option key={provider.value} value={provider.value}>
+                    {provider.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Model">
+              {models.length > 0 ? (
+                <Select value={config.model} onChange={(event) => update({ model: event.target.value })}>
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
                     </option>
                   ))}
                 </Select>
-              </Field>
+              ) : (
+                <Input
+                  value={config.model}
+                  onChange={(event) => update({ model: event.target.value })}
+                  placeholder="model-name"
+                />
+              )}
+            </Field>
+          </div>
 
-              <Field label="Model">
-                {models.length > 0 ? (
-                  <Select
-                    value={config.model}
-                    onChange={(event) => update({ model: event.target.value })}
-                    
-                  >
-                    {models.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    value={config.model}
-                    onChange={(event) => update({ model: event.target.value })}
-                    placeholder="model-name"
-                  />
-                )}
-              </Field>
-            </div>
+          <Field label="API key" hint="Stored in this browser and sent only when starting a run.">
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={config.apiKey}
+              onChange={(event) => update({ apiKey: event.target.value })}
+              placeholder="Provider API key"
+            />
+          </Field>
 
-            <Field label="API key" hint="Kept in this browser's local storage and sent with a run.">
+          {PROVIDERS_NEEDING_BASE_URL.has(config.provider) ? (
+            <Field label="Base URL" hint="For example, http://localhost:11434/v1">
               <Input
-                type="password"
-                autoComplete="new-password"
-                value={config.apiKey}
-                onChange={(event) => update({ apiKey: event.target.value })}
-                placeholder="sk-…"
+                value={config.baseUrl}
+                onChange={(event) => update({ baseUrl: event.target.value })}
+                placeholder="https://provider.example/v1"
               />
             </Field>
+          ) : null}
 
-            {PROVIDERS_NEEDING_BASE_URL.has(config.provider) ? (
-              <Field label="Base URL" hint="e.g. http://localhost:11434/v1">
+          <div className="rounded-card border border-border bg-surface-muted p-3">
+            <p className="text-meta font-medium text-text-primary">Cost fallback</p>
+            <p className="mt-0.5 text-caption text-text-muted">
+              Optional USD rates per one million tokens, used only when the provider does not
+              return a cost.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Input token rate">
                 <Input
-                  value={config.baseUrl}
-                  onChange={(event) => update({ baseUrl: event.target.value })}
-                  placeholder="https://…"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={config.inputCostPerMillion ?? ""}
+                  onChange={(event) => update({ inputCostPerMillion: parseRate(event.target.value) })}
+                  placeholder="0.00"
                 />
               </Field>
-            ) : null}
+              <Field label="Output token rate">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={config.outputCostPerMillion ?? ""}
+                  onChange={(event) => update({ outputCostPerMillion: parseRate(event.target.value) })}
+                  placeholder="0.00"
+                />
+              </Field>
+            </div>
           </div>
-        </section>
-      </div>
+
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+            <Button variant="ghost" onClick={handleClear}>Clear</Button>
+            <Button variant="primary" onClick={handleSave}>{saved ? "Saved" : "Save settings"}</Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+export function SettingsModal() {
+  const modal = useUiStore((state) => state.modal);
+  const closeModal = useUiStore((state) => state.closeModal);
+  return (
+    <Modal
+      open={modal === "settings"}
+      onClose={closeModal}
+      title="Settings"
+      description="Appearance, providers, and usage pricing."
+      size="lg"
+    >
+      <SettingsPanel />
     </Modal>
   );
 }

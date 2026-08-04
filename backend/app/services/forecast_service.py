@@ -25,7 +25,7 @@ from app.forecasting.engine import (
     run_forecast,
 )
 from app.insights.engine import build_context, generate_insights
-from app.insights.llm import llm_enabled, rewrite_insights
+from app.insights.llm import LlmUsageRecord, llm_enabled, rewrite_insights
 from app.models.entities import (
     CategoryForecast,
     Dataset,
@@ -34,6 +34,7 @@ from app.models.entities import (
     ForecastPoint,
     ForecastRun,
     Insight,
+    LlmUsageEvent,
     ModelCandidate,
     RegionalForecast,
 )
@@ -71,18 +72,29 @@ class RunOverrides:
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_base_url: str | None = None
+    llm_input_cost_per_million: float | None = None
+    llm_output_cost_per_million: float | None = None
 
     def is_empty(self) -> bool:
         return all(getattr(self, f.name) is None for f in fields(self))
 
     def llm_config(self) -> dict[str, object] | None:
-        if not self.llm_api_key:
+        if not any(
+            value is not None
+            for value in (
+                self.llm_api_key,
+                self.llm_input_cost_per_million,
+                self.llm_output_cost_per_million,
+            )
+        ):
             return None
         return {
             "llm_provider": self.llm_provider,
             "llm_api_key": self.llm_api_key,
             "llm_model": self.llm_model,
             "llm_base_url": self.llm_base_url,
+            "llm_input_cost_per_million": self.llm_input_cost_per_million,
+            "llm_output_cost_per_million": self.llm_output_cost_per_million,
         }
 
 
@@ -148,6 +160,8 @@ async def create_run(
     llm_api_key: str | None = None,
     llm_model: str | None = None,
     llm_base_url: str | None = None,
+    llm_input_cost_per_million: float | None = None,
+    llm_output_cost_per_million: float | None = None,
 ) -> ForecastRun:
     dataset = await dataset_service.get_dataset(session, dataset_id)
 
@@ -217,6 +231,8 @@ async def create_run(
         llm_api_key=llm_api_key,
         llm_model=llm_model,
         llm_base_url=llm_base_url,
+        llm_input_cost_per_million=llm_input_cost_per_million,
+        llm_output_cost_per_million=llm_output_cost_per_million,
     )
     if not overrides.is_empty():
         _run_overrides[run.id] = overrides
@@ -510,11 +526,14 @@ async def _persist_insights(
     )
     insights = generate_insights(context)
 
-    rewritten = llm_enabled(llm_config)
-    if rewritten:
-        insights = rewrite_insights(insights, llm_config=llm_config)
+    usage: list[LlmUsageRecord] = []
+    if llm_enabled(llm_config):
+        insights = rewrite_insights(insights, llm_config=llm_config, usage_sink=usage)
 
     for rank, insight in enumerate(insights, start=1):
+        rewritten = any(
+            record.insight_type == insight.type.value and record.applied for record in usage
+        )
         session.add(
             Insight(
                 run_id=run.id,
@@ -530,6 +549,28 @@ async def _persist_insights(
                 rank=rank,
                 generated_at=insight.generated_at,
                 llm_rewritten=rewritten,
+            )
+        )
+
+    for record in usage:
+        session.add(
+            LlmUsageEvent(
+                run_id=run.id,
+                purpose="insight_rewrite",
+                insight_type=record.insight_type,
+                provider=record.provider,
+                model=record.model,
+                status=record.status,
+                applied=record.applied,
+                input_tokens=record.input_tokens,
+                output_tokens=record.output_tokens,
+                cached_input_tokens=record.cached_input_tokens,
+                reasoning_tokens=record.reasoning_tokens,
+                total_tokens=record.total_tokens,
+                latency_ms=record.latency_ms,
+                cost_usd=record.cost_usd,
+                cost_source=record.cost_source,
+                error_code=record.error_code,
             )
         )
 
@@ -568,6 +609,7 @@ async def _clear_results(session: AsyncSession, run_id: uuid.UUID) -> None:
         CategoryForecast,
         ForecastDriver,
         Insight,
+        LlmUsageEvent,
     ):
         await session.execute(delete(model).where(model.run_id == run_id))
 

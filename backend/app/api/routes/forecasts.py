@@ -74,6 +74,8 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         llm_api_key=payload.llm_api_key,
         llm_model=payload.llm_model,
         llm_base_url=payload.llm_base_url,
+        llm_input_cost_per_million=payload.llm_input_cost_per_million,
+        llm_output_cost_per_million=payload.llm_output_cost_per_million,
     )
 
     await session.commit()

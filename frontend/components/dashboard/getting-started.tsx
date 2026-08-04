@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, Check, Database, PlayCircle, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Button, Card } from "@/components/ui/primitives";
 import { useDatasets, useForecastRuns } from "@/hooks/use-dashboard";
@@ -23,7 +24,7 @@ interface Step {
  */
 export function GettingStarted() {
   const openModal = useUiStore((state) => state.openModal);
-  const openRail = useUiStore((state) => state.openRail);
+  const router = useRouter();
 
   const { data: datasets } = useDatasets();
   const { data: runs } = useForecastRuns();
@@ -76,7 +77,7 @@ export function GettingStarted() {
             Three steps from raw history to a ranked, backtested forecast.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => openRail("connectors")} className="shrink-0">
+        <Button variant="ghost" onClick={() => router.push("/connectors")} className="shrink-0">
           Browse connectors
         </Button>
       </div>

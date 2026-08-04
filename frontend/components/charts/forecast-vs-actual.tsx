@@ -301,7 +301,7 @@ export function ForecastVsActual() {
                 type="button"
                 aria-label="Panel actions"
                 className={cn(
-                  "inline-flex h-6 w-6 items-center justify-center rounded-chip",
+         "inline-flex h-11 w-11 items-center justify-center rounded-chip sm:h-6 sm:w-6",
                   "text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary",
                 )}
               >

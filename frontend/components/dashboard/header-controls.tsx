@@ -40,7 +40,7 @@ const EXPORT_FORMATS: { value: ExportFormat; label: string; hint: string }[] = [
 const PRESET_COUNTS = [3, 6, 12] as const;
 
 const TRIGGER = cn(
-  "inline-flex h-8 max-w-[190px] items-center gap-1.5 rounded-input border border-border bg-surface px-2.5",
+  "inline-flex h-11 min-w-11 max-w-[190px] items-center gap-1.5 rounded-input border border-border bg-surface px-2.5 sm:h-8 sm:min-w-0",
   "text-meta text-text-primary",
   "transition-colors duration-fast hover:border-border-strong hover:bg-surface-muted",
 );

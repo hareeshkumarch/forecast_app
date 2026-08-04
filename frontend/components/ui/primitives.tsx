@@ -28,8 +28,8 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
-  sm: "h-7 px-2.5 text-caption gap-1.5",
-  md: "h-8 px-3 text-meta gap-2",
+  sm: "h-10 px-3 text-caption gap-1.5 sm:h-7 sm:px-2.5",
+  md: "h-11 px-3 text-meta gap-2 sm:h-8",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -68,7 +68,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 
 export const ICON_BUTTON = cn(
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-input",
+  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-input sm:h-8 sm:w-8",
   "border border-transparent text-text-secondary",
   "transition-colors duration-fast hover:border-border hover:bg-surface-muted hover:text-text-primary",
 );
@@ -173,7 +173,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input
         ref={ref}
         className={cn(
-          "h-8 w-full rounded-input border border-border bg-surface px-2.5",
+          "h-11 w-full rounded-input border border-border bg-surface px-2.5 sm:h-8",
           "text-meta text-text-primary placeholder:text-text-muted",
           "transition-colors duration-fast focus:border-accent focus:outline-none",
           "disabled:bg-surface-muted disabled:text-text-muted",
@@ -191,7 +191,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          "h-8 w-full rounded-input border border-border bg-surface px-2",
+          "h-11 w-full rounded-input border border-border bg-surface px-2 sm:h-8",
           "text-meta text-text-primary",
           "transition-colors duration-fast focus:border-accent focus:outline-none",
           "disabled:bg-surface-muted disabled:text-text-muted",

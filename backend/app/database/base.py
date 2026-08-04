@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-UTC = getattr(timezone, "utc", UTC)
+UTC = timezone.utc  # noqa: UP017 -- the host tooling still runs on Python 3.10
 
 
 def utcnow() -> datetime:

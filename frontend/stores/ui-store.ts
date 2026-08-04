@@ -18,7 +18,7 @@ export type ModalKind =
  * Below `lg` the two rails are not on screen — they open as off-canvas
  * drawers instead. One at a time, so the overlay never stacks.
  */
-export type MobileRail = "connectors" | "insights" | null;
+export type MobileRail = "navigation" | "insights" | null;
 
 interface UiState {
 

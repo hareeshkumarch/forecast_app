@@ -9,6 +9,8 @@ export interface LlmConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
+  inputCostPerMillion: number | null;
+  outputCostPerMillion: number | null;
 }
 
 export const PROVIDERS: { value: string; label: string }[] = [
@@ -41,6 +43,8 @@ export const EMPTY_LLM_CONFIG: LlmConfig = {
   apiKey: "",
   model: "gpt-4o-mini",
   baseUrl: "",
+  inputCostPerMillion: null,
+  outputCostPerMillion: null,
 };
 
 export function defaultModelFor(provider: string): string {
@@ -60,6 +64,10 @@ export function loadLlmConfig(): LlmConfig {
       apiKey: parsed.apiKey ?? "",
       model: parsed.model ?? EMPTY_LLM_CONFIG.model,
       baseUrl: parsed.baseUrl ?? "",
+      inputCostPerMillion:
+        typeof parsed.inputCostPerMillion === "number" ? parsed.inputCostPerMillion : null,
+      outputCostPerMillion:
+        typeof parsed.outputCostPerMillion === "number" ? parsed.outputCostPerMillion : null,
     };
   } catch {
     return EMPTY_LLM_CONFIG;
@@ -94,6 +102,8 @@ export function llmRunFields(config: LlmConfig) {
       llm_api_key: null,
       llm_model: null,
       llm_base_url: null,
+      llm_input_cost_per_million: config.inputCostPerMillion,
+      llm_output_cost_per_million: config.outputCostPerMillion,
     };
   }
 
@@ -102,5 +112,7 @@ export function llmRunFields(config: LlmConfig) {
     llm_api_key: apiKey,
     llm_model: config.model.trim() || null,
     llm_base_url: config.baseUrl.trim() || null,
+    llm_input_cost_per_million: config.inputCostPerMillion,
+    llm_output_cost_per_million: config.outputCostPerMillion,
   };
 }

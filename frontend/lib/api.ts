@@ -22,6 +22,7 @@ import type {
   GapFill,
   HealthResponse,
   InsightResponse,
+  LlmUsageResponse,
   MeasureAggregation,
   OutlierTreatment,
   RegionResponse,
@@ -241,6 +242,8 @@ export const startForecast = (payload: {
   llm_api_key?: string | null;
   llm_model?: string | null;
   llm_base_url?: string | null;
+  llm_input_cost_per_million?: number | null;
+  llm_output_cost_per_million?: number | null;
 }) =>
   request<ForecastRun>("/api/forecasts/run", {
     method: "POST",
@@ -269,6 +272,9 @@ export const getDrivers = (filters: DashboardFilters) =>
 
 export const getInsights = (filters: DashboardFilters) =>
   request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`);
+
+export const getLlmUsage = (days = 30) =>
+  request<LlmUsageResponse>(`/api/usage/llm${buildQuery({ days })}`);
 
 export const exportUrl = (runId: string, format: ExportFormat) =>
   `${API_BASE_URL}/api/exports/${runId}${buildQuery({ format })}`;

@@ -1,19 +1,20 @@
 "use client";
 
-
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   BookOpen,
+  Menu,
   Monitor,
   MoreVertical,
   Moon,
-  PanelLeft,
   Settings,
   Sparkles,
   Sun,
   TrendingUp,
 } from "lucide-react";
+import Link from "next/link";
 
+import type { AppSection } from "@/components/dashboard/app-sidebar";
 import {
   CompactFilters,
   ExportControl,
@@ -31,54 +32,74 @@ import { useUiStore } from "@/stores/ui-store";
 
 const DOCS_URL = `${API_BASE_URL}/docs`;
 
-export function TopHeader() {
+const SECTION_LABEL: Record<AppSection, string> = {
+  dashboard: "Dashboard",
+  reports: "Reports",
+  connectors: "Connectors",
+  usage: "LLM Usage",
+  settings: "Settings",
+};
+
+export function TopHeader({ section }: { section: AppSection }) {
   const openRail = useUiStore((state) => state.openRail);
-  const openModal = useUiStore((state) => state.openModal);
   const { data: insights } = useInsights();
   const theme = usePrefsStore((state) => state.theme);
   const resolvedTheme = usePrefsStore((state) => state.resolvedTheme);
   const toggleTheme = usePrefsStore((state) => state.toggleTheme);
 
+  const isDashboard = section === "dashboard";
   const insightCount = insights?.items.length ?? 0;
   const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun;
 
   return (
-    <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-3 sm:gap-2.5 sm:px-5">
-      {/* The rails are drawers below their breakpoints; these open them. */}
+    <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-2 sm:gap-2.5 sm:px-5">
       <IconButton
-        label="Data connectors"
-        icon={PanelLeft}
-        onClick={() => openRail("connectors")}
+        label="Open navigation"
+        icon={Menu}
+        onClick={() => openRail("navigation")}
         className="lg:hidden"
       />
 
-      <div className="flex min-w-0 items-center gap-2.5">
+      <Link
+        href="/"
+        aria-label="Forecast Hub dashboard"
+        className="flex min-h-11 min-w-11 items-center gap-2.5 rounded-input sm:min-h-0 sm:min-w-0"
+      >
         <span
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent"
           aria-hidden
         >
           <TrendingUp className="h-4 w-4 text-white" />
         </span>
-        <h1 className="truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:text-title">
-          Forecasting Dashboard
-        </h1>
-      </div>
+        <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
+          Forecast Hub
+        </span>
+      </Link>
 
-      <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        <div className="hidden items-center gap-2 md:flex">
-          <RunControl />
-          <ScenarioControl />
-          <RangeControl />
+      <span className="hidden h-5 w-px bg-border sm:block" aria-hidden />
+      <span className="hidden truncate text-meta font-medium text-text-secondary sm:block">
+        {SECTION_LABEL[section]}
+      </span>
+
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        {isDashboard ? (
+          <>
+            <div className="hidden items-center gap-2 md:flex">
+              <RunControl />
+              <ScenarioControl />
+              <RangeControl />
+            </div>
+            <div className="md:hidden">
+              <CompactFilters />
+            </div>
+            <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" aria-hidden />
+          </>
+        ) : null}
+
+        <div className="hidden sm:block">
+          <StatusControl />
         </div>
-
-        <div className="md:hidden">
-          <CompactFilters />
-        </div>
-
-        <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" aria-hidden />
-
-        <StatusControl />
-        <ExportControl />
+        {isDashboard ? <ExportControl /> : null}
 
         <IconButton
           label={`Theme: ${theme}. Switch to ${resolvedTheme === "dark" ? "light" : "dark"}`}
@@ -98,14 +119,15 @@ export function TopHeader() {
           <BookOpen className="h-4 w-4" aria-hidden />
         </a>
 
-        <IconButton
-          label="Settings"
-          icon={Settings}
-          onClick={() => openModal("settings")}
-          className="hidden sm:inline-flex"
-        />
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          title="Settings"
+          className={cn(ICON_BUTTON, "hidden sm:inline-flex")}
+        >
+          <Settings className="h-4 w-4" aria-hidden />
+        </Link>
 
-        {/* Everything that did not fit, for the narrowest viewports. */}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button type="button" aria-label="More" className={cn(ICON_BUTTON, "sm:hidden")}>
@@ -118,9 +140,11 @@ export function TopHeader() {
                 <ThemeIcon className="h-3.5 w-3.5 text-text-muted" aria-hidden />
                 {resolvedTheme === "dark" ? "Light theme" : "Dark theme"}
               </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => openModal("settings")} className={MENU_ITEM}>
-                <Settings className="h-3.5 w-3.5 text-text-muted" aria-hidden />
-                Settings
+              <DropdownMenu.Item asChild className={MENU_ITEM}>
+                <Link href="/settings">
+                  <Settings className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+                  Settings
+                </Link>
               </DropdownMenu.Item>
               <DropdownMenu.Item asChild className={MENU_ITEM}>
                 <a href={DOCS_URL} target="_blank" rel="noreferrer">
@@ -132,20 +156,22 @@ export function TopHeader() {
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
 
-        <button
-          type="button"
-          aria-label={`AI insights${insightCount > 0 ? ` (${insightCount})` : ""}`}
-          title="AI insights"
-          onClick={() => openRail("insights")}
-          className={cn(ICON_BUTTON, "relative 2xl:hidden")}
-        >
-          <Sparkles className="h-4 w-4 text-accent" aria-hidden />
-          {insightCount > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-white num">
-              {insightCount > 9 ? "9+" : insightCount}
-            </span>
-          ) : null}
-        </button>
+        {isDashboard ? (
+          <button
+            type="button"
+            aria-label={`Forecast insights${insightCount > 0 ? ` (${insightCount})` : ""}`}
+            title="Forecast insights"
+            onClick={() => openRail("insights")}
+            className={cn(ICON_BUTTON, "relative min-[1720px]:hidden")}
+          >
+            <Sparkles className="h-4 w-4 text-accent" aria-hidden />
+            {insightCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-white num">
+                {insightCount > 9 ? "9+" : insightCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
       </div>
     </header>
   );

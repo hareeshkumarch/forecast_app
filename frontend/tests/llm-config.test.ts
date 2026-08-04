@@ -15,12 +15,21 @@ beforeEach(() => {
 
 describe("storage", () => {
   it("round-trips a saved config", () => {
-    saveLlmConfig({ provider: "groq", apiKey: "key", model: "llama", baseUrl: "" });
+    saveLlmConfig({
+      provider: "groq",
+      apiKey: "key",
+      model: "llama",
+      baseUrl: "",
+      inputCostPerMillion: 0.59,
+      outputCostPerMillion: 0.79,
+    });
     expect(loadLlmConfig()).toEqual({
       provider: "groq",
       apiKey: "key",
       model: "llama",
       baseUrl: "",
+      inputCostPerMillion: 0.59,
+      outputCostPerMillion: 0.79,
     });
   });
 
@@ -39,7 +48,7 @@ describe("storage", () => {
   });
 
   it("clears", () => {
-    saveLlmConfig({ provider: "groq", apiKey: "key", model: "llama", baseUrl: "" });
+    saveLlmConfig({ ...EMPTY_LLM_CONFIG, provider: "groq", apiKey: "key", model: "llama" });
     clearLlmConfig();
     expect(loadLlmConfig()).toEqual(EMPTY_LLM_CONFIG);
   });
@@ -47,19 +56,34 @@ describe("storage", () => {
 
 describe("llmRunFields", () => {
   it("sends nothing without a key, so the server's own config wins", () => {
-    expect(llmRunFields({ provider: "openai", apiKey: "   ", model: "gpt-4o", baseUrl: "" })).toEqual(
-      { llm_provider: null, llm_api_key: null, llm_model: null, llm_base_url: null },
-    );
+    expect(
+      llmRunFields({ ...EMPTY_LLM_CONFIG, apiKey: "   ", model: "gpt-4o" }),
+    ).toEqual({
+      llm_provider: null,
+      llm_api_key: null,
+      llm_model: null,
+      llm_base_url: null,
+      llm_input_cost_per_million: null,
+      llm_output_cost_per_million: null,
+    });
   });
 
   it("trims what it sends and nulls the blanks", () => {
     expect(
-      llmRunFields({ provider: "openai", apiKey: " sk-1 ", model: " gpt-4o ", baseUrl: "" }),
+      llmRunFields({
+        ...EMPTY_LLM_CONFIG,
+        apiKey: " sk-1 ",
+        model: " gpt-4o ",
+        inputCostPerMillion: 2.5,
+        outputCostPerMillion: 10,
+      }),
     ).toEqual({
       llm_provider: "openai",
       llm_api_key: "sk-1",
       llm_model: "gpt-4o",
       llm_base_url: null,
+      llm_input_cost_per_million: 2.5,
+      llm_output_cost_per_million: 10,
     });
   });
 });

@@ -210,7 +210,7 @@ export function ForecastModal() {
       open={open}
       onClose={handleClose}
       title="Run Forecast"
-      description="Fits five candidate models, backtests them and selects a winner."
+      description="Fits every eligible candidate model, backtests them, and selects a winner."
       size="md"
       footer={
         activeRunId ? (

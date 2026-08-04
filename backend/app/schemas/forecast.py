@@ -55,6 +55,8 @@ class ForecastRunRequest(StrictModel):
     llm_api_key: str | None = Field(default=None, max_length=512, repr=False)
     llm_model: Identifier | None = None
     llm_base_url: str | None = Field(default=None, max_length=512)
+    llm_input_cost_per_million: float | None = Field(default=None, ge=0.0, le=100_000.0)
+    llm_output_cost_per_million: float | None = Field(default=None, ge=0.0, le=100_000.0)
 
     @field_validator("metric_weights")
     @classmethod

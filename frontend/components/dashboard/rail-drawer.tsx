@@ -6,15 +6,15 @@ import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
-import { ConnectorRailBody } from "@/components/connectors/connector-rail";
+import { AppSidebarBody } from "@/components/dashboard/app-sidebar";
 import { InsightsRailBody } from "@/components/insights/insights-rail";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 /** Mirrors the `lg` / `2xl` breakpoints the two rails become visible at. */
 const RAIL_MEDIA = {
-  connectors: "(min-width: 1024px)",
-  insights: "(min-width: 1536px)",
+  navigation: "(min-width: 1024px)",
+  insights: "(min-width: 1720px)",
 } as const;
 
 /**
@@ -42,7 +42,7 @@ export function RailDrawer() {
     return () => query.removeEventListener("change", onChange);
   }, [rail, closeRail]);
 
-  const isConnectors = rail === "connectors";
+  const isNavigation = rail === "navigation";
 
   return (
     <Dialog.Root open={rail !== null} onOpenChange={(open) => !open && closeRail()}>
@@ -51,25 +51,25 @@ export function RailDrawer() {
         <Dialog.Content
           className={cn(
             "fixed inset-y-0 z-50 flex w-[86vw] max-w-[320px] flex-col bg-surface shadow-popover focus:outline-none",
-            isConnectors ? "left-0 border-r border-border" : "right-0 border-l border-border",
+            isNavigation ? "left-0 border-r border-border" : "right-0 border-l border-border",
           )}
           aria-describedby={undefined}
         >
           <VisuallyHidden.Root>
-            <Dialog.Title>{isConnectors ? "Data connectors" : "AI insights"}</Dialog.Title>
+            <Dialog.Title>{isNavigation ? "Navigation" : "Forecast insights"}</Dialog.Title>
           </VisuallyHidden.Root>
 
           <Dialog.Close asChild>
             <button
               type="button"
               aria-label="Close"
-              className="absolute right-2 top-3 z-10 rounded-input p-1.5 text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary"
+              className="absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-input text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary sm:h-8 sm:w-8"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
           </Dialog.Close>
 
-          {isConnectors ? <ConnectorRailBody /> : <InsightsRailBody />}
+          {isNavigation ? <AppSidebarBody /> : <InsightsRailBody />}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
