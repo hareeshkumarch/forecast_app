@@ -7,7 +7,13 @@ import polars as pl
 import pytest
 
 from app.core.errors import PayloadTooLargeError, UnsupportedFileError, ValidationError
-from app.datasets.ingest import persist_upload, read_tabular, validate_upload, write_parquet
+from app.datasets.ingest import (
+    _coerce_formatted_numbers,
+    persist_upload,
+    read_tabular,
+    validate_upload,
+    write_parquet,
+)
 from app.datasets.profiler import profile_frame
 from app.datasets.queries import aggregate_segments, aggregate_series
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
@@ -231,3 +237,53 @@ def test_column_name_quoting_blocks_injection() -> None:
 
     names = column_names(path)
     assert 'evil"; DROP TABLE x; --' in names
+
+
+def test_currency_and_thousands_separators_become_measures() -> None:
+    csv = (
+        "period,revenue,units,note\n"
+        '2024-01-01,"$1,200.50",12,ok\n'
+        '2024-02-01,"$1,350.00",15,ok\n'
+        '2024-03-01,"$1,400.25",18,fine\n'
+        '2024-04-01,"$1,510.75",21,ok\n'
+    )
+    frame = persist_upload(csv.encode(), "money.csv", "coerce-money").frame
+
+    assert frame["revenue"].dtype == pl.Float64
+    assert frame["revenue"][0] == pytest.approx(1200.50)
+    assert frame["note"].dtype == pl.Utf8, "prose must stay prose"
+
+    profile = profile_frame(frame)
+    target = next(c.name for c in profile.columns if c.role is ColumnRole.TARGET)
+    assert target in {"revenue", "units"}
+
+
+def test_accounting_negatives_are_read_as_negative() -> None:
+    csv = "period,amount\n2024-01-01,(450)\n2024-02-01,1200\n2024-03-01,(75)\n2024-04-01,900\n"
+    frame = persist_upload(csv.encode(), "ledger.csv", "coerce-ledger").frame
+
+    assert frame["amount"].to_list() == [-450.0, 1200.0, -75.0, 900.0]
+
+
+def test_a_text_year_column_is_left_as_a_label() -> None:
+    # Polars already types a bare integer column as Int64, so the guard only
+    # ever sees a year that arrived as text — a trailing space is enough.
+    frame = pl.DataFrame(
+        {
+            "period": ["2024-01-01", "2024-02-01", "2024-03-01"],
+            "fiscal_year": ["2024 ", "2024 ", "2025 "],
+            "revenue": ["$100", "$110", "$120"],
+        }
+    )
+
+    coerced = _coerce_formatted_numbers(frame)
+
+    assert coerced["fiscal_year"].dtype == pl.Utf8, "a year is a label, not a measure"
+    assert coerced["revenue"].dtype == pl.Float64
+
+
+def test_a_mostly_textual_column_is_not_coerced() -> None:
+    csv = "period,label\n2024-01-01,north\n2024-02-01,south\n2024-03-01,12\n2024-04-01,east\n"
+    frame = persist_upload(csv.encode(), "labels.csv", "coerce-labels").frame
+
+    assert frame["label"].dtype == pl.Utf8

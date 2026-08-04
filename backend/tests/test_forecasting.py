@@ -317,3 +317,58 @@ def test_drivers_are_produced_and_ranked() -> None:
     assert len(output.drivers) == 5
     impacts = [abs(d.impact_value) for d in output.drivers]
     assert impacts == sorted(impacts, reverse=True), "drivers must be ranked by impact"
+
+
+def test_a_two_point_history_is_never_presented_as_certain() -> None:
+    from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
+
+    periods = [add_periods(date(2024, 1, 1), i, MONTHLY) for i in range(3)]
+    output = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=[10.0, 20.0, 30.0]),
+            frequency=MONTHLY,
+            horizon=4,
+            confidence_level=0.8,
+        )
+    )
+
+    assert output.interval_method == "series_volatility"
+    widths = [high - low for low, high in zip(output.lower_bound, output.upper_bound, strict=True)]
+    assert all(width > 0 for width in widths), "no fold means no certainty"
+    assert widths == sorted(widths), "uncertainty cannot shrink with distance"
+
+
+def test_an_extreme_magnitude_band_stays_representable() -> None:
+    from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
+
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(30)]
+    values = [1e15 + i * 1e13 for i in range(30)]
+
+    output = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=values),
+            frequency=MONTHLY,
+            horizon=6,
+            confidence_level=0.8,
+        )
+    )
+
+    widths = [high - low for low, high in zip(output.lower_bound, output.upper_bound, strict=True)]
+    assert all(width > 0 for width in widths), "the band underflowed at 1e15"
+
+
+def test_a_flat_series_keeps_its_zero_width_band() -> None:
+    from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
+
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(30)]
+    output = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=[100.0] * 30),
+            frequency=MONTHLY,
+            horizon=6,
+            confidence_level=0.8,
+        )
+    )
+
+    widths = [high - low for low, high in zip(output.lower_bound, output.upper_bound, strict=True)]
+    assert max(widths) < 1.0, "a constant series is genuinely predictable"

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from enum import Enum
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -44,22 +47,22 @@ from app.models.enums import (
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
-class RobustEnum(TypeDecorator):
+class RobustEnum(TypeDecorator[Any]):
     impl = String(32)
     cache_ok = True
 
-    def __init__(self, enum_cls: type, _name: str | None = None):
+    def __init__(self, enum_cls: type[Enum], _name: str | None = None) -> None:
         self.enum_cls = enum_cls
         super().__init__()
 
-    def process_bind_param(self, value, _dialect):
+    def process_bind_param(self, value: Any, _dialect: Dialect) -> str | None:
         if value is None:
             return None
         if isinstance(value, self.enum_cls):
-            return value.value
+            return str(value.value)
         return str(value)
 
-    def process_result_value(self, value, _dialect):
+    def process_result_value(self, value: Any, _dialect: Dialect) -> Any:
         if value is None:
             return None
         if isinstance(value, self.enum_cls):
@@ -76,7 +79,9 @@ class RobustEnum(TypeDecorator):
         for member in self.enum_cls:
             if member.value.lower() == val_str or member.name.lower() == val_str:
                 return member
-        raise LookupError(f"'{value}' is not among defined enum values for {self.enum_cls.__name__}")
+        raise LookupError(
+            f"'{value}' is not among defined enum values for {self.enum_cls.__name__}"
+        )
 
 
 def _enum(enum_cls: type, name: str) -> RobustEnum:

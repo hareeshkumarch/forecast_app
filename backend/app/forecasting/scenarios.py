@@ -13,6 +13,15 @@ FloatArray = npt.NDArray[np.float64]
 SCENARIO_CONFIDENCE = 0.95
 MIN_EMPIRICAL_RESIDUALS = 8
 
+# With no validation fold to learn from, the series' own step-to-step movement
+# is the only honest estimate of how wrong the next point could be. Damped,
+# because a short history over-reads its own noise.
+FALLBACK_VOLATILITY_WEIGHT = 0.75
+
+# A band this small relative to the level cannot survive float64 addition, so
+# reporting it would claim a precision the numbers cannot carry.
+MIN_RELATIVE_SIGMA = 1e-9
+
 
 @dataclass(slots=True)
 class IntervalBands:
@@ -36,12 +45,30 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
     return buckets
 
 
-def _sigma_by_step(result: BacktestResult, horizon: int) -> tuple[FloatArray, str]:
+def _volatility_sigma(history: FloatArray, horizon: int) -> FloatArray:
+    finite = history[np.isfinite(history)]
+
+    scale = 0.0
+    if finite.size >= 2:
+        steps = np.abs(np.diff(finite))
+        scale = float(np.median(steps))
+        if scale <= 0.0:
+            scale = float(np.mean(steps))
+    if scale <= 0.0 and finite.size:
+        # A flat history still moves; assume it could move by a tenth of level.
+        scale = float(np.max(np.abs(finite))) * 0.1
+
+    return scale * FALLBACK_VOLATILITY_WEIGHT * np.sqrt(np.arange(1, horizon + 1))
+
+
+def _sigma_by_step(
+    result: BacktestResult, horizon: int, history: FloatArray
+) -> tuple[FloatArray, str]:
     buckets = _residuals_by_step(result, horizon)
     pooled = [value for bucket in buckets for value in bucket]
 
     if not pooled:
-        return np.zeros(horizon), "no_residuals"
+        return _volatility_sigma(history, horizon), "series_volatility"
 
     pooled_sigma = float(np.std(pooled, ddof=1)) if len(pooled) > 1 else abs(float(pooled[0]))
     if pooled_sigma == 0.0:
@@ -105,12 +132,18 @@ def build_intervals(
     backtest: BacktestResult,
     confidence_level: float = 0.8,
     *,
+    history: FloatArray | None = None,
     non_negative: bool = False,
 ) -> IntervalBands:
     point_forecast = np.asarray(point_forecast, dtype=float).ravel()
     horizon = point_forecast.size
+    past = (
+        np.asarray(history, dtype=float).ravel()
+        if history is not None
+        else np.empty(0, dtype=float)
+    )
 
-    sigmas, method = _sigma_by_step(backtest, horizon)
+    sigmas, method = _sigma_by_step(backtest, horizon, past)
 
     empirical = _quantile_offsets(backtest, horizon, confidence_level)
     scenario = _quantile_offsets(backtest, horizon, SCENARIO_CONFIDENCE)
@@ -132,6 +165,20 @@ def build_intervals(
     upper = point_forecast + interval_high
     worst = point_forecast + scenario_low
     best = point_forecast + scenario_high
+
+    # At extreme magnitudes an offset can be smaller than the gap between two
+    # representable floats, which silently collapses the band to nothing. Only
+    # widen a band that the model asked for; a genuinely flat series keeps its
+    # zero-width interval.
+    if method != "no_residuals":
+        level = float(np.max(np.abs(point_forecast))) if point_forecast.size else 0.0
+        floor = level * MIN_RELATIVE_SIGMA
+        collapsed = (upper - lower <= 0.0) & (np.abs(interval_high - interval_low) > 0.0)
+        if floor > 0.0 and collapsed.any():
+            lower = np.where(collapsed, point_forecast - floor, lower)
+            upper = np.where(collapsed, point_forecast + floor, upper)
+            worst = np.minimum(worst, lower)
+            best = np.maximum(best, upper)
 
     if non_negative:
         lower = np.maximum(lower, 0.0)

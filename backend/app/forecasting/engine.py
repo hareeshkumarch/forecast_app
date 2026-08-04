@@ -249,6 +249,7 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         point_forecast,
         winner_result,
         confidence_level=payload.confidence_level,
+        history=values,
         non_negative=non_negative,
     )
 
