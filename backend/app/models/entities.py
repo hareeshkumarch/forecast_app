@@ -226,6 +226,12 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum(OutlierTreatment, "outlier_treatment"), default=OutlierTreatment.NONE
     )
 
+    # Per-run tuning choices, stored so a worker in another process — or the
+    # same one after a restart — fits the run the caller actually asked for.
+    # Any LLM key is encrypted before it lands here.
+    options: Mapped[dict] = mapped_column(JSONType, default=dict)
+    task_id: Mapped[str | None] = mapped_column(String(64))
+
     selected_model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "selected_model"))
     selection_rationale: Mapped[str | None] = mapped_column(Text)
 

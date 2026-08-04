@@ -35,6 +35,12 @@ openpyxl==3.1.5
 fastexcel==0.12.0
 xlsxwriter==3.2.0
 
+# ---- distributed work ----------------------------------------------------
+# Optional at runtime: without CELERY_BROKER_URL the platform fits models in
+# an in-process pool and neither import is reached.
+celery[redis]==5.4.0
+redis==5.2.1
+
 # ---- crypto --------------------------------------------------------------
 cryptography==44.0.0
 

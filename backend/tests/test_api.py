@@ -339,3 +339,21 @@ async def test_unknown_ids_return_404(client: AsyncClient, prefix: str) -> None:
     response = await client.get(f"/api/{prefix}/{uuid.uuid4()}")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+async def test_a_finished_run_cannot_be_cancelled(client: AsyncClient) -> None:
+    run = await _seed_and_run(client)
+
+    response = await client.post(f"/api/forecasts/{run['id']}/cancel")
+
+    assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "validation_error"
+    assert "already finished" in body["message"]
+
+
+async def test_cancelling_an_unknown_run_is_a_clean_404(client: AsyncClient) -> None:
+    response = await client.post(f"/api/forecasts/{uuid.uuid4()}/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

@@ -92,12 +92,39 @@ class ProgressBus:
 progress_bus = ProgressBus()
 
 
+def publish_progress(event: ProgressEvent) -> None:
+    """
+    The single way progress leaves the code that produces it. In-process
+    subscribers always see it; with Redis configured it is also fanned out so a
+    stream served by another process — or another API instance — sees it too.
+    """
+    progress_bus.publish(event)
+
+    if settings.progress_channel_url:
+        from app.services.progress_relay import publish_from_worker
+
+        publish_from_worker(event)
+
+
+def _in_daemonic_process() -> bool:
+    """
+    A Celery prefork worker is daemonic and cannot spawn children, so a nested
+    pool is impossible there — and pointless, because the worker process is
+    already the isolation boundary the pool exists to provide.
+    """
+    return bool(multiprocessing.current_process().daemon)
+
+
 class ExecutorRegistry:
     def __init__(self) -> None:
         self._executor: ProcessPoolExecutor | None = None
 
+    @property
+    def inline(self) -> bool:
+        return settings.distributed or _in_daemonic_process()
+
     def start(self) -> None:
-        if self._executor is not None:
+        if self._executor is not None or self.inline:
             return
         workers = max(1, settings.forecast_workers)
         self._executor = ProcessPoolExecutor(
@@ -120,6 +147,11 @@ class ExecutorRegistry:
         return self._executor
 
     async def run(self, func: Any, *args: Any) -> Any:
+        if self.inline:
+            # Already inside a worker dedicated to this one run: fit here and
+            # let the worker's own concurrency provide the parallelism.
+            return func(*args)
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, func, *args)
 
