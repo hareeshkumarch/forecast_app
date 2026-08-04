@@ -9,7 +9,7 @@ from app.database.sample_data import generate_csv_bytes
 from app.database.session import session_scope
 from app.models.entities import Connector, Dataset, ForecastRun
 from app.models.enums import ConnectorStatus, ConnectorType, ForecastFrequency, RunStatus
-from app.services import connector_service, dataset_service, forecast_service
+from app.services import dataset_service, forecast_service
 
 logger = get_logger(__name__)
 
@@ -95,7 +95,7 @@ async def seed_dataset() -> Dataset | None:
         return dataset
 
 
-async def seed_forecast(dataset_id) -> None:  # noqa: ANN001 — uuid.UUID
+async def seed_forecast(dataset_id) -> None:
     async with session_scope() as session:
         completed = await session.execute(
             select(func.count())

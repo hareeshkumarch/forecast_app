@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+
 import httpx
 
 from app.core.config import settings

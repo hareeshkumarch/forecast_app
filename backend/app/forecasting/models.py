@@ -19,6 +19,13 @@ RANDOM_STATE = 20260804
 MAX_STATE_SPACE_PERIOD = 24
 MAX_FOURIER_HARMONICS = 3
 
+_APPROX_DAYS: dict[ForecastFrequency, float] = {
+    ForecastFrequency.DAILY: 1.0,
+    ForecastFrequency.WEEKLY: 7.0,
+    ForecastFrequency.MONTHLY: 30.44,
+    ForecastFrequency.QUARTERLY: 91.31,
+}
+
 
 class Forecaster(Protocol):
     kind: ModelKind
@@ -217,6 +224,193 @@ class HoltWintersForecaster:
     @property
     def min_observations(self) -> int:
         return 5
+
+
+@dataclass
+class AutoEtsForecaster:
+    frequency: ForecastFrequency
+    profile: SeriesProfile | None = None
+    kind: ModelKind = field(default=ModelKind.ETS, init=False)
+    _fitted: object | None = field(default=None, init=False)
+    _config: dict[str, object] = field(default_factory=dict, init=False)
+
+    def _taxonomy(self, y: FloatArray) -> list[tuple[str, str | None, str | None, bool]]:
+        period = self.profile.seasonal_period if self.profile else _default_period(self.frequency)
+        seasonal_usable = (
+            period >= 2
+            and y.size >= 2 * period + 1
+            and (self.profile is None or self.profile.has_seasonality)
+        )
+        positive = bool(np.all(y > 0))
+
+        errors = ["add", "mul"] if positive else ["add"]
+        trends: list[str | None] = [None, "add"]
+        seasons: list[str | None] = [None]
+        if seasonal_usable:
+            seasons.append("add")
+            if positive:
+                seasons.append("mul")
+
+        space: list[tuple[str, str | None, str | None, bool]] = []
+        for error in errors:
+            for trend in trends:
+                for season in seasons:
+                    if season == "mul" and error == "add":
+                        continue
+                    for damped in (False, True):
+                        if damped and trend is None:
+                            continue
+                        space.append((error, trend, season, damped))
+        return space
+
+    def fit(self, y: FloatArray, periods: list[date]) -> None:
+        from statsmodels.tsa.exponential_smoothing.ets import ETSModel
+
+        period = self.profile.seasonal_period if self.profile else _default_period(self.frequency)
+
+        best_fit = None
+        best_spec: tuple[str, str | None, str | None, bool] | None = None
+        best_score = float("inf")
+
+        for error, trend, season, damped in self._taxonomy(y):
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = ETSModel(
+                        np.asarray(y, dtype=float),
+                        error=error,
+                        trend=trend,
+                        seasonal=season,
+                        damped_trend=damped,
+                        seasonal_periods=period if season else None,
+                    )
+                    fitted = model.fit(disp=False)
+
+                score = float(getattr(fitted, "aicc", np.nan))
+                if not np.isfinite(score):
+                    score = float(getattr(fitted, "aic", np.inf))
+                if not np.isfinite(score):
+                    continue
+
+                if score < best_score:
+                    best_fit, best_spec, best_score = fitted, (error, trend, season, damped), score
+            except Exception:
+                continue
+
+        if best_fit is None or best_spec is None:
+            raise ValueError("No ETS specification converged on this history.")
+
+        error, trend, season, damped = best_spec
+        self._fitted = best_fit
+        self._config = {
+            "error": error,
+            "trend": trend,
+            "seasonal": season,
+            "damped_trend": damped,
+            "seasonal_periods": period if season else None,
+            "aicc": round(best_score, 3),
+        }
+
+    def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
+        if self._fitted is None:
+            raise RuntimeError("fit() must be called before predict().")
+        return np.asarray(self._fitted.forecast(horizon), dtype=float)
+
+    @property
+    def params(self) -> dict[str, object]:
+        return dict(self._config)
+
+    @property
+    def min_observations(self) -> int:
+        return 8
+
+
+@dataclass
+class ProphetForecaster:
+    frequency: ForecastFrequency
+    profile: SeriesProfile | None = None
+    kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
+    _fitted: object | None = field(default=None, init=False)
+    _config: dict[str, object] = field(default_factory=dict, init=False)
+
+    @staticmethod
+    def available() -> bool:
+        from importlib.util import find_spec
+
+        return find_spec("prophet") is not None
+
+    def _seasonality_flags(self, y: FloatArray) -> dict[str, bool]:
+        period = self.profile.seasonal_period if self.profile else 0
+        seasonal = self.profile.has_seasonality if self.profile else False
+        span_days = y.size * _APPROX_DAYS[self.frequency]
+
+        return {
+            "yearly_seasonality": seasonal and span_days >= 2 * 365,
+            "weekly_seasonality": (
+                seasonal and self.frequency is ForecastFrequency.DAILY and period in (7, 14)
+            ),
+            "daily_seasonality": False,
+        }
+
+    def fit(self, y: FloatArray, periods: list[date]) -> None:
+        if not self.available():
+            raise ValueError(
+                "Prophet is not installed in this deployment "
+                "(pip install -r requirements-optional.txt)."
+            )
+
+        import logging
+
+        import pandas as pd
+        from prophet import Prophet
+
+        logging.getLogger("cmdstanpy").setLevel(logging.ERROR)
+        logging.getLogger("prophet").setLevel(logging.ERROR)
+
+        flags = self._seasonality_flags(y)
+        multiplicative = (
+            self.profile is not None
+            and self.profile.transform == "log"
+            and bool(np.all(y > 0))
+        )
+
+        frame = pd.DataFrame({"ds": pd.to_datetime(periods), "y": np.asarray(y, dtype=float)})
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = Prophet(
+                seasonality_mode="multiplicative" if multiplicative else "additive",
+                changepoint_prior_scale=0.05,
+                interval_width=0.8,
+                **flags,
+            )
+            model.fit(frame)
+
+        self._fitted = model
+        self._config = {
+            "seasonality_mode": "multiplicative" if multiplicative else "additive",
+            **{key: bool(value) for key, value in flags.items()},
+        }
+
+    def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
+        if self._fitted is None:
+            raise RuntimeError("fit() must be called before predict().")
+
+        import pandas as pd
+
+        frame = pd.DataFrame({"ds": pd.to_datetime(future_periods)})
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            forecast = self._fitted.predict(frame)
+        return np.asarray(forecast["yhat"].to_numpy(), dtype=float)
+
+    @property
+    def params(self) -> dict[str, object]:
+        return dict(self._config)
+
+    @property
+    def min_observations(self) -> int:
+        return 12
 
 
 @dataclass
@@ -555,6 +749,69 @@ class GradientBoostingForecaster:
         return max(12, min(period, 12) + 4)
 
 
+@dataclass
+class EnsembleForecaster:
+    frequency: ForecastFrequency
+    profile: SeriesProfile | None = None
+    members: tuple[ModelKind, ...] = (
+        ModelKind.THETA,
+        ModelKind.ETS,
+        ModelKind.SARIMAX,
+    )
+    kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
+    _fitted: list[object] = field(default_factory=list, init=False)
+    _config: dict[str, object] = field(default_factory=dict, init=False)
+
+    def fit(self, y: FloatArray, periods: list[date]) -> None:
+        fitted: list[object] = []
+        joined: list[str] = []
+        skipped: list[str] = []
+
+        for member in self.members:
+            try:
+                model = build_candidate(member, self.frequency, None, self.profile)
+                if y.size < model.min_observations:
+                    raise ValueError("not enough history")
+                model.fit(y, periods)
+                fitted.append(model)
+                joined.append(member.value)
+            except Exception as exc:
+                skipped.append(f"{member.value} ({type(exc).__name__})")
+                continue
+
+        if len(fitted) < 2:
+            raise ValueError(
+                "A combination needs at least two members that fit; "
+                f"only {len(fitted)} did ({', '.join(skipped) or 'none skipped'})."
+            )
+
+        self._fitted = fitted
+        self._config = {"members": joined, "combiner": "median", "skipped": skipped}
+
+    def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
+        if not self._fitted:
+            raise RuntimeError("fit() must be called before predict().")
+
+        stacked = []
+        for model in self._fitted:
+            prediction = np.asarray(model.predict(horizon, future_periods), dtype=float).ravel()
+            if prediction.size == horizon and np.all(np.isfinite(prediction)):
+                stacked.append(prediction)
+
+        if not stacked:
+            raise RuntimeError("No ensemble member produced a usable forecast.")
+
+        return np.median(np.vstack(stacked), axis=0)
+
+    @property
+    def params(self) -> dict[str, object]:
+        return dict(self._config)
+
+    @property
+    def min_observations(self) -> int:
+        return 12
+
+
 def _default_period(frequency: ForecastFrequency) -> int:
     from app.forecasting.frequency import seasonal_period
 
@@ -581,6 +838,7 @@ def build_candidates(
         NaiveForecaster(frequency, profile),
         SeasonalNaiveForecaster(frequency, profile),
         HoltWintersForecaster(frequency, profile),
+        AutoEtsForecaster(frequency, profile),
         ThetaForecaster(frequency, profile),
         SarimaxForecaster(frequency, profile, order=order_tuple),  # type: ignore[arg-type]
         GradientBoostingForecaster(
@@ -589,12 +847,26 @@ def build_candidates(
             max_depth=int(gbm_depth) if gbm_depth is not None else None,
             learning_rate=float(gbm_lr) if gbm_lr is not None else None,
         ),
+        EnsembleForecaster(frequency, profile),
     ]
 
+    if ProphetForecaster.available():
+        candidates.insert(-1, ProphetForecaster(frequency, profile))
+
     if profile is None or profile.intermittent:
-        candidates.append(CrostonForecaster(frequency, profile))
+        candidates.insert(-1, CrostonForecaster(frequency, profile))
 
     return candidates
+
+
+def unavailable_models() -> dict[ModelKind, str]:
+    missing: dict[ModelKind, str] = {}
+    if not ProphetForecaster.available():
+        missing[ModelKind.PROPHET] = (
+            "Prophet is not installed in this deployment. "
+            "Install it with: pip install -r requirements-optional.txt"
+        )
+    return missing
 
 
 def build_candidate(

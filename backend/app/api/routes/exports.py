@@ -23,7 +23,7 @@ router = APIRouter(prefix="/exports", tags=["exports"])
 async def export_forecast(
     forecast_id: uuid.UUID,
     session: SessionDep,
-    format: ExportFormat = Query(  # noqa: A002 — matches the public query-param name
+    format: ExportFormat = Query(
         default=ExportFormat.CSV, description="csv, xlsx or json."
     ),
 ) -> FileResponse:

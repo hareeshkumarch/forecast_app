@@ -57,7 +57,7 @@ async def create_export(
         job.file_size_bytes = path.stat().st_size
         job.row_count = len(rows)
         job.completed_at = utcnow()
-    except Exception as exc:  # noqa: BLE001 — recorded on the job row
+    except Exception as exc:
         logger.exception("Export failed for run %s", run_id)
         job.status = ExportStatus.FAILED
         job.error_message = (getattr(exc, "message", None) or str(exc))[:1000]

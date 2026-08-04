@@ -33,7 +33,10 @@ COMPLEXITY_PENALTY: dict[ModelKind, float] = {
     ModelKind.THETA: 0.015,
     ModelKind.CROSTON: 0.015,
     ModelKind.HOLT_WINTERS: 0.02,
+    ModelKind.ETS: 0.02,
+    ModelKind.ENSEMBLE: 0.025,
     ModelKind.SARIMAX: 0.03,
+    ModelKind.PROPHET: 0.035,
     ModelKind.GRADIENT_BOOSTING: 0.04,
 }
 
@@ -43,7 +46,10 @@ PARAMETER_BUDGET: dict[ModelKind, int] = {
     ModelKind.THETA: 3,
     ModelKind.CROSTON: 2,
     ModelKind.HOLT_WINTERS: 6,
+    ModelKind.ETS: 7,
+    ModelKind.ENSEMBLE: 10,
     ModelKind.SARIMAX: 8,
+    ModelKind.PROPHET: 12,
     ModelKind.GRADIENT_BOOSTING: 24,
 }
 

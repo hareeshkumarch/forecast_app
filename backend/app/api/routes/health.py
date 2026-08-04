@@ -28,7 +28,7 @@ async def health(session: SessionDep) -> HealthResponse:
     try:
         await session.execute(text("SELECT 1"))
         database = "ok"
-    except Exception as exc:  # noqa: BLE001 — reported, not raised
+    except Exception as exc:
         database = f"error: {type(exc).__name__}"
 
     try:
@@ -37,7 +37,7 @@ async def health(session: SessionDep) -> HealthResponse:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
         storage_writable = True
-    except Exception:  # noqa: BLE001
+    except Exception:
         storage_writable = False
 
     return HealthResponse(

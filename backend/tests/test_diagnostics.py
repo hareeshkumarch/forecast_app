@@ -171,3 +171,61 @@ def test_run_reports_what_it_detected() -> None:
     assert output.diagnostics["folds"] >= 1
     assert output.diagnostics["backtest_scheme"] in {"expanding", "rolling"}
     assert output.metrics["seasonal_period"] == 3.0
+
+
+def test_ets_searches_the_taxonomy_and_forecasts() -> None:
+    values = seasonal_series(72, 12)
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+
+    from app.forecasting.models import AutoEtsForecaster
+
+    model = AutoEtsForecaster(MONTHLY, profile_series(values, MONTHLY))
+    model.fit(values, periods)
+    forecast = model.predict(6, [])
+
+    assert forecast.size == 6
+    assert np.all(np.isfinite(forecast))
+    assert model.params["error"] in {"add", "mul"}
+    assert np.isfinite(float(model.params["aicc"]))
+
+
+def test_ensemble_combines_its_members() -> None:
+    values = seasonal_series(72, 12)
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+
+    from app.forecasting.models import EnsembleForecaster
+
+    model = EnsembleForecaster(MONTHLY, profile_series(values, MONTHLY))
+    model.fit(values, periods)
+    forecast = model.predict(6, [add_periods(periods[-1], i, MONTHLY) for i in range(1, 7)])
+
+    assert forecast.size == 6
+    assert np.all(np.isfinite(forecast))
+    assert len(model.params["members"]) >= 2
+    assert model.params["combiner"] == "median"
+
+
+def test_ensemble_refuses_to_run_on_a_single_member() -> None:
+    from app.forecasting.models import EnsembleForecaster
+
+    values = np.arange(20, dtype=float) + 100
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+
+    model = EnsembleForecaster(MONTHLY, profile_series(values, MONTHLY), members=(ModelKind.THETA,))
+    try:
+        model.fit(values, periods)
+    except ValueError as exc:
+        assert "at least two members" in str(exc)
+    else:
+        raise AssertionError("a one-member combination should not be accepted")
+
+
+def test_missing_optional_models_are_reported_not_hidden() -> None:
+    from app.forecasting.models import ProphetForecaster, unavailable_models
+
+    missing = unavailable_models()
+    if ProphetForecaster.available():
+        assert ModelKind.PROPHET not in missing
+    else:
+        assert ModelKind.PROPHET in missing
+        assert "requirements-optional" in missing[ModelKind.PROPHET]

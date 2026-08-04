@@ -180,7 +180,7 @@ def test_engine_respects_the_limit() -> None:
 def test_a_broken_generator_does_not_blank_the_rail(monkeypatch) -> None:
     import app.insights.engine as engine_module
 
-    def exploding(_: InsightContext):  # noqa: ANN202
+    def exploding(_: InsightContext):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(

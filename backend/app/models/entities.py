@@ -38,7 +38,6 @@ from app.models.enums import (
     RunStatus,
 )
 
-
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 

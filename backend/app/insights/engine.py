@@ -92,7 +92,7 @@ def generate_insights(context: InsightContext, *, limit: int = 8) -> list[Genera
     for generator in GENERATORS:
         try:
             insight = generator(context)
-        except Exception:  # noqa: BLE001 — one bad rule shouldn't blank the rail
+        except Exception:
             logger.exception("Insight generator %s failed", generator.__name__)
             continue
 

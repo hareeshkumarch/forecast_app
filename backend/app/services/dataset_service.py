@@ -228,7 +228,7 @@ def _suggestions(profile: DatasetProfileResult, role: str) -> list[ColumnSuggest
     ]
 
 
-def _column_payload(column) -> dict:  # noqa: ANN001 — ColumnProfile
+def _column_payload(column) -> dict:
     return {
         "id": uuid.uuid4(),
         "name": column.name,

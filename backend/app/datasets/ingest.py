@@ -98,7 +98,7 @@ def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
             )
     except (ValidationError, UnsupportedFileError):
         raise
-    except Exception as exc:  # noqa: BLE001 — translated into a user-facing message
+    except Exception as exc:
         raise ValidationError(
             f"The file couldn't be parsed: {type(exc).__name__}. "
             "Check that it has a single header row and consistent column counts."

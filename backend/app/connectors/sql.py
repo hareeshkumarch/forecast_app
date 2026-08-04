@@ -56,7 +56,7 @@ class SqlAdapter(ConnectorAdapter):
         started = time.perf_counter()
         try:
             connection = self._connect()
-        except Exception as exc:  # noqa: BLE001 — surfaced to the user verbatim-ish
+        except Exception as exc:
             return TestOutcome(
                 ok=False,
                 status=ConnectorStatus.ERROR,
@@ -70,7 +70,7 @@ class SqlAdapter(ConnectorAdapter):
             row = cursor.fetchone()
             version = str(row[0]) if row else None
             cursor.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return TestOutcome(
                 ok=False,
                 status=ConnectorStatus.ERROR,
@@ -101,7 +101,7 @@ class SqlAdapter(ConnectorAdapter):
             )
             rows = cursor.fetchall()
             cursor.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ConnectorError(f"Could not list tables: {exc}") from exc
         finally:
             _close_quietly(connection)
@@ -140,7 +140,7 @@ class SqlAdapter(ConnectorAdapter):
             columns = [description[0] for description in cursor.description]
             rows = cursor.fetchall()
             cursor.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ConnectorError(f"Import query failed: {exc}") from exc
         finally:
             _close_quietly(connection)
@@ -159,7 +159,7 @@ class SqlAdapter(ConnectorAdapter):
     def _open_or_raise(self) -> Any:
         try:
             return self._connect()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ConnectorError(_friendly_error(exc, self.display_name)) from exc
 
 
@@ -272,5 +272,5 @@ def _friendly_error(exc: Exception, display_name: str) -> str:
 def _close_quietly(connection: Any) -> None:
     try:
         connection.close()
-    except Exception:  # noqa: BLE001 — closing errors are never actionable
+    except Exception:
         logger.debug("Error closing connection", exc_info=True)

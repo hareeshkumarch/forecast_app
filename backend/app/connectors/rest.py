@@ -10,7 +10,6 @@ from app.connectors.base import ConnectorAdapter, FormField, TableInfo, TestOutc
 from app.core.errors import ConnectorError
 from app.models.enums import ConnectorStatus, ConnectorType
 
-
 ARRAY_KEYS = ("data", "results", "items", "records", "rows", "value", "payload")
 
 REQUEST_TIMEOUT = httpx.Timeout(15.0, connect=8.0)

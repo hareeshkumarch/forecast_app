@@ -12,7 +12,6 @@ from app.core.errors import ValidationError
 from app.forecasting.frequency import TRUNCATE_EVERY
 from app.models.enums import ForecastFrequency
 
-
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
     ForecastFrequency.DAILY: "day",
     ForecastFrequency.WEEKLY: "week",
@@ -38,7 +37,7 @@ def _as_date(value: object) -> date:
 
 
 @contextmanager
-def connect():  # noqa: ANN201 — duckdb connection type is not exported cleanly
+def connect():
     connection = duckdb.connect(database=":memory:")
     try:
         yield connection

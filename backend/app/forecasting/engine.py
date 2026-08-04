@@ -12,7 +12,7 @@ from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
 from app.forecasting.metrics import accuracy_from_wmape, evaluate, wmape
-from app.forecasting.models import build_candidate, build_candidates
+from app.forecasting.models import build_candidate, build_candidates, unavailable_models
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
@@ -182,6 +182,9 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
                 weights,
             )
         )
+
+    for kind, reason in unavailable_models().items():
+        results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
 
     selection = select_model(
         results,

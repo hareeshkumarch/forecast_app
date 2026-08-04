@@ -212,7 +212,7 @@ async def create_run(
 async def execute_run(run_id: uuid.UUID) -> None:
     try:
         await _execute(run_id)
-    except Exception as exc:  # noqa: BLE001 — recorded on the run, then published
+    except Exception as exc:
         logger.exception("Forecast run %s failed", run_id)
         await _mark_failed(run_id, exc)
 
@@ -571,7 +571,7 @@ async def _mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
             run.error_message = message[:2000]
             run.completed_at = utcnow()
             await session.flush()
-    except Exception:  # noqa: BLE001 — the publish below still has to happen
+    except Exception:
         logger.exception("Could not record failure for run %s", run_id)
 
     progress_bus.publish(

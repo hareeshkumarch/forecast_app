@@ -192,7 +192,7 @@ def _decompose(
                 np.asarray(stl.seasonal, dtype=float),
                 np.asarray(stl.resid, dtype=float),
             )
-        except Exception:  # noqa: BLE001 — fall through to the simple path
+        except Exception:
             pass
 
     window = min(max(3, period), values.size)

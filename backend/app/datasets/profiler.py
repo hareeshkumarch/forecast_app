@@ -9,7 +9,6 @@ import polars as pl
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
-
 DATE_NAME_HINTS = (
     "date", "day", "month", "week", "period", "time", "timestamp",
     "ds", "dt", "yearmonth", "year_month", "fiscal",
@@ -96,7 +95,7 @@ def _try_parse_dates(series: pl.Series) -> pl.Series | None:
     for fmt in DATE_FORMATS:
         try:
             parsed = as_string.str.strptime(pl.Date, format=fmt, strict=False)
-        except Exception:  # noqa: BLE001 — try the next format
+        except Exception:
             continue
         matched = parsed.drop_nulls().len()
         if matched >= 0.8 * non_null.len():

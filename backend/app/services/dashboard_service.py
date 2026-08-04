@@ -31,7 +31,6 @@ from app.schemas.dashboard import (
 )
 from app.services import forecast_service
 
-
 VIEW_COLUMN: dict[str, str] = {
     "base": "forecast",
     "best": "best_case",
