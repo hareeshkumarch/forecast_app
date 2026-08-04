@@ -75,14 +75,19 @@ def _quantile_offsets(
     lower = np.zeros(horizon)
     upper = np.zeros(horizon)
 
-    pooled_low = float(np.quantile(pooled, tail))
-    pooled_high = float(np.quantile(pooled, 1.0 - tail))
+    pooled_centred = pooled - float(np.median(pooled))
+    pooled_low = float(np.quantile(pooled_centred, tail))
+    pooled_high = float(np.quantile(pooled_centred, 1.0 - tail))
+
+    if pooled_high - pooled_low <= 0:
+        return None
 
     for step in range(horizon):
         bucket = np.array(buckets[step], dtype=float)
         if bucket.size >= MIN_EMPIRICAL_RESIDUALS:
-            step_low = float(np.quantile(bucket, tail))
-            step_high = float(np.quantile(bucket, 1.0 - tail))
+            centred = bucket - float(np.median(bucket))
+            step_low = float(np.quantile(centred, tail))
+            step_high = float(np.quantile(centred, 1.0 - tail))
         else:
             spread = np.sqrt(step + 1)
             step_low, step_high = pooled_low * spread, pooled_high * spread

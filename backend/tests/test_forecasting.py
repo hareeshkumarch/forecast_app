@@ -212,7 +212,7 @@ def test_intervals_widen_with_horizon() -> None:
         ForecastInput(series=SeriesInput(periods, values), frequency=MONTHLY, horizon=6)
     )
 
-    widths = [u - l for u, l in zip(output.upper_bound, output.lower_bound, strict=True)]
+    widths = [high - low for high, low in zip(output.upper_bound, output.lower_bound, strict=True)]
     assert widths[-1] >= widths[0], "uncertainty must not shrink with distance"
 
 

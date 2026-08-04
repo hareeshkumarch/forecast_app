@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import polars as pl
 
@@ -15,7 +16,7 @@ from app.models.enums import ConnectorStatus, ConnectorType
 class FileAdapter(ConnectorAdapter):
 
     supports_import = True
-    suffixes: set[str] = set()
+    suffixes: ClassVar[set[str]] = set()
 
     def _resolve(self) -> Path:
         raw = str(self.config.get("file_path") or "").strip()

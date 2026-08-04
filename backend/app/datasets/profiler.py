@@ -291,10 +291,13 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
             reasons.append("more likely a weight than a target")
 
 
-        if row_count and profile.distinct_count / row_count > 0.98:
-            if _name_score(profile.name, ("id", "key", "index", "row", "number")):
-                score -= 0.5
-                reasons.append("looks like an identifier")
+        if (
+            row_count
+            and profile.distinct_count / row_count > 0.98
+            and _name_score(profile.name, ("id", "key", "index", "row", "number"))
+        ):
+            score -= 0.5
+            reasons.append("looks like an identifier")
 
 
         if profile.distinct_count <= 1:

@@ -96,9 +96,8 @@ def plan_backtest(
     folds_limit = max_folds if max_folds is not None else _adaptive_fold_limit(affordable)
     folds_limit = int(np.clip(folds_limit, MIN_FOLDS, MAX_FOLDS_CEILING))
 
-    resolved_scheme = scheme or (
-        "rolling" if n_observations >= ROLLING_WINDOW_SEASONS * period * 2 else "expanding"
-    )
+    seasons_held = n_observations / period if period > 1 else n_observations / 12
+    resolved_scheme = scheme or ("rolling" if seasons_held >= ROLLING_WINDOW_SEASONS * 2 else "expanding")
 
     cut_points: list[int] = []
     cut = n_observations - test_horizon
@@ -133,20 +132,37 @@ def _season(frequency: ForecastFrequency) -> int:
 
 ModelFactory = Callable[[FloatArray, list[date]], object]
 
-DIVERGENCE_FACTOR = 1_000.0
+DIVERGENCE_SIGMAS = 12.0
+
+
+def _divergence_ceiling(y_train: FloatArray) -> float:
+    finite = y_train[np.isfinite(y_train)]
+    if finite.size == 0:
+        return float("inf")
+
+    level = float(np.max(np.abs(finite)))
+    if finite.size < 3:
+        return max(level * 4.0, 1.0)
+
+    steps = np.abs(np.diff(finite))
+    typical = float(np.median(steps)) if steps.size else 0.0
+    spread = float(np.median(np.abs(steps - typical))) * 1.4826 if steps.size else 0.0
+    volatility = max(typical + DIVERGENCE_SIGMAS * spread, float(np.std(finite, ddof=1)))
+
+    return max(level + DIVERGENCE_SIGMAS * volatility, level * 2.0, 1.0)
 
 
 def _diverged(predictions: FloatArray, y_train: FloatArray) -> str | None:
     if not np.all(np.isfinite(predictions)):
         return "The model produced non-finite forecasts."
 
-    scale = float(np.max(np.abs(y_train[np.isfinite(y_train)]), initial=0.0))
-    ceiling = DIVERGENCE_FACTOR * max(scale, 1.0)
+    ceiling = _divergence_ceiling(y_train)
     peak = float(np.max(np.abs(predictions)))
     if peak > ceiling:
+        level = float(np.max(np.abs(y_train[np.isfinite(y_train)]), initial=0.0))
         return (
             f"The model diverged: forecasts reached {peak:.3g} against a history "
-            f"peaking at {scale:.3g}."
+            f"peaking at {level:.3g} (ceiling {ceiling:.3g})."
         )
     return None
 

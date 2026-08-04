@@ -8,14 +8,17 @@ from typing import Protocol
 import numpy as np
 import numpy.typing as npt
 
-from app.forecasting.diagnostics import SeriesProfile, profile_series
+from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
+from app.forecasting.tuning import MIN_VALIDATION_ROWS, SearchSpace, tune
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
 
 RANDOM_STATE = 20260804
 
+MIN_GBM_ROWS = 8
+OBSERVATIONS_PER_PARAMETER = 3
 MAX_STATE_SPACE_PERIOD = 24
 MAX_FOURIER_HARMONICS = 3
 
@@ -322,7 +325,11 @@ class AutoEtsForecaster:
 
     @property
     def min_observations(self) -> int:
-        return 8
+        seasonal = self.profile is not None and self.profile.has_seasonality
+        period = self.profile.seasonal_period if self.profile else 0
+        parameters = 5 + (period if seasonal else 0)
+
+        return max(10, OBSERVATIONS_PER_PARAMETER * parameters)
 
 
 @dataclass
@@ -645,7 +652,12 @@ class SarimaxForecaster:
 
     @property
     def min_observations(self) -> int:
-        return 10
+        widest = max(sum(order) for order in self._search_space(np.zeros(0))) if self.order is None else sum(self.order)
+        seasonal = self.profile is not None and self.profile.has_seasonality
+        period = self.profile.seasonal_period if self.profile else 0
+        parameters = widest + 1 + (2 if seasonal and period <= MAX_STATE_SPACE_PERIOD else 0)
+
+        return max(10, OBSERVATIONS_PER_PARAMETER * parameters)
 
 
 @dataclass
@@ -661,54 +673,85 @@ class GradientBoostingForecaster:
     _periods: list[date] = field(default_factory=list, init=False)
     _hyper: dict[str, object] = field(default_factory=dict, init=False)
 
-    def _hyperparameters(self, n_rows: int) -> dict[str, object]:
-        depth = self.max_depth or int(np.clip(2 + n_rows // 60, 2, 6))
-        rate = self.learning_rate or float(np.clip(0.30 / np.sqrt(max(n_rows, 1)), 0.02, 0.15))
-        iterations = int(np.clip(n_rows * 6, 120, 600))
-        leaf = max(2, min(20, n_rows // 12))
+    def _search_space(self, n_rows: int) -> SearchSpace:
+        depths = [2, 3, 4] if n_rows < 120 else [3, 4, 6, 8]
+        rates = [0.03, 0.06, 0.1] if n_rows < 120 else [0.02, 0.05, 0.1, 0.15]
+        leaves = sorted({2, max(2, n_rows // 40), max(3, n_rows // 20), max(4, n_rows // 10)})
 
-        noisy = self.profile is not None and self.profile.coefficient_of_variation > 0.5
-        regularisation = 2.0 if noisy else 1.0
+        return SearchSpace(
+            {
+                "max_depth": depths,
+                "learning_rate": rates,
+                "min_samples_leaf": leaves,
+                "l2_regularization": [0.0, 1.0, 5.0],
+            }
+        )
 
-        return {
-            "max_depth": depth,
-            "learning_rate": round(rate, 4),
-            "max_iter": iterations,
-            "min_samples_leaf": leaf,
-            "l2_regularization": regularisation,
-            "early_stopping": n_rows >= 60,
-        }
-
-    def fit(self, y: FloatArray, periods: list[date]) -> None:
+    def _estimator(self, params: dict[str, object], n_rows: int):
         from sklearn.ensemble import HistGradientBoostingRegressor
 
+        early = n_rows >= 80
+        return HistGradientBoostingRegressor(
+            max_depth=int(params["max_depth"]),
+            learning_rate=float(params["learning_rate"]),
+            min_samples_leaf=int(params["min_samples_leaf"]),
+            l2_regularization=float(params["l2_regularization"]),
+            max_iter=int(np.clip(n_rows * 6, 120, 600)),
+            early_stopping=early,
+            validation_fraction=0.15 if early else None,
+            random_state=RANDOM_STATE,
+        )
+
+    def _overrides(self) -> dict[str, object]:
+        overrides: dict[str, object] = {}
+        if self.max_depth is not None:
+            overrides["max_depth"] = int(self.max_depth)
+        if self.learning_rate is not None:
+            overrides["learning_rate"] = float(self.learning_rate)
+        return overrides
+
+    def fit(self, y: FloatArray, periods: list[date]) -> None:
         from app.forecasting.features import build_feature_spec
 
         spec = build_feature_spec(len(y), self.frequency, profile=self.profile)
         matrix, target, _names, _rows = build_design_matrix(y, periods, spec, self.frequency)
 
-        if matrix.shape[0] < 8:
+        if matrix.shape[0] < MIN_GBM_ROWS:
             raise ValueError(
                 f"Only {matrix.shape[0]} usable training rows after lag construction; "
-                "gradient boosting needs at least 8."
+                f"gradient boosting needs at least {MIN_GBM_ROWS}."
             )
 
-        hyper = self._hyperparameters(matrix.shape[0])
-        model = HistGradientBoostingRegressor(
-            max_depth=int(hyper["max_depth"]),
-            max_iter=int(hyper["max_iter"]),
-            learning_rate=float(hyper["learning_rate"]),
-            min_samples_leaf=int(hyper["min_samples_leaf"]),
-            l2_regularization=float(hyper["l2_regularization"]),
-            early_stopping=bool(hyper["early_stopping"]),
-            validation_fraction=0.15 if hyper["early_stopping"] else None,
-            random_state=RANDOM_STATE,
+        n_rows = int(matrix.shape[0])
+        space = self._search_space(n_rows)
+        overrides = self._overrides()
+
+        if overrides:
+            space = SearchSpace(
+                {
+                    key: ([overrides[key]] if key in overrides else values)
+                    for key, values in space.choices.items()
+                }
+            )
+
+        horizon = self.profile.seasonal_period if self.profile else 6
+        result = tune(
+            "gradient_boosting",
+            matrix,
+            target,
+            space,
+            lambda params, train_x, train_y, valid_x: self._estimator(params, len(train_y))
+            .fit(train_x, train_y)
+            .predict(valid_x),
+            max(1, min(horizon, 12)),
         )
+
+        model = self._estimator(result.params, n_rows)
         model.fit(matrix, target)
 
         self._model = model
         self._spec = spec
-        self._hyper = hyper
+        self._hyper = {**result.params, **result.as_dict()}
         self._history = np.asarray(y, dtype=float).copy()
         self._periods = list(periods)
 
@@ -745,8 +788,11 @@ class GradientBoostingForecaster:
 
     @property
     def min_observations(self) -> int:
+        seasonal = self.profile is not None and self.profile.has_seasonality
         period = self.profile.seasonal_period if self.profile else _default_period(self.frequency)
-        return max(12, min(period, 12) + 4)
+        deepest_lag = min(period, 12) + 1 if seasonal else 3
+
+        return deepest_lag + 2 * MIN_VALIDATION_ROWS
 
 
 @dataclass
@@ -830,7 +876,7 @@ def build_candidates(
 
     order_tuple = (
         tuple(sarimax_order)
-        if isinstance(sarimax_order, (list, tuple)) and len(sarimax_order) == 3
+        if isinstance(sarimax_order, list | tuple) and len(sarimax_order) == 3
         else None
     )
 
@@ -880,11 +926,3 @@ def build_candidate(
             return candidate
     raise ValueError(f"Unknown candidate kind: {kind}")
 
-
-def candidate_for_window(
-    kind: ModelKind,
-    frequency: ForecastFrequency,
-    y: FloatArray,
-    options: dict[str, object] | None = None,
-) -> Forecaster:
-    return build_candidate(kind, frequency, options, profile_series(y, frequency))

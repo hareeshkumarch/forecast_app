@@ -36,9 +36,6 @@ class Transform:
         return restored
 
 
-IDENTITY = Transform(kind="none")
-
-
 @dataclass(slots=True)
 class TransformedForecaster:
     inner: object

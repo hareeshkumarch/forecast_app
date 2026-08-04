@@ -235,7 +235,7 @@ async def _prior_year_actual_total(
 def _actual_window_label(run: ForecastRun) -> str:
     start, end = _ytd_window(run)
     if start and end:
-        return f"{start:%b %Y} – {end:%b %Y}"
+        return f"{start:%b %Y} – {end:%b %Y}"  # noqa: RUF001
     return "historical actuals"
 
 

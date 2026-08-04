@@ -11,7 +11,7 @@ from app.forecasting.backtest import BacktestResult, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
-from app.forecasting.metrics import accuracy_from_wmape, evaluate, wmape
+from app.forecasting.metrics import accuracy_from_wmape
 from app.forecasting.models import build_candidate, build_candidates, unavailable_models
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import metric_weights_for, select_model
@@ -432,6 +432,3 @@ def _stability(series: list[float]) -> float:
         return float("nan")
     return abs(mean) / std
 
-
-def backtest_summary(values: FloatArray, weights: FloatArray | None = None) -> dict[str, float]:
-    return evaluate(values, values, weights) | {"wmape": wmape(values, values, weights)}

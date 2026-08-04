@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import date
@@ -48,13 +49,15 @@ async def create_export(
         if not rows:
             raise ValidationError("This run has no forecast points to export.")
 
-        settings.ensure_directories()
+        sheets = await _summary_sheets(session, run)
         path = settings.exports_dir / f"{run.id}-{job.id}.{export_format.value}"
-        _write(rows, path, export_format, run, await _summary_sheets(session, run))
+
+        await asyncio.to_thread(settings.ensure_directories)
+        await asyncio.to_thread(_write, rows, path, export_format, run, sheets)
 
         job.status = ExportStatus.READY
         job.file_path = str(path)
-        job.file_size_bytes = path.stat().st_size
+        job.file_size_bytes = (await asyncio.to_thread(path.stat)).st_size
         job.row_count = len(rows)
         job.completed_at = utcnow()
     except Exception as exc:

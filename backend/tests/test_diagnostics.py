@@ -229,3 +229,37 @@ def test_missing_optional_models_are_reported_not_hidden() -> None:
     else:
         assert ModelKind.PROPHET in missing
         assert "requirements-optional" in missing[ModelKind.PROPHET]
+
+
+def test_demand_pattern_uses_syntetos_boylan_not_a_flat_zero_share() -> None:
+    rng = np.random.default_rng(4)
+
+    smooth = 500 + rng.normal(0, 20, 60)
+    assert profile_series(smooth, MONTHLY).demand_class == "smooth"
+
+    sparse = np.zeros(60)
+    sparse[::4] = rng.uniform(80, 400, sparse[::4].size)
+    sparse_profile = profile_series(sparse, MONTHLY)
+    assert sparse_profile.demand_class in {"intermittent", "lumpy"}
+    assert sparse_profile.intermittent
+    assert sparse_profile.demand_interval > 1.0
+
+
+def test_seasonality_floor_is_calibrated_against_noise() -> None:
+    seasonal = profile_series(seasonal_series(96, 12), MONTHLY)
+    assert seasonal.has_seasonality
+    assert seasonal.seasonal_strength > seasonal.seasonal_noise_floor
+
+    noise = profile_series(np.random.default_rng(2).normal(1_000, 50, 96), MONTHLY)
+    assert not noise.has_seasonality
+    assert 0.0 < noise.seasonal_noise_floor <= 1.0
+
+
+def test_divergence_ceiling_scales_with_volatility_not_a_fixed_multiple() -> None:
+    from app.forecasting.backtest import _divergence_ceiling
+
+    calm = np.array([100.0, 101.0, 100.5, 101.2, 100.8, 101.1])
+    wild = np.array([100.0, 400.0, 50.0, 380.0, 60.0, 350.0])
+
+    assert _divergence_ceiling(wild) > _divergence_ceiling(calm)
+    assert _divergence_ceiling(calm) >= float(np.max(calm))

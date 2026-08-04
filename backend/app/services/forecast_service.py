@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import date
 from pathlib import Path
@@ -228,7 +229,7 @@ async def _execute(run_id: uuid.UUID) -> None:
         await session.flush()
 
         parquet_path = Path(dataset.parquet_path or "")
-        payload = _build_payload(run, parquet_path)
+        payload = await asyncio.to_thread(_build_payload, run, parquet_path)
 
 
     _publish(run_id, RunStatus.RUNNING, 0.30, "backtesting", "Backtesting candidate models...")

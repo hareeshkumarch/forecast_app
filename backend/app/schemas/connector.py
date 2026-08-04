@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import ConnectorStatus, ConnectorType
-from app.schemas.common import ORMModel
+from app.schemas.common import ORMModel, StrictModel
+
+RowLimit = Annotated[int, Field(ge=1, le=5_000_000)]
 
 
-class ConnectorConfig(BaseModel):
-
+class ConnectorConfig(StrictModel):
     host: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     database: str | None = None
@@ -25,12 +27,12 @@ class ConnectorConfig(BaseModel):
     options: dict[str, str] = Field(default_factory=dict)
 
 
-class ConnectorCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+class ConnectorCreate(StrictModel):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
     type: ConnectorType
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)
 
-    credentials: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, str] = Field(default_factory=dict, repr=False)
 
     @field_validator("name")
     @classmethod
@@ -52,7 +54,7 @@ class ConnectorTestRequest(BaseModel):
     connector_id: uuid.UUID | None = None
     type: ConnectorType | None = None
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)
-    credentials: dict[str, str] = Field(default_factory=dict)
+    credentials: dict[str, str] = Field(default_factory=dict, repr=False)
 
 
 class ConnectorTestResult(BaseModel):

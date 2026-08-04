@@ -242,7 +242,7 @@ def confidence_widening(ctx: InsightContext) -> GeneratedInsight | None:
     if len(ctx.lower_bound) < 3 or len(ctx.upper_bound) < 3:
         return None
 
-    widths = [u - l for u, l in zip(ctx.upper_bound, ctx.lower_bound, strict=False)]
+    widths = [high - low for high, low in zip(ctx.upper_bound, ctx.lower_bound, strict=False)]
     if not widths or widths[0] <= 0:
         return None
 

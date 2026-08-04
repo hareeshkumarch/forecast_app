@@ -11,14 +11,16 @@ from app.models.enums import ForecastFrequency
 
 FloatArray = npt.NDArray[np.float64]
 
-SEASONAL_STRENGTH_FLOOR = 0.30
-SEASONAL_ACF_FLOOR = 0.20
+SIGNIFICANCE = 0.05
+SURROGATE_DRAWS = 40
+SURROGATE_MARGIN = 1.05
 SEASONAL_DIFFERENCE_FLOOR = 0.64
-TREND_STRENGTH_FLOOR = 0.20
-INTERMITTENT_ZERO_SHARE = 0.30
 MAX_DIFFERENCE_ORDER = 2
 BOX_COX_GRID = (0.0, 0.25, 0.5, 0.75, 1.0)
 LOG_LAMBDA_CEILING = 0.30
+
+SYNTETOS_BOYLAN_ADI = 1.32
+SYNTETOS_BOYLAN_CV2 = 0.49
 
 
 @dataclass(slots=True)
@@ -38,20 +40,19 @@ class SeriesProfile:
     transform: str
     difference_order: int
     seasonal_difference_order: int
+    seasonal_noise_floor: float
+    trend_noise_floor: float
+    demand_interval: float
+    demand_cv2: float
+    demand_class: str
 
     @property
     def has_seasonality(self) -> bool:
-        return self.seasonal_period > 1 and self.seasonal_strength >= SEASONAL_STRENGTH_FLOOR
+        return self.seasonal_period > 1 and self.seasonal_strength > self.seasonal_noise_floor
 
     @property
     def has_trend(self) -> bool:
-        return self.trend_strength >= TREND_STRENGTH_FLOOR
-
-    @property
-    def seasons_observed(self) -> float:
-        if self.seasonal_period <= 1:
-            return 0.0
-        return self.n_observations / self.seasonal_period
+        return self.trend_strength > self.trend_noise_floor
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -63,6 +64,11 @@ class SeriesProfile:
             "zero_share": round(self.zero_share, 4),
             "outlier_share": round(self.outlier_share, 4),
             "coefficient_of_variation": round(self.coefficient_of_variation, 4),
+            "demand_class": self.demand_class,
+            "demand_interval": round(self.demand_interval, 3),
+            "demand_cv2": round(self.demand_cv2, 4),
+            "seasonal_noise_floor": round(self.seasonal_noise_floor, 4),
+            "trend_noise_floor": round(self.trend_noise_floor, 4),
             "transform": self.transform,
             "box_cox_lambda": round(self.box_cox_lambda, 3),
             "difference_order": self.difference_order,
@@ -160,26 +166,58 @@ def _autocorrelation(values: FloatArray, lag: int) -> float:
     return float(np.dot(centred[lag:], centred[:-lag]) / denominator)
 
 
+def _acf_band(n: int) -> float:
+    from scipy import stats
+
+    critical = float(stats.norm.ppf(1.0 - SIGNIFICANCE / 2.0))
+    return critical / np.sqrt(max(n, 1))
+
+
 def _repeats_significantly(detrended: FloatArray, period: int) -> bool:
     finite = detrended[np.isfinite(detrended)]
     if finite.size <= period + 2:
         return False
+    return _autocorrelation(finite, period) >= _acf_band(finite.size)
 
-    band = max(SEASONAL_ACF_FLOOR, 2.0 / np.sqrt(finite.size))
-    return _autocorrelation(finite, period) >= band
+
+def _surrogate_floor(values: FloatArray, period: int) -> float:
+    if period < 2 or values.size < 2 * period:
+        return 1.0
+
+    rng = np.random.default_rng(period * 7919 + values.size)
+    residual = values - _centred_moving_average(values, period)
+    residual = residual[np.isfinite(residual)]
+    if residual.size < period:
+        return 1.0
+
+    draws = np.empty(SURROGATE_DRAWS)
+    for index in range(SURROGATE_DRAWS):
+        shuffled = rng.permutation(residual)
+        decomposition = _decompose(shuffled, period)
+        draws[index] = (
+            0.0
+            if decomposition is None
+            else _strength(decomposition.seasonal, decomposition.remainder)
+        )
+
+    return float(np.quantile(draws, 1.0 - SIGNIFICANCE) * SURROGATE_MARGIN)
 
 
 def seasonal_scores(values: FloatArray, frequency: ForecastFrequency) -> dict[int, float]:
     scores: dict[int, float] = {}
+
     for period in candidate_periods(frequency, values.size):
         decomposition = _decompose(values, period)
         if decomposition is None:
             continue
 
+        if not _repeats_significantly(decomposition.detrended, period):
+            scores[period] = 0.0
+            continue
+
         strength = _strength(decomposition.seasonal, decomposition.remainder)
-        scores[period] = (
-            strength if _repeats_significantly(decomposition.detrended, period) else 0.0
-        )
+        scores[period] = strength if strength > _surrogate_floor(values, period) else 0.0
+
     return scores
 
 
@@ -191,9 +229,9 @@ def _pick_period(scores: dict[int, float], frequency: ForecastFrequency, n: int)
     best_period = max(scores, key=lambda period: (scores[period], -period))
     best_score = scores[best_period]
 
-    if best_score < SEASONAL_STRENGTH_FLOOR:
+    if best_score <= 0.0:
         default = seasonal_period(frequency)
-        return (default if n >= 2 * default else 1), best_score
+        return (default if n >= 2 * default else 1), 0.0
 
     for period in sorted(scores):
         if period < best_period and scores[period] >= best_score - 0.05:
@@ -291,6 +329,44 @@ def _is_stationary(values: FloatArray) -> bool:
         return _variance(np.diff(values)) >= _variance(values)
 
 
+def _surrogate_trend_floor(values: FloatArray, period: int) -> float:
+    if values.size < 8:
+        return 1.0
+
+    rng = np.random.default_rng(values.size * 104_729)
+    draws = np.empty(SURROGATE_DRAWS)
+
+    for index in range(SURROGATE_DRAWS):
+        draws[index] = _trend_strength(rng.permutation(values), period)
+
+    return float(np.quantile(draws, 1.0 - SIGNIFICANCE) * SURROGATE_MARGIN)
+
+
+def _demand_pattern(values: FloatArray) -> tuple[float, float, str]:
+    occurrences = np.flatnonzero(values > 0)
+    if occurrences.size < 2:
+        return float("inf"), 0.0, "no_demand"
+
+    interval = float(values.size / occurrences.size)
+    sizes = values[occurrences]
+    mean = float(np.mean(sizes))
+    cv2 = float((np.std(sizes, ddof=1) / mean) ** 2) if mean > 0 and sizes.size > 1 else 0.0
+
+    lumpy_interval = interval >= SYNTETOS_BOYLAN_ADI
+    variable_size = cv2 >= SYNTETOS_BOYLAN_CV2
+
+    if lumpy_interval and variable_size:
+        label = "lumpy"
+    elif lumpy_interval:
+        label = "intermittent"
+    elif variable_size:
+        label = "erratic"
+    else:
+        label = "smooth"
+
+    return interval, cv2, label
+
+
 def _seasonal_difference_order(strength: float, seasons: float) -> int:
     if seasons < 2.5:
         return 0
@@ -318,6 +394,11 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
             transform="none",
             difference_order=0,
             seasonal_difference_order=0,
+            seasonal_noise_floor=1.0,
+            trend_noise_floor=1.0,
+            demand_interval=float("inf"),
+            demand_cv2=0.0,
+            demand_class="no_demand",
         )
 
     scores = seasonal_scores(finite, frequency)
@@ -325,7 +406,11 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
 
     zero_share = float(np.mean(np.isclose(finite, 0.0)))
     strictly_positive = bool(np.all(finite > 0))
-    intermittent = zero_share >= INTERMITTENT_ZERO_SHARE
+    interval, cv2, demand_class = _demand_pattern(finite)
+    intermittent = demand_class in {"intermittent", "lumpy"}
+
+    seasonal_floor = _surrogate_floor(finite, period) if strength > 0.0 else 1.0
+    trend_floor = _surrogate_trend_floor(finite, period)
 
     mean = float(np.mean(finite))
     deviation = float(np.std(finite, ddof=1)) if n > 1 else 0.0
@@ -352,6 +437,11 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
         transform=transform,
         difference_order=_difference_order(finite, period),
         seasonal_difference_order=_seasonal_difference_order(strength, seasons),
+        seasonal_noise_floor=seasonal_floor,
+        trend_noise_floor=trend_floor,
+        demand_interval=interval,
+        demand_cv2=cv2,
+        demand_class=demand_class,
     )
 
 

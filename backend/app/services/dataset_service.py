@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import date
 
@@ -41,9 +42,9 @@ async def create_from_upload(
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
-    ingested = persist_upload(content, filename, str(dataset_id))
-    profile = profile_frame(ingested.frame)
-    parquet_path = write_parquet(ingested.frame, str(dataset_id))
+    ingested = await asyncio.to_thread(persist_upload, content, filename, str(dataset_id))
+    profile = await asyncio.to_thread(profile_frame, ingested.frame)
+    parquet_path = await asyncio.to_thread(write_parquet, ingested.frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -88,8 +89,8 @@ async def create_from_frame(
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
-    profile = profile_frame(frame)
-    parquet_path = write_parquet(frame, str(dataset_id))
+    profile = await asyncio.to_thread(profile_frame, frame)
+    parquet_path = await asyncio.to_thread(write_parquet, frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -271,7 +272,7 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
         date_range_start=dataset.date_range_start,
         date_range_end=dataset.date_range_end,
         detected_frequency=dataset.frequency,
-        columns=[c for c in columns],  # type: ignore[misc] — Pydantic reads them via from_attributes
+        columns=list(columns),  # type: ignore[misc] — Pydantic reads them via from_attributes
         time_column_suggestions=[
             ColumnSuggestion(
                 name=c.name, kind=c.kind, confidence=rank(c, date_axis=True), reason=c.dtype

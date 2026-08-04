@@ -2,26 +2,29 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Annotated, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.models.enums import ColumnKind, ColumnRole, DatasetStatus, ForecastFrequency
-from app.schemas.common import ORMModel
+from app.schemas.common import Identifier, NonNegativeInt, ORMModel, StrictModel
+
+Horizon = Annotated[int, Field(ge=1, le=365)]
 
 
 class DatasetColumnRead(ORMModel):
     id: uuid.UUID
     name: str
-    position: int
+    position: NonNegativeInt
     kind: ColumnKind
     role: ColumnRole
     dtype: str
-    null_count: int
-    distinct_count: int
+    null_count: NonNegativeInt
+    distinct_count: NonNegativeInt
     min_value: str | None
     max_value: str | None
     mean_value: float | None
-    sample_values: list
+    sample_values: list[object]
     is_date_candidate: bool
     is_target_candidate: bool
 
@@ -33,16 +36,16 @@ class DatasetRead(ORMModel):
     source_kind: str
     connector_id: uuid.UUID | None
     status: DatasetStatus
-    file_size_bytes: int
-    row_count: int
-    column_count: int
-    missing_value_count: int
+    file_size_bytes: NonNegativeInt
+    row_count: NonNegativeInt
+    column_count: NonNegativeInt
+    missing_value_count: NonNegativeInt
     date_range_start: date | None
     date_range_end: date | None
     time_column: str | None
     target_column: str | None
     frequency: ForecastFrequency | None
-    horizon: int | None
+    horizon: Horizon | None
     error_message: str | None
     created_at: datetime
     updated_at: datetime
@@ -77,15 +80,27 @@ class DatasetProfile(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class DatasetConfigureRequest(BaseModel):
-
-    time_column: str
-    target_column: str
+class DatasetConfigureRequest(StrictModel):
+    time_column: Identifier
+    target_column: Identifier
     frequency: ForecastFrequency
-    horizon: int = Field(ge=1, le=365)
-    name: str | None = None
+    horizon: Horizon
+    name: Identifier | None = None
+
+    @model_validator(mode="after")
+    def _time_and_target_differ(self) -> Self:
+        if self.time_column == self.target_column:
+            raise ValueError("The time column and the forecast target must be different columns.")
+        return self
 
 
 class DatasetUploadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dataset: DatasetDetail
     profile: DatasetProfile
+
+    @computed_field
+    @property
+    def ready_to_forecast(self) -> bool:
+        return bool(self.dataset.time_column and self.dataset.target_column)
