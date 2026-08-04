@@ -112,7 +112,7 @@ def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
     if frame.width == 0:
         raise ValidationError("No columns were found in the file.")
 
-    return _clean_headers(frame)
+    return _coerce_formatted_numbers(_clean_headers(frame))
 
 
 def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
@@ -130,6 +130,57 @@ def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
             renames[original] = cleaned
 
     return frame.rename(renames) if renames else frame
+
+
+NUMERIC_CLEAN_PATTERN = r"[^0-9eE+\-.]"
+NUMERIC_COERCION_RATIO = 0.9
+NUMERIC_SAMPLE_ROWS = 500
+
+
+def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
+    """
+    Spreadsheet exports carry measures as text: "$1,200", "1 350", "(450)",
+    "12.5%". Left as strings they are never offered as a forecast target, so a
+    column that is overwhelmingly numeric once the decoration is stripped is
+    converted here, before anything downstream sees it.
+    """
+    converted: list[pl.Expr] = []
+
+    for name, dtype in zip(frame.columns, frame.dtypes, strict=True):
+        if dtype != pl.Utf8:
+            continue
+
+        column = frame[name].drop_nulls()
+        if column.len() == 0:
+            continue
+
+        sample = column.head(NUMERIC_SAMPLE_ROWS)
+        text = sample.str.strip_chars()
+        # Accounting negatives: (450) means -450.
+        text = text.str.replace_all(r"^\((.*)\)$", "-${1}")
+        stripped = text.str.replace_all(NUMERIC_CLEAN_PATTERN, "")
+
+        parsed = stripped.cast(pl.Float64, strict=False)
+        usable = parsed.drop_nulls().len()
+        if usable == 0 or usable < NUMERIC_COERCION_RATIO * sample.len():
+            continue
+
+        # A bare year column is numeric but is a label, not a measure.
+        if stripped.str.len_chars().max() == 4 and parsed.min() is not None:
+            low, high = float(parsed.min()), float(parsed.max())  # type: ignore[arg-type]
+            if 1800 <= low <= 2200 and 1800 <= high <= 2200:
+                continue
+
+        converted.append(
+            pl.col(name)
+            .str.strip_chars()
+            .str.replace_all(r"^\((.*)\)$", "-${1}")
+            .str.replace_all(NUMERIC_CLEAN_PATTERN, "")
+            .cast(pl.Float64, strict=False)
+            .alias(name)
+        )
+
+    return frame.with_columns(converted) if converted else frame
 
 
 def persist_upload(content: bytes, filename: str, dataset_id: str) -> IngestResult:

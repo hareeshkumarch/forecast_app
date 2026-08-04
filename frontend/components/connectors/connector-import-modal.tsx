@@ -5,7 +5,8 @@ import { AlertTriangle, Database, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, InlineError, Input, Select, Skeleton } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input, Skeleton } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { errorMessage } from "@/lib/errors";
 import {
   useConnectorSchemas,
@@ -199,17 +200,16 @@ export function ConnectorImportModal() {
                 <Field label="Table" required>
                   <Select
                     value={selected}
-                    onChange={(event) => setSelected(event.target.value)}
-                  >
-                    {tables.map((table) => (
-                      <option key={tableKey(table)} value={tableKey(table)}>
-                        {tableKey(table)}
-                        {table.row_estimate !== null
-                          ? ` — ~${formatInteger(table.row_estimate)} rows`
-                          : ""}
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={setSelected}
+                    options={tables.map((table) => ({
+                      value: tableKey(table),
+                      label: tableKey(table),
+                      hint:
+                        table.row_estimate !== null
+                          ? `~${formatInteger(table.row_estimate)} rows · ${table.columns.length} columns`
+                          : `${table.columns.length} columns`,
+                    }))}
+                  />
                 </Field>
 
                 {activeTable ? (

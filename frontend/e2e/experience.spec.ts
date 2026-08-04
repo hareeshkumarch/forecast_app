@@ -88,14 +88,24 @@ test("compact density tightens the panel grid", async ({ page }) => {
       getComputedStyle(document.documentElement).getPropertyValue("--density-panel-gap").trim(),
     );
 
-  await page.evaluate(() => {
-    document.documentElement.dataset.density = "compact";
-  });
+  // Driven through storage and a reload rather than by setting the attribute
+  // directly, so the assertion cannot race the hydration effect re-applying
+  // the stored preference.
+  async function useDensity(value: "compact" | "comfortable") {
+    await page.evaluate((density) => {
+      localStorage.setItem(
+        "forecast_hub_prefs",
+        JSON.stringify({ theme: "light", density, sidebarCollapsed: false }),
+      );
+    }, value);
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-density", value);
+  }
+
+  await useDensity("compact");
   expect(await gap()).toBe("8px");
 
-  await page.evaluate(() => {
-    document.documentElement.dataset.density = "comfortable";
-  });
+  await useDensity("comfortable");
   expect(await gap()).toBe("12px");
 });
 

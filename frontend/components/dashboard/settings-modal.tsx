@@ -4,7 +4,8 @@ import { Monitor, Moon, Rows3, Rows4, ShieldCheck, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Card, Field, Input, Select } from "@/components/ui/primitives";
+import { Button, Card, Field, Input } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { API_BASE_URL } from "@/lib/api";
 import {
   EMPTY_LLM_CONFIG,
@@ -162,28 +163,21 @@ export function SettingsPanel({ className }: { className?: string }) {
             <Field label="Provider">
               <Select
                 value={config.provider}
-                onChange={(event) => {
-                  const provider = event.target.value;
-                  update({ provider, model: defaultModelFor(provider) });
-                }}
-              >
-                {PROVIDERS.map((provider) => (
-                  <option key={provider.value} value={provider.value}>
-                    {provider.label}
-                  </option>
-                ))}
-              </Select>
+                onChange={(provider) => update({ provider, model: defaultModelFor(provider) })}
+                options={PROVIDERS.map((provider) => ({
+                  value: provider.value,
+                  label: provider.label,
+                }))}
+              />
             </Field>
 
             <Field label="Model">
               {models.length > 0 ? (
-                <Select value={config.model} onChange={(event) => update({ model: event.target.value })}>
-                  {models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </Select>
+                <Select
+                  value={config.model}
+                  onChange={(model) => update({ model })}
+                  options={models.map((model) => ({ value: model, label: model }))}
+                />
               ) : (
                 <Input
                   value={config.model}

@@ -36,6 +36,7 @@ class LlmCallResult:
     text: str | None
     usage: LlmUsageRecord
 
+
 NUMBER_PATTERN = re.compile(r"-?\$?\d[\d,]*\.?\d*[%KMB]?")
 
 EMOJI_PATTERN = re.compile(
@@ -84,8 +85,10 @@ def _resolve_api_key() -> str | None:
 
 
 def _non_negative_int(value: object) -> int | None:
+    if not isinstance(value, int | float | str):
+        return None
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = int(value)
     except (TypeError, ValueError):
         return None
     return parsed if parsed >= 0 else None
@@ -147,8 +150,10 @@ def _usage_record(
     else:
         input_rate = _non_negative_float(config.get("llm_input_cost_per_million"))
         output_rate = _non_negative_float(config.get("llm_output_cost_per_million"))
-        if input_tokens is not None and output_tokens is not None and (
-            input_rate is not None or output_rate is not None
+        if (
+            input_tokens is not None
+            and output_tokens is not None
+            and (input_rate is not None or output_rate is not None)
         ):
             cost_usd = (
                 input_tokens * (input_rate or 0.0) + output_tokens * (output_rate or 0.0)
@@ -173,9 +178,7 @@ def _usage_record(
     )
 
 
-def _call_llm_api(
-    source: str, config: dict[str, object] | None = None
-) -> LlmCallResult | None:
+def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCallResult | None:
     cfg = config or {}
     api_key = str(cfg.get("llm_api_key") or "") if cfg.get("llm_api_key") else _resolve_api_key()
     if not api_key:

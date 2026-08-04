@@ -178,6 +178,11 @@ body {
     @apply text-micro font-semibold uppercase tracking-[0.09em] text-text-muted;
   }
 
+  .kbd {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[4px] border border-border
+           bg-surface-muted px-1 text-micro font-medium leading-none text-text-muted;
+  }
+
   .table-header {
     @apply text-caption font-medium uppercase tracking-[0.045em] text-text-muted;
   }

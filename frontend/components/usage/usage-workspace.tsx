@@ -4,11 +4,18 @@ import { Activity, Clock3, Coins, Cpu, RefreshCw, Send, TriangleAlert } from "lu
 import { useMemo, useState, type ReactNode } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Badge, Button, Card, EmptyState, ErrorState, Select, Skeleton } from "@/components/ui/primitives";
+import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { useLlmUsage } from "@/hooks/use-dashboard";
 import { axisLabel, axisLine, chartColors, splitLine, tooltipStyle } from "@/lib/chart-theme";
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { LlmUsageResponse } from "@/types/api";
+
+const WINDOWS = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+];
 
 function compact(value: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -133,14 +140,13 @@ export function UsageWorkspace() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label>
-            <span className="sr-only">Usage window</span>
-            <Select value={days} onChange={(event) => setDays(Number(event.target.value))} className="w-[118px]">
-              <option value={7}>Last 7 days</option>
-              <option value={30}>Last 30 days</option>
-              <option value={90}>Last 90 days</option>
-            </Select>
-          </label>
+          <Select
+            label="Usage window"
+            value={String(days)}
+            onChange={(next) => setDays(Number(next))}
+            options={WINDOWS}
+            className="w-[152px]"
+          />
           <Button variant="ghost" icon={RefreshCw} loading={isFetching} onClick={() => void refetch()}>Refresh</Button>
         </div>
       </div>

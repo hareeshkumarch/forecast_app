@@ -5,7 +5,8 @@ import { FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, InlineError, Input, Select } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { useConfigureDataset, useUploadDataset } from "@/hooks/use-dashboard";
 import { errorMessage } from "@/lib/errors";
 import { formatBytes, formatInteger } from "@/lib/format";
@@ -240,16 +241,7 @@ export function UploadDatasetModal() {
             </Field>
 
             <Field label="Frequency" required>
-              <Select
-                value={frequency}
-                onChange={(event) => setFrequency(event.target.value as ForecastFrequency)}
-              >
-                {FREQUENCIES.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </Select>
+              <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
             </Field>
 
             <Field label="Horizon (periods)" required>
@@ -368,14 +360,9 @@ function ColumnSelect({
   return (
     <Select
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      <option value="">Select a column…</option>
-      {choices.map((name) => (
-        <option key={name} value={name}>
-          {name}
-        </option>
-      ))}
-    </Select>
+      onChange={onChange}
+      placeholder="Select a column…"
+      options={choices.map((name) => ({ value: name, label: name }))}
+    />
   );
 }
