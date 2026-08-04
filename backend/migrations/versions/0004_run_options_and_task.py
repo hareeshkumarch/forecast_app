@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "0004_run_options_and_task"
-down_revision = "0003_llm_usage_events"
+down_revision = "0003"
 branch_labels = None
 depends_on = None
 
