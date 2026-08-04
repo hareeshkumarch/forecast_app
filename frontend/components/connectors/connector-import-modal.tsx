@@ -113,7 +113,7 @@ export function ConnectorImportModal() {
 
           openModal("configure-forecast");
         },
-        onError: (mutationError) => setError(mutationError.message),
+        onError: (mutationError) => setError(errorMessage(mutationError)),
       },
     );
   }

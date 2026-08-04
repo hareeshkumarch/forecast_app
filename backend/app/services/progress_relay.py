@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import uuid
+from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -13,8 +14,8 @@ from app.services.job_runner import ProgressEvent, progress_bus
 logger = get_logger(__name__)
 
 CHANNEL = "forecast:progress"
-LATEST_KEY = "forecast:progress:latest"
-LATEST_TTL_SECONDS = 3_600
+
+_publisher: Any | None = None
 
 
 def _decode(raw: str | bytes) -> ProgressEvent | None:
@@ -34,46 +35,31 @@ def _decode(raw: str | bytes) -> ProgressEvent | None:
         return None
 
 
+def _client() -> Any:
+    """
+    One client for the process. redis-py pools connections behind it, so a run
+    that emits six frames reuses one socket instead of dialing six times.
+    """
+    global _publisher
+    if _publisher is None:
+        import redis
+
+        _publisher = redis.Redis.from_url(settings.progress_channel_url)
+    return _publisher
+
+
 def publish_from_worker(event: ProgressEvent) -> None:
-    """
-    Called from the Celery worker, which has no event loop of its own. Also
-    keeps the last frame under a key so a stream that connects mid-run opens
-    with the current state rather than silence.
-    """
+    """Called from the Celery worker, which has no event loop of its own."""
     if not settings.progress_channel_url:
         return
 
-    import redis
-
-    payload = json.dumps(event.to_dict())
     try:
-        client = redis.Redis.from_url(settings.progress_channel_url)
-        pipeline = client.pipeline()
-        pipeline.publish(CHANNEL, payload)
-        pipeline.hset(LATEST_KEY, str(event.run_id), payload)
-        pipeline.expire(LATEST_KEY, LATEST_TTL_SECONDS)
-        pipeline.execute()
+        _client().publish(CHANNEL, json.dumps(event.to_dict()))
     except Exception:
         # Progress is advisory: the run itself must not fail because the
-        # stream is unavailable.
+        # stream is unavailable. A dropped frame costs nothing, because the
+        # client polls the run whenever the stream misbehaves.
         logger.warning("Could not publish progress for run %s", event.run_id, exc_info=True)
-
-
-async def latest_from_redis(run_id: uuid.UUID) -> ProgressEvent | None:
-    if not settings.progress_channel_url:
-        return None
-
-    import redis.asyncio as aioredis
-
-    client = aioredis.Redis.from_url(settings.progress_channel_url)
-    try:
-        raw = await client.hget(LATEST_KEY, str(run_id))
-        return _decode(raw) if raw else None
-    except Exception:
-        logger.warning("Could not read the last progress frame for run %s", run_id)
-        return None
-    finally:
-        await client.aclose()
 
 
 class ProgressRelay:

@@ -8,14 +8,9 @@ import { useEffect } from "react";
 
 import { AppSidebarBody } from "@/components/dashboard/app-sidebar";
 import { InsightsRailBody } from "@/components/insights/insights-rail";
+import { RAIL_MEDIA, useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
-
-/** Mirrors the `lg` / `2xl` breakpoints the two rails become visible at. */
-const RAIL_MEDIA = {
-  navigation: "(min-width: 1024px)",
-  insights: "(min-width: 1720px)",
-} as const;
 
 /**
  * Serves either rail as an off-canvas sheet on viewports too narrow to show
@@ -26,21 +21,17 @@ export function RailDrawer() {
   const rail = useUiStore((state) => state.mobileRail);
   const closeRail = useUiStore((state) => state.closeRail);
 
+  // Both breakpoints are watched with constant queries: a query that changed
+  // with the open rail would still hold the previous rail's answer on the
+  // render that opens the sheet, and close it again immediately.
+  const navigationInline = useMediaQuery(RAIL_MEDIA.navigation);
+  const insightsInline = useMediaQuery(RAIL_MEDIA.insights);
+  const isInline = rail === "insights" ? insightsInline : navigationInline;
+
+  // Once the rail fits inline, the sheet would show the same content twice.
   useEffect(() => {
-    if (!rail) return;
-
-    const query = window.matchMedia(RAIL_MEDIA[rail]);
-    if (query.matches) {
-      closeRail();
-      return;
-    }
-
-    const onChange = (event: MediaQueryListEvent) => {
-      if (event.matches) closeRail();
-    };
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, [rail, closeRail]);
+    if (rail && isInline) closeRail();
+  }, [rail, isInline, closeRail]);
 
   const isNavigation = rail === "navigation";
 
