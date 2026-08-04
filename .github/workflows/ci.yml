@@ -71,6 +71,94 @@ jobs:
         working-directory: backend
         run: pytest -q --durations=10
 
+  migrations:
+    name: Backend · migrations on Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: forecasting
+          POSTGRES_PASSWORD: forecasting
+          POSTGRES_DB: forecasting
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forecasting"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SYNC_DATABASE_URL: postgresql+psycopg://forecasting:forecasting@localhost:5432/forecasting
+      DATABASE_URL: postgresql+asyncpg://forecasting:forecasting@localhost:5432/forecasting
+      STORAGE_ROOT: /tmp/forecast-storage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Apply every migration to an empty database
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Fail if a model has drifted from the migrations
+        working-directory: backend
+        run: alembic check
+
+      - name: Roll all the way back and forward again
+        working-directory: backend
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+  worker:
+    name: Backend · Celery round trip
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/1
+      REDIS_URL: redis://localhost:6379/2
+      CREDENTIAL_SECRET_KEY: ci-only-not-a-real-secret
+      STORAGE_ROOT: /tmp/forecast-storage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Dispatch a forecast to a real worker
+        working-directory: backend
+        run: pytest -q tests/test_worker_roundtrip.py --no-header
+
   frontend-checks:
     name: Frontend · lint, types, unit tests, build
     runs-on: ubuntu-latest
@@ -183,12 +271,14 @@ jobs:
     name: CI
     runs-on: ubuntu-latest
     if: always()
-    needs: [backend-lint, backend-tests, frontend-checks, e2e, docker]
+    needs: [backend-lint, backend-tests, migrations, worker, frontend-checks, e2e, docker]
     steps:
       - name: Fail if any job did not succeed
         run: |
           echo "backend-lint      ${{ needs.backend-lint.result }}"
           echo "backend-tests     ${{ needs.backend-tests.result }}"
+          echo "migrations        ${{ needs.migrations.result }}"
+          echo "worker            ${{ needs.worker.result }}"
           echo "frontend-checks   ${{ needs.frontend-checks.result }}"
           echo "e2e               ${{ needs.e2e.result }}"
           echo "docker            ${{ needs.docker.result }}"

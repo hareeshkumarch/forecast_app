@@ -1,7 +1,7 @@
 """Persist per-run options and the queued task id.
 
-Revision ID: 0004_run_options_and_task
-Revises: 0003_llm_usage_events
+Revision ID: 0004
+Revises: 0003
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "0004_run_options_and_task"
-down_revision = "0003_llm_usage_events"
+revision: str = "0004"
+down_revision: str | None = "0003"
 branch_labels = None
 depends_on = None
 
