@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import re
@@ -10,7 +9,7 @@ import polars as pl
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
-                                                                            
+
 DATE_NAME_HINTS = (
     "date", "day", "month", "week", "period", "time", "timestamp",
     "ds", "dt", "yearmonth", "year_month", "fiscal",
@@ -27,7 +26,7 @@ DIMENSION_NAME_HINTS = (
 )
 WEIGHT_NAME_HINTS = ("weight", "units", "quantity", "qty", "volume")
 
-                                                                 
+
 DATE_FORMATS = (
     "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y",
     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m", "%b %Y", "%B %Y",
@@ -50,7 +49,7 @@ class ColumnProfile:
     sample_values: list = field(default_factory=list)
     is_date_candidate: bool = False
     is_target_candidate: bool = False
-                                                                     
+
     date_score: float = 0.0
     target_score: float = 0.0
     reason: str = ""
@@ -101,7 +100,7 @@ def _try_parse_dates(series: pl.Series) -> pl.Series | None:
             continue
         matched = parsed.drop_nulls().len()
         if matched >= 0.8 * non_null.len():
-                                                                            
+
             return series.cast(pl.Utf8, strict=False).str.strptime(
                 pl.Date, format=fmt, strict=False
             )
@@ -117,7 +116,7 @@ def _classify(series: pl.Series, parsed_dates: pl.Series | None) -> ColumnKind:
         return ColumnKind.BOOLEAN
     if dtype.is_numeric():
         return ColumnKind.NUMERIC
-                                                                                   
+
     non_null = series.drop_nulls()
     if non_null.len() and series.n_unique() <= max(50, non_null.len() * 0.2):
         return ColumnKind.CATEGORICAL
@@ -191,7 +190,7 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
 
     _assign_roles(profiles)
 
-                                                                              
+
     date_start = date_end = None
     detected_frequency: ForecastFrequency | None = None
 
@@ -208,7 +207,7 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
                     "Pick one manually — the data may have irregular gaps."
                 )
 
-                                                                               
+
     if frame.height < 12:
         warnings.append(
             f"Only {frame.height} rows. Forecast quality will be limited and "
@@ -248,7 +247,7 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
 def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> None:
     reasons: list[str] = []
 
-                                                                               
+
     if profile.kind is ColumnKind.DATE:
         score = 0.6
         reasons.append("parses as dates")
@@ -258,7 +257,7 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
         if name_signal:
             reasons.append("name suggests a date")
 
-                                                                                
+
         if row_count:
             uniqueness = profile.distinct_count / row_count
             if uniqueness > 0.9:
@@ -267,7 +266,7 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
             elif uniqueness > 0.05:
                 score += 0.08
 
-                                                                            
+
         if profile.null_count:
             score -= 0.2 * (profile.null_count / max(1, row_count))
             reasons.append(f"{profile.null_count} missing dates")
@@ -275,7 +274,7 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
         profile.date_score = max(0.0, min(1.0, score))
         profile.is_date_candidate = profile.date_score >= 0.5
 
-                                                                               
+
     if profile.kind is ColumnKind.NUMERIC:
         score = 0.45
         reasons.append("numeric")
@@ -287,23 +286,23 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
         elif name_signal:
             reasons.append("name hints at a measure")
 
-                                                                              
+
         if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0:
             score -= 0.12
             reasons.append("more likely a weight than a target")
 
-                                                                         
+
         if row_count and profile.distinct_count / row_count > 0.98:
             if _name_score(profile.name, ("id", "key", "index", "row", "number")):
                 score -= 0.5
                 reasons.append("looks like an identifier")
 
-                                           
+
         if profile.distinct_count <= 1:
             score -= 0.4
             reasons.append("constant value")
 
-                                  
+
         if row_count and profile.null_count / row_count > 0.3:
             score -= 0.2
             reasons.append("sparsely populated")

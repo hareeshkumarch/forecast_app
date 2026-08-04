@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,6 +6,7 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 
+from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.frequency import seasonal_period
 from app.models.enums import ForecastFrequency
 
@@ -30,27 +30,30 @@ class FeatureSpec:
         return max([*self.lags, window_reach, 1])
 
 
-def build_feature_spec(n_observations: int, frequency: ForecastFrequency) -> FeatureSpec:
-    period = seasonal_period(frequency)
+def build_feature_spec(
+    n_observations: int,
+    frequency: ForecastFrequency,
+    profile: SeriesProfile | None = None,
+) -> FeatureSpec:
+    period = profile.seasonal_period if profile and profile.seasonal_period > 1 else seasonal_period(frequency)
+    seasonal = profile.has_seasonality if profile is not None else n_observations >= 2 * period + 4
 
-                                                                            
     lags = [1, 2, 3]
 
-                                                                          
-    if n_observations >= 2 * period + 4:
-        lags.extend([period, period + 1])
+    if seasonal and n_observations >= 2 * period + 4:
+        lags.extend([period - 1, period, period + 1])
 
-                                                                        
-    deep_seasonal = n_observations >= 4 * period
+    deep_seasonal = seasonal and n_observations >= 4 * period
     if deep_seasonal:
         lags.append(2 * period)
 
-                                                                                
-    rolling_windows = [w for w in (3, 6, 12) if w <= max(2, n_observations // 4)]
+    reach = max(2, n_observations // 4)
+    windows = {3, 6, 12, period} if seasonal else {3, 6, 12}
+    rolling_windows = sorted(w for w in windows if 2 <= w <= reach)
     if not rolling_windows:
         rolling_windows = [max(2, min(3, n_observations // 3))]
 
-    lags = sorted({lag for lag in lags if lag < n_observations}) or [1]
+    lags = sorted({lag for lag in lags if 1 <= lag < n_observations}) or [1]
 
     return FeatureSpec(
         lags=lags,
@@ -112,7 +115,6 @@ def _feature_columns(
         columns[f"roll_mean_{window}"] = means
         columns[f"roll_std_{window}"] = stds
 
-                                                                            
         delta = np.full(n, np.nan)
         valid = ~np.isnan(means) & ~np.isnan(lag1)
         delta[valid] = lag1[valid] - means[valid]
@@ -125,8 +127,6 @@ def _feature_columns(
         columns.update(_calendar_features(periods, frequency))
 
     if spec.use_seasonal and 2 * spec.seasonal_period < n:
-                                                                            
-                              
         p = spec.seasonal_period
         seasonal_delta = np.full(n, np.nan)
         for i in range(2 * p, n):
@@ -168,11 +168,9 @@ def build_future_row(
     extended_periods = [*history_periods, next_period]
 
     columns = _feature_columns(extended_values, extended_periods, spec, frequency)
-                                                                                 
     names = spec.names or sorted(columns)
     row = np.array([columns[name][-1] for name in names], dtype=float)
 
-                                                                            
     if np.isnan(row).any():
         finite_history = history[np.isfinite(history)]
         filler = float(finite_history[-1]) if finite_history.size else 0.0

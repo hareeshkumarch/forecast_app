@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from app.connectors.base import ConnectorAdapter, FormField, TestOutcome
@@ -17,8 +16,8 @@ class UnavailableDriverAdapter(ConnectorAdapter):
         try:
             return importlib.util.find_spec(self.required_package) is not None
         except (ImportError, ModuleNotFoundError, ValueError):
-                                                                         
-                                                                              
+
+
             return False
 
     def test(self) -> TestOutcome:

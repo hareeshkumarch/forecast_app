@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -13,7 +12,7 @@ from app.core.errors import ValidationError
 from app.forecasting.frequency import TRUNCATE_EVERY
 from app.models.enums import ForecastFrequency
 
-                                                              
+
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
     ForecastFrequency.DAILY: "day",
     ForecastFrequency.WEEKLY: "week",

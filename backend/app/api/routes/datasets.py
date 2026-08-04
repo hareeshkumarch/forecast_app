@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -40,7 +39,7 @@ async def upload_dataset(
     if not file.filename:
         raise ValidationError("The upload is missing a filename.")
 
-                                                                              
+
     chunks: list[bytes] = []
     total = 0
     while chunk := await file.read(1024 * 1024):

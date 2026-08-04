@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,7 +36,7 @@ def _sparkline(values: FloatArray, points: int = 12) -> list[float]:
         return []
     if finite.size <= points:
         return [round(float(v), 4) for v in finite]
-                                                                         
+
     edges = np.linspace(0, finite.size, points + 1).astype(int)
     return [
         round(float(np.mean(finite[edges[i] : edges[i + 1]])), 4)
@@ -60,7 +59,7 @@ def decompose_drivers(
     if history.size == 0 or horizon == 0:
         return []
 
-                                                                           
+
     window = min(horizon, history.size)
     baseline = history[-window:]
     baseline_total = float(np.sum(baseline))
@@ -71,7 +70,7 @@ def decompose_drivers(
 
     drivers: list[Driver] = []
 
-                                                                              
+
     slope = _trend_slope(trend_component)
     volume_impact = slope * horizon * (horizon + 1) / 2.0
     drivers.append(
@@ -86,7 +85,7 @@ def decompose_drivers(
         )
     )
 
-                                                                              
+
     period = seasonal_period(frequency)
     if seasonal_component.size >= period:
         phase = history.size % period
@@ -112,7 +111,7 @@ def decompose_drivers(
         )
     )
 
-                                                                              
+
     if quantity is not None and quantity.size == history.size and np.all(quantity[-window:] > 0):
         unit_value = history[-window:] / quantity[-window:]
         prior = history[-2 * window : -window] / quantity[-2 * window : -window] if history.size >= 2 * window and np.all(quantity[-2 * window : -window] > 0) else unit_value
@@ -120,7 +119,7 @@ def decompose_drivers(
         price_impact = price_delta * float(np.sum(quantity[-window:]))
         price_method = "unit_value_delta"
     else:
-                                                                                    
+
         level_shift = float(np.mean(forecast) - np.mean(baseline))
         price_impact = (level_shift - slope * horizon / 2.0) * horizon * 0.5
         price_method = "residual_level_shift"
@@ -137,10 +136,10 @@ def decompose_drivers(
         )
     )
 
-                                                                             
+
     market_impact = total_movement - volume_impact - seasonal_impact - price_impact
-                                                                             
-                                       
+
+
     promo_share = _promotional_share(residual)
     promo_impact = market_impact * promo_share
     market_impact -= promo_impact
@@ -169,7 +168,7 @@ def decompose_drivers(
         )
     )
 
-                                                                               
+
     denominator = sum(abs(d.impact_value) for d in drivers) or 1.0
     for driver in drivers:
         driver.impact_pct = round(driver.impact_value / denominator * 100.0, 2)

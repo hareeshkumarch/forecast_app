@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -8,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-                                                          
+
 _STORAGE = Path(tempfile.mkdtemp(prefix="fp-tests-"))
 os.environ["STORAGE_ROOT"] = str(_STORAGE)
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{(_STORAGE / 'test.db').as_posix()}"

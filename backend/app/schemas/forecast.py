@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -114,8 +113,8 @@ class ForecastPointsResponse(BaseModel):
     run_id: uuid.UUID
     frequency: ForecastFrequency
     confidence_level: float
-                                                                             
-                                     
+
+
     boundary_index: int | None
     points: list[ForecastPointRead]
 

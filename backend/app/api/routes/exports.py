@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -34,7 +33,7 @@ async def export_forecast(
     if not job.file_path or not Path(job.file_path).exists():
         raise NotFoundError("The export file could not be found after generation.")
 
-                                                                               
+
     await session.commit()
 
     return FileResponse(

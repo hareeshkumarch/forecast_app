@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import numpy as np
@@ -49,7 +48,7 @@ def wmape(y_true: FloatArray, y_pred: FloatArray, weights: FloatArray | None = N
     else:
         w = np.asarray(weights, dtype=float).ravel()
         if w.size != t.size:
-                                                                              
+
             raw_true = np.asarray(y_true, dtype=float).ravel()
             raw_pred = np.asarray(y_pred, dtype=float).ravel()
             mask = np.isfinite(raw_true) & np.isfinite(raw_pred)

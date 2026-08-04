@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import time
@@ -13,7 +12,7 @@ from app.models.enums import ConnectorStatus, ConnectorType
 
 logger = get_logger(__name__)
 
-                                                                              
+
 SYSTEM_SCHEMAS = {
     "information_schema",
     "pg_catalog",
@@ -49,7 +48,7 @@ class SqlAdapter(ConnectorAdapter):
         closing = {"[": "]"}.get(q, q)
         return f"{q}{identifier.replace(closing, closing * 2)}{closing}"
 
-                                                                            
+
     def test(self) -> TestOutcome:
         if self._missing_required():
             return self._not_configured()
@@ -225,8 +224,8 @@ class SqlServerAdapter(SqlAdapter):
         )
 
     def _limit_clause(self, limit: int) -> str:
-                                                                             
-                                                  
+
+
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 

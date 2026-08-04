@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -151,8 +150,8 @@ def _write(
     frame = pl.DataFrame(rows, infer_schema_length=None)
 
     if export_format is ExportFormat.CSV:
-                                                                             
-                                                                          
+
+
         frame.write_csv(path)
         return
 
@@ -180,7 +179,7 @@ def _write(
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         return
 
-                                                                  
+
     try:
         import xlsxwriter
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import asyncio
@@ -84,7 +83,7 @@ async def create_connector(
         await _store_credentials(session, connector, credentials)
 
     await session.flush()
-                                                                                
+
     return await get_connector(session, connector.id)
 
 
@@ -161,8 +160,8 @@ async def test_connector(
         connector = await get_connector(session, connector_id)
         resolved_type = connector.type
         resolved_config = {**(connector.config or {}), **config}
-                                                                       
-                                                  
+
+
         resolved_credentials = {**load_credentials(connector), **credentials}
     else:
         if connector_type is None:
@@ -174,7 +173,7 @@ async def test_connector(
 
     adapter = build_adapter(resolved_type, resolved_config, resolved_credentials)
 
-                                                                     
+
     outcome = await asyncio.to_thread(adapter.test)
 
     if connector is not None:

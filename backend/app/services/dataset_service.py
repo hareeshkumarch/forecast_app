@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -66,7 +65,7 @@ async def create_from_upload(
         time_column=time_column,
         target_column=target_column,
         frequency=profile.detected_frequency,
-                                                                                 
+
         horizon=_default_horizon(profile.detected_frequency),
     )
     session.add(dataset)
@@ -75,7 +74,7 @@ async def create_from_upload(
     _attach_columns(session, dataset, profile)
     await session.flush()
 
-                                                                            
+
     return await get_dataset(session, dataset.id), profile
 
 
@@ -186,7 +185,7 @@ async def configure(
     if name:
         dataset.name = name[:200]
 
-                                                                    
+
     for column in dataset.columns:
         if column.name == time_column:
             column.role = ColumnRole.TIME
@@ -258,8 +257,8 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
     columns = sorted(dataset.columns, key=lambda c: c.position)
 
     def rank(column: DatasetColumn, *, date_axis: bool) -> float:
-                                                                          
-                                                                  
+
+
         base = 0.9 if column.role in (ColumnRole.TIME, ColumnRole.TARGET) else 0.6
         return base if (column.is_date_candidate if date_axis else column.is_target_candidate) else 0.0
 
@@ -321,7 +320,7 @@ def guess_segment_columns(dataset: Dataset) -> tuple[str | None, str | None]:
         (c for c in dimensions if c != region and any(w in c.lower() for w in category_words)), None
     )
 
-                                                                      
+
     remaining = [c for c in dimensions if c not in (region, category)]
     if region is None and remaining:
         region = remaining.pop(0)

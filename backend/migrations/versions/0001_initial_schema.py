@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -17,13 +16,13 @@ TS = sa.DateTime(timezone=True)
 
 
 def _enum(name: str, *values: str) -> sa.Enum:
-                                                                              
-                                                
+
+
     return sa.Enum(*values, name=name, native_enum=False, length=32)
 
 
 def upgrade() -> None:
-                                                                             
+
     op.create_table(
         "connectors",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -71,7 +70,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("connector_id"),
     )
 
-                                                                             
+
     op.create_table(
         "datasets",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -137,7 +136,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("dataset_id", "name", name="uq_dataset_columns_dataset_name"),
     )
 
-                                                                             
+
     op.create_table(
         "forecast_runs",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -308,7 +307,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("run_id", "driver", name="uq_forecast_drivers_run_driver"),
     )
 
-                                                                             
+
     op.create_table(
         "insights",
         sa.Column("id", sa.Uuid(), primary_key=True),

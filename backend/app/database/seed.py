@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +16,7 @@ logger = get_logger(__name__)
 SAMPLE_DATASET_NAME = "Sample Sales History"
 SAMPLE_FILENAME = "sample_sales_history.csv"
 
-                                                                          
+
 SEED_CONNECTORS: tuple[tuple[str, ConnectorType, dict], ...] = (
     ("BigQuery", ConnectorType.BIGQUERY, {}),
     ("Snowflake", ConnectorType.SNOWFLAKE, {}),
@@ -75,7 +74,7 @@ async def seed_dataset() -> Dataset | None:
             name=SAMPLE_DATASET_NAME,
         )
 
-                                                                           
+
         dataset = await dataset_service.configure(
             session,
             dataset.id,

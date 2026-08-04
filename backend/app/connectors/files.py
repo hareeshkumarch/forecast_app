@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import time
@@ -23,10 +22,11 @@ class FileAdapter(ConnectorAdapter):
         if not raw:
             raise ConnectorError("No file path is configured for this connector.")
 
-        root = settings.uploads_dir.resolve()
-        candidate = (root / raw).resolve()
 
-                                                                      
+        root = settings.uploads_dir.resolve()
+        candidate = (root / raw.replace("\\", "/")).resolve()
+
+
         if not candidate.is_relative_to(root):
             raise ConnectorError(
                 "The file path must be inside the uploads directory. "

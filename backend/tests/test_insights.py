@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import numpy as np
@@ -74,7 +73,7 @@ def test_accuracy_degradation_is_flagged() -> None:
 
 
 def test_forecast_gap_detects_growth() -> None:
-                                                                        
+
     insight = forecast_gap(make_context(point_forecast=[200.0] * 6))
 
     assert insight is not None
@@ -198,7 +197,7 @@ def test_llm_rewrite_must_not_invent_numbers() -> None:
     original = "Revenue grows 12.4% to $2.48M over 6 months."
 
     assert _numbers_preserved(original, "Revenue climbs 12.4% reaching $2.48M across 6 months.")
-                                               
+
     assert not _numbers_preserved(original, "Revenue climbs 18.9% reaching $3.10M.")
 
 

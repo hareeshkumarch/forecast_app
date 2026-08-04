@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import io
@@ -171,7 +170,7 @@ def test_aggregate_series_sums_onto_the_period_grid() -> None:
 
     assert len(series.periods) == 12
     assert all(isinstance(period, date) for period in series.periods)
-                                                           
+
     assert series.values[0] == pytest.approx(1000.0 + 1100.0)
 
 
@@ -207,7 +206,7 @@ def test_aggregate_segments_computes_prior_window() -> None:
     for segment in segments:
         assert segment.current_total > 0
         assert segment.prior_total is not None
-                                                                            
+
         assert segment.current_total > segment.prior_total
 
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -32,7 +31,7 @@ from app.schemas.dashboard import (
 )
 from app.services import forecast_service
 
-                                                        
+
 VIEW_COLUMN: dict[str, str] = {
     "base": "forecast",
     "best": "best_case",
@@ -105,7 +104,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
     worst_total = await _scenario_total(session, run.id, "worst", query.start, query.end)
 
     actual_total = await _actual_total(session, run.id, run, query.start)
-                                                                      
+
     prior_ytd = await _prior_year_actual_total(session, run.id, run)
 
     accuracy = metrics.get("accuracy")
@@ -148,7 +147,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             currency=False,
             comparison=wmape.previous_value if wmape else None,
             comparison_label="vs previous run",
-                                                                       
+
             higher_is_better=False,
         ),
         _card(
@@ -219,7 +218,7 @@ async def _prior_year_actual_total(
     prior_end = date(end.year - 1, end.month, end.day)
 
     if run.history_start and prior_start < run.history_start:
-                                                                              
+
         return None
 
     result = await session.execute(
@@ -268,7 +267,7 @@ def _card(
         else:
             rising = delta > 0
             direction = "up" if rising else "down"
-                                                                
+
             tone = "positive" if rising == higher_is_better else "negative"
 
     return KpiCard(

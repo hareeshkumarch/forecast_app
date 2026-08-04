@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -30,7 +29,7 @@ class ConnectorCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     type: ConnectorType
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)
-                                                                                 
+
     credentials: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("name")
@@ -74,7 +73,7 @@ class ConnectorRead(ORMModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
-                                                                         
+
     credential_keys: list[str] = Field(default_factory=list)
     supports_import: bool = False
 
@@ -100,7 +99,7 @@ class ConnectorSchemaList(BaseModel):
 class ConnectorImportRequest(BaseModel):
     schema_name: str | None = None
     table_name: str | None = None
-                                                                        
+
     query: str | None = None
     dataset_name: str | None = None
     row_limit: int = Field(default=500_000, ge=1, le=5_000_000)

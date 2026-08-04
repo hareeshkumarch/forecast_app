@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from app.connectors.base import ConnectorAdapter, FormField
@@ -29,7 +28,7 @@ ADAPTERS: dict[ConnectorType, type[ConnectorAdapter]] = {
     ConnectorType.SALESFORCE: SalesforceAdapter,
 }
 
-                                                                          
+
 RAIL_ORDER: tuple[ConnectorType, ...] = (
     ConnectorType.BIGQUERY,
     ConnectorType.SNOWFLAKE,

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -21,8 +20,8 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings.ensure_directories()
-                                                                              
-                                  
+
+
     executors.start()
     logger.info("%s ready.", settings.app_name)
 
@@ -52,7 +51,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-                                                                      
+
     expose_headers=["Content-Disposition"],
 )
 

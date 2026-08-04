@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,11 +9,13 @@ import numpy.typing as npt
 from app.core.logging import get_logger
 from app.forecasting.backtest import BacktestResult, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
-from app.forecasting.frequency import future_periods, min_observations, seasonal_period
+from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
+from app.forecasting.frequency import future_periods
 from app.forecasting.metrics import accuracy_from_wmape, evaluate, wmape
 from app.forecasting.models import build_candidate, build_candidates
 from app.forecasting.scenarios import IntervalBands, build_intervals
-from app.forecasting.selection import SCORING_RULE, Selection, select_model
+from app.forecasting.selection import metric_weights_for, select_model
+from app.forecasting.transforms import TransformedForecaster, build_transform
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
@@ -87,6 +88,7 @@ class ForecastOutput:
     metrics: dict[str, float]
     candidates: list[dict[str, object]]
     interval_method: str
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
     regions: list[SegmentOutput] = field(default_factory=list)
     categories: list[SegmentOutput] = field(default_factory=list)
@@ -95,6 +97,29 @@ class ForecastOutput:
 
 class InsufficientDataError(Exception):
     pass
+
+
+TRANSFORMABLE = {
+    ModelKind.HOLT_WINTERS,
+    ModelKind.THETA,
+    ModelKind.SARIMAX,
+    ModelKind.GRADIENT_BOOSTING,
+}
+
+
+def _make_factory(
+    kind: ModelKind,
+    frequency: ForecastFrequency,
+    options: dict[str, object] | None,
+):
+    def factory(y_train: FloatArray, periods_train: list[date]):
+        window_profile = profile_series(y_train, frequency)
+        model = build_candidate(kind, frequency, options, window_profile)
+        if kind in TRANSFORMABLE:
+            return TransformedForecaster(model, build_transform(y_train, window_profile))
+        return model
+
+    return factory
 
 
 def run_forecast(payload: ForecastInput) -> ForecastOutput:
@@ -113,53 +138,56 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
 
     frequency = payload.frequency
     horizon = payload.horizon
-    floor = min_observations(frequency)
+
+    profile = profile_series(values, frequency)
+    floor = minimum_history(profile)
 
     used_fallback = False
     fallback_reason: str | None = None
 
-                                                                               
-    plan = plan_backtest(values.size, horizon, frequency, max_folds=payload.max_folds)
+    plan = plan_backtest(
+        values.size,
+        horizon,
+        frequency,
+        max_folds=payload.max_folds,
+        seasonal_period=profile.seasonal_period,
+    )
 
-                                                                              
     if values.size < floor or plan.n_folds == 0:
         used_fallback = True
-        fallback_reason = (
-            f"Only {values.size} periods of history at {frequency.value} frequency "
-            f"({floor} needed for full model selection"
-            + (", and no validation fold could be built" if plan.n_folds == 0 else "")
-            + "). Fell back to a seasonal-naive baseline, or naive where a full "
-            "season is unavailable."
-        )
-        season = seasonal_period(frequency)
+        fallback_reason = _fallback_reason(values.size, floor, frequency, plan.n_folds, profile)
+        seasonal_ready = profile.seasonal_period > 1 and values.size >= profile.seasonal_period
         candidates = [
             build_candidate(
-                ModelKind.SEASONAL_NAIVE if values.size >= season else ModelKind.NAIVE,
+                ModelKind.SEASONAL_NAIVE if seasonal_ready else ModelKind.NAIVE,
                 frequency,
-                options=payload.model_options,
+                payload.model_options,
+                profile,
             )
         ]
     else:
-        candidates = build_candidates(frequency, options=payload.model_options)
+        candidates = build_candidates(frequency, payload.model_options, profile)
 
-                                                                               
     results: list[BacktestResult] = []
     for candidate in candidates:
         kind = candidate.kind
-        result = run_backtest(
-            lambda k=kind: build_candidate(k, frequency, options=payload.model_options),
-            kind,
-            values,
-            periods,
-            plan,
-            frequency,
-            weights,
+        results.append(
+            run_backtest(
+                _make_factory(kind, frequency, payload.model_options),
+                kind,
+                values,
+                periods,
+                plan,
+                frequency,
+                weights,
+            )
         )
-        result.params = dict(candidate.params) if not result.failed else {}
-        results.append(result)
 
-                                                                               
-    selection = select_model(results, metric_weights=payload.metric_weights)
+    selection = select_model(
+        results,
+        metric_weights=payload.metric_weights or metric_weights_for(profile.intermittent),
+        n_observations=int(values.size),
+    )
     if selection.winner is None:
         raise InsufficientDataError(
             "No candidate model could be fitted to this series. "
@@ -167,12 +195,11 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         )
 
     winner_kind = selection.winner.result.model
+    final_model = _make_factory(winner_kind, frequency, payload.model_options)(values, periods)
 
-                                                                               
-    final_model = build_candidate(winner_kind, frequency, options=payload.model_options)
     try:
         final_model.fit(values, periods)
-    except Exception as exc:  # noqa: BLE001 — degrade rather than fail the run
+    except Exception as exc:
         logger.warning("Winner %s failed final refit (%s); using naive.", winner_kind, exc)
         used_fallback = True
         fallback_reason = (
@@ -180,7 +207,7 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
             f"({type(exc).__name__}: {exc}). Fell back to a naive baseline."
         )
         winner_kind = ModelKind.NAIVE
-        final_model = build_candidate(winner_kind, frequency, options=payload.model_options)
+        final_model = build_candidate(winner_kind, frequency, payload.model_options, profile)
         final_model.fit(values, periods)
 
     forecast_index = future_periods(periods[-1], horizon, frequency)
@@ -188,13 +215,11 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         final_model.predict(horizon, forecast_index), dtype=float
     ).ravel()[:horizon]
 
-                                                                
     if not np.all(np.isfinite(point_forecast)):
         last_finite = values[np.isfinite(values)]
         filler = float(last_finite[-1]) if last_finite.size else 0.0
         point_forecast = np.where(np.isfinite(point_forecast), point_forecast, filler)
 
-                                                                               
     winner_result = selection.winner.result
     non_negative = bool(np.all(values[np.isfinite(values)] >= 0))
     bands: IntervalBands = build_intervals(
@@ -204,7 +229,6 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         non_negative=non_negative,
     )
 
-                                                                               
     metrics = {
         "mae": winner_result.mae,
         "rmse": winner_result.rmse,
@@ -216,9 +240,11 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         "worst_case_total": float(np.sum(bands.worst_case)),
         "history_total": float(np.nansum(values)),
         "backtest_folds": float(winner_result.n_folds),
+        "seasonal_period": float(profile.seasonal_period),
+        "seasonal_strength": round(profile.seasonal_strength * 100.0, 2),
     }
 
-    fitted = _in_sample_fit(values, periods, winner_kind, frequency)
+    fitted = _in_sample_fit(values, periods, final_model, winner_kind, profile)
 
     drivers = decompose_drivers(
         values,
@@ -238,7 +264,7 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
             if not used_fallback
             else f"{fallback_reason} {selection.rationale}"
         ),
-        scoring_rule=SCORING_RULE,
+        scoring_rule=selection.scoring_rule,
         used_fallback=used_fallback,
         fallback_reason=fallback_reason,
         history_periods=periods,
@@ -254,13 +280,35 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         metrics=metrics,
         candidates=[_candidate_row(c) for c in selection.candidates],
         interval_method=bands.method,
+        diagnostics={**profile.as_dict(), "backtest_scheme": plan.scheme, "folds": plan.n_folds},
         regions=regions,
         categories=categories,
         drivers=drivers,
     )
 
 
-def _candidate_row(scored) -> dict[str, object]:  # noqa: ANN001 — ScoredCandidate
+def _fallback_reason(
+    n_observations: int,
+    floor: int,
+    frequency: ForecastFrequency,
+    n_folds: int,
+    profile: SeriesProfile,
+) -> str:
+    season = (
+        f"a {profile.seasonal_period}-period season was detected"
+        if profile.has_seasonality
+        else "no repeating season was detected"
+    )
+    return (
+        f"Only {n_observations} periods of history at {frequency.value} frequency "
+        f"({floor} needed for full model selection, and {season})"
+        + (", and no validation fold could be built" if n_folds == 0 else "")
+        + ". Fell back to a seasonal-naive baseline, or naive where a full "
+        "season is unavailable."
+    )
+
+
+def _candidate_row(scored) -> dict[str, object]:
     result = scored.result
     return {
         "model": result.model.value,
@@ -286,36 +334,31 @@ def _finite(value: float) -> float | None:
 def _in_sample_fit(
     values: FloatArray,
     periods: list[date],
+    model: object,
     kind: ModelKind,
-    frequency: ForecastFrequency,
+    profile: SeriesProfile,
 ) -> list[float | None]:
     n = values.size
     fitted: list[float | None] = [None] * n
 
-    warmup = max(2, seasonal_period(frequency) if kind is ModelKind.SEASONAL_NAIVE else 2)
-    if n <= warmup:
-        return fitted
-
-                                                                              
     if kind in (ModelKind.NAIVE, ModelKind.SEASONAL_NAIVE):
-        period = seasonal_period(frequency) if kind is ModelKind.SEASONAL_NAIVE else 1
-        for i in range(period, n):
-            fitted[i] = float(values[i - period])
+        period = profile.seasonal_period if kind is ModelKind.SEASONAL_NAIVE else 1
+        period = max(1, min(period, n - 1))
+        for index in range(period, n):
+            fitted[index] = float(values[index - period])
         return fitted
 
     try:
-        model = build_candidate(kind, frequency)
-        model.fit(values, periods)
-                                                           
-        inner = getattr(model, "_fitted", None)
-        raw = getattr(inner, "fittedvalues", None)
-        if raw is not None:
-            array = np.asarray(raw, dtype=float).ravel()
-            for i in range(min(n, array.size)):
-                if np.isfinite(array[i]):
-                    fitted[i] = float(array[i])
+        getter = getattr(model, "fitted_values", None)
+        raw = getter() if callable(getter) else getattr(getattr(model, "_fitted", None), "fittedvalues", None)
+        if raw is None:
             return fitted
-    except Exception:  # noqa: BLE001 — a missing fitted line is cosmetic
+
+        array = np.asarray(raw, dtype=float).ravel()
+        for index in range(min(n, array.size)):
+            if np.isfinite(array[index]):
+                fitted[index] = float(array[index])
+    except Exception:
         logger.debug("In-sample fit unavailable for %s", kind)
 
     return fitted
@@ -333,11 +376,9 @@ def _project_segments(
     if grand_total <= 0:
         return []
 
-                                                                               
     base_accuracy = accuracy_from_wmape(winner.wmape)
     stabilities = {s.label: _stability(s.series) for s in segments}
 
-                                                                              
     finite_stabilities = [v for v in stabilities.values() if np.isfinite(v)]
     mean_stability = float(np.mean(finite_stabilities)) if finite_stabilities else 0.0
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -23,7 +22,7 @@ def configure_logging() -> None:
     root.handlers = [handler]
     root.setLevel(settings.log_level.upper())
 
-                                                                         
+
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     _CONFIGURED = True
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import math
@@ -71,7 +70,7 @@ def test_features_never_leak_the_current_value() -> None:
 
     matrix, target, names, rows = build_design_matrix(array, periods, spec, MONTHLY)
 
-                                                                            
+
     for column_index, name in enumerate(names):
         if name.startswith(("lag_", "roll_")):
             assert not np.allclose(matrix[:, column_index], target), f"{name} leaks the target"
@@ -91,7 +90,7 @@ def test_backtest_folds_are_chronological_and_disjoint() -> None:
 
     assert plan.n_folds > 0
     assert plan.cut_points == sorted(plan.cut_points), "folds must move forward in time"
-                                                  
+
     for cut in plan.cut_points:
         assert cut + plan.horizon <= 48
         assert cut >= plan.initial_train
@@ -161,7 +160,7 @@ def test_failed_candidates_are_ranked_last_but_kept() -> None:
 
     assert selection.winner is not None
     assert selection.winner.result.model is ModelKind.HOLT_WINTERS
-                                                                      
+
     models = {c.result.model for c in selection.candidates}
     assert ModelKind.SARIMAX in models
 
@@ -188,7 +187,9 @@ def test_full_run_produces_a_complete_result() -> None:
     assert all(math.isfinite(v) for v in output.point_forecast)
     assert output.selected_model in set(ModelKind)
     assert output.selection_rationale
-    assert len(output.candidates) == 5
+    models = {row["model"] for row in output.candidates}
+    assert models <= {kind.value for kind in ModelKind}
+    assert {"naive", "seasonal_naive", "holt_winters", "theta", "sarimax", "gradient_boosting"} <= models
 
 
 def test_bounds_bracket_the_point_forecast() -> None:
@@ -200,7 +201,7 @@ def test_bounds_bracket_the_point_forecast() -> None:
     for i, point in enumerate(output.point_forecast):
         assert output.lower_bound[i] <= point <= output.upper_bound[i]
         assert output.worst_case[i] <= point <= output.best_case[i]
-                                                                              
+
         assert output.worst_case[i] <= output.lower_bound[i]
         assert output.best_case[i] >= output.upper_bound[i]
 

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -19,7 +18,7 @@ class HealthResponse(BaseModel):
     storage_writable: bool
     forecast_workers: int
     max_upload_mb: float
-                                                                            
+
     using_default_credential_key: bool
     timestamp: str
 

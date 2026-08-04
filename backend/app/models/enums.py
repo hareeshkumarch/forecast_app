@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 try:
@@ -74,6 +73,8 @@ class ModelKind(StrEnum):
     NAIVE = "naive"
     SEASONAL_NAIVE = "seasonal_naive"
     HOLT_WINTERS = "holt_winters"
+    THETA = "theta"
+    CROSTON = "croston"
     SARIMAX = "sarimax"
     GRADIENT_BOOSTING = "gradient_boosting"
 

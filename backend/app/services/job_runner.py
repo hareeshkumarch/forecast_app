@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +13,7 @@ from app.models.enums import RunStatus
 
 logger = get_logger(__name__)
 
-                                                                            
+
 _QUEUE_MAXSIZE = 64
 
 
@@ -44,8 +43,8 @@ class ProgressEvent:
 class ProgressBus:
 
     _subscribers: dict[uuid.UUID, set[asyncio.Queue[ProgressEvent]]] = field(default_factory=dict)
-                                                                              
-                                                                
+
+
     _latest: dict[uuid.UUID, ProgressEvent] = field(default_factory=dict)
 
     def publish(self, event: ProgressEvent) -> None:
@@ -54,7 +53,7 @@ class ProgressBus:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                                                                                     
+
                 try:
                     queue.get_nowait()
                     queue.put_nowait(event)
@@ -117,7 +116,7 @@ class ExecutorRegistry:
     @property
     def executor(self) -> ProcessPoolExecutor:
         if self._executor is None:
-                                                                              
+
             self.start()
         assert self._executor is not None
         return self._executor
