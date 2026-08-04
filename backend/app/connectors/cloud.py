@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.connectors.base import ConnectorAdapter, FormField, TestOutcome
 from app.connectors.sql import PostgresAdapter
+from app.core.errors import ConnectorError
 from app.models.enums import ConnectorStatus, ConnectorType
 
 
@@ -127,3 +130,84 @@ class RedshiftAdapter(PostgresAdapter):
         FormField("username", "Username", secret=True),
         FormField("password", "Password", secret=True, kind="password"),
     )
+
+
+class SupabaseAdapter(PostgresAdapter):
+    """
+    Supabase is Postgres, so the SQL path is inherited wholesale. What differs
+    is how you reach it: the host is derived from the project reference, TLS is
+    mandatory, and the transaction pooler wants a project-qualified username.
+    """
+
+    type = ConnectorType.SUPABASE
+    display_name = "Supabase"
+    default_port = 5432
+
+    DIRECT_PORT = 5432
+    POOLER_PORT = 6543
+
+    form_fields = (
+        FormField(
+            "project_ref",
+            "Project reference",
+            placeholder="abcdefghijklmnopqrst",
+            help_text="The subdomain in your project URL: https://<ref>.supabase.co",
+        ),
+        FormField("password", "Database password", secret=True, kind="password"),
+        FormField(
+            "host",
+            "Host",
+            required=False,
+            placeholder="db.<ref>.supabase.co",
+            help_text="Only needed for the pooler, e.g. aws-0-eu-west-1.pooler.supabase.com",
+        ),
+        FormField("port", "Port", required=False, kind="number", placeholder="5432"),
+        FormField("database", "Database", required=False, placeholder="postgres"),
+        FormField(
+            "username",
+            "Username",
+            required=False,
+            secret=True,
+            placeholder="postgres",
+            help_text="Leave blank unless you connect through the pooler.",
+        ),
+    )
+
+    def _project_ref(self) -> str:
+        return self._value("project_ref").strip()
+
+    def _resolved_host(self) -> str:
+        configured = self._value("host").strip()
+        if configured:
+            return configured
+
+        ref = self._project_ref()
+        if not ref:
+            raise ConnectorError("A Supabase project reference or an explicit host is required.")
+        return f"db.{ref}.supabase.co"
+
+    def _resolved_username(self) -> str:
+        configured = self._value("username").strip()
+        if configured:
+            return configured
+
+        # The transaction pooler multiplexes projects, so it needs the role
+        # qualified by the project reference; a direct connection does not.
+        ref = self._project_ref()
+        if self._port() == self.POOLER_PORT and ref:
+            return f"postgres.{ref}"
+        return "postgres"
+
+    def _connect(self) -> Any:
+        import psycopg2
+
+        return psycopg2.connect(
+            host=self._resolved_host(),
+            port=self._port(),
+            dbname=self._value("database").strip() or "postgres",
+            user=self._resolved_username(),
+            password=self._value("password"),
+            connect_timeout=8,
+            # Supabase terminates plaintext connections; never negotiate down.
+            sslmode="require",
+        )

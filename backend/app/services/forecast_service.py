@@ -10,8 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.errors import ForecastError, NotFoundError, ValidationError
-from app.core.logging import get_logger
+from app.core.logging import get_logger, request_id
+from app.core.security import (
+    CredentialDecryptionError,
+    decrypt_credentials,
+    encrypt_credentials,
+)
 from app.core.storage import file_exists
 from app.database.base import utcnow
 from app.database.session import session_scope
@@ -48,7 +54,7 @@ from app.models.enums import (
     RunStatus,
 )
 from app.services import dataset_service
-from app.services.job_runner import ProgressEvent, executors, progress_bus
+from app.services.job_runner import ProgressEvent, executors, publish_progress
 
 logger = get_logger(__name__)
 
@@ -75,8 +81,46 @@ class RunOverrides:
     llm_input_cost_per_million: float | None = None
     llm_output_cost_per_million: float | None = None
 
+    SECRET_FIELDS = ("llm_api_key",)
+
     def is_empty(self) -> bool:
         return all(getattr(self, f.name) is None for f in fields(self))
+
+    def to_stored(self) -> dict[str, object]:
+        """Serialise for the run row, encrypting anything that is a secret."""
+        stored: dict[str, object] = {}
+        secrets: dict[str, str] = {}
+
+        for field_def in fields(self):
+            value = getattr(self, field_def.name)
+            if value is None:
+                continue
+            if field_def.name in RunOverrides.SECRET_FIELDS:
+                secrets[field_def.name] = str(value)
+            else:
+                stored[field_def.name] = value
+
+        if secrets:
+            ciphertext, _ = encrypt_credentials(secrets)
+            stored["_secrets"] = ciphertext
+        return stored
+
+    @classmethod
+    def from_stored(cls, stored: dict[str, object] | None) -> RunOverrides:
+        if not stored:
+            return cls()
+
+        known = {field_def.name for field_def in fields(cls)}
+        values = {key: value for key, value in stored.items() if key in known}
+
+        ciphertext = stored.get("_secrets")
+        if isinstance(ciphertext, str):
+            try:
+                values.update(decrypt_credentials(ciphertext))
+            except CredentialDecryptionError:
+                logger.warning("Could not decrypt the stored run options; continuing without them.")
+
+        return cls(**values)  # type: ignore[arg-type]
 
     def llm_config(self) -> dict[str, object] | None:
         if not any(
@@ -96,9 +140,6 @@ class RunOverrides:
             "llm_input_cost_per_million": self.llm_input_cost_per_million,
             "llm_output_cost_per_million": self.llm_output_cost_per_million,
         }
-
-
-_run_overrides: dict[uuid.UUID, RunOverrides] = {}
 
 
 async def list_runs(session: AsyncSession, *, limit: int = 50) -> list[ForecastRun]:
@@ -234,10 +275,10 @@ async def create_run(
         llm_input_cost_per_million=llm_input_cost_per_million,
         llm_output_cost_per_million=llm_output_cost_per_million,
     )
-    if not overrides.is_empty():
-        _run_overrides[run.id] = overrides
+    run.options = overrides.to_stored()
+    await session.flush()
 
-    progress_bus.publish(
+    publish_progress(
         ProgressEvent(
             run_id=run.id,
             status=RunStatus.PENDING,
@@ -249,12 +290,80 @@ async def create_run(
     return run
 
 
-async def execute_run(run_id: uuid.UUID) -> None:
+_background_tasks: set[asyncio.Task[RunStatus]] = set()
+
+
+async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:
+    """
+    Hands the run to a Celery worker when a broker is configured, and otherwise
+    fits it in this process. The single-node path keeps the platform runnable
+    with nothing but Postgres.
+    """
+    if not settings.distributed:
+        task = asyncio.create_task(execute_run(run.id))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+        return
+
+    from app.workers.tasks import run_forecast_task
+
+    try:
+        queued = run_forecast_task.apply_async(
+            args=[str(run.id), request_id.get()],
+            task_id=str(run.id),
+        )
+    except Exception as exc:
+        logger.exception("Could not queue forecast run %s", run.id)
+        await mark_failed(run.id, exc)
+        raise ForecastError(
+            "The forecast could not be queued. The job broker is unreachable."
+        ) from exc
+
+    run.task_id = queued.id
+    await session.flush()
+    await session.commit()
+    logger.info("Forecast run %s queued as task %s", run.id, queued.id)
+
+
+async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
+    run = await get_run(session, run_id)
+
+    if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+        raise ValidationError(f"This run already finished with status '{run.status.value}'.")
+
+    if settings.distributed and run.task_id:
+        from app.workers.celery_app import celery_app
+
+        celery_app.control.revoke(run.task_id, terminate=True, signal="SIGTERM")
+
+    run.status = RunStatus.FAILED
+    run.stage = "cancelled"
+    run.error_message = "Cancelled before it finished."
+    run.completed_at = utcnow()
+    await session.flush()
+
+    publish_progress(
+        ProgressEvent(
+            run_id=run_id,
+            status=RunStatus.FAILED,
+            progress=run.progress,
+            stage="cancelled",
+            message="Forecast cancelled.",
+            error="Cancelled before it finished.",
+        )
+    )
+    return run
+
+
+async def execute_run(run_id: uuid.UUID) -> RunStatus:
+    """Fits the run and returns its terminal status; never raises."""
     try:
         await _execute(run_id)
+        return RunStatus.COMPLETED
     except Exception as exc:
         logger.exception("Forecast run %s failed", run_id)
-        await _mark_failed(run_id, exc)
+        await mark_failed(run_id, exc)
+        return RunStatus.FAILED
 
 
 async def _execute(run_id: uuid.UUID) -> None:
@@ -283,11 +392,9 @@ async def _execute(run_id: uuid.UUID) -> None:
         run = await get_run(session, run_id)
         await _persist_output(session, run, output)
 
-        overrides = _run_overrides.pop(run_id, None)
+        overrides = RunOverrides.from_stored(run.options)
         _publish(run_id, RunStatus.RUNNING, 0.96, "generating_insights", "Generating insights...")
-        await _persist_insights(
-            session, run, output, llm_config=overrides.llm_config() if overrides else None
-        )
+        await _persist_insights(session, run, output, llm_config=overrides.llm_config())
 
         run.status = RunStatus.COMPLETED
         run.progress = 1.0
@@ -296,7 +403,7 @@ async def _execute(run_id: uuid.UUID) -> None:
         await session.flush()
         selected = run.selected_model.value if run.selected_model else None
 
-    progress_bus.publish(
+    publish_progress(
         ProgressEvent(
             run_id=run_id,
             status=RunStatus.COMPLETED,
@@ -339,7 +446,7 @@ def _build_payload(run: ForecastRun, parquet_path: Path) -> ForecastInput:
     regions = _segments(parquet_path, run, run.region_column)
     categories = _segments(parquet_path, run, run.category_column)
 
-    overrides = _run_overrides.get(run.id, RunOverrides())
+    overrides = RunOverrides.from_stored(run.options)
 
     return ForecastInput(
         series=SeriesInput(periods=periods, values=values, weights=weights),
@@ -638,14 +745,13 @@ def _advance(run: ForecastRun, stage: str, message: str) -> None:
 def _publish(
     run_id: uuid.UUID, status: RunStatus, progress: float, stage: str, message: str
 ) -> None:
-    progress_bus.publish(
+    publish_progress(
         ProgressEvent(run_id=run_id, status=status, progress=progress, stage=stage, message=message)
     )
 
 
-async def _mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
+async def mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
     message = getattr(exc, "message", None) or str(exc) or type(exc).__name__
-    _run_overrides.pop(run_id, None)
 
     try:
         async with session_scope() as session:
@@ -658,7 +764,7 @@ async def _mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
     except Exception:
         logger.exception("Could not record failure for run %s", run_id)
 
-    progress_bus.publish(
+    publish_progress(
         ProgressEvent(
             run_id=run_id,
             status=RunStatus.FAILED,

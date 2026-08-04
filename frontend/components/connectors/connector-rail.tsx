@@ -19,6 +19,7 @@ const RAIL_ORDER: ConnectorLogoKey[] = [
   "sqlserver",
   "mysql",
   "postgresql",
+  "supabase",
   "google_sheets",
   "excel",
   "rest_api",

@@ -14,6 +14,7 @@ from app.core.middleware import RequestContextMiddleware
 from app.database.session import engine
 from app.schemas.common import ErrorResponse
 from app.services.job_runner import executors
+from app.services.progress_relay import relay
 
 logger = get_logger(__name__)
 
@@ -24,10 +25,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings.ensure_directories()
 
     executors.start()
-    logger.info("%s ready.", settings.app_name)
+    relay.start()
+    logger.info(
+        "%s ready — forecasts run %s.",
+        settings.app_name,
+        "on Celery workers" if settings.distributed else "in this process",
+    )
 
     yield
 
+    await relay.stop()
     executors.shutdown()
     await engine.dispose()
     logger.info("Shutdown complete.")

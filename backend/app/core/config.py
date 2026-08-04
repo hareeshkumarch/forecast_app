@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     forecast_workers: int = 2
     run_seed_on_startup: bool = True
 
+    # Set a broker to run forecasts on Celery. Left empty the platform stays
+    # single-node and fits models in an in-process pool, which is what the
+    # tests and a laptop want.
+    celery_broker_url: str = ""
+    celery_result_backend: str = ""
+    redis_url: str = ""
+    forecast_task_soft_time_limit: int = 1_500
+    forecast_task_time_limit: int = 1_800
+    forecast_task_max_retries: int = 2
+
     forecast_max_folds: int = 5
     metric_weight_wmape: float = 0.50
     metric_weight_smape: float = 0.30
@@ -48,6 +58,24 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     insight_llm_model: str = "claude-3-5-sonnet-20241022"
+
+    @property
+    def broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url
+
+    @property
+    def result_backend(self) -> str:
+        return self.celery_result_backend or self.broker_url
+
+    @property
+    def distributed(self) -> bool:
+        """True when runs are dispatched to Celery rather than fitted in-process."""
+        return bool(self.broker_url)
+
+    @property
+    def progress_channel_url(self) -> str:
+        """Redis carries progress between the worker and whichever API serves the stream."""
+        return self.redis_url or self.broker_url
 
     @property
     def cors_origins(self) -> list[str]:

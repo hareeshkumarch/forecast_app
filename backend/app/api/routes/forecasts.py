@@ -79,15 +79,19 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
     )
 
     await session.commit()
-
-    task = asyncio.create_task(forecast_service.execute_run(run.id))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    await forecast_service.dispatch_run(session, run)
 
     return ForecastRunRead.model_validate(run)
 
 
-_background_tasks: set[asyncio.Task] = set()
+@router.post(
+    "/{run_id}/cancel",
+    response_model=ForecastRunRead,
+    summary="Cancel a queued or running forecast",
+)
+async def cancel_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunRead:
+    run = await forecast_service.cancel_run(session, run_id)
+    return ForecastRunRead.model_validate(run)
 
 
 @router.get("/{run_id}", response_model=ForecastRunDetail, summary="Get a forecast run")

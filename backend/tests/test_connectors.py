@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.connectors.registry import RAIL_ORDER, build_adapter, describe_all, split_submission
+from app.connectors.registry import (
+    ADAPTERS,
+    RAIL_ORDER,
+    build_adapter,
+    describe_all,
+    split_submission,
+)
 from app.connectors.sql import _reject_non_select
 from app.core.config import settings
 from app.core.errors import ConnectorError
@@ -142,3 +148,62 @@ def test_redshift_reuses_the_postgres_driver() -> None:
 
     assert RedshiftAdapter.supports_import is True
     assert RedshiftAdapter.default_port == 5439
+
+
+def test_supabase_derives_its_host_from_the_project_reference() -> None:
+    adapter = build_adapter(
+        ConnectorType.SUPABASE, {"project_ref": "abcdefghijklmnop"}, {"password": "secret"}
+    )
+
+    assert adapter._resolved_host() == "db.abcdefghijklmnop.supabase.co"
+    assert adapter._resolved_username() == "postgres"
+    assert adapter._port() == 5432
+
+
+def test_supabase_qualifies_the_role_when_going_through_the_pooler() -> None:
+    adapter = build_adapter(
+        ConnectorType.SUPABASE,
+        {
+            "project_ref": "abcdefghijklmnop",
+            "host": "aws-0-eu-west-1.pooler.supabase.com",
+            "port": 6543,
+        },
+        {"password": "secret"},
+    )
+
+    assert adapter._resolved_host() == "aws-0-eu-west-1.pooler.supabase.com"
+    assert adapter._resolved_username() == "postgres.abcdefghijklmnop"
+
+
+def test_supabase_honours_an_explicit_username() -> None:
+    adapter = build_adapter(
+        ConnectorType.SUPABASE,
+        {"project_ref": "abcdefghijklmnop", "port": 6543},
+        {"password": "secret", "username": "readonly_role"},
+    )
+
+    assert adapter._resolved_username() == "readonly_role"
+
+
+def test_supabase_without_a_reference_or_host_says_so() -> None:
+    adapter = build_adapter(ConnectorType.SUPABASE, {}, {"password": "secret"})
+
+    with pytest.raises(ConnectorError, match="project reference"):
+        adapter._resolved_host()
+
+
+def test_supabase_reports_what_is_missing_before_connecting() -> None:
+    outcome = build_adapter(ConnectorType.SUPABASE, {}, {}).test()
+
+    assert not outcome.ok
+    assert outcome.status is ConnectorStatus.NOT_CONFIGURED
+    assert "Project reference" in outcome.message or "Database password" in outcome.message
+
+
+def test_supabase_is_offered_as_an_importable_type() -> None:
+    adapter_cls = ADAPTERS[ConnectorType.SUPABASE]
+
+    assert adapter_cls.supports_import is True
+    assert ConnectorType.SUPABASE in RAIL_ORDER
+    keys = {field.key for field in adapter_cls.form_fields}
+    assert {"project_ref", "password"} <= keys

@@ -5,6 +5,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.connectors.registry import ADAPTERS, RAIL_ORDER
 from app.database.sample_data import generate_csv_bytes
 from app.database.seed import seed_connectors
 from app.models.enums import ModelKind
@@ -98,9 +99,20 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
     assert response.status_code == 200
 
     types = response.json()
-    assert len(types) == 10
+
+    # Every connector offered in the rail must reach the modal, so adding one
+    # cannot silently leave it unconfigurable. CSV is deliberately absent —
+    # files arrive through upload, not through a connection.
+    assert {item["type"] for item in types} == {kind.value for kind in RAIL_ORDER}
+    assert set(RAIL_ORDER) <= set(ADAPTERS), "a rail entry with no adapter would 500"
+    assert all(item["fields"] for item in types), "a type with no fields cannot be configured"
+
     bigquery = next(item for item in types if item["type"] == "bigquery")
     assert any(field["secret"] for field in bigquery["fields"])
+
+    supabase = next(item for item in types if item["type"] == "supabase")
+    assert supabase["supports_import"] is True
+    assert {field["key"] for field in supabase["fields"]} >= {"project_ref", "password"}
 
 
 async def test_test_endpoint_reports_not_configured(client: AsyncClient) -> None:
@@ -337,5 +349,23 @@ async def test_export_of_missing_run_is_404(client: AsyncClient) -> None:
 @pytest.mark.parametrize("prefix", ["datasets", "forecasts", "connectors"])
 async def test_unknown_ids_return_404(client: AsyncClient, prefix: str) -> None:
     response = await client.get(f"/api/{prefix}/{uuid.uuid4()}")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+async def test_a_finished_run_cannot_be_cancelled(client: AsyncClient) -> None:
+    run = await _seed_and_run(client)
+
+    response = await client.post(f"/api/forecasts/{run['id']}/cancel")
+
+    assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "validation_error"
+    assert "already finished" in body["message"]
+
+
+async def test_cancelling_an_unknown_run_is_a_clean_404(client: AsyncClient) -> None:
+    response = await client.post(f"/api/forecasts/{uuid.uuid4()}/cancel")
+
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"

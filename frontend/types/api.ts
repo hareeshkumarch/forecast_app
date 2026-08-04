@@ -11,6 +11,7 @@ export type ConnectorType =
   | "snowflake"
   | "redshift"
   | "google_sheets"
+  | "supabase"
   | "salesforce";
 
 export type ConnectorStatus = "not_configured" | "configured" | "connected" | "error";

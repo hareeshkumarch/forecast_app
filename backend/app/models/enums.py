@@ -14,6 +14,7 @@ class ConnectorType(StrEnum):
     SNOWFLAKE = "snowflake"
     REDSHIFT = "redshift"
     GOOGLE_SHEETS = "google_sheets"
+    SUPABASE = "supabase"
     SALESFORCE = "salesforce"
 
 

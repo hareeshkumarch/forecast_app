@@ -29,6 +29,19 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    # Broker, result backend and the progress channel the SSE stream reads.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -46,6 +59,11 @@ services:
       RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-text}
+      # Set these to move model fitting onto Celery workers. Left empty the
+      # API fits in-process, which is fine for one node.
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/2}
     volumes:
       # Bind-mounted so uploaded files and generated Parquet/exports are
       # inspectable from the host and survive rebuilds.
@@ -53,12 +71,52 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status==200 else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 45s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    command:
+      - celery
+      - --app=app.workers.celery_app.celery_app
+      - worker
+      - --loglevel=info
+      - --queues=forecasts
+      - --concurrency=${WORKER_CONCURRENCY:-2}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      STORAGE_ROOT: /storage
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      # Migrations and seeding belong to the API container, not to workers.
+      RUN_SEED_ON_STARTUP: "false"
+    volumes:
+      # The worker reads the same Parquet the API wrote.
+      - ./storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery --app=app.workers.celery_app.celery_app inspect ping --destination celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   frontend:

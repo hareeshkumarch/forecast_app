@@ -7,6 +7,7 @@ from app.connectors.cloud import (
     RedshiftAdapter,
     SalesforceAdapter,
     SnowflakeAdapter,
+    SupabaseAdapter,
 )
 from app.connectors.files import CsvAdapter, ExcelAdapter
 from app.connectors.rest import RestApiAdapter
@@ -26,6 +27,7 @@ ADAPTERS: dict[ConnectorType, type[ConnectorAdapter]] = {
     ConnectorType.SNOWFLAKE: SnowflakeAdapter,
     ConnectorType.GOOGLE_SHEETS: GoogleSheetsAdapter,
     ConnectorType.SALESFORCE: SalesforceAdapter,
+    ConnectorType.SUPABASE: SupabaseAdapter,
 }
 
 
@@ -36,6 +38,7 @@ RAIL_ORDER: tuple[ConnectorType, ...] = (
     ConnectorType.SQLSERVER,
     ConnectorType.MYSQL,
     ConnectorType.POSTGRESQL,
+    ConnectorType.SUPABASE,
     ConnectorType.GOOGLE_SHEETS,
     ConnectorType.EXCEL,
     ConnectorType.REST_API,
