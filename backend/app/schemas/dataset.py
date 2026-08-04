@@ -6,7 +6,15 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-from app.models.enums import ColumnKind, ColumnRole, DatasetStatus, ForecastFrequency
+from app.models.enums import (
+    ColumnKind,
+    ColumnRole,
+    DatasetStatus,
+    ForecastFrequency,
+    GapFill,
+    IssueSeverity,
+    MeasureAggregation,
+)
 from app.schemas.common import Identifier, NonNegativeInt, ORMModel, StrictModel
 
 Horizon = Annotated[int, Field(ge=1, le=365)]
@@ -63,7 +71,6 @@ class ColumnSuggestion(BaseModel):
 
 
 class DatasetProfile(BaseModel):
-
     dataset_id: uuid.UUID
     row_count: int
     column_count: int
@@ -104,3 +111,52 @@ class DatasetUploadResponse(BaseModel):
     @property
     def ready_to_forecast(self) -> bool:
         return bool(self.dataset.time_column and self.dataset.target_column)
+
+
+class QualityIssueRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Identifier
+    severity: IssueSeverity
+    message: str
+    remedy: str
+    count: NonNegativeInt
+
+
+class DataQualityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: uuid.UUID
+    time_column: Identifier
+    target_column: Identifier
+    frequency: ForecastFrequency
+    aggregation: MeasureAggregation
+    gap_fill: GapFill
+
+    rows_scanned: NonNegativeInt
+    rows_usable: NonNegativeInt
+    periods_present: NonNegativeInt
+    periods_expected: NonNegativeInt
+    coverage: Annotated[float, Field(ge=0.0, le=1.0)]
+    gap_count: NonNegativeInt
+    longest_gap: NonNegativeInt
+    duplicate_rows: NonNegativeInt
+    partial_periods: NonNegativeInt
+    outlier_periods: NonNegativeInt
+    negative_periods: NonNegativeInt
+    zero_periods: NonNegativeInt
+    constant_target: bool
+    range_start: date | None
+    range_end: date | None
+    fill_applied: GapFill
+    blocked: bool
+    issues: list[QualityIssueRead] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def severity(self) -> IssueSeverity:
+        if any(issue.severity is IssueSeverity.SEVERE for issue in self.issues):
+            return IssueSeverity.SEVERE
+        if any(issue.severity is IssueSeverity.WARNING for issue in self.issues):
+            return IssueSeverity.WARNING
+        return IssueSeverity.INFO

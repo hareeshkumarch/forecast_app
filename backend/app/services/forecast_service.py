@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from dataclasses import dataclass, fields
 from datetime import date
 from pathlib import Path
 
@@ -11,9 +12,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import ForecastError, NotFoundError, ValidationError
 from app.core.logging import get_logger
+from app.core.storage import file_exists
 from app.database.base import utcnow
 from app.database.session import session_scope
-from app.datasets import queries
+from app.datasets import quality, queries
 from app.forecasting.engine import (
     ForecastInput,
     ForecastOutput,
@@ -37,7 +39,10 @@ from app.models.entities import (
 )
 from app.models.enums import (
     ForecastFrequency,
+    GapFill,
+    MeasureAggregation,
     ModelKind,
+    OutlierTreatment,
     PointKind,
     RunStatus,
 )
@@ -55,7 +60,33 @@ STAGES: tuple[tuple[str, float], ...] = (
     ("complete", 1.0),
 )
 
-_run_overrides: dict[uuid.UUID, dict[str, object]] = {}
+
+@dataclass(slots=True)
+class RunOverrides:
+    max_folds: int | None = None
+    metric_weights: dict[str, float] | None = None
+    sarimax_order: list[int] | None = None
+    gbm_max_depth: int | None = None
+    llm_provider: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+    llm_base_url: str | None = None
+
+    def is_empty(self) -> bool:
+        return all(getattr(self, f.name) is None for f in fields(self))
+
+    def llm_config(self) -> dict[str, object] | None:
+        if not self.llm_api_key:
+            return None
+        return {
+            "llm_provider": self.llm_provider,
+            "llm_api_key": self.llm_api_key,
+            "llm_model": self.llm_model,
+            "llm_base_url": self.llm_base_url,
+        }
+
+
+_run_overrides: dict[uuid.UUID, RunOverrides] = {}
 
 
 async def list_runs(session: AsyncSession, *, limit: int = 50) -> list[ForecastRun]:
@@ -106,6 +137,9 @@ async def create_run(
     frequency: ForecastFrequency | None = None,
     horizon: int | None = None,
     confidence_level: float = 0.8,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+    gap_fill: GapFill = GapFill.AUTO,
+    outlier_treatment: OutlierTreatment = OutlierTreatment.NONE,
     max_folds: int | None = None,
     metric_weights: dict[str, float] | None = None,
     sarimax_order: list[int] | None = None,
@@ -117,7 +151,7 @@ async def create_run(
 ) -> ForecastRun:
     dataset = await dataset_service.get_dataset(session, dataset_id)
 
-    if not dataset.parquet_path or not Path(dataset.parquet_path).exists():
+    if not await file_exists(dataset.parquet_path):
         raise ValidationError(
             "This dataset has no stored data file. Re-upload it before forecasting."
         )
@@ -128,9 +162,7 @@ async def create_run(
     resolved_horizon = horizon or dataset.horizon or 6
 
     if not resolved_time:
-        raise ValidationError(
-            "No time column is configured. Select one before running a forecast."
-        )
+        raise ValidationError("No time column is configured. Select one before running a forecast.")
     if not resolved_target:
         raise ValidationError(
             "No target column is configured. Select one before running a forecast."
@@ -149,7 +181,6 @@ async def create_run(
                 f"'{value}' is not a column in this dataset (selected as the {label} column).",
                 detail={"available_columns": sorted(available)},
             )
-
 
     if region_column is None or category_column is None:
         guessed_region, guessed_category = dataset_service.guess_segment_columns(dataset)
@@ -170,33 +201,25 @@ async def create_run(
         frequency=resolved_frequency,
         horizon=resolved_horizon,
         confidence_level=confidence_level,
+        aggregation=aggregation,
+        gap_fill=gap_fill,
+        outlier_treatment=outlier_treatment,
     )
     session.add(run)
     await session.flush()
 
-    if any(
-        opt is not None
-        for opt in (
-            max_folds,
-            metric_weights,
-            sarimax_order,
-            gbm_max_depth,
-            llm_provider,
-            llm_api_key,
-            llm_model,
-            llm_base_url,
-        )
-    ):
-        _run_overrides[run.id] = {
-            "max_folds": max_folds,
-            "metric_weights": metric_weights,
-            "sarimax_order": sarimax_order,
-            "gbm_max_depth": gbm_max_depth,
-            "llm_provider": llm_provider,
-            "llm_api_key": llm_api_key,
-            "llm_model": llm_model,
-            "llm_base_url": llm_base_url,
-        }
+    overrides = RunOverrides(
+        max_folds=max_folds,
+        metric_weights=metric_weights,
+        sarimax_order=sarimax_order,
+        gbm_max_depth=gbm_max_depth,
+        llm_provider=llm_provider,
+        llm_api_key=llm_api_key,
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
+    )
+    if not overrides.is_empty():
+        _run_overrides[run.id] = overrides
 
     progress_bus.publish(
         ProgressEvent(
@@ -231,7 +254,6 @@ async def _execute(run_id: uuid.UUID) -> None:
         parquet_path = Path(dataset.parquet_path or "")
         payload = await asyncio.to_thread(_build_payload, run, parquet_path)
 
-
     _publish(run_id, RunStatus.RUNNING, 0.30, "backtesting", "Backtesting candidate models...")
 
     try:
@@ -245,11 +267,11 @@ async def _execute(run_id: uuid.UUID) -> None:
         run = await get_run(session, run_id)
         await _persist_output(session, run, output)
 
-        llm_config = _run_overrides.pop(run_id, None)
-        _publish(
-            run_id, RunStatus.RUNNING, 0.96, "generating_insights", "Generating insights..."
+        overrides = _run_overrides.pop(run_id, None)
+        _publish(run_id, RunStatus.RUNNING, 0.96, "generating_insights", "Generating insights...")
+        await _persist_insights(
+            session, run, output, llm_config=overrides.llm_config() if overrides else None
         )
-        await _persist_insights(session, run, output, llm_config=llm_config)
 
         run.status = RunStatus.COMPLETED
         run.progress = 1.0
@@ -277,27 +299,50 @@ def _build_payload(run: ForecastRun, parquet_path: Path) -> ForecastInput:
         run.target_column,
         run.frequency,
         weight_column=run.weight_column,
+        aggregation=run.aggregation,
     )
+
+    report = quality.build_report(
+        rows_scanned=series.rows_scanned,
+        rows_usable=series.rows_usable,
+        duplicate_rows=series.duplicate_rows,
+        row_counts=series.row_counts,
+        periods=series.periods,
+        values=series.values,
+        frequency=run.frequency,
+        fill=run.gap_fill,
+    )
+
+    periods, values, weights, fill_applied, _missing = quality.regularise(
+        series.periods, series.values, series.weights, run.frequency, run.gap_fill
+    )
+
+    if run.outlier_treatment is OutlierTreatment.WINSORISE:
+        values = quality.winsorise(values)
 
     regions = _segments(parquet_path, run, run.region_column)
     categories = _segments(parquet_path, run, run.category_column)
 
-    overrides = _run_overrides.pop(run.id, {})
+    overrides = _run_overrides.get(run.id, RunOverrides())
 
     return ForecastInput(
-        series=SeriesInput(
-            periods=series.periods, values=series.values, weights=series.weights
-        ),
+        series=SeriesInput(periods=periods, values=values, weights=weights),
+        quality={
+            **report.as_dict(),
+            "fill_applied": fill_applied.value,
+            "aggregation": run.aggregation.value,
+            "outlier_treatment": run.outlier_treatment.value,
+        },
         frequency=run.frequency,
         horizon=run.horizon,
         confidence_level=run.confidence_level,
         regions=regions,
         categories=categories,
-        max_folds=overrides.get("max_folds"),
-        metric_weights=overrides.get("metric_weights"),
+        max_folds=overrides.max_folds,
+        metric_weights=overrides.metric_weights,
         model_options={
-            "sarimax_order": overrides.get("sarimax_order"),
-            "gbm_max_depth": overrides.get("gbm_max_depth"),
+            "sarimax_order": overrides.sarimax_order,
+            "gbm_max_depth": overrides.gbm_max_depth,
         },
     )
 
@@ -332,9 +377,7 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
     ]
 
 
-async def _persist_output(
-    session: AsyncSession, run: ForecastRun, output: ForecastOutput
-) -> None:
+async def _persist_output(session: AsyncSession, run: ForecastRun, output: ForecastOutput) -> None:
     await _clear_results(session, run.id)
 
     run.selected_model = ModelKind(output.selected_model)
@@ -377,7 +420,6 @@ async def _persist_output(
                 previous_value=previous.get(name),
             )
         )
-
 
     for index, period in enumerate(output.history_periods):
         fitted = output.fitted_values[index] if index < len(output.fitted_values) else None
@@ -555,14 +597,13 @@ def _publish(
     run_id: uuid.UUID, status: RunStatus, progress: float, stage: str, message: str
 ) -> None:
     progress_bus.publish(
-        ProgressEvent(
-            run_id=run_id, status=status, progress=progress, stage=stage, message=message
-        )
+        ProgressEvent(run_id=run_id, status=status, progress=progress, stage=stage, message=message)
     )
 
 
 async def _mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
     message = getattr(exc, "message", None) or str(exc) or type(exc).__name__
+    _run_overrides.pop(run_id, None)
 
     try:
         async with session_scope() as session:

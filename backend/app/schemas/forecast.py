@@ -6,7 +6,15 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
-from app.models.enums import ForecastFrequency, ModelKind, PointKind, RunStatus
+from app.models.enums import (
+    ForecastFrequency,
+    GapFill,
+    MeasureAggregation,
+    ModelKind,
+    OutlierTreatment,
+    PointKind,
+    RunStatus,
+)
 from app.schemas.common import (
     Identifier,
     NonNegativeFloat,
@@ -36,6 +44,9 @@ class ForecastRunRequest(StrictModel):
     frequency: ForecastFrequency | None = None
     horizon: Horizon | None = None
     confidence_level: Probability = 0.8
+    aggregation: MeasureAggregation = MeasureAggregation.SUM
+    gap_fill: GapFill = GapFill.AUTO
+    outlier_treatment: OutlierTreatment = OutlierTreatment.NONE
     max_folds: Folds | None = None
     metric_weights: dict[str, float] | None = None
     sarimax_order: ArimaOrder | None = None
@@ -144,6 +155,9 @@ class ForecastRunRead(ORMModel):
     frequency: ForecastFrequency
     horizon: Horizon
     confidence_level: Probability
+    aggregation: MeasureAggregation
+    gap_fill: GapFill
+    outlier_treatment: OutlierTreatment
     selected_model: ModelKind | None
     selection_rationale: str | None
     used_fallback: bool

@@ -4,24 +4,61 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { DataQualityPanel } from "@/components/dashboard/data-quality-panel";
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Select } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input, Select } from "@/components/ui/primitives";
 import {
   useDataset,
+  useDatasetQuality,
   useDatasets,
   useRefreshDashboard,
   useStartForecast,
 } from "@/hooks/use-dashboard";
 import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
+import { errorMessage } from "@/lib/errors";
 import { humanizeModel } from "@/lib/format";
 import { llmRunFields, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
-import type { ForecastFrequency } from "@/types/api";
+import type {
+  ForecastFrequency,
+  GapFill,
+  MeasureAggregation,
+  OutlierTreatment,
+} from "@/types/api";
 
 const FREQUENCIES: ForecastFrequency[] = ["daily", "weekly", "monthly", "quarterly"];
 const NONE = "__none__";
+
+const AGGREGATIONS: { value: MeasureAggregation; label: string; hint: string }[] = [
+  { value: "sum", label: "Sum", hint: "Totals, units sold, revenue" },
+  { value: "mean", label: "Average", hint: "Rates, prices, utilisation" },
+  { value: "median", label: "Median", hint: "Averages with outliers" },
+  { value: "last", label: "Last value", hint: "Balances, stock on hand" },
+  { value: "min", label: "Minimum", hint: "Floors within the period" },
+  { value: "max", label: "Maximum", hint: "Peaks within the period" },
+];
+
+const GAP_FILLS: { value: GapFill; label: string }[] = [
+  { value: "auto", label: "Automatic" },
+  { value: "interpolate", label: "Interpolate" },
+  { value: "zero", label: "Treat as zero" },
+  { value: "none", label: "Leave gaps" },
+];
+
+const OUTLIER_TREATMENTS: { value: OutlierTreatment; label: string }[] = [
+  { value: "none", label: "Keep as-is" },
+  { value: "winsorise", label: "Damp extremes" },
+];
+
+type MetricFocus = "balanced" | "wmape" | "smape" | "rmse";
+
+const METRIC_WEIGHTS: Record<Exclude<MetricFocus, "balanced">, Record<string, number>> = {
+  wmape: { wmape: 0.7, smape: 0.2, rmse: 0.1 },
+  smape: { wmape: 0.2, smape: 0.7, rmse: 0.1 },
+  rmse: { wmape: 0.2, smape: 0.1, rmse: 0.7 },
+};
 
 export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
@@ -44,13 +81,24 @@ export function ForecastModal() {
   const [regionColumn, setRegionColumn] = useState(NONE);
   const [categoryColumn, setCategoryColumn] = useState(NONE);
   const [weightColumn, setWeightColumn] = useState(NONE);
+  const [aggregation, setAggregation] = useState<MeasureAggregation>("sum");
+  const [gapFill, setGapFill] = useState<GapFill>("auto");
+  const [outlierTreatment, setOutlierTreatment] = useState<OutlierTreatment>("none");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [maxFolds, setMaxFolds] = useState(5);
-  const [metricFocus, setMetricFocus] = useState<"balanced" | "wmape" | "smape" | "rmse">("balanced");
+  const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
   const [error, setError] = useState<string | null>(null);
 
   const { data: dataset } = useDataset(datasetId || null);
+
+  const quality = useDatasetQuality(datasetId || null, {
+    time_column: dataset?.time_column ?? null,
+    target_column: dataset?.target_column ?? null,
+    frequency,
+    aggregation,
+    gap_fill: gapFill,
+  });
 
   const progress = useForecastProgress(activeRunId, (event) => {
     if (event.status === "completed") {
@@ -92,6 +140,7 @@ export function ForecastModal() {
     setRegionColumn(region?.name ?? dimensions[0]?.name ?? NONE);
     setCategoryColumn(category?.name ?? dimensions[1]?.name ?? NONE);
     setWeightColumn(weight?.name ?? NONE);
+    setAggregation(suggestAggregation(dataset.target_column));
   }, [dataset]);
 
   useEffect(() => {
@@ -107,12 +156,16 @@ export function ForecastModal() {
       setError("Choose a dataset to forecast.");
       return;
     }
+    if (quality.data?.blocked) {
+      setError(
+        quality.data.issues.find((issue) => issue.severity === "severe")?.remedy ??
+          "Fix the data problems listed above before running a forecast.",
+      );
+      return;
+    }
     setError(null);
 
-    let metricWeights: Record<string, number> | undefined = undefined;
-    if (metricFocus === "wmape") metricWeights = { wmape: 0.7, smape: 0.2, rmse: 0.1 };
-    else if (metricFocus === "smape") metricWeights = { wmape: 0.2, smape: 0.7, rmse: 0.1 };
-    else if (metricFocus === "rmse") metricWeights = { wmape: 0.2, smape: 0.1, rmse: 0.7 };
+    const metricWeights = metricFocus === "balanced" ? undefined : METRIC_WEIGHTS[metricFocus];
 
     startMutation.mutate(
       {
@@ -124,6 +177,9 @@ export function ForecastModal() {
         region_column: regionColumn === NONE ? null : regionColumn,
         category_column: categoryColumn === NONE ? null : categoryColumn,
         weight_column: weightColumn === NONE ? null : weightColumn,
+        aggregation,
+        gap_fill: gapFill,
+        outlier_treatment: outlierTreatment,
         max_folds: maxFolds,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
@@ -132,7 +188,7 @@ export function ForecastModal() {
       },
       {
         onSuccess: (run) => setActiveRun(run.id),
-        onError: (mutationError) => setError(mutationError.message),
+        onError: (mutationError) => setError(errorMessage(mutationError)),
       },
     );
   }
@@ -147,6 +203,7 @@ export function ForecastModal() {
 
   const dimensions = dataset?.columns.filter((column) => column.role === "dimension") ?? [];
   const numerics = dataset?.columns.filter((column) => column.kind === "numeric") ?? [];
+  const blocked = quality.data?.blocked ?? false;
 
   return (
     <Modal
@@ -165,7 +222,13 @@ export function ForecastModal() {
             <Button variant="ghost" onClick={handleClose}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleRun} loading={startMutation.isPending}>
+            <Button
+              variant="primary"
+              onClick={handleRun}
+              loading={startMutation.isPending}
+              disabled={blocked}
+              title={blocked ? "Resolve the data problems listed in the panel first" : undefined}
+            >
               Run Forecast
             </Button>
           </>
@@ -255,6 +318,69 @@ export function ForecastModal() {
             </Field>
           </div>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field
+              label="Combine rows by"
+              hint={AGGREGATIONS.find((item) => item.value === aggregation)?.hint}
+            >
+              <Select
+                value={aggregation}
+                onChange={(event) =>
+                  setAggregation(event.target.value as MeasureAggregation)
+                }
+              >
+                {AGGREGATIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Missing periods" hint="Keeps the calendar regular">
+              <Select
+                value={gapFill}
+                onChange={(event) => setGapFill(event.target.value as GapFill)}
+              >
+                {GAP_FILLS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Outliers" hint="One-off spikes">
+              <Select
+                value={outlierTreatment}
+                onChange={(event) =>
+                  setOutlierTreatment(event.target.value as OutlierTreatment)
+                }
+              >
+                {OUTLIER_TREATMENTS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          {datasetId ? (
+            dataset && !dataset.time_column ? (
+              <p className="rounded-card border border-border bg-surface-muted px-3 py-2 text-caption text-text-secondary">
+                Pick a time column and a target for this dataset to see a data quality check before
+                you run.
+              </p>
+            ) : (
+              <DataQualityPanel
+                report={quality.data}
+                isLoading={quality.isLoading}
+                error={quality.error}
+              />
+            )
+          ) : null}
+
           <div className="pt-1">
             <button
               type="button"
@@ -281,8 +407,7 @@ export function ForecastModal() {
                 <Field label="Metric Emphasis" hint="Scoring weights">
                   <Select
                     value={metricFocus}
-                    onChange={(e) => setMetricFocus(e.target.value as any)}
-                    
+                    onChange={(event) => setMetricFocus(event.target.value as MetricFocus)}
                   >
                     <option value="balanced">Balanced (Default)</option>
                     <option value="wmape">wMAPE Focus (70%)</option>
@@ -316,11 +441,20 @@ export function ForecastModal() {
             . The numbers are computed either way.
           </p>
 
-          {error ? <p className="text-caption text-negative">{error}</p> : null}
+          <InlineError message={error ?? undefined} />
         </div>
       )}
     </Modal>
   );
+}
+
+function suggestAggregation(target: string | null): MeasureAggregation {
+  if (!target) return "sum";
+  if (/rate|ratio|pct|percent|price|avg|average|score|index|margin|temp/i.test(target)) {
+    return "mean";
+  }
+  if (/balance|stock|inventory|level|headcount|on_hand/i.test(target)) return "last";
+  return "sum";
 }
 
 function DimensionSelect({

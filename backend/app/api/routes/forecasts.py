@@ -63,6 +63,9 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         frequency=payload.frequency,
         horizon=payload.horizon,
         confidence_level=payload.confidence_level,
+        aggregation=payload.aggregation,
+        gap_fill=payload.gap_fill,
+        outlier_treatment=payload.outlier_treatment,
         max_folds=payload.max_folds,
         metric_weights=payload.metric_weights,
         sarimax_order=payload.sarimax_order,
@@ -125,7 +128,6 @@ async def get_points(
     run = await forecast_service.get_run(session, run_id)
     points = await forecast_service.points_for_run(session, run_id, start=start, end=end)
 
-
     boundary = next(
         (index for index, point in enumerate(points) if point.kind is PointKind.FORECAST), None
     )
@@ -145,7 +147,6 @@ async def get_points(
     response_class=StreamingResponse,
 )
 async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
-
 
     async with session_scope() as session:
         run = await forecast_service.get_run(session, run_id)
@@ -173,7 +174,6 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
                     subscription.__anext__(), timeout=SSE_KEEPALIVE_SECONDS
                 )
             except TimeoutError:
-
                 yield b": keep-alive\n\n"
                 continue
             except StopAsyncIteration:
@@ -189,7 +189,6 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         headers={
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
-
             "X-Accel-Buffering": "no",
         },
     )

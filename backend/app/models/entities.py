@@ -31,9 +31,12 @@ from app.models.enums import (
     ExportFormat,
     ExportStatus,
     ForecastFrequency,
+    GapFill,
     InsightSeverity,
     InsightType,
+    MeasureAggregation,
     ModelKind,
+    OutlierTreatment,
     PointKind,
     RunStatus,
 )
@@ -67,7 +70,6 @@ class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ConnectorCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-
     __tablename__ = "connector_credentials"
 
     connector_id: Mapped[uuid.UUID] = mapped_column(
@@ -99,13 +101,11 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     column_count: Mapped[int] = mapped_column(Integer, default=0)
     missing_value_count: Mapped[int] = mapped_column(Integer, default=0)
 
-
     parquet_path: Mapped[str | None] = mapped_column(String(600))
     raw_path: Mapped[str | None] = mapped_column(String(600))
 
     date_range_start: Mapped[date | None] = mapped_column(Date)
     date_range_end: Mapped[date | None] = mapped_column(Date)
-
 
     time_column: Mapped[str | None] = mapped_column(String(200))
     target_column: Mapped[str | None] = mapped_column(String(200))
@@ -146,7 +146,6 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mean_value: Mapped[float | None] = mapped_column(Float)
     sample_values: Mapped[list] = mapped_column(JSONType, default=list)
 
-
     is_date_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
     is_target_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -179,6 +178,13 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     frequency: Mapped[ForecastFrequency] = mapped_column(_enum(ForecastFrequency, "run_frequency"))
     horizon: Mapped[int] = mapped_column(Integer, nullable=False)
     confidence_level: Mapped[float] = mapped_column(Float, default=0.8)
+    aggregation: Mapped[MeasureAggregation] = mapped_column(
+        _enum(MeasureAggregation, "measure_aggregation"), default=MeasureAggregation.SUM
+    )
+    gap_fill: Mapped[GapFill] = mapped_column(_enum(GapFill, "gap_fill"), default=GapFill.AUTO)
+    outlier_treatment: Mapped[OutlierTreatment] = mapped_column(
+        _enum(OutlierTreatment, "outlier_treatment"), default=OutlierTreatment.NONE
+    )
 
     selected_model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "selected_model"))
     selection_rationale: Mapped[str | None] = mapped_column(Text)
@@ -228,7 +234,6 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ModelCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-
     __tablename__ = "model_candidates"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -256,7 +261,6 @@ class ModelCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ForecastMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-
     __tablename__ = "forecast_metrics"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -274,7 +278,6 @@ class ForecastMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ForecastPoint(UUIDPrimaryKeyMixin, Base):
-
     __tablename__ = "forecast_points"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -314,7 +317,9 @@ class RegionalForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     run: Mapped[ForecastRun] = relationship(back_populates="regional")
 
-    __table_args__ = (UniqueConstraint("run_id", "region", name="uq_regional_forecasts_run_region"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "region", name="uq_regional_forecasts_run_region"),
+    )
 
 
 class CategoryForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -339,7 +344,6 @@ class CategoryForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ForecastDriver(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-
     __tablename__ = "forecast_drivers"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -371,7 +375,6 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
-
 
     metric_name: Mapped[str] = mapped_column(String(80), nullable=False)
     metric_value: Mapped[float] = mapped_column(Float, nullable=False)
