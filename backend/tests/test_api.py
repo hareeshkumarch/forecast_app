@@ -5,6 +5,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.connectors.registry import ADAPTERS, RAIL_ORDER
 from app.database.sample_data import generate_csv_bytes
 from app.database.seed import seed_connectors
 from app.models.enums import ModelKind
@@ -98,9 +99,20 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
     assert response.status_code == 200
 
     types = response.json()
-    assert len(types) == 10
+
+    # Every connector offered in the rail must reach the modal, so adding one
+    # cannot silently leave it unconfigurable. CSV is deliberately absent —
+    # files arrive through upload, not through a connection.
+    assert {item["type"] for item in types} == {kind.value for kind in RAIL_ORDER}
+    assert set(RAIL_ORDER) <= set(ADAPTERS), "a rail entry with no adapter would 500"
+    assert all(item["fields"] for item in types), "a type with no fields cannot be configured"
+
     bigquery = next(item for item in types if item["type"] == "bigquery")
     assert any(field["secret"] for field in bigquery["fields"])
+
+    supabase = next(item for item in types if item["type"] == "supabase")
+    assert supabase["supports_import"] is True
+    assert {field["key"] for field in supabase["fields"]} >= {"project_ref", "password"}
 
 
 async def test_test_endpoint_reports_not_configured(client: AsyncClient) -> None:

@@ -173,6 +173,28 @@ export function CsvLogo({ className = BASE }: LogoProps) {
 }
 
 
+export function SupabaseLogo({ className = BASE }: LogoProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
+      <defs>
+        <linearGradient id="supabase-bolt" x1="4" y1="21" x2="17" y2="10" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#249361" />
+          <stop offset="100%" stopColor="#3ECF8E" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M13.2 22.4c-.6.75-1.8.34-1.8-.62V13.9H4.75c-1.09 0-1.69-1.25-1.02-2.1L10.8 1.6c.6-.75 1.8-.34 1.8.62v7.88h6.65c1.09 0 1.7 1.25 1.02 2.1l-7.07 10.2Z"
+        fill="url(#supabase-bolt)"
+      />
+      <path
+        d="M12.6 10.1V2.22c0-.96-1.2-1.37-1.8-.62L3.73 11.8c-.67.85-.07 2.1 1.02 2.1H12.6v-3.8Z"
+        fill="#3ECF8E"
+        opacity=".45"
+      />
+    </svg>
+  );
+}
+
 export const CONNECTOR_LOGOS = {
   bigquery: BigQueryLogo,
   snowflake: SnowflakeLogo,
@@ -180,6 +202,7 @@ export const CONNECTOR_LOGOS = {
   sqlserver: SqlServerLogo,
   mysql: MySqlLogo,
   postgresql: PostgresLogo,
+  supabase: SupabaseLogo,
   google_sheets: GoogleSheetsLogo,
   excel: ExcelLogo,
   rest_api: RestApiLogo,
