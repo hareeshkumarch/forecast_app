@@ -124,9 +124,9 @@ function KpiTile({ kpi }: { kpi: KpiCardModel }) {
             className={cn(
               "inline-flex items-center gap-0.5 rounded-chip border px-1 py-px text-caption font-medium",
               kpi.tone === "positive"
-                ? "border-[#cfe6d9] bg-positive-soft text-positive"
+                ? "border-positive-border bg-positive-soft text-positive"
                 : kpi.tone === "negative"
-                  ? "border-[#f0cdcc] bg-negative-soft text-negative"
+                  ? "border-negative-border bg-negative-soft text-negative"
                   : "border-border bg-surface-muted text-text-secondary",
             )}
           >

@@ -2,7 +2,12 @@
 
 
 import { AlertTriangle, Loader2, type LucideIcon } from "lucide-react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 import { forwardRef } from "react";
 
 import { cn } from "@/lib/utils";
@@ -13,12 +18,12 @@ type ButtonSize = "sm" | "md";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-accent text-white border border-accent hover:bg-[#a56e16] disabled:bg-[#d9bc85] disabled:border-[#d9bc85]",
+    "bg-accent text-white border border-accent hover:bg-accent-hover disabled:bg-accent-disabled disabled:border-accent-disabled",
   secondary:
     "bg-surface text-text-primary border border-border hover:bg-surface-muted hover:border-border-strong",
   ghost: "bg-transparent text-text-secondary border border-transparent hover:bg-surface-muted",
   danger:
-    "bg-surface text-negative border border-[#f0cdcc] hover:bg-negative-soft hover:border-negative",
+    "bg-surface text-negative border border-negative-border hover:bg-negative-soft hover:border-negative",
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
@@ -131,10 +136,10 @@ type BadgeTone = "neutral" | "positive" | "negative" | "warning" | "accent";
 
 const BADGE_TONES: Record<BadgeTone, string> = {
   neutral: "bg-surface-muted text-text-secondary border-border",
-  positive: "bg-positive-soft text-positive border-[#cfe6d9]",
-  negative: "bg-negative-soft text-negative border-[#f0cdcc]",
-  warning: "bg-warning-soft text-warning border-[#eddcbc]",
-  accent: "bg-accent-soft text-accent border-[#eeddba]",
+  positive: "bg-positive-soft text-positive border-positive-border",
+  negative: "bg-negative-soft text-negative border-negative-border",
+  warning: "bg-warning-soft text-warning border-warning-border",
+  accent: "bg-accent-soft text-accent border-accent-border",
 };
 
 export function Badge({
@@ -175,6 +180,26 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
         )}
         {...rest}
       />
+    );
+  },
+);
+
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
+  function Select({ className, children, ...rest }, ref) {
+    return (
+      <select
+        ref={ref}
+        className={cn(
+          "h-8 w-full rounded-input border border-border bg-surface px-2",
+          "text-meta text-text-primary",
+          "transition-colors duration-fast focus:border-accent focus:outline-none",
+          "disabled:bg-surface-muted disabled:text-text-muted",
+          className,
+        )}
+        {...rest}
+      >
+        {children}
+      </select>
     );
   },
 );
@@ -265,7 +290,7 @@ export function ErrorState({
         className,
       )}
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#f0cdcc] bg-negative-soft">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-negative-border bg-negative-soft">
         <AlertTriangle className="h-4 w-4 text-negative" aria-hidden />
       </span>
       <p className="text-body font-medium text-text-primary">{title}</p>

@@ -4,12 +4,22 @@
 import { Globe2 } from "lucide-react";
 
 import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { SortableHeader, useSortedRows } from "@/components/ui/sortable-header";
 import { useRegions } from "@/hooks/use-dashboard";
+import type { RegionRow } from "@/types/api";
 import { formatCompact, formatPercent, formatSignedPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type RegionSortKey = "region" | "forecast_value" | "change_vs_last_year" | "accuracy";
+
 export function RegionTable() {
   const { data, isLoading, isError, error, refetch } = useRegions();
+
+  const { sorted, sort, toggle } = useSortedRows<RegionRow, RegionSortKey>(
+    data?.rows ?? [],
+    { key: "forecast_value", direction: "desc" },
+    (row, key) => row[key],
+  );
 
   return (
     <Card className="flex min-w-0 flex-col">
@@ -31,25 +41,25 @@ export function RegionTable() {
             <table className="w-full min-w-[420px] border-collapse">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="table-header px-3 pb-1.5 text-left font-medium">Region</th>
-                  <th className="table-header px-3 pb-1.5 text-right font-medium">Forecast</th>
-                  <th className="table-header px-3 pb-1.5 text-right font-medium">vs LY</th>
-                  <th className="table-header px-3 pb-1.5 text-right font-medium">Accuracy</th>
+                  <SortableHeader label="Region" sortKey="region" sort={sort} onToggle={toggle} className="text-left" />
+                  <SortableHeader label="Forecast" sortKey="forecast_value" sort={sort} onToggle={toggle} align="right" className="text-right" />
+                  <SortableHeader label="vs LY" sortKey="change_vs_last_year" sort={sort} onToggle={toggle} align="right" className="text-right" />
+                  <SortableHeader label="Accuracy" sortKey="accuracy" sort={sort} onToggle={toggle} align="right" className="text-right" />
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((row) => (
+                {sorted.map((row) => (
                   <tr
                     key={row.region}
                     className="border-b border-border last:border-0 transition-colors duration-fast hover:bg-surface-muted"
                   >
-                    <td className="px-3 py-[9px] text-meta text-text-primary">{row.region}</td>
-                    <td className="px-3 py-[9px] text-right text-meta font-semibold text-text-primary num">
+                    <td className="cell px-3 text-meta text-text-primary">{row.region}</td>
+                    <td className="cell px-3 text-right text-meta font-semibold text-text-primary num">
                       {formatCompact(row.forecast_value)}
                     </td>
                     <td
                       className={cn(
-                        "px-3 py-[9px] text-right text-meta font-medium num",
+                        "cell px-3 text-right text-meta font-medium num",
                         row.change_vs_last_year === null
                           ? "text-text-muted"
                           : row.change_vs_last_year >= 0
@@ -59,7 +69,7 @@ export function RegionTable() {
                     >
                       {formatSignedPercent(row.change_vs_last_year)}
                     </td>
-                    <td className="px-3 py-[9px] text-right text-meta text-text-secondary num">
+                    <td className="cell px-3 text-right text-meta text-text-secondary num">
                       {formatPercent(row.accuracy)}
                     </td>
                   </tr>

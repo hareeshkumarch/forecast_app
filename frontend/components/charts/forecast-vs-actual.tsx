@@ -17,18 +17,20 @@ import {
 } from "@/components/ui/primitives";
 import { downloadExport, useForecastPoints, useSummary } from "@/hooks/use-dashboard";
 import {
-  AXIS_LABEL,
-  AXIS_LINE,
-  CHART_COLORS,
-  SPLIT_LINE,
-  TOOLTIP_STYLE,
+  type ChartPalette,
+  axisLabel,
+  axisLine,
   axisValueFormatter,
+  chartColors,
+  splitLine,
   tooltipHeader,
   tooltipRow,
+  tooltipStyle,
 } from "@/lib/chart-theme";
 import { formatCompact, formatDayMonth, formatMonth } from "@/lib/format";
 import { labelGranularity } from "@/lib/periods";
 import { cn } from "@/lib/utils";
+import { useThemeRevision } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastPointsResponse, ForecastView } from "@/types/api";
 
@@ -55,7 +57,11 @@ function displayWindow(
   };
 }
 
-function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOption {
+function buildOption(
+  data: ForecastPointsResponse,
+  view: ForecastView,
+  colors: ChartPalette,
+): ChartOption {
   const { confidence_level: confidence } = data;
 
   // A daily run stamped with month labels repeats "Mar 2026" thirty times.
@@ -101,7 +107,32 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
     animation: false,
     
     
-    grid: { left: 8, right: 14, top: 42, bottom: 4, containLabel: true },
+    grid: { left: 8, right: 14, top: 42, bottom: points.length > 40 ? 26 : 4, containLabel: true },
+    dataZoom: [
+      { type: "inside", throttle: 50, zoomOnMouseWheel: "shift", moveOnMouseWheel: false },
+      ...(points.length > 40
+        ? [
+            {
+              type: "slider" as const,
+              height: 16,
+              bottom: 2,
+              borderColor: colors.border,
+              fillerColor: colors.accentSoft,
+              handleStyle: { color: colors.accent },
+              moveHandleStyle: { color: colors.border },
+              textStyle: { color: colors.textMuted, fontSize: 9 },
+              dataBackground: {
+                lineStyle: { color: colors.borderStrong },
+                areaStyle: { color: colors.surfaceMuted },
+              },
+              selectedDataBackground: {
+                lineStyle: { color: colors.accent },
+                areaStyle: { color: colors.accentSoft },
+              },
+            },
+          ]
+        : []),
+    ],
     legend: {
       show: true,
       top: 0,
@@ -110,16 +141,16 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
       itemWidth: 14,
       itemHeight: 2,
       icon: "roundRect",
-      textStyle: { ...AXIS_LABEL, fontSize: 11, color: CHART_COLORS.textSecondary },
+      textStyle: { ...axisLabel(colors), fontSize: 11, color: colors.textSecondary },
       data: ["Actual", "Forecast", `${Math.round(confidence * 100)}% confidence`],
     },
     tooltip: {
-      ...TOOLTIP_STYLE,
+      ...tooltipStyle(colors),
       trigger: "axis",
       confine: true,
       axisPointer: {
         type: "line",
-        lineStyle: { color: CHART_COLORS.borderStrong, width: 1, type: "dashed" },
+        lineStyle: { color: colors.borderStrong, width: 1, type: "dashed" },
       },
       formatter: (params: unknown) => {
         const rows = Array.isArray(params) ? params : [params];
@@ -130,20 +161,21 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         const point = points[index];
         if (!point) return "";
 
-        let html = tooltipHeader(period(point.period));
+        let html = tooltipHeader(period(point.period), colors);
 
         if (point.actual !== null) {
-          html += tooltipRow(CHART_COLORS.navy, "Actual", formatCompact(point.actual));
+          html += tooltipRow(colors.navy, "Actual", formatCompact(point.actual), colors);
         }
         const forecastValue = point[field] ?? point.forecast;
         if (forecastValue !== null && index >= boundary) {
-          html += tooltipRow(CHART_COLORS.accent, "Forecast", formatCompact(forecastValue));
+          html += tooltipRow(colors.accent, "Forecast", formatCompact(forecastValue), colors);
         }
         if (point.lower_bound !== null && point.upper_bound !== null) {
           html += tooltipRow(
-            CHART_COLORS.sand,
+            colors.sand,
             "Range",
             `${formatCompact(point.lower_bound)} – ${formatCompact(point.upper_bound)}`,
+            colors,
           );
         }
         return html;
@@ -153,18 +185,18 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
       type: "category",
       data: labels,
       boundaryGap: false,
-      axisLine: AXIS_LINE,
+      axisLine: axisLine(colors),
       axisTick: { show: false },
       
-      axisLabel: { ...AXIS_LABEL, margin: 10, hideOverlap: true },
+      axisLabel: { ...axisLabel(colors), margin: 10, hideOverlap: true },
       splitLine: { show: false },
     },
     yAxis: {
       type: "value",
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { ...AXIS_LABEL, margin: 10, formatter: axisValueFormatter(true) },
-      splitLine: SPLIT_LINE,
+      axisLabel: { ...axisLabel(colors), margin: 10, formatter: axisValueFormatter(true) },
+      splitLine: splitLine(colors),
       splitNumber: 4,
     },
     series: [
@@ -175,7 +207,7 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         lineStyle: { opacity: 0 },
         
         
-        itemStyle: { color: CHART_COLORS.sand },
+        itemStyle: { color: colors.sand },
         stack: "confidence",
         symbol: "none",
         silent: true,
@@ -191,7 +223,7 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         symbol: "none",
         silent: true,
         z: 1,
-        areaStyle: { color: CHART_COLORS.sand, opacity: 0.22 },
+        areaStyle: { color: colors.sand, opacity: 0.22 },
         legendHoverLink: false,
       },
       {
@@ -200,8 +232,8 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         data: actuals,
         showSymbol: false,
         smooth: 0.18,
-        lineStyle: { color: CHART_COLORS.navy, width: 1.9 },
-        itemStyle: { color: CHART_COLORS.navy },
+        lineStyle: { color: colors.navy, width: 1.9 },
+        itemStyle: { color: colors.navy },
         connectNulls: false,
         z: 3,
         ...(boundaryLabel
@@ -215,14 +247,14 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
                   position: "end",
                   formatter: "Forecast",
                   fontSize: 10,
-                  color: CHART_COLORS.textMuted,
+                  color: colors.textMuted,
                   
                   
                   rotate: 0,
                   distance: [0, 6],
                   align: "center",
                 },
-                lineStyle: { color: CHART_COLORS.borderStrong, width: 1, type: "dashed" },
+                lineStyle: { color: colors.borderStrong, width: 1, type: "dashed" },
                 data: [{ xAxis: period(boundaryLabel) }],
               },
             }
@@ -234,8 +266,8 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         data: forecasts,
         showSymbol: false,
         smooth: 0.18,
-        lineStyle: { color: CHART_COLORS.accent, width: 1.9, type: "dashed" },
-        itemStyle: { color: CHART_COLORS.accent },
+        lineStyle: { color: colors.accent, width: 1.9, type: "dashed" },
+        itemStyle: { color: colors.accent },
         connectNulls: false,
         z: 3,
       },
@@ -250,7 +282,12 @@ export function ForecastVsActual() {
 
   const { data, isLoading, isError, error, refetch } = useForecastPoints(runId);
 
-  const option = useMemo(() => (data ? buildOption(data, view) : null), [data, view]);
+  const revision = useThemeRevision();
+  const option = useMemo(
+    () => (data ? buildOption(data, view, chartColors()) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, view, revision],
+  );
 
   return (
     <Card className="flex min-w-0 flex-col">

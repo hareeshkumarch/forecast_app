@@ -5,10 +5,11 @@ import { AlertTriangle, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input } from "@/components/ui/primitives";
+import { Button, Field, Input, Select } from "@/components/ui/primitives";
 import { useConfigureDataset, useUploadDataset } from "@/hooks/use-dashboard";
 import { formatBytes, formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { DatasetUploadResponse, ForecastFrequency } from "@/types/api";
 
@@ -99,10 +100,12 @@ export function UploadDatasetModal() {
         horizon,
       },
       {
-        onSuccess: () => {
+        onSuccess: (dataset) => {
+          toast.success(
+            `${dataset.name} is ready`,
+            `Forecasting ${dataset.target_column} by ${dataset.time_column}.`,
+          );
           closeModal();
-          
-          
           openModal("configure-forecast");
         },
         onError: (error) => setLocalError(error.message),
@@ -139,6 +142,7 @@ export function UploadDatasetModal() {
     >
       {!result ? (
         <div className="space-y-3">
+          <FlowSteps current={1} />
           <button
             type="button"
             onClick={() => fileInput.current?.click()}
@@ -168,7 +172,7 @@ export function UploadDatasetModal() {
           />
 
           {errorMessage ? (
-            <div className="flex items-start gap-2 rounded-card border border-[#f0cdcc] bg-negative-soft px-3 py-2">
+            <div className="flex items-start gap-2 rounded-card border border-negative-border bg-negative-soft px-3 py-2">
               <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
               <p className="text-caption text-negative">{errorMessage}</p>
             </div>
@@ -176,7 +180,8 @@ export function UploadDatasetModal() {
         </div>
       ) : (
         <div className="space-y-4">
-          
+          <FlowSteps current={2} />
+
           <div className="flex items-center gap-2.5 rounded-card border border-border bg-surface-muted px-3 py-2.5">
             <FileSpreadsheet className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
             <div className="min-w-0 flex-1">
@@ -196,7 +201,7 @@ export function UploadDatasetModal() {
           </div>
 
           {(profile?.warnings.length ?? 0) > 0 ? (
-            <div className="space-y-1 rounded-card border border-[#eddcbc] bg-warning-soft px-3 py-2">
+            <div className="space-y-1 rounded-card border border-warning-border bg-warning-soft px-3 py-2">
               {profile?.warnings.map((warning) => (
                 <p key={warning} className="text-caption text-warning">
                   {warning}
@@ -239,17 +244,16 @@ export function UploadDatasetModal() {
             </Field>
 
             <Field label="Frequency" required>
-              <select
+              <Select
                 value={frequency}
                 onChange={(event) => setFrequency(event.target.value as ForecastFrequency)}
-                className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
               >
                 {FREQUENCIES.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
 
             <Field label="Horizon (periods)" required>
@@ -307,6 +311,49 @@ export function UploadDatasetModal() {
   );
 }
 
+function FlowSteps({ current }: { current: 1 | 2 }) {
+  const steps = ["Choose a file", "Map the columns", "Run the forecast"];
+
+  return (
+    <ol className="mb-4 flex items-center gap-2">
+      {steps.map((label, index) => {
+        const step = index + 1;
+        const done = step < current;
+        const active = step === current;
+
+        return (
+          <li key={label} className="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              className={cn(
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-micro font-semibold",
+                done
+                  ? "bg-positive text-white"
+                  : active
+                    ? "bg-accent text-white"
+                    : "border border-border bg-surface text-text-muted",
+              )}
+              aria-hidden
+            >
+              {step}
+            </span>
+            <span
+              className={cn(
+                "truncate text-caption",
+                active ? "font-medium text-text-primary" : "text-text-muted",
+              )}
+            >
+              {label}
+            </span>
+            {step < steps.length ? (
+              <span className="hidden h-px flex-1 bg-border sm:block" aria-hidden />
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function ColumnSelect({
   value,
   onChange,
@@ -323,10 +370,9 @@ function ColumnSelect({
   const choices = options.length > 0 ? options : fallback;
 
   return (
-    <select
+    <Select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
     >
       <option value="">Select a column…</option>
       {choices.map((name) => (
@@ -334,6 +380,6 @@ function ColumnSelect({
           {name}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

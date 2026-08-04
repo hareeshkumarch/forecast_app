@@ -5,7 +5,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { Calendar, ChevronDown, Download, History, SlidersHorizontal } from "lucide-react";
 
-import { MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
+import { MENU_CONTENT, MENU_ITEM, Select } from "@/components/ui/primitives";
 import { downloadExport, useForecastRuns, useHealth, useSummary } from "@/hooks/use-dashboard";
 import { formatDateRange, formatRelativeTime, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWindowEnd } from "@/lib/periods";
@@ -44,9 +44,6 @@ const TRIGGER = cn(
   "text-meta text-text-primary",
   "transition-colors duration-fast hover:border-border-strong hover:bg-surface-muted",
 );
-
-const NATIVE_SELECT =
-  "h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none";
 
 /**
  * The run the dashboard is actually showing: either the one pinned in the
@@ -284,10 +281,10 @@ export function CompactFilters() {
             <span className="mb-1 block text-caption font-medium text-text-secondary">
               Forecast run
             </span>
-            <select
+            <Select
               value={pinnedRunId ?? ""}
               onChange={(event) => setRunId(event.target.value || null)}
-              className={NATIVE_SELECT}
+              
             >
               <option value="">Latest run</option>
               {completed.map((run) => (
@@ -295,22 +292,22 @@ export function CompactFilters() {
                   {runLabel(run)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
 
           <label className="block">
             <span className="mb-1 block text-caption font-medium text-text-secondary">Scenario</span>
-            <select
+            <Select
               value={view}
               onChange={(event) => setView(event.target.value as ForecastView)}
-              className={NATIVE_SELECT}
+              
             >
               {VIEWS.map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
 
           <div className="border-t border-border pt-1">
@@ -418,7 +415,7 @@ export function StatusControl() {
           )}
 
           {data?.using_default_credential_key ? (
-            <p className="mt-2 rounded-chip border border-[#eddcbc] bg-warning-soft px-2 py-1.5 text-caption text-warning">
+            <p className="mt-2 rounded-chip border border-warning-border bg-warning-soft px-2 py-1.5 text-caption text-warning">
               Connector credentials are encrypted with the default development
               key. Set CREDENTIAL_SECRET_KEY before storing anything real.
             </p>

@@ -6,6 +6,7 @@ import { ChevronRight, Plus, Upload } from "lucide-react";
 import { ForecastByCategory } from "@/components/charts/forecast-by-category";
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { DriverTable } from "@/components/dashboard/driver-table";
+import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { RegionTable } from "@/components/dashboard/region-table";
 import { Button } from "@/components/ui/primitives";
@@ -15,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 export function Workspace() {
-  const { data: summary } = useSummary();
+  const { data: summary, isSuccess } = useSummary();
   const openModal = useUiStore((state) => state.openModal);
 
   return (
@@ -65,6 +66,12 @@ export function Workspace() {
           </Button>
         </div>
       </div>
+
+      {isSuccess && !summary.has_data ? (
+        <div className="mt-4">
+          <GettingStarted />
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <KpiCards />

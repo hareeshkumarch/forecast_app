@@ -39,7 +39,7 @@ const SEVERITY_STYLES: Record<
   { border: string; iconBg: string; iconText: string; title: string }
 > = {
   positive: {
-    border: "border-[#cfe6d9]",
+    border: "border-positive-border",
     iconBg: "bg-positive-soft",
     iconText: "text-positive",
     title: "text-positive",
@@ -51,13 +51,13 @@ const SEVERITY_STYLES: Record<
     title: "text-text-primary",
   },
   warning: {
-    border: "border-[#eddcbc]",
+    border: "border-warning-border",
     iconBg: "bg-warning-soft",
     iconText: "text-warning",
     title: "text-warning",
   },
   critical: {
-    border: "border-[#f0cdcc]",
+    border: "border-negative-border",
     iconBg: "bg-negative-soft",
     iconText: "text-negative",
     title: "text-negative",
@@ -175,7 +175,7 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
         <button
           type="button"
           onClick={onOpen}
-          className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-[#a56e16]"
+          className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-accent-hover"
         >
           View Details →
         </button>

@@ -232,8 +232,8 @@ export function AddConnectorModal() {
                   className={cn(
                     "flex items-start gap-2 rounded-card border px-3 py-2",
                     testResult.ok
-                      ? "border-[#cfe6d9] bg-positive-soft"
-                      : "border-[#eddcbc] bg-warning-soft",
+                      ? "border-positive-border bg-positive-soft"
+                      : "border-warning-border bg-warning-soft",
                   )}
                 >
                   {testResult.ok ? (

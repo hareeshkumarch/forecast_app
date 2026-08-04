@@ -4,6 +4,7 @@
 import { AddConnectorModal } from "@/components/connectors/add-connector-modal";
 import { ConnectorImportModal } from "@/components/connectors/connector-import-modal";
 import { ConnectorRail } from "@/components/connectors/connector-rail";
+import { CommandPalette } from "@/components/dashboard/command-palette";
 import { ForecastModal } from "@/components/dashboard/forecast-modal";
 import { ModelDetailModal } from "@/components/dashboard/model-detail-modal";
 import { RailDrawer } from "@/components/dashboard/rail-drawer";
@@ -11,6 +12,7 @@ import { SettingsModal } from "@/components/dashboard/settings-modal";
 import { TopHeader } from "@/components/dashboard/top-header";
 import { UploadDatasetModal } from "@/components/dashboard/upload-dataset-modal";
 import { Workspace } from "@/components/dashboard/workspace";
+import { Toaster } from "@/components/ui/toaster";
 import { AllInsightsModal } from "@/components/insights/all-insights-modal";
 import { InsightDrawer } from "@/components/insights/insight-drawer";
 import { InsightsRail } from "@/components/insights/insights-rail";
@@ -29,6 +31,8 @@ export function DashboardShell() {
       </div>
 
       <RailDrawer />
+      <CommandPalette />
+      <Toaster />
 
       <AddConnectorModal />
       <ConnectorImportModal />

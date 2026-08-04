@@ -47,7 +47,7 @@ export function RailDrawer() {
   return (
     <Dialog.Root open={rail !== null} onOpenChange={(open) => !open && closeRail()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-[#18202f]/25 backdrop-blur-[1px]" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay backdrop-blur-[1px]" />
         <Dialog.Content
           className={cn(
             "fixed inset-y-0 z-50 flex w-[86vw] max-w-[320px] flex-col bg-surface shadow-popover focus:outline-none",

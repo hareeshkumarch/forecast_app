@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
+import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
 import type { DashboardFilters, ExportFormat, ForecastFrequency } from "@/types/api";
 
@@ -170,7 +171,11 @@ export function useCreateConnector() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.createConnector,
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.connectors }),
+    onSuccess: (connector) => {
+      toast.success(`${connector.name} saved`, "Credentials are encrypted before storage.");
+      void client.invalidateQueries({ queryKey: queryKeys.connectors });
+    },
+    onError: (error: ApiError) => toast.error("Could not save the connector", error.message),
   });
 }
 
@@ -179,10 +184,15 @@ export function useImportFromConnector() {
   return useMutation({
     mutationFn: ({ id, ...payload }: { id: string } & Parameters<typeof api.importFromConnector>[1]) =>
       api.importFromConnector(id, payload),
-    onSuccess: () => {
+    onSuccess: (dataset) => {
+      toast.success(
+        `Imported ${dataset.name}`,
+        `${dataset.row_count.toLocaleString()} rows are ready to forecast.`,
+      );
       void client.invalidateQueries({ queryKey: queryKeys.datasets });
       void client.invalidateQueries({ queryKey: queryKeys.connectors });
     },
+    onError: (error: ApiError) => toast.error("Import failed", error.message),
   });
 }
 
@@ -190,7 +200,14 @@ export function useUploadDataset() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ file, name }: { file: File; name?: string }) => api.uploadDataset(file, name),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.datasets }),
+    onSuccess: (response) => {
+      toast.success(
+        "Dataset profiled",
+        `${response.profile.row_count.toLocaleString()} rows, ${response.profile.column_count} columns.`,
+      );
+      void client.invalidateQueries({ queryKey: queryKeys.datasets });
+    },
+    onError: (error: ApiError) => toast.error("Upload failed", error.message),
   });
 }
 
@@ -219,7 +236,11 @@ export function useStartForecast() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.startForecast,
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.runs }),
+    onSuccess: (run) => {
+      toast.info("Forecast started", `${run.name} is fitting and backtesting candidates.`);
+      void client.invalidateQueries({ queryKey: queryKeys.runs });
+    },
+    onError: (error: ApiError) => toast.error("Could not start the forecast", error.message),
   });
 }
 

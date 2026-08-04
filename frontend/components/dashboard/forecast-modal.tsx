@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input } from "@/components/ui/primitives";
+import { Button, Field, Input, Select } from "@/components/ui/primitives";
 import {
   useDataset,
   useDatasets,
@@ -13,16 +13,15 @@ import {
   useStartForecast,
 } from "@/hooks/use-dashboard";
 import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
+import { humanizeModel } from "@/lib/format";
 import { llmRunFields, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
+import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastFrequency } from "@/types/api";
 
 const FREQUENCIES: ForecastFrequency[] = ["daily", "weekly", "monthly", "quarterly"];
 const NONE = "__none__";
-
-const SELECT =
-  "h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none";
 
 export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
@@ -57,6 +56,14 @@ export function ForecastModal() {
     if (event.status === "completed") {
       setRunId(event.run_id);
       refreshDashboard();
+      toast.success(
+        "Forecast complete",
+        event.selected_model
+          ? `${humanizeModel(event.selected_model)} won the backtest; the dashboard now reflects this run.`
+          : "The dashboard now reflects this run.",
+      );
+    } else if (event.status === "failed") {
+      toast.error("Forecast failed", event.error ?? "The run did not finish.");
     }
   });
 
@@ -170,10 +177,10 @@ export function ForecastModal() {
       ) : (
         <div className="space-y-4">
           <Field label="Dataset" required>
-            <select
+            <Select
               value={datasetId}
               onChange={(event) => setDatasetId(event.target.value)}
-              className={SELECT}
+              
             >
               <option value="">Select a dataset…</option>
               {(datasets ?? []).map((item) => (
@@ -181,7 +188,7 @@ export function ForecastModal() {
                   {item.name} ({item.row_count.toLocaleString()} rows)
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <Field label="Run name">
@@ -190,17 +197,17 @@ export function ForecastModal() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Frequency" required>
-              <select
+              <Select
                 value={frequency}
                 onChange={(event) => setFrequency(event.target.value as ForecastFrequency)}
-                className={cn(SELECT, "capitalize")}
+                className="capitalize"
               >
                 {FREQUENCIES.map((item) => (
                   <option key={item} value={item} className="capitalize">
                     {item}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
 
             <Field label="Horizon" required>
@@ -272,16 +279,16 @@ export function ForecastModal() {
                 </Field>
 
                 <Field label="Metric Emphasis" hint="Scoring weights">
-                  <select
+                  <Select
                     value={metricFocus}
                     onChange={(e) => setMetricFocus(e.target.value as any)}
-                    className={SELECT}
+                    
                   >
                     <option value="balanced">Balanced (Default)</option>
                     <option value="wmape">wMAPE Focus (70%)</option>
                     <option value="smape">sMAPE Focus (70%)</option>
                     <option value="rmse">RMSE Focus (70%)</option>
-                  </select>
+                  </Select>
                 </Field>
 
                 <Field label="GBM Max Depth" hint="Tree depth">
@@ -326,10 +333,10 @@ function DimensionSelect({
   options: string[];
 }) {
   return (
-    <select
+    <Select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className={SELECT}
+      
     >
       <option value={NONE}>None</option>
       {options.map((name) => (
@@ -337,7 +344,7 @@ function DimensionSelect({
           {name}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 
@@ -424,14 +431,14 @@ function ProgressPanel({
       </ol>
 
       {progress.error ? (
-        <div className="flex items-start gap-2 rounded-card border border-[#f0cdcc] bg-negative-soft px-3 py-2">
+        <div className="flex items-start gap-2 rounded-card border border-negative-border bg-negative-soft px-3 py-2">
           <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
           <p className="text-caption text-negative">{progress.error}</p>
         </div>
       ) : null}
 
       {done ? (
-        <p className="rounded-card border border-[#cfe6d9] bg-positive-soft px-3 py-2 text-caption text-positive">
+        <p className="rounded-card border border-positive-border bg-positive-soft px-3 py-2 text-caption text-positive">
           Forecast complete. The dashboard now reflects this run.
         </p>
       ) : null}

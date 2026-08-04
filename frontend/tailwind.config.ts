@@ -23,6 +23,9 @@ const config: Config = {
 
         accent: "var(--accent)",
         "accent-soft": "var(--accent-soft)",
+        "accent-hover": "var(--accent-hover)",
+        "accent-border": "var(--accent-border)",
+        "accent-disabled": "var(--accent-disabled)",
 
         navy: "var(--navy)",
         teal: "var(--teal)",
@@ -31,10 +34,14 @@ const config: Config = {
 
         positive: "var(--positive)",
         "positive-soft": "var(--positive-soft)",
+        "positive-border": "var(--positive-border)",
         negative: "var(--negative)",
         "negative-soft": "var(--negative-soft)",
+        "negative-border": "var(--negative-border)",
         warning: "var(--warning)",
         "warning-soft": "var(--warning-soft)",
+        "warning-border": "var(--warning-border)",
+        overlay: "var(--overlay)",
       },
       borderRadius: {
         
@@ -60,12 +67,20 @@ const config: Config = {
         kpi: ["24px", { lineHeight: "30px" }],
       },
       boxShadow: {
-        
-        card: "0 1px 2px rgba(24, 32, 47, 0.04)",
-        popover: "0 8px 24px rgba(24, 32, 47, 0.10), 0 2px 6px rgba(24, 32, 47, 0.06)",
+        card: "var(--shadow-card)",
+        popover: "var(--shadow-popover)",
       },
       transitionDuration: {
         fast: "120ms",
+      },
+      keyframes: {
+        "toast-in": {
+          from: { opacity: "0", transform: "translateY(8px) scale(0.98)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+      },
+      animation: {
+        "toast-in": "toast-in 160ms ease-out",
       },
     },
   },

@@ -50,7 +50,7 @@ export function ModelDetailModal() {
         </p>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-card border border-[#eeddba] bg-accent-soft px-3 py-2.5">
+          <div className="rounded-card border border-accent-border bg-accent-soft px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="accent">{humanizeModel(data.selected_model)}</Badge>
               <span className="text-caption text-text-muted">Scored by {data.scoring_rule}</span>

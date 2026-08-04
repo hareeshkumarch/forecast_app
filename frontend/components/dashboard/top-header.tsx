@@ -4,10 +4,13 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   BookOpen,
+  Monitor,
   MoreVertical,
+  Moon,
   PanelLeft,
   Settings,
   Sparkles,
+  Sun,
   TrendingUp,
 } from "lucide-react";
 
@@ -23,6 +26,7 @@ import { ICON_BUTTON, IconButton, MENU_CONTENT, MENU_ITEM } from "@/components/u
 import { useInsights } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
 const DOCS_URL = `${API_BASE_URL}/docs`;
@@ -31,8 +35,12 @@ export function TopHeader() {
   const openRail = useUiStore((state) => state.openRail);
   const openModal = useUiStore((state) => state.openModal);
   const { data: insights } = useInsights();
+  const theme = usePrefsStore((state) => state.theme);
+  const resolvedTheme = usePrefsStore((state) => state.resolvedTheme);
+  const toggleTheme = usePrefsStore((state) => state.toggleTheme);
 
   const insightCount = insights?.items.length ?? 0;
+  const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun;
 
   return (
     <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-3 sm:gap-2.5 sm:px-5">
@@ -72,6 +80,13 @@ export function TopHeader() {
         <StatusControl />
         <ExportControl />
 
+        <IconButton
+          label={`Theme: ${theme}. Switch to ${resolvedTheme === "dark" ? "light" : "dark"}`}
+          icon={ThemeIcon}
+          onClick={toggleTheme}
+          className="hidden sm:inline-flex"
+        />
+
         <a
           href={DOCS_URL}
           target="_blank"
@@ -99,6 +114,10 @@ export function TopHeader() {
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content align="end" sideOffset={6} className={MENU_CONTENT}>
+              <DropdownMenu.Item onSelect={toggleTheme} className={MENU_ITEM}>
+                <ThemeIcon className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+                {resolvedTheme === "dark" ? "Light theme" : "Dark theme"}
+              </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={() => openModal("settings")} className={MENU_ITEM}>
                 <Settings className="h-3.5 w-3.5 text-text-muted" aria-hidden />
                 Settings

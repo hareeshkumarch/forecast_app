@@ -17,6 +17,9 @@
 
   --accent: #b87b19;
   --accent-soft: #fbf1df;
+  --accent-hover: #a56e16;
+  --accent-border: #eeddba;
+  --accent-disabled: #d9bc85;
 
   --navy: #213b58;
   --teal: #527f79;
@@ -25,10 +28,22 @@
 
   --positive: #338563;
   --positive-soft: #e7f3ec;
+  --positive-border: #cfe6d9;
   --negative: #d45b59;
   --negative-soft: #fbe9e8;
+  --negative-border: #f0cdcc;
   --warning: #bd7b21;
   --warning-soft: #fbf0de;
+  --warning-border: #eddcbc;
+
+  --overlay: rgba(24, 32, 47, 0.25);
+  --shadow-card: 0 1px 2px rgba(24, 32, 47, 0.04);
+  --shadow-popover: 0 8px 24px rgba(24, 32, 47, 0.1), 0 2px 6px rgba(24, 32, 47, 0.06);
+
+  /* Row heights and padding step down together in compact mode. */
+  --density-row: 9px;
+  --density-cell-y: 9px;
+  --density-panel-gap: 12px;
 
   /* Layout rails. The header shrinks on phones; the rails only exist from
    * `lg` up — below that they are served as off-canvas drawers. */
@@ -43,6 +58,55 @@
     --header-height: 74px;
     --workspace-padding: 24px;
   }
+}
+
+/*
+ * Dark palette. The warm gold identity is kept but lifted for contrast, and
+ * the series colours are brightened so lines stay legible on a dark canvas.
+ */
+:root[data-theme="dark"] {
+  --canvas: #14161b;
+  --surface: #1b1e25;
+  --surface-muted: #23262e;
+  --border: #2c313a;
+  --border-strong: #3d434e;
+
+  --text-primary: #e9eaee;
+  --text-secondary: #a2a8b4;
+  --text-muted: #79808d;
+
+  --accent: #d99a2b;
+  --accent-soft: #2f2718;
+  --accent-hover: #e8ab3d;
+  --accent-border: #4a3c21;
+  --accent-disabled: #6b5a34;
+
+  --navy: #7ba7d4;
+  --teal: #6faea6;
+  --gold: #e0b055;
+  --sand: #c9a468;
+
+  --positive: #4bbd8a;
+  --positive-soft: #172c23;
+  --positive-border: #27452f;
+  --negative: #e8736f;
+  --negative-soft: #2f1d1d;
+  --negative-border: #4d2c2b;
+  --warning: #d9a03e;
+  --warning-soft: #2e2517;
+  --warning-border: #4a3b20;
+
+  --overlay: rgba(6, 8, 12, 0.6);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+:root[data-density="compact"] {
+  --density-row: 5px;
+  --density-cell-y: 5px;
+  --density-panel-gap: 8px;
 }
 
 /* ------------------------------------------------------------------ base */
@@ -121,6 +185,23 @@ body {
   .num {
     @apply tabular-nums;
   }
+
+  .cell {
+    padding-top: var(--density-cell-y);
+    padding-bottom: var(--density-cell-y);
+  }
+}
+
+/* Honour a reduced-motion preference everywhere, including chart entries. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ----------------------------------------------------- responsive panels */
@@ -142,20 +223,13 @@ body {
 .grid-charts,
 .grid-panels {
   display: grid;
-  gap: 12px;
+  gap: var(--density-panel-gap);
   grid-template-columns: minmax(0, 1fr);
 }
 
 /* Six KPIs: only 1/2/3/6 columns divide evenly, so those are the steps. */
 .grid-kpi {
-  gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-@container workspace (min-width: 420px) {
-  .grid-kpi {
-    gap: 12px;
-  }
 }
 
 @container workspace (min-width: 660px) {

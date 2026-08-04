@@ -1,10 +1,11 @@
 "use client";
 
 
+import { Monitor, Moon, Rows3, Rows4, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input } from "@/components/ui/primitives";
+import { Button, Field, Input, Select } from "@/components/ui/primitives";
 import { API_BASE_URL } from "@/lib/api";
 import {
   EMPTY_LLM_CONFIG,
@@ -17,10 +18,63 @@ import {
   saveLlmConfig,
   type LlmConfig,
 } from "@/lib/llm-config";
+import { cn } from "@/lib/utils";
+import { usePrefsStore, type Density, type ThemeChoice } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
-const SELECT =
-  "h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none";
+const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "System", icon: Monitor },
+];
+
+const DENSITIES: { value: Density; label: string; icon: typeof Rows3 }[] = [
+  { value: "comfortable", label: "Comfortable", icon: Rows3 },
+  { value: "compact", label: "Compact", icon: Rows4 },
+];
+
+function SegmentedControl<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string; icon: typeof Sun }[];
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1 block text-caption font-medium text-text-secondary">{label}</span>
+      <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-input border border-border bg-surface-muted p-0.5">
+        {options.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1.5",
+                "text-meta font-medium transition-colors duration-fast",
+                active
+                  ? "bg-surface text-text-primary shadow-card"
+                  : "text-text-secondary hover:text-text-primary",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden />
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Home for settings that belong to the browser rather than to a single run —
@@ -31,6 +85,11 @@ export function SettingsModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
   const open = modal === "settings";
+
+  const theme = usePrefsStore((state) => state.theme);
+  const density = usePrefsStore((state) => state.density);
+  const setTheme = usePrefsStore((state) => state.setTheme);
+  const setDensity = usePrefsStore((state) => state.setDensity);
 
   const [config, setConfig] = useState<LlmConfig>(EMPTY_LLM_CONFIG);
   const [saved, setSaved] = useState(false);
@@ -78,6 +137,17 @@ export function SettingsModal() {
       }
     >
       <div className="space-y-4">
+        <section className="space-y-3">
+          <h3 className="eyebrow">Appearance</h3>
+          <SegmentedControl label="Theme" value={theme} options={THEMES} onChange={setTheme} />
+          <SegmentedControl
+            label="Density"
+            value={density}
+            options={DENSITIES}
+            onChange={setDensity}
+          />
+        </section>
+
         <section>
           <h3 className="eyebrow">API</h3>
           <div className="mt-2 flex items-center justify-between gap-3 rounded-card border border-border bg-surface-muted px-3 py-2">
@@ -100,35 +170,35 @@ export function SettingsModal() {
           <div className="mt-2.5 space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Provider">
-                <select
+                <Select
                   value={config.provider}
                   onChange={(event) => {
                     const provider = event.target.value;
                     update({ provider, model: defaultModelFor(provider) });
                   }}
-                  className={SELECT}
+                  
                 >
                   {PROVIDERS.map((provider) => (
                     <option key={provider.value} value={provider.value}>
                       {provider.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
 
               <Field label="Model">
                 {models.length > 0 ? (
-                  <select
+                  <Select
                     value={config.model}
                     onChange={(event) => update({ model: event.target.value })}
-                    className={SELECT}
+                    
                   >
                     {models.map((model) => (
                       <option key={model} value={model}>
                         {model}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 ) : (
                   <Input
                     value={config.model}

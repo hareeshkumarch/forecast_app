@@ -5,7 +5,7 @@ import { AlertTriangle, Database, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Skeleton } from "@/components/ui/primitives";
+import { Button, Field, Input, Select, Skeleton } from "@/components/ui/primitives";
 import {
   useConnectorSchemas,
   useConnectors,
@@ -180,7 +180,7 @@ export function ConnectorImportModal() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : schemasQuery.isError ? (
-              <div className="flex items-start gap-2 rounded-card border border-[#eddcbc] bg-warning-soft px-3 py-2">
+              <div className="flex items-start gap-2 rounded-card border border-warning-border bg-warning-soft px-3 py-2">
                 <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
                 <div>
                   <p className="text-caption text-warning">{schemasQuery.error?.message}</p>
@@ -196,10 +196,9 @@ export function ConnectorImportModal() {
             ) : (
               <>
                 <Field label="Table" required>
-                  <select
+                  <Select
                     value={selected}
                     onChange={(event) => setSelected(event.target.value)}
-                    className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
                   >
                     {tables.map((table) => (
                       <option key={tableKey(table)} value={tableKey(table)}>
@@ -209,7 +208,7 @@ export function ConnectorImportModal() {
                           : ""}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </Field>
 
                 {activeTable ? (

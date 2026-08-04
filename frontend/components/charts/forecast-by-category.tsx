@@ -8,23 +8,26 @@ import { EChart, type ChartOption } from "@/components/charts/echart";
 import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
 import { useCategories } from "@/hooks/use-dashboard";
 import {
-  CATEGORICAL_PALETTE,
-  CHART_COLORS,
-  TOOLTIP_STYLE,
+  type ChartPalette,
+  categoricalPalette,
+  chartColors,
   tooltipHeader,
   tooltipRow,
+  tooltipStyle,
 } from "@/lib/chart-theme";
 import { formatCompact, formatPercent } from "@/lib/format";
+import { useThemeRevision } from "@/stores/prefs-store";
 import type { CategoryResponse } from "@/types/api";
 
-function buildOption(data: CategoryResponse): ChartOption {
+function buildOption(data: CategoryResponse, colors: ChartPalette): ChartOption {
   const rows = data.rows;
+  const palette = categoricalPalette(colors);
 
   return {
     backgroundColor: "transparent",
     animation: false,
     tooltip: {
-      ...TOOLTIP_STYLE,
+      ...tooltipStyle(colors),
       trigger: "item",
       confine: true,
       formatter: (params: unknown) => {
@@ -32,18 +35,20 @@ function buildOption(data: CategoryResponse): ChartOption {
         const row = rows[point.dataIndex];
         if (!row) return "";
         return (
-          tooltipHeader(row.category) +
+          tooltipHeader(row.category, colors) +
           tooltipRow(
-            CATEGORICAL_PALETTE[point.dataIndex % CATEGORICAL_PALETTE.length] ?? CHART_COLORS.navy,
+            palette[point.dataIndex % palette.length] ?? colors.navy,
             "Forecast",
             formatCompact(row.forecast_value),
+            colors,
           ) +
-          tooltipRow(CHART_COLORS.textMuted, "Share", formatPercent(row.share)) +
+          tooltipRow(colors.textMuted, "Share", formatPercent(row.share), colors) +
           (row.change_vs_last_year !== null
             ? tooltipRow(
-                row.change_vs_last_year >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative,
+                row.change_vs_last_year >= 0 ? colors.positive : colors.negative,
                 "vs last year",
                 `${row.change_vs_last_year >= 0 ? "+" : ""}${row.change_vs_last_year.toFixed(1)}%`,
+                colors,
               )
             : "")
         );
@@ -59,7 +64,7 @@ function buildOption(data: CategoryResponse): ChartOption {
         label: { show: false },
         labelLine: { show: false },
         itemStyle: {
-          borderColor: CHART_COLORS.surface,
+          borderColor: colors.surface,
           borderWidth: 2,
           borderRadius: 3,
         },
@@ -72,7 +77,7 @@ function buildOption(data: CategoryResponse): ChartOption {
           name: row.category,
           value: Math.max(row.forecast_value, 0),
           itemStyle: {
-            color: CATEGORICAL_PALETTE[index % CATEGORICAL_PALETTE.length] ?? CHART_COLORS.navy,
+            color: palette[index % palette.length] ?? colors.navy,
           },
         })),
       },
@@ -82,7 +87,13 @@ function buildOption(data: CategoryResponse): ChartOption {
 
 export function ForecastByCategory() {
   const { data, isLoading, isError, error, refetch } = useCategories();
-  const option = useMemo(() => (data ? buildOption(data) : null), [data]);
+  const revision = useThemeRevision();
+  const palette = categoricalPalette();
+  const option = useMemo(
+    () => (data ? buildOption(data, chartColors()) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, revision],
+  );
 
   return (
     <Card className="flex min-w-0 flex-col">
@@ -122,9 +133,7 @@ export function ForecastByCategory() {
                   <span
                     className="h-2 w-2 shrink-0 rounded-[2px]"
                     style={{
-                      background:
-                        CATEGORICAL_PALETTE[index % CATEGORICAL_PALETTE.length] ??
-                        CHART_COLORS.navy,
+                      background: palette[index % palette.length],
                     }}
                     aria-hidden
                   />

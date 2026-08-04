@@ -106,7 +106,7 @@ export function ConnectorRailBody() {
                       "group flex w-full items-center gap-2.5 rounded-input border px-2 py-2 text-left",
                       "transition-colors duration-fast",
                       isSelected
-                        ? "border-[#eeddba] bg-accent-soft"
+                        ? "border-accent-border bg-accent-soft"
                         : "border-transparent hover:bg-surface-muted",
                     )}
                   >

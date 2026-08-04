@@ -63,7 +63,7 @@ export function AllInsightsModal() {
                   className={cn(
                     "rounded-chip border px-2 py-1 text-caption font-medium transition-colors duration-fast",
                     filter === option.value
-                      ? "border-[#eeddba] bg-accent-soft text-accent"
+                      ? "border-accent-border bg-accent-soft text-accent"
                       : "border-border bg-surface text-text-secondary hover:bg-surface-muted",
                     "disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-surface",
                   )}
