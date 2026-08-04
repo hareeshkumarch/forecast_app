@@ -42,6 +42,8 @@ class RegionRow(ORMModel):
     change_vs_last_year: float | None
     accuracy: float | None
     share: float | None
+    model: ModelKind | None = None
+    accuracy_measured: bool = False
 
 
 class RegionResponse(BaseModel):
@@ -57,6 +59,8 @@ class CategoryRow(ORMModel):
     change_vs_last_year: float | None
     accuracy: float | None
     rank: int
+    model: ModelKind | None = None
+    accuracy_measured: bool = False
 
 
 class CategoryResponse(BaseModel):

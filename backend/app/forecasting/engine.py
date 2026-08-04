@@ -12,6 +12,7 @@ from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
+from app.forecasting.hierarchy import coherence_gap, reconcile_to_total
 from app.forecasting.metrics import accuracy_from_wmape
 from app.forecasting.models import (
     Forecaster,
@@ -42,6 +43,8 @@ class SegmentInput:
     current_total: float
     prior_total: float | None
     series: list[float] = field(default_factory=list)
+    periods: list[date] = field(default_factory=list)
+    values: list[float] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -67,6 +70,10 @@ class SegmentOutput:
     change_vs_last_year: float | None
     accuracy: float | None
     share: float
+    model: str | None = None
+    """True when the accuracy came from this segment's own backtest rather
+    than being inherited from the top line."""
+    accuracy_measured: bool = False
 
 
 @dataclass(slots=True)
@@ -277,9 +284,12 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         quantity=np.asarray(payload.quantity, dtype=float) if payload.quantity else None,
     )
 
-    total_forecast = float(np.sum(point_forecast))
-    regions = _project_segments(payload.regions, total_forecast, winner_result)
-    categories = _project_segments(payload.categories, total_forecast, winner_result)
+    regions = _forecast_segments(
+        payload.regions, point_forecast, winner_result, frequency, horizon, payload.max_folds
+    )
+    categories = _forecast_segments(
+        payload.categories, point_forecast, winner_result, frequency, horizon, payload.max_folds
+    )
 
     return ForecastOutput(
         selected_model=winner_kind,
@@ -394,11 +404,117 @@ def _in_sample_fit(
     return fitted
 
 
-def _project_segments(
+# Fitting the full roster for every segment would multiply the run's cost by
+# the number of segments for very little gain: a segment carries less signal
+# than the total it came from, so the expensive candidates rarely win and often
+# overfit. These cover level, trend, seasonality and intermittency.
+SEGMENT_CANDIDATES = (
+    ModelKind.NAIVE,
+    ModelKind.SEASONAL_NAIVE,
+    ModelKind.THETA,
+    ModelKind.HOLT_WINTERS,
+    ModelKind.CROSTON,
+)
+
+
+@dataclass(slots=True)
+class _SegmentFit:
+    label: str
+    forecast: FloatArray
+    model: ModelKind | None
+    wmape: float
+
+
+def _forecast_one_segment(
+    segment: SegmentInput,
+    frequency: ForecastFrequency,
+    horizon: int,
+    max_folds: int | None,
+) -> _SegmentFit | None:
+    """
+    Runs the same select-and-backtest pipeline the top line gets, over a
+    cheaper roster. Returns None when the segment has too little history to
+    validate a model, which leaves it to be apportioned instead.
+    """
+    values = np.asarray(segment.values, dtype=float)
+    periods = list(segment.periods)
+
+    if values.size < 2 or values.size != len(periods) or not np.any(np.isfinite(values)):
+        return None
+
+    profile = profile_series(values, frequency)
+    plan = plan_backtest(
+        values.size,
+        horizon,
+        frequency,
+        max_folds=max_folds,
+        seasonal_period=profile.seasonal_period,
+    )
+    if values.size < minimum_history(profile) or plan.n_folds == 0:
+        return None
+
+    results = [
+        run_backtest(
+            _make_factory(kind, frequency, None),
+            kind,
+            values,
+            periods,
+            plan,
+            frequency,
+        )
+        for kind in SEGMENT_CANDIDATES
+    ]
+
+    selection = select_model(
+        results,
+        metric_weights=metric_weights_for(profile.intermittent),
+        n_observations=int(values.size),
+    )
+    if selection.winner is None:
+        return None
+
+    kind = selection.winner.result.model
+    try:
+        model = _make_factory(kind, frequency, None)(values, periods)
+        model.fit(values, periods)
+        forecast = np.asarray(
+            model.predict(horizon, future_periods(periods[-1], horizon, frequency)),
+            dtype=float,
+        ).ravel()
+    except Exception as exc:
+        logger.debug("Segment %s failed its final fit: %s", segment.label, exc)
+        return None
+
+    if forecast.size != horizon or not np.all(np.isfinite(forecast)):
+        return None
+
+    return _SegmentFit(
+        label=segment.label,
+        forecast=forecast,
+        model=kind,
+        wmape=selection.winner.result.wmape,
+    )
+
+
+def _forecast_segments(
     segments: list[SegmentInput],
-    total_forecast: float,
+    total_path: FloatArray,
     winner: BacktestResult,
+    frequency: ForecastFrequency,
+    horizon: int,
+    max_folds: int | None,
 ) -> list[SegmentOutput]:
+    """
+    Forecasts every segment in its own right, then reconciles the results to
+    the top line.
+
+    The old behaviour multiplied the total by a share frozen at run time, so
+    two segments moving in opposite directions produced identical curves that
+    differed only in height, and every segment reported the top line's accuracy
+    as though it were its own. Each segment now has its own model, its own
+    backtest and its own measured error; only segments too short to validate
+    fall back to apportioning, and those say so.
+    """
     if not segments:
         return []
 
@@ -406,40 +522,64 @@ def _project_segments(
     if grand_total <= 0:
         return []
 
-    base_accuracy = accuracy_from_wmape(winner.wmape)
-    stabilities = {s.label: _stability(s.series) for s in segments}
+    total_forecast = float(np.sum(total_path))
+    shares = [s.current_total / grand_total for s in segments]
 
-    finite_stabilities = [v for v in stabilities.values() if np.isfinite(v)]
-    mean_stability = float(np.mean(finite_stabilities)) if finite_stabilities else 0.0
+    fits = {
+        segment.label: fit
+        for segment in segments
+        if (fit := _forecast_one_segment(segment, frequency, horizon, max_folds)) is not None
+    }
+
+    # Reconciliation needs a path per segment: a real forecast where there is
+    # one, the apportioned share everywhere else.
+    paths = [
+        fits[segment.label].forecast
+        if segment.label in fits
+        else np.asarray(total_path, dtype=float) * share
+        for segment, share in zip(segments, shares, strict=True)
+    ]
+    reconciled = reconcile_to_total(paths, np.asarray(total_path, dtype=float), shares)
+
+    if fits:
+        gap = coherence_gap(
+            [fits[s.label].forecast for s in segments if s.label in fits],
+            np.asarray(total_path, dtype=float),
+        )
+        if gap > 0.25:
+            logger.info(
+                "Segment forecasts imply a total %.0f%% away from the direct one; "
+                "reconciled toward the direct total.",
+                gap * 100,
+            )
+
+    inherited = accuracy_from_wmape(winner.wmape)
 
     out: list[SegmentOutput] = []
-    for segment in segments:
-        share = segment.current_total / grand_total
-        forecast_value = total_forecast * share
-
+    for segment, path in zip(segments, reconciled, strict=True):
         change = None
         prior = segment.prior_total
         if prior:
             change = round((segment.current_total - prior) / abs(prior) * 100.0, 2)
 
-        accuracy: float | None = None
-        if np.isfinite(base_accuracy):
-            stability = stabilities[segment.label]
-            adjustment = (
-                float(np.clip((stability / mean_stability - 1.0) * 6.0, -8.0, 8.0))
-                if np.isfinite(stability) and mean_stability
-                else 0.0
-            )
-            accuracy = round(float(np.clip(base_accuracy + adjustment, 0.0, 99.9)), 2)
+        fit = fits.get(segment.label)
+        if fit is not None:
+            measured = accuracy_from_wmape(fit.wmape)
+            accuracy = round(float(measured), 2) if np.isfinite(measured) else None
+        else:
+            accuracy = round(float(inherited), 2) if np.isfinite(inherited) else None
 
+        value = float(np.sum(path))
         out.append(
             SegmentOutput(
                 label=segment.label,
-                forecast_value=round(forecast_value, 4),
+                forecast_value=round(value, 4),
                 prior_year_value=segment.prior_total,
                 change_vs_last_year=change,
                 accuracy=accuracy,
-                share=round(share * 100.0, 2),
+                share=round(value / total_forecast * 100.0, 2) if total_forecast else 0.0,
+                model=fit.model.value if fit and fit.model else None,
+                accuracy_measured=fit is not None,
             )
         )
 

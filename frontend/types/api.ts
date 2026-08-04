@@ -334,6 +334,10 @@ export interface RegionRow {
   change_vs_last_year: number | null;
   accuracy: number | null;
   share: number | null;
+  /** The model that won this segment's own backtest, when it had one. */
+  model: ModelKind | null;
+  /** False when the accuracy was inherited from the top line rather than measured here. */
+  accuracy_measured: boolean;
 }
 
 export interface RegionResponse {
@@ -349,6 +353,8 @@ export interface CategoryRow {
   change_vs_last_year: number | null;
   accuracy: number | null;
   rank: number;
+  model: ModelKind | null;
+  accuracy_measured: boolean;
 }
 
 export interface CategoryResponse {

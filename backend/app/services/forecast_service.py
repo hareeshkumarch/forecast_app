@@ -495,6 +495,8 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
             current_total=t.current_total,
             prior_total=t.prior_total,
             series=t.series,
+            periods=t.periods,
+            values=t.values,
         )
         for t in totals
     ]
@@ -581,6 +583,8 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
                 change_vs_last_year=segment.change_vs_last_year,
                 accuracy=segment.accuracy,
                 share=segment.share,
+                model=ModelKind(segment.model) if segment.model else None,
+                accuracy_measured=segment.accuracy_measured,
             )
         )
 
