@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
 import type {
@@ -98,8 +99,22 @@ export function useInsights() {
 }
 
 
+/** A run that has not settled yet; the list has to keep moving while it works. */
+const ACTIVE_RUN_POLL_MS = 4_000;
+
 export function useForecastRuns() {
-  return useQuery({ queryKey: queryKeys.runs, queryFn: api.listForecastRuns });
+  return useQuery({
+    queryKey: queryKeys.runs,
+    queryFn: api.listForecastRuns,
+    // Runs now finish on a worker, so nothing tells this list they moved.
+    // Poll only while something is actually in flight, then go quiet again.
+    refetchInterval: (query) => {
+      const runs = query.state.data;
+      if (!runs) return false;
+      const working = runs.some((run) => run.status === "pending" || run.status === "running");
+      return working ? ACTIVE_RUN_POLL_MS : false;
+    },
+  });
 }
 
 export function useLlmUsage(days = 30) {
@@ -220,7 +235,7 @@ export function useCreateConnector() {
       toast.success(`${connector.name} saved`, "Credentials are encrypted before storage.");
       void client.invalidateQueries({ queryKey: queryKeys.connectors });
     },
-    onError: (error: ApiError) => toast.error("Could not save the connector", error.message),
+    onError: (error: unknown) => toast.error("Could not save the connector", errorMessage(error)),
   });
 }
 
@@ -237,7 +252,7 @@ export function useImportFromConnector() {
       void client.invalidateQueries({ queryKey: queryKeys.datasets });
       void client.invalidateQueries({ queryKey: queryKeys.connectors });
     },
-    onError: (error: ApiError) => toast.error("Import failed", error.message),
+    onError: (error: unknown) => toast.error("Import failed", errorMessage(error)),
   });
 }
 
@@ -252,7 +267,7 @@ export function useUploadDataset() {
       );
       void client.invalidateQueries({ queryKey: queryKeys.datasets });
     },
-    onError: (error: ApiError) => toast.error("Upload failed", error.message),
+    onError: (error: unknown) => toast.error("Upload failed", errorMessage(error)),
   });
 }
 
@@ -285,7 +300,7 @@ export function useStartForecast() {
       toast.info("Forecast started", `${run.name} is fitting and backtesting candidates.`);
       void client.invalidateQueries({ queryKey: queryKeys.runs });
     },
-    onError: (error: ApiError) => toast.error("Could not start the forecast", error.message),
+    onError: (error: unknown) => toast.error("Could not start the forecast", errorMessage(error)),
   });
 }
 

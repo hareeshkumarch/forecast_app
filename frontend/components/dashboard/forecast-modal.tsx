@@ -529,6 +529,13 @@ function ProgressPanel({
         <span className="ml-auto text-meta font-semibold text-text-secondary num">{percent}%</span>
       </div>
 
+      {progress.isReconnecting ? (
+        <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          Reconnecting to the progress stream — the forecast is still running.
+        </p>
+      ) : null}
+
       <div
         className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted"
         role="progressbar"
