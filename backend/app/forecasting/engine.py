@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import TypedDict
 
 import numpy as np
 import numpy.typing as npt
 
 from app.core.logging import get_logger
-from app.forecasting.backtest import BacktestResult, plan_backtest, run_backtest
+from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
 from app.forecasting.metrics import accuracy_from_wmape
-from app.forecasting.models import build_candidate, build_candidates, unavailable_models
+from app.forecasting.models import (
+    Forecaster,
+    build_candidate,
+    build_candidates,
+    unavailable_models,
+)
 from app.forecasting.scenarios import IntervalBands, build_intervals
-from app.forecasting.selection import metric_weights_for, select_model
+from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
 from app.models.enums import ForecastFrequency, ModelKind
 
@@ -25,7 +31,6 @@ logger = get_logger(__name__)
 
 @dataclass(slots=True)
 class SeriesInput:
-
     periods: list[date]
     values: list[float]
     weights: list[float] | None = None
@@ -33,7 +38,6 @@ class SeriesInput:
 
 @dataclass(slots=True)
 class SegmentInput:
-
     label: str
     current_total: float
     prior_total: float | None
@@ -42,7 +46,6 @@ class SegmentInput:
 
 @dataclass(slots=True)
 class ForecastInput:
-
     series: SeriesInput
     frequency: ForecastFrequency
     horizon: int
@@ -53,6 +56,7 @@ class ForecastInput:
     max_folds: int | None = None
     metric_weights: dict[str, float] | None = None
     model_options: dict[str, object] | None = None
+    quality: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -86,13 +90,29 @@ class ForecastOutput:
     worst_case: list[float]
 
     metrics: dict[str, float]
-    candidates: list[dict[str, object]]
+    candidates: list[CandidateRow]
     interval_method: str
     diagnostics: dict[str, object] = field(default_factory=dict)
 
     regions: list[SegmentOutput] = field(default_factory=list)
     categories: list[SegmentOutput] = field(default_factory=list)
     drivers: list[Driver] = field(default_factory=list)
+
+
+class CandidateRow(TypedDict):
+    model: str
+    rank: int
+    selected: bool
+    mae: float | None
+    rmse: float | None
+    smape: float | None
+    wmape: float | None
+    score: float | None
+    folds: int
+    fit_seconds: float
+    params: dict[str, object]
+    failed: bool
+    failure_reason: str | None
 
 
 class InsufficientDataError(Exception):
@@ -111,8 +131,8 @@ def _make_factory(
     kind: ModelKind,
     frequency: ForecastFrequency,
     options: dict[str, object] | None,
-):
-    def factory(y_train: FloatArray, periods_train: list[date]):
+) -> ModelFactory:
+    def factory(y_train: FloatArray, _periods_train: list[date]) -> Forecaster:
         window_profile = profile_series(y_train, frequency)
         model = build_candidate(kind, frequency, options, window_profile)
         if kind in TRANSFORMABLE:
@@ -214,9 +234,9 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         final_model.fit(values, periods)
 
     forecast_index = future_periods(periods[-1], horizon, frequency)
-    point_forecast = np.asarray(
-        final_model.predict(horizon, forecast_index), dtype=float
-    ).ravel()[:horizon]
+    point_forecast = np.asarray(final_model.predict(horizon, forecast_index), dtype=float).ravel()[
+        :horizon
+    ]
 
     if not np.all(np.isfinite(point_forecast)):
         last_finite = values[np.isfinite(values)]
@@ -247,7 +267,7 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         "seasonal_strength": round(profile.seasonal_strength * 100.0, 2),
     }
 
-    fitted = _in_sample_fit(values, periods, final_model, winner_kind, profile)
+    fitted = _in_sample_fit(values, final_model, winner_kind, profile)
 
     drivers = decompose_drivers(
         values,
@@ -263,9 +283,7 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
     return ForecastOutput(
         selected_model=winner_kind,
         selection_rationale=(
-            selection.rationale
-            if not used_fallback
-            else f"{fallback_reason} {selection.rationale}"
+            selection.rationale if not used_fallback else f"{fallback_reason} {selection.rationale}"
         ),
         scoring_rule=selection.scoring_rule,
         used_fallback=used_fallback,
@@ -283,7 +301,12 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         metrics=metrics,
         candidates=[_candidate_row(c) for c in selection.candidates],
         interval_method=bands.method,
-        diagnostics={**profile.as_dict(), "backtest_scheme": plan.scheme, "folds": plan.n_folds},
+        diagnostics={
+            **profile.as_dict(),
+            "backtest_scheme": plan.scheme,
+            "folds": plan.n_folds,
+            "quality": payload.quality,
+        },
         regions=regions,
         categories=categories,
         drivers=drivers,
@@ -311,7 +334,7 @@ def _fallback_reason(
     )
 
 
-def _candidate_row(scored) -> dict[str, object]:
+def _candidate_row(scored: ScoredCandidate) -> CandidateRow:
     result = scored.result
     return {
         "model": result.model.value,
@@ -336,8 +359,7 @@ def _finite(value: float) -> float | None:
 
 def _in_sample_fit(
     values: FloatArray,
-    periods: list[date],
-    model: object,
+    model: Forecaster,
     kind: ModelKind,
     profile: SeriesProfile,
 ) -> list[float | None]:
@@ -353,7 +375,11 @@ def _in_sample_fit(
 
     try:
         getter = getattr(model, "fitted_values", None)
-        raw = getter() if callable(getter) else getattr(getattr(model, "_fitted", None), "fittedvalues", None)
+        raw = (
+            getter()
+            if callable(getter)
+            else getattr(getattr(model, "_fitted", None), "fittedvalues", None)
+        )
         if raw is None:
             return fitted
 
@@ -391,10 +417,9 @@ def _project_segments(
         forecast_value = total_forecast * share
 
         change = None
-        if segment.prior_total not in (None, 0):
-            change = round(
-                (segment.current_total - segment.prior_total) / abs(segment.prior_total) * 100.0, 2
-            )
+        prior = segment.prior_total
+        if prior:
+            change = round((segment.current_total - prior) / abs(prior) * 100.0, 2)
 
         accuracy: float | None = None
         if np.isfinite(base_accuracy):
@@ -431,4 +456,3 @@ def _stability(series: list[float]) -> float:
     if mean == 0 or std == 0:
         return float("nan")
     return abs(mean) / std
-

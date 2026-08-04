@@ -18,7 +18,9 @@ WEEKLY = ForecastFrequency.WEEKLY
 DAILY = ForecastFrequency.DAILY
 
 
-def seasonal_series(n: int, period: int, *, amplitude: float = 4_000.0, seed: int = 3) -> np.ndarray:
+def seasonal_series(
+    n: int, period: int, *, amplitude: float = 4_000.0, seed: int = 3
+) -> np.ndarray:
     rng = np.random.default_rng(seed)
     t = np.arange(n)
     return 20_000 + 150 * t + amplitude * np.sin(2 * np.pi * t / period) + rng.normal(0, 200, n)
@@ -78,8 +80,13 @@ def test_croston_is_offered_only_for_intermittent_demand() -> None:
     sparse = rng.poisson(3, 60).astype(float) * 120
     sparse[rng.random(60) < 0.5] = 0.0
 
-    dense_kinds = {c.kind for c in build_candidates(MONTHLY, None, profile_series(seasonal_series(72, 12), MONTHLY))}
-    sparse_kinds = {c.kind for c in build_candidates(MONTHLY, None, profile_series(sparse, MONTHLY))}
+    dense_kinds = {
+        c.kind
+        for c in build_candidates(MONTHLY, None, profile_series(seasonal_series(72, 12), MONTHLY))
+    }
+    sparse_kinds = {
+        c.kind for c in build_candidates(MONTHLY, None, profile_series(sparse, MONTHLY))
+    }
 
     assert ModelKind.CROSTON not in dense_kinds
     assert ModelKind.CROSTON in sparse_kinds

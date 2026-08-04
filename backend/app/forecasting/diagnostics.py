@@ -221,7 +221,9 @@ def seasonal_scores(values: FloatArray, frequency: ForecastFrequency) -> dict[in
     return scores
 
 
-def _pick_period(scores: dict[int, float], frequency: ForecastFrequency, n: int) -> tuple[int, float]:
+def _pick_period(
+    scores: dict[int, float], frequency: ForecastFrequency, n: int
+) -> tuple[int, float]:
     if not scores:
         default = seasonal_period(frequency)
         return (default if n >= 2 * default else 1), 0.0
@@ -263,10 +265,13 @@ def _outlier_share(values: FloatArray) -> float:
     differenced = np.diff(values)
     median = float(np.median(differenced))
     deviation = float(np.median(np.abs(differenced - median)))
-    if deviation <= 0:
+    scale = 1.4826 * deviation
+    if scale <= 0:
+        scale = float(np.mean(np.abs(differenced - median)))
+    if scale <= 0:
         return 0.0
 
-    scaled = np.abs(differenced - median) / (1.4826 * deviation)
+    scaled = np.abs(differenced - median) / scale
     return float(np.mean(scaled > 3.5))
 
 
@@ -417,7 +422,11 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
     cv = abs(deviation / mean) if mean else 0.0
 
     lambda_hint = _box_cox_lambda(finite, period) if strictly_positive and not intermittent else 1.0
-    transform = "log" if strictly_positive and not intermittent and lambda_hint <= LOG_LAMBDA_CEILING else "none"
+    transform = (
+        "log"
+        if strictly_positive and not intermittent and lambda_hint <= LOG_LAMBDA_CEILING
+        else "none"
+    )
 
     seasons = n / period if period > 1 else 0.0
 

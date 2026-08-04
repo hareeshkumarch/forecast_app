@@ -23,24 +23,22 @@ class TableInfo:
     schema_name: str
     table_name: str
     row_estimate: int | None = None
-    columns: list[tuple[str, str, bool]] = field(default_factory=list)                          
+    columns: list[tuple[str, str, bool]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class FormField:
-
     key: str
     label: str
 
     secret: bool = False
     required: bool = True
-    kind: str = "text"                                                  
+    kind: str = "text"
     placeholder: str = ""
     help_text: str = ""
 
 
 class ConnectorAdapter(ABC):
-
     type: ConnectorType
     display_name: str
 
@@ -65,7 +63,6 @@ class ConnectorAdapter(ABC):
         raise NotImplementedError(
             f"{self.display_name} does not support importing data in this POC."
         )
-
 
     def _value(self, key: str) -> str:
         if key in self.credentials:

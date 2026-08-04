@@ -5,7 +5,8 @@ import { AlertTriangle, Database, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Select, Skeleton } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input, Select, Skeleton } from "@/components/ui/primitives";
+import { errorMessage } from "@/lib/errors";
 import {
   useConnectorSchemas,
   useConnectors,
@@ -183,7 +184,7 @@ export function ConnectorImportModal() {
               <div className="flex items-start gap-2 rounded-card border border-warning-border bg-warning-soft px-3 py-2">
                 <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
                 <div>
-                  <p className="text-caption text-warning">{schemasQuery.error?.message}</p>
+                  <p className="text-caption text-warning">{errorMessage(schemasQuery.error)}</p>
                   <p className="mt-1 text-caption text-text-muted">
                     Check the connector&apos;s credentials, then test it from the rail.
                   </p>
@@ -268,7 +269,7 @@ export function ConnectorImportModal() {
             </Field>
           </div>
 
-          {error ? <p className="text-caption text-negative">{error}</p> : null}
+          <InlineError message={error ?? undefined} />
         </div>
       )}
     </Modal>

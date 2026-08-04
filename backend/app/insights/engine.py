@@ -99,7 +99,6 @@ def generate_insights(context: InsightContext, *, limit: int = 8) -> list[Genera
         if insight is None:
             continue
 
-
         if not np.isfinite(insight.metric_value):
             logger.debug("Skipping %s: non-finite metric", generator.__name__)
             continue

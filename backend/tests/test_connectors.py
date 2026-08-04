@@ -88,9 +88,7 @@ def test_csv_adapter_reads_a_real_file() -> None:
     assert set(frame.columns) == {"date", "rev"}
 
 
-@pytest.mark.parametrize(
-    "path", ["../../../etc/passwd", "..\\..\\secrets.csv", "../outside.csv"]
-)
+@pytest.mark.parametrize("path", ["../../../etc/passwd", "..\\..\\secrets.csv", "../outside.csv"])
 def test_file_adapter_refuses_path_traversal(path: str) -> None:
     outcome = build_adapter(ConnectorType.CSV, {"file_path": path}, {}).test()
 

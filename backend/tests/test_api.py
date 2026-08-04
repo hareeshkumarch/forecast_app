@@ -30,7 +30,6 @@ async def _seed_and_run(client: AsyncClient) -> dict:
     assert run.status_code == 202, run.text
     run_id = run.json()["id"]
 
-
     async with client.stream("GET", f"/api/forecasts/{run_id}/events") as stream:
         async for _ in stream.aiter_lines():
             pass
@@ -297,7 +296,6 @@ async def test_regions_categories_and_drivers(client: AsyncClient) -> None:
     assert len(regions["rows"]) == 5
     assert len(categories["rows"]) == 5
     assert len(drivers["rows"]) == 5
-
 
     assert sum(r["forecast_value"] for r in regions["rows"]) == pytest.approx(
         regions["total"], rel=1e-6

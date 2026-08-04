@@ -9,7 +9,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "next lint",
+    "lint": "next lint --dir app --dir components --dir hooks --dir lib --dir stores --dir types --dir tests --dir e2e --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

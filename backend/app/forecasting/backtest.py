@@ -11,6 +11,7 @@ import numpy.typing as npt
 from app.core.logging import get_logger
 from app.forecasting.frequency import future_periods as make_future_periods
 from app.forecasting.metrics import evaluate
+from app.forecasting.models import Forecaster
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
@@ -97,7 +98,9 @@ def plan_backtest(
     folds_limit = int(np.clip(folds_limit, MIN_FOLDS, MAX_FOLDS_CEILING))
 
     seasons_held = n_observations / period if period > 1 else n_observations / 12
-    resolved_scheme = scheme or ("rolling" if seasons_held >= ROLLING_WINDOW_SEASONS * 2 else "expanding")
+    resolved_scheme = scheme or (
+        "rolling" if seasons_held >= ROLLING_WINDOW_SEASONS * 2 else "expanding"
+    )
 
     cut_points: list[int] = []
     cut = n_observations - test_horizon
@@ -130,7 +133,7 @@ def _season(frequency: ForecastFrequency) -> int:
     return seasonal_period(frequency)
 
 
-ModelFactory = Callable[[FloatArray, list[date]], object]
+ModelFactory = Callable[[FloatArray, list[date]], Forecaster]
 
 DIVERGENCE_SIGMAS = 12.0
 

@@ -217,9 +217,7 @@ def test_aggregate_segments_buckets_the_long_tail() -> None:
     ]
     path = write_parquet(pl.DataFrame(rows), "seg-tail")
 
-    segments = aggregate_segments(
-        path, "d", "v", "seg", ForecastFrequency.MONTHLY, max_segments=5
-    )
+    segments = aggregate_segments(path, "d", "v", "seg", ForecastFrequency.MONTHLY, max_segments=5)
 
     assert len(segments) == 5
     assert segments[-1].label == "Others"

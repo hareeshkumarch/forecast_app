@@ -44,7 +44,7 @@ export function AllInsightsModal() {
       size="lg"
     >
       {isError ? (
-        <ErrorState message={error?.message} onRetry={() => void refetch()} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">

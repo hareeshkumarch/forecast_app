@@ -64,7 +64,11 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> str |
         return None
 
     provider = str(cfg.get("llm_provider") or settings.llm_provider or "openai").lower().strip()
-    model = str(cfg.get("llm_model") or settings.llm_model or ("claude-3-5-sonnet-20241022" if provider == "anthropic" else "gpt-4o-mini"))
+    model = str(
+        cfg.get("llm_model")
+        or settings.llm_model
+        or ("claude-3-5-sonnet-20241022" if provider == "anthropic" else "gpt-4o-mini")
+    )
     override_url = str(cfg.get("llm_base_url")) if cfg.get("llm_base_url") else None
 
     try:
@@ -86,9 +90,15 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> str |
                 res.raise_for_status()
                 data = res.json()
                 content = data.get("content", [])
-                return "".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
+                return "".join(
+                    b.get("text", "") for b in content if b.get("type") == "text"
+                ).strip()
 
-        base_url = (override_url or settings.llm_base_url or PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")).rstrip("/")
+        base_url = (
+            override_url
+            or settings.llm_base_url
+            or PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")
+        ).rstrip("/")
         url = f"{base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",

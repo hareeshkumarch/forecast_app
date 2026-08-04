@@ -73,7 +73,9 @@ async def create_connector(
     connector = Connector(
         name=name,
         type=connector_type,
-        status=ConnectorStatus.CONFIGURED if credentials or config else ConnectorStatus.NOT_CONFIGURED,
+        status=ConnectorStatus.CONFIGURED
+        if credentials or config
+        else ConnectorStatus.NOT_CONFIGURED,
         config=_strip_secrets(connector_type, config),
     )
     session.add(connector)
@@ -161,7 +163,6 @@ async def test_connector(
         resolved_type = connector.type
         resolved_config = {**(connector.config or {}), **config}
 
-
         resolved_credentials = {**load_credentials(connector), **credentials}
     else:
         if connector_type is None:
@@ -172,7 +173,6 @@ async def test_connector(
         resolved_credentials = credentials
 
     adapter = build_adapter(resolved_type, resolved_config, resolved_credentials)
-
 
     outcome = await asyncio.to_thread(adapter.test)
 
@@ -185,9 +185,7 @@ async def test_connector(
     return outcome
 
 
-async def list_schemas(
-    session: AsyncSession, connector_id: uuid.UUID
-) -> list[SchemaTable]:
+async def list_schemas(session: AsyncSession, connector_id: uuid.UUID) -> list[SchemaTable]:
     connector = await get_connector(session, connector_id)
     adapter = build_adapter(connector.type, connector.config or {}, load_credentials(connector))
 

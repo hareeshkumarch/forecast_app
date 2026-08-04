@@ -115,7 +115,11 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             label="Total Forecast",
             value=forecast_total,
             currency=currency,
-            comparison=metrics.get("forecast_total").previous_value if "forecast_total" in metrics else None,
+            comparison=(
+                previous.previous_value
+                if (previous := metrics.get("forecast_total")) is not None
+                else None
+            ),
             comparison_label="vs previous run",
             higher_is_better=True,
         ),
@@ -146,7 +150,6 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             currency=False,
             comparison=wmape.previous_value if wmape else None,
             comparison_label="vs previous run",
-
             higher_is_better=False,
         ),
         _card(
@@ -217,7 +220,6 @@ async def _prior_year_actual_total(
     prior_end = date(end.year - 1, end.month, end.day)
 
     if run.history_start and prior_start < run.history_start:
-
         return None
 
     result = await session.execute(
@@ -274,9 +276,7 @@ def _card(
         label=label,
         value=round(safe_value, 4),
         display_value=(
-            format_value(safe_value, unit=unit, currency=currency)
-            if math.isfinite(value)
-            else "—"
+            format_value(safe_value, unit=unit, currency=currency) if math.isfinite(value) else "—"
         ),
         unit=unit,
         comparison_value=comparison,
@@ -338,7 +338,9 @@ async def drivers(session: AsyncSession, query: DashboardQuery) -> DriverRespons
     )
 
 
-async def insights(session: AsyncSession, query: DashboardQuery, *, limit: int = 20) -> InsightResponse:
+async def insights(
+    session: AsyncSession, query: DashboardQuery, *, limit: int = 20
+) -> InsightResponse:
     run = await forecast_service.resolve_run(session, query.run_id)
     if run is None:
         return InsightResponse(run_id=None, items=[])

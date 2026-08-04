@@ -59,7 +59,6 @@ def decompose_drivers(
     if history.size == 0 or horizon == 0:
         return []
 
-
     window = min(horizon, history.size)
     baseline = history[-window:]
     baseline_total = float(np.sum(baseline))
@@ -69,7 +68,6 @@ def decompose_drivers(
     trend_component, seasonal_component, residual = _decompose(history, frequency)
 
     drivers: list[Driver] = []
-
 
     slope = _trend_slope(trend_component)
     volume_impact = slope * horizon * (horizon + 1) / 2.0
@@ -84,7 +82,6 @@ def decompose_drivers(
             method="stl_trend_slope",
         )
     )
-
 
     period = seasonal_period(frequency)
     if seasonal_component.size >= period:
@@ -111,15 +108,17 @@ def decompose_drivers(
         )
     )
 
-
     if quantity is not None and quantity.size == history.size and np.all(quantity[-window:] > 0):
         unit_value = history[-window:] / quantity[-window:]
-        prior = history[-2 * window : -window] / quantity[-2 * window : -window] if history.size >= 2 * window and np.all(quantity[-2 * window : -window] > 0) else unit_value
+        prior = (
+            history[-2 * window : -window] / quantity[-2 * window : -window]
+            if history.size >= 2 * window and np.all(quantity[-2 * window : -window] > 0)
+            else unit_value
+        )
         price_delta = float(np.mean(unit_value) - np.mean(prior))
         price_impact = price_delta * float(np.sum(quantity[-window:]))
         price_method = "unit_value_delta"
     else:
-
         level_shift = float(np.mean(forecast) - np.mean(baseline))
         price_impact = (level_shift - slope * horizon / 2.0) * horizon * 0.5
         price_method = "residual_level_shift"
@@ -136,9 +135,7 @@ def decompose_drivers(
         )
     )
 
-
     market_impact = total_movement - volume_impact - seasonal_impact - price_impact
-
 
     promo_share = _promotional_share(residual)
     promo_impact = market_impact * promo_share
@@ -167,7 +164,6 @@ def decompose_drivers(
             method="positive_residual_spikes",
         )
     )
-
 
     denominator = sum(abs(d.impact_value) for d in drivers) or 1.0
     for driver in drivers:

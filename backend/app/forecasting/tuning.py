@@ -17,6 +17,14 @@ ROWS_PER_EVALUATION = 12
 CACHE_LIMIT = 64
 
 
+def as_int(value: object, default: int = 0) -> int:
+    return int(value) if isinstance(value, int | float | str) else default
+
+
+def as_float(value: object, default: float = 0.0) -> float:
+    return float(value) if isinstance(value, int | float | str) else default
+
+
 @dataclass(slots=True)
 class SearchSpace:
     choices: dict[str, Sequence[object]]
@@ -33,9 +41,7 @@ class SearchSpace:
     def grid(self) -> list[dict[str, object]]:
         combinations: list[dict[str, object]] = [{}]
         for key, values in self.choices.items():
-            combinations = [
-                {**partial, key: value} for partial in combinations for value in values
-            ]
+            combinations = [{**partial, key: value} for partial in combinations for value in values]
         return combinations
 
 
@@ -154,9 +160,7 @@ def tune(
         errors: list[float] = []
         for start, end in splits:
             try:
-                predictions = fit_predict(
-                    params, matrix[:start], target[:start], matrix[start:end]
-                )
+                predictions = fit_predict(params, matrix[:start], target[:start], matrix[start:end])
             except Exception:
                 errors = []
                 break
@@ -178,4 +182,3 @@ def tune(
     result = TuningResult(best_params, best_score, len(candidates), method, len(splits))
     _CACHE.put(key, result)
     return result
-

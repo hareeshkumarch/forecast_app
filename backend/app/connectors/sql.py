@@ -23,7 +23,7 @@ SYSTEM_SCHEMAS = {
     "INFORMATION_SCHEMA",
 }
 
-_SQL_FORM = (
+_SQL_FORM: tuple[FormField, ...] = (
     FormField("host", "Host", placeholder="db.internal.example.com"),
     FormField("port", "Port", required=False, kind="number"),
     FormField("database", "Database", placeholder="analytics"),
@@ -34,7 +34,6 @@ _SQL_FORM = (
 
 
 class SqlAdapter(ConnectorAdapter):
-
     supports_import = True
     form_fields = _SQL_FORM
     version_query = "SELECT version()"
@@ -43,11 +42,19 @@ class SqlAdapter(ConnectorAdapter):
     def _connect(self) -> Any:
         raise NotImplementedError
 
+    def _port(self) -> int:
+        configured = self.config.get("port")
+        if isinstance(configured, int | float | str) and str(configured).strip():
+            try:
+                return int(configured)
+            except ValueError:
+                pass
+        return self.default_port or 0
+
     def _quote(self, identifier: str) -> str:
         q = self.quote_char
         closing = {"[": "]"}.get(q, q)
         return f"{q}{identifier.replace(closing, closing * 2)}{closing}"
-
 
     def test(self) -> TestOutcome:
         if self._missing_required():
@@ -173,7 +180,7 @@ class PostgresAdapter(SqlAdapter):
 
         return psycopg2.connect(
             host=str(self.config.get("host")),
-            port=int(self.config.get("port") or self.default_port),
+            port=self._port(),
             dbname=str(self.config.get("database") or "postgres"),
             user=self.credentials.get("username"),
             password=self.credentials.get("password"),
@@ -194,7 +201,7 @@ class MySqlAdapter(SqlAdapter):
 
         return pymysql.connect(
             host=str(self.config.get("host")),
-            port=int(self.config.get("port") or self.default_port),
+            port=self._port(),
             database=str(self.config.get("database") or ""),
             user=self.credentials.get("username"),
             password=self.credentials.get("password", ""),
@@ -225,7 +232,6 @@ class SqlServerAdapter(SqlAdapter):
 
     def _limit_clause(self, limit: int) -> str:
 
-
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 
@@ -233,15 +239,24 @@ def _reject_non_select(query: str) -> None:
     normalised = query.strip().rstrip(";").lstrip("(").lstrip()
     lowered = normalised.lower()
 
-    if not (lowered.startswith("select") or lowered.startswith("with")):
+    if not lowered.startswith(("select", "with")):
         raise ConnectorError("Only SELECT (or WITH ... SELECT) queries can be imported.")
 
     if ";" in normalised:
         raise ConnectorError("Multiple statements are not allowed in an import query.")
 
     forbidden = (
-        "insert ", "update ", "delete ", "drop ", "alter ", "create ",
-        "truncate ", "grant ", "revoke ", "call ", "merge ",
+        "insert ",
+        "update ",
+        "delete ",
+        "drop ",
+        "alter ",
+        "create ",
+        "truncate ",
+        "grant ",
+        "revoke ",
+        "call ",
+        "merge ",
     )
     padded = f" {lowered} "
     for keyword in forbidden:
@@ -259,7 +274,11 @@ def _friendly_error(exc: Exception, display_name: str) -> str:
         return f"Timed out connecting to {display_name}. Check the host, port and firewall rules."
     if "authentication" in lowered or "password" in lowered or "access denied" in lowered:
         return f"{display_name} rejected the credentials. Check the username and password."
-    if "could not translate host" in lowered or "unknown host" in lowered or "getaddrinfo" in lowered:
+    if (
+        "could not translate host" in lowered
+        or "unknown host" in lowered
+        or "getaddrinfo" in lowered
+    ):
         return f"The host could not be resolved. Check the hostname for {display_name}."
     if "does not exist" in lowered and "database" in lowered:
         return "The specified database does not exist on that server."

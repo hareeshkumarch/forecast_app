@@ -61,7 +61,6 @@ def generate_rows() -> list[dict[str, object]]:
         period = add_periods(START, index, ForecastFrequency.MONTHLY)
         years_elapsed = index / 12.0
 
-
         seasonal = 1.0 + 0.09 * np.sin(2 * np.pi * (index - 2) / 12.0)
 
         for region, region_share in REGIONS.items():
@@ -80,14 +79,15 @@ def generate_rows() -> list[dict[str, object]]:
                     * (1.0 + rng.normal(0.0, 0.045))
                 )
 
-
                 if index == MONTHS - 4 and category in ("Product A", "Product B"):
                     revenue *= 1.34
 
-                unit_price = AVERAGE_UNIT_PRICE * (1.0 + 0.03 * years_elapsed) * (
-                    1.0 + rng.normal(0.0, 0.02)
+                unit_price = (
+                    AVERAGE_UNIT_PRICE
+                    * (1.0 + 0.03 * years_elapsed)
+                    * (1.0 + rng.normal(0.0, 0.02))
                 )
-                units = max(1, int(round(revenue / unit_price)))
+                units = max(1, round(revenue / unit_price))
 
                 rows.append(
                     {

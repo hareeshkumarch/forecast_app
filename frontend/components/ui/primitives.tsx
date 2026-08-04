@@ -10,6 +10,7 @@ import type {
 } from "react";
 import { forwardRef } from "react";
 
+import { errorMessage, errorTitle, isRetryable } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
 
@@ -272,16 +273,22 @@ export function EmptyState({
 }
 
 export function ErrorState({
-  title = "Couldn't load this panel",
+  error,
+  title,
   message,
   onRetry,
   className,
 }: {
+  error?: unknown;
   title?: string;
   message?: string;
   onRetry?: () => void;
   className?: string;
 }) {
+  const heading = title ?? errorTitle(error, "Couldn't load this panel");
+  const detail = message ?? (error === undefined ? undefined : errorMessage(error));
+  const canRetry = onRetry && (error === undefined || isRetryable(error));
+
   return (
     <div
       role="alert"
@@ -293,13 +300,44 @@ export function ErrorState({
       <span className="flex h-9 w-9 items-center justify-center rounded-full border border-negative-border bg-negative-soft">
         <AlertTriangle className="h-4 w-4 text-negative" aria-hidden />
       </span>
-      <p className="text-body font-medium text-text-primary">{title}</p>
-      {message ? <p className="max-w-[40ch] text-caption text-text-muted">{message}</p> : null}
-      {onRetry ? (
+      <p className="text-body font-medium text-text-primary">{heading}</p>
+      {detail ? <p className="max-w-[40ch] text-caption text-text-muted">{detail}</p> : null}
+      {canRetry ? (
         <Button size="sm" onClick={onRetry} className="mt-1">
           Retry
         </Button>
       ) : null}
     </div>
+  );
+}
+
+export function InlineError({
+  error,
+  message,
+  tone = "negative",
+  className,
+}: {
+  error?: unknown;
+  message?: string;
+  tone?: "negative" | "warning";
+  className?: string;
+}) {
+  const text = message ?? (error === undefined ? null : errorMessage(error));
+  if (!text) return null;
+
+  return (
+    <p
+      role="alert"
+      className={cn(
+        "flex items-start gap-1.5 rounded-chip px-2 py-1.5 text-caption",
+        tone === "negative"
+          ? "bg-negative-soft text-negative"
+          : "bg-warning-soft text-warning",
+        className,
+      )}
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden />
+      <span className="min-w-0">{text}</span>
+    </p>
   );
 }

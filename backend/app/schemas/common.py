@@ -27,11 +27,10 @@ class ErrorDetail(BaseModel):
     code: ShortStr
     message: NonEmptyStr
     detail: dict[str, object] = Field(default_factory=dict)
+    request_id: ShortStr
 
 
 class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     error: ErrorDetail
-
-

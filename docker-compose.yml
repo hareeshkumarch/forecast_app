@@ -45,6 +45,7 @@ services:
       FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
       RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
     volumes:
       # Bind-mounted so uploaded files and generated Parquet/exports are
       # inspectable from the host and survive rebuilds.

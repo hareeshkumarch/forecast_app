@@ -68,8 +68,7 @@ def test_features_never_leak_the_current_value() -> None:
     array = np.asarray(values)
     spec = build_feature_spec(len(array), MONTHLY)
 
-    matrix, target, names, rows = build_design_matrix(array, periods, spec, MONTHLY)
-
+    matrix, target, names, _rows = build_design_matrix(array, periods, spec, MONTHLY)
 
     for column_index, name in enumerate(names):
         if name.startswith(("lag_", "roll_")):
@@ -189,7 +188,14 @@ def test_full_run_produces_a_complete_result() -> None:
     assert output.selection_rationale
     models = {row["model"] for row in output.candidates}
     assert models <= {kind.value for kind in ModelKind}
-    assert {"naive", "seasonal_naive", "holt_winters", "theta", "sarimax", "gradient_boosting"} <= models
+    assert {
+        "naive",
+        "seasonal_naive",
+        "holt_winters",
+        "theta",
+        "sarimax",
+        "gradient_boosting",
+    } <= models
 
 
 def test_bounds_bracket_the_point_forecast() -> None:

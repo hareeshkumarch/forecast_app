@@ -1,12 +1,13 @@
 "use client";
 
 
-import { AlertTriangle, FileSpreadsheet, UploadCloud } from "lucide-react";
+import { FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Select } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input, Select } from "@/components/ui/primitives";
 import { useConfigureDataset, useUploadDataset } from "@/hooks/use-dashboard";
+import { errorMessage } from "@/lib/errors";
 import { formatBytes, formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast-store";
@@ -108,13 +109,13 @@ export function UploadDatasetModal() {
           closeModal();
           openModal("configure-forecast");
         },
-        onError: (error) => setLocalError(error.message),
+        onError: (error) => setLocalError(errorMessage(error)),
       },
     );
   }
 
   const profile = result?.profile;
-  const errorMessage = localError ?? uploadMutation.error?.message ?? null;
+  const failure = localError ?? (uploadMutation.error ? errorMessage(uploadMutation.error) : null);
 
   return (
     <Modal
@@ -171,12 +172,7 @@ export function UploadDatasetModal() {
             onChange={(event) => handleFile(event.target.files?.[0])}
           />
 
-          {errorMessage ? (
-            <div className="flex items-start gap-2 rounded-card border border-negative-border bg-negative-soft px-3 py-2">
-              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
-              <p className="text-caption text-negative">{errorMessage}</p>
-            </div>
-          ) : null}
+          <InlineError message={failure ?? undefined} className="px-3 py-2" />
         </div>
       ) : (
         <div className="space-y-4">
@@ -304,7 +300,7 @@ export function UploadDatasetModal() {
             </div>
           ) : null}
 
-          {errorMessage ? <p className="text-caption text-negative">{errorMessage}</p> : null}
+          <InlineError message={failure ?? undefined} />
         </div>
       )}
     </Modal>

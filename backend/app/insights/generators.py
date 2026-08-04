@@ -28,7 +28,6 @@ class DriverFact:
 
 @dataclass(slots=True)
 class InsightContext:
-
     accuracy: float
     previous_accuracy: float | None
     wmape: float
@@ -85,7 +84,6 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
         return None
 
     if ctx.previous_accuracy is None or not np.isfinite(ctx.previous_accuracy):
-
         if ctx.accuracy < 80:
             return GeneratedInsight(
                 type=InsightType.ACCURACY_CHANGE,
@@ -124,7 +122,7 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
 
     delta = ctx.accuracy - ctx.previous_accuracy
     if abs(delta) < 0.5:
-        return None                   
+        return None
 
     improving = delta > 0
     return GeneratedInsight(
@@ -291,7 +289,6 @@ def anomaly(ctx: InsightContext) -> GeneratedInsight | None:
     if sigma == 0:
         return None
 
-
     tail = pairs[-6:]
     worst_index, worst_actual, worst_fit = max(
         tail, key=lambda item: abs(item[1] - item[2]) / sigma
@@ -452,7 +449,6 @@ def recommendation(ctx: InsightContext) -> GeneratedInsight | None:
 
     total = float(np.sum(ctx.point_forecast))
     top_region = max(ctx.regions, key=lambda r: r.forecast_value) if ctx.regions else None
-
 
     if np.isfinite(ctx.accuracy) and ctx.accuracy < 75:
         return GeneratedInsight(

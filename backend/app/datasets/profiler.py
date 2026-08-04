@@ -10,26 +10,77 @@ from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
 DATE_NAME_HINTS = (
-    "date", "day", "month", "week", "period", "time", "timestamp",
-    "ds", "dt", "yearmonth", "year_month", "fiscal",
+    "date",
+    "day",
+    "month",
+    "week",
+    "period",
+    "time",
+    "timestamp",
+    "ds",
+    "dt",
+    "yearmonth",
+    "year_month",
+    "fiscal",
 )
 TARGET_NAME_HINTS = (
-    "revenue", "sales", "amount", "value", "total", "demand", "volume",
-    "quantity", "qty", "units", "count", "spend", "cost", "gmv", "bookings",
-    "target", "y", "actual", "net", "gross",
+    "revenue",
+    "sales",
+    "amount",
+    "value",
+    "total",
+    "demand",
+    "volume",
+    "quantity",
+    "qty",
+    "units",
+    "count",
+    "spend",
+    "cost",
+    "gmv",
+    "bookings",
+    "target",
+    "y",
+    "actual",
+    "net",
+    "gross",
 )
 DIMENSION_NAME_HINTS = (
-    "region", "country", "market", "territory", "category", "segment",
-    "product", "sku", "channel", "brand", "department", "store", "customer",
-    "type", "group", "division",
+    "region",
+    "country",
+    "market",
+    "territory",
+    "category",
+    "segment",
+    "product",
+    "sku",
+    "channel",
+    "brand",
+    "department",
+    "store",
+    "customer",
+    "type",
+    "group",
+    "division",
 )
 WEIGHT_NAME_HINTS = ("weight", "units", "quantity", "qty", "volume")
 
 
 DATE_FORMATS = (
-    "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y",
-    "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m", "%b %Y", "%B %Y",
-    "%d %b %Y", "%d %B %Y", "%Y%m%d",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%d-%m-%Y",
+    "%m-%d-%Y",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m",
+    "%b %Y",
+    "%B %Y",
+    "%d %b %Y",
+    "%d %B %Y",
+    "%Y%m%d",
 )
 
 
@@ -73,10 +124,10 @@ def _name_score(name: str, hints: tuple[str, ...]) -> float:
 
     for hint in hints:
         if hint in tokens:
-            return 1.0                                         
+            return 1.0
     for hint in hints:
         if hint in lowered:
-            return 0.6                                
+            return 0.6
     return 0.0
 
 
@@ -99,7 +150,6 @@ def _try_parse_dates(series: pl.Series) -> pl.Series | None:
             continue
         matched = parsed.drop_nulls().len()
         if matched >= 0.8 * non_null.len():
-
             return series.cast(pl.Utf8, strict=False).str.strptime(
                 pl.Date, format=fmt, strict=False
             )
@@ -129,6 +179,12 @@ def _stringify(value: object) -> str | None:
         return value.isoformat()
     text = str(value)
     return text[:200]
+
+
+def _as_date(value: object) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    return value if isinstance(value, date) else None
 
 
 def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfileResult:
@@ -161,11 +217,12 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
         elif kind is ColumnKind.NUMERIC and non_null.len():
             min_value = _stringify(non_null.min())
             max_value = _stringify(non_null.max())
-            try:
-                mean_raw = non_null.mean()
-                mean_value = float(mean_raw) if mean_raw is not None else None
-            except (TypeError, ValueError):
-                mean_value = None
+            mean_raw = non_null.mean()
+            mean_value = (
+                float(mean_raw)
+                if isinstance(mean_raw, int | float) and not isinstance(mean_raw, bool)
+                else None
+            )
         elif non_null.len():
             min_value = _stringify(non_null.min())
             max_value = _stringify(non_null.max())
@@ -184,28 +241,27 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
             sample_values=[_stringify(v) for v in non_null.head(5).to_list()],
         )
 
-        _score_column(profile, series, frame.height)
+        _score_column(profile, frame.height)
         profiles.append(profile)
 
     _assign_roles(profiles)
 
-
-    date_start = date_end = None
+    date_start: date | None = None
+    date_end: date | None = None
     detected_frequency: ForecastFrequency | None = None
 
     time_column = next((p for p in profiles if p.role is ColumnRole.TIME), None)
     if time_column and time_column.name in parsed_date_columns:
         values = parsed_date_columns[time_column.name].drop_nulls()
         if values.len():
-            date_start = values.min()
-            date_end = values.max()
+            date_start = _as_date(values.min())
+            date_end = _as_date(values.max())
             detected_frequency = infer_frequency(sorted(set(values.to_list())))
             if detected_frequency is None:
                 warnings.append(
                     f"Couldn't infer a regular frequency from '{time_column.name}'. "
                     "Pick one manually — the data may have irregular gaps."
                 )
-
 
     if frame.height < 12:
         warnings.append(
@@ -216,9 +272,7 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
     cells = max(1, frame.height * frame.width)
     missing_pct = total_missing / cells * 100
     if missing_pct > 20:
-        warnings.append(
-            f"{missing_pct:.1f}% of cells are empty. Consider cleaning the data first."
-        )
+        warnings.append(f"{missing_pct:.1f}% of cells are empty. Consider cleaning the data first.")
 
     if not any(p.is_date_candidate for p in profiles):
         warnings.append(
@@ -243,9 +297,8 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
     )
 
 
-def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> None:
+def _score_column(profile: ColumnProfile, row_count: int) -> None:
     reasons: list[str] = []
-
 
     if profile.kind is ColumnKind.DATE:
         score = 0.6
@@ -256,7 +309,6 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
         if name_signal:
             reasons.append("name suggests a date")
 
-
         if row_count:
             uniqueness = profile.distinct_count / row_count
             if uniqueness > 0.9:
@@ -265,14 +317,12 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
             elif uniqueness > 0.05:
                 score += 0.08
 
-
         if profile.null_count:
             score -= 0.2 * (profile.null_count / max(1, row_count))
             reasons.append(f"{profile.null_count} missing dates")
 
         profile.date_score = max(0.0, min(1.0, score))
         profile.is_date_candidate = profile.date_score >= 0.5
-
 
     if profile.kind is ColumnKind.NUMERIC:
         score = 0.45
@@ -285,11 +335,9 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
         elif name_signal:
             reasons.append("name hints at a measure")
 
-
         if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0:
             score -= 0.12
             reasons.append("more likely a weight than a target")
-
 
         if (
             row_count
@@ -299,11 +347,9 @@ def _score_column(profile: ColumnProfile, series: pl.Series, row_count: int) -> 
             score -= 0.5
             reasons.append("looks like an identifier")
 
-
         if profile.distinct_count <= 1:
             score -= 0.4
             reasons.append("constant value")
-
 
         if row_count and profile.null_count / row_count > 0.3:
             score -= 0.2
@@ -341,7 +387,9 @@ def _assign_roles(profiles: list[ColumnProfile]) -> None:
             )
 
 
-def suggestions(profiles: list[ColumnProfile], role: str) -> list[tuple[str, ColumnKind, float, str]]:
+def suggestions(
+    profiles: list[ColumnProfile], role: str
+) -> list[tuple[str, ColumnKind, float, str]]:
     if role == "time":
         pool = [(p, p.date_score) for p in profiles if p.is_date_candidate]
     elif role == "target":
