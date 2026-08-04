@@ -12,7 +12,14 @@ from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
-from app.forecasting.hierarchy import coherence_gap, reconcile_to_total
+from app.forecasting.hierarchy import (
+    Node,
+    build_tree,
+    coherence_gap,
+    reconcile_to_total,
+    reconcile_tree,
+    walk,
+)
 from app.forecasting.metrics import accuracy_from_wmape
 from app.forecasting.models import (
     Forecaster,
@@ -23,7 +30,7 @@ from app.forecasting.models import (
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
-from app.models.enums import ForecastFrequency, ModelKind
+from app.models.enums import ForecastFrequency, ModelKind, SeriesStatus
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -45,6 +52,8 @@ class SegmentInput:
     series: list[float] = field(default_factory=list)
     periods: list[date] = field(default_factory=list)
     values: list[float] = field(default_factory=list)
+    #: The grouping columns that identify this leaf, when the run has a grain.
+    key: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -423,6 +432,7 @@ class _SegmentFit:
     forecast: FloatArray
     model: ModelKind | None
     wmape: float
+    folds: int = 0
 
 
 def _forecast_one_segment(
@@ -488,12 +498,143 @@ def _forecast_one_segment(
     if forecast.size != horizon or not np.all(np.isfinite(forecast)):
         return None
 
+    winning = selection.winner.result
     return _SegmentFit(
         label=segment.label,
         forecast=forecast,
         model=kind,
-        wmape=selection.winner.result.wmape,
+        wmape=winning.wmape,
+        folds=winning.n_folds,
     )
+
+
+@dataclass(slots=True)
+class SeriesResult:
+    """One series in a grouped run, as the service needs to persist it."""
+
+    key: dict[str, str]
+    label: str
+    level: int
+    parent_label: str | None
+    forecast: list[float]
+    model: ModelKind | None
+    wmape: float | None
+    accuracy: float | None
+    accuracy_measured: bool
+    folds: int
+    forecast_total: float
+    prior_total: float | None
+    share: float | None
+    status: SeriesStatus
+    blocked_reason: str | None = None
+
+
+def forecast_grouped(
+    leaves: list[SegmentInput],
+    group_by: list[str],
+    total_path: FloatArray,
+    frequency: ForecastFrequency,
+    horizon: int,
+    max_folds: int | None,
+) -> list[SeriesResult]:
+    """
+    Forecasts every leaf in its own right, assembles the levels the grouping
+    implies, and reconciles the whole tree to the directly forecast total.
+
+    A leaf that cannot be validated keeps its place in the tree and is
+    apportioned instead, so the levels still add up and the row says where its
+    number came from.
+    """
+    if not leaves:
+        return []
+
+    grand_total = sum(leaf.current_total for leaf in leaves)
+    if grand_total <= 0:
+        return []
+
+    fits: dict[str, _SegmentFit] = {}
+    blocked: dict[str, str] = {}
+    for leaf in leaves:
+        try:
+            fit = _forecast_one_segment(leaf, frequency, horizon, max_folds)
+        except Exception as exc:
+            logger.warning("Series %s failed to fit: %s", leaf.label, exc)
+            blocked[leaf.label] = f"{type(exc).__name__}: {exc}"
+            continue
+        if fit is None:
+            blocked[leaf.label] = "Too little history to validate a model."
+        else:
+            fits[leaf.label] = fit
+
+    total = np.asarray(total_path, dtype=float)
+    tree_input = [
+        (
+            leaf.key,
+            leaf.label,
+            fits[leaf.label].forecast
+            if leaf.label in fits
+            else total * (leaf.current_total / grand_total),
+            leaf.current_total / grand_total,
+        )
+        for leaf in leaves
+    ]
+    root = build_tree(tree_input, group_by)
+    reconcile_tree(root, total)
+
+    by_label: dict[str, SegmentInput] = {leaf.label: leaf for leaf in leaves}
+    results: list[SeriesResult] = []
+
+    for node in walk(root):
+        path = node.reconciled if node.reconciled is not None else np.zeros(horizon)
+        value = float(np.sum(path))
+        source = by_label.get(node.label)
+        fit = fits.get(node.label)
+
+        if node.level == 0 or fit is not None:
+            status = SeriesStatus.FORECAST
+        elif node.is_leaf and node.label in blocked:
+            status = SeriesStatus.ESTIMATED
+        else:
+            status = SeriesStatus.FORECAST
+
+        accuracy = accuracy_from_wmape(fit.wmape) if fit else float("nan")
+
+        results.append(
+            SeriesResult(
+                key=node.key,
+                label=node.label,
+                level=node.level,
+                parent_label=None,
+                forecast=[float(v) for v in path],
+                model=fit.model if fit else None,
+                wmape=float(fit.wmape) if fit and np.isfinite(fit.wmape) else None,
+                accuracy=round(float(accuracy), 2) if np.isfinite(accuracy) else None,
+                accuracy_measured=fit is not None,
+                folds=fit.folds if fit else 0,
+                forecast_total=round(value, 4),
+                prior_total=source.prior_total if source else None,
+                share=round(value / float(np.sum(total)) * 100.0, 2) if np.sum(total) else None,
+                status=status,
+                blocked_reason=blocked.get(node.label),
+            )
+        )
+
+    _attach_parents(root, results)
+    return results
+
+
+def _attach_parents(root: Node, results: list[SeriesResult]) -> None:
+    """Second pass: each result learns its parent's label, so the service can link rows."""
+    by_label = {result.label: result for result in results}
+
+    def visit(node: Node, parent_label: str | None) -> None:
+        row = by_label.get(node.label)
+        if row is not None:
+            row.parent_label = parent_label
+        for child in node.children:
+            visit(child, node.label)
+
+    visit(root, None)
 
 
 def _forecast_segments(
