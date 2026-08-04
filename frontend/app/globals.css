@@ -30,11 +30,19 @@
   --warning: #bd7b21;
   --warning-soft: #fbf0de;
 
-  /* Fixed layout rails, referenced by both CSS and the Playwright test. */
-  --header-height: 74px;
+  /* Layout rails. The header shrinks on phones; the rails only exist from
+   * `lg` up — below that they are served as off-canvas drawers. */
+  --header-height: 56px;
   --rail-width: 224px;
   --insights-width: 320px;
-  --workspace-padding: 24px;
+  --workspace-padding: 16px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --header-height: 74px;
+    --workspace-padding: 24px;
+  }
 }
 
 /* ------------------------------------------------------------------ base */
@@ -49,6 +57,9 @@ body {
 }
 
 body {
+  /* Panels manage their own horizontal scrolling; the page itself never
+   * scrolls sideways, at any width. */
+  overflow-x: hidden;
   background: var(--canvas);
   color: var(--text-primary);
   font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
@@ -109,6 +120,110 @@ body {
 
   .num {
     @apply tabular-nums;
+  }
+}
+
+/* ----------------------------------------------------- responsive panels */
+
+/*
+ * The workspace is the sizing authority for the panels inside it. Its width
+ * does not track the viewport — the two rails appear at `lg` and `xl`, so a
+ * 1280px window has a *narrower* workspace than a 1279px one. Container
+ * queries let each grid react to the space it actually has.
+ *
+ * Browsers without container-query support keep the single-column base
+ * layout, which is a correct (if roomy) rendering rather than a broken one.
+ */
+.workspace {
+  container: workspace / inline-size;
+}
+
+.grid-kpi,
+.grid-charts,
+.grid-panels {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Six KPIs: only 1/2/3/6 columns divide evenly, so those are the steps. */
+.grid-kpi {
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container workspace (min-width: 420px) {
+  .grid-kpi {
+    gap: 12px;
+  }
+}
+
+@container workspace (min-width: 660px) {
+  .grid-kpi {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container workspace (min-width: 1000px) {
+  .grid-kpi {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* The line chart earns slightly more room than the donut when they pair up. */
+@container workspace (min-width: 1000px) {
+  .grid-charts {
+    grid-template-columns: 52fr 48fr;
+  }
+}
+
+@container workspace (min-width: 880px) {
+  .grid-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Chart canvases scale with the workspace instead of sitting at one height. */
+.chart-box {
+  height: 200px;
+}
+
+@container workspace (min-width: 700px) {
+  .chart-box {
+    height: 218px;
+  }
+}
+
+@container workspace (min-width: 1280px) {
+  .chart-box {
+    height: 244px;
+  }
+}
+
+/* The donut sits beside its legend only once there is room for both. */
+.category-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-donut {
+  width: 100%;
+  max-width: 218px;
+  margin: 0 auto;
+}
+
+@container workspace (min-width: 560px) {
+  .category-layout {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .category-donut {
+    width: 218px;
+    flex-shrink: 0;
+    margin: 0;
   }
 }
 

@@ -1,10 +1,11 @@
 "use client";
 
 
+import { PieChart } from "lucide-react";
 import { useMemo } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
 import { useCategories } from "@/hooks/use-dashboard";
 import {
   CATEGORICAL_PALETTE,
@@ -15,8 +16,6 @@ import {
 } from "@/lib/chart-theme";
 import { formatCompact, formatPercent } from "@/lib/format";
 import type { CategoryResponse } from "@/types/api";
-
-const CHART_HEIGHT = 218;
 
 function buildOption(data: CategoryResponse): ChartOption {
   const rows = data.rows;
@@ -91,9 +90,9 @@ export function ForecastByCategory() {
 
       <div className="min-h-0 flex-1 px-3 pb-3">
         {isLoading ? (
-          <div className="flex gap-4 px-1 pt-2" aria-hidden>
-            <Skeleton className="h-[190px] w-[190px] rounded-full" />
-            <div className="flex-1 space-y-2.5 pt-4">
+          <div className="category-layout px-1 pt-2" aria-hidden>
+            <Skeleton className="category-donut aspect-square rounded-full" />
+            <div className="flex-1 space-y-2.5">
               {Array.from({ length: 5 }).map((_, index) => (
                 <Skeleton key={index} className="h-4 w-full" />
               ))}
@@ -102,14 +101,10 @@ export function ForecastByCategory() {
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => void refetch()} />
         ) : option && data && data.rows.length > 0 ? (
-          <div className="flex items-center gap-3">
+          <div className="category-layout">
             
-            <div className="relative w-[218px] shrink-0">
-              <EChart
-                option={option}
-                height={CHART_HEIGHT}
-                ariaLabel="Forecast split by product category"
-              />
+            <div className="category-donut relative">
+              <EChart option={option} ariaLabel="Forecast split by product category" />
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-micro font-semibold uppercase tracking-[0.09em] text-text-muted">
                   Total
@@ -147,11 +142,12 @@ export function ForecastByCategory() {
             </ul>
           </div>
         ) : (
-          <div className="flex h-[218px] items-center justify-center">
-            <p className="text-caption text-text-muted">
-              No category breakdown — the dataset has no category dimension.
-            </p>
-          </div>
+          <EmptyState
+            className="chart-box"
+            icon={PieChart}
+            title="No category breakdown"
+            message="Map a category column when you run a forecast to split it by product."
+          />
         )}
       </div>
     </Card>

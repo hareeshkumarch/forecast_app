@@ -61,6 +61,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 });
 
 
+export const ICON_BUTTON = cn(
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-input",
+  "border border-transparent text-text-secondary",
+  "transition-colors duration-fast hover:border-border hover:bg-surface-muted hover:text-text-primary",
+);
+
 export const IconButton = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & { label: string; icon: LucideIcon }
@@ -71,12 +77,7 @@ export const IconButton = forwardRef<
       type="button"
       aria-label={label}
       title={label}
-      className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-input",
-        "border border-transparent text-text-secondary",
-        "transition-colors duration-fast hover:border-border hover:bg-surface-muted hover:text-text-primary",
-        className,
-      )}
+      className={cn(ICON_BUTTON, className)}
       {...rest}
     >
       <Icon className="h-4 w-4" aria-hidden />
@@ -88,6 +89,20 @@ export const IconButton = forwardRef<
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={cn("card shadow-card", className)}>{children}</div>;
 }
+
+
+/**
+ * Shared chrome for every Radix dropdown/popover surface, so menus in the
+ * header, the panels and the rails cannot drift apart.
+ */
+export const MENU_CONTENT =
+  "z-50 min-w-[180px] max-w-[calc(100vw-16px)] rounded-card border border-border bg-surface p-1 shadow-popover";
+
+export const MENU_ITEM = cn(
+  "flex cursor-pointer items-center gap-2 rounded-chip px-2 py-1.5 text-meta text-text-primary outline-none",
+  "data-[highlighted]:bg-surface-muted",
+  "data-[disabled]:cursor-not-allowed data-[disabled]:text-text-muted",
+);
 
 export function PanelHeader({
   title,
@@ -261,36 +276,5 @@ export function ErrorState({
         </Button>
       ) : null}
     </div>
-  );
-}
-
-
-export function DirectionArrow({
-  direction,
-  tone,
-  className,
-}: {
-  direction: "up" | "down" | "flat";
-  tone: "positive" | "negative" | "neutral";
-  className?: string;
-}) {
-  const color =
-    tone === "positive" ? "text-positive" : tone === "negative" ? "text-negative" : "text-text-muted";
-
-  if (direction === "flat") {
-    return (
-      <span className={cn("text-caption leading-none", color, className)} aria-label="unchanged">
-        —
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={cn("text-caption leading-none", color, className)}
-      aria-label={direction === "up" ? "increase" : "decrease"}
-    >
-      {direction === "up" ? "▲" : "▼"}
-    </span>
   );
 }

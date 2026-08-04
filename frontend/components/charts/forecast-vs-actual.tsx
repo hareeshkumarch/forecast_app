@@ -2,11 +2,19 @@
 
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { LineChart, MoreHorizontal } from "lucide-react";
 import { useMemo } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import {
+  Card,
+  EmptyState,
+  ErrorState,
+  MENU_CONTENT,
+  MENU_ITEM,
+  PanelHeader,
+  Skeleton,
+} from "@/components/ui/primitives";
 import { downloadExport, useForecastPoints, useSummary } from "@/hooks/use-dashboard";
 import {
   AXIS_LABEL,
@@ -18,12 +26,11 @@ import {
   tooltipHeader,
   tooltipRow,
 } from "@/lib/chart-theme";
-import { formatCompact, formatMonth } from "@/lib/format";
+import { formatCompact, formatDayMonth, formatMonth } from "@/lib/format";
+import { labelGranularity } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastPointsResponse, ForecastView } from "@/types/api";
-
-const CHART_HEIGHT = 218;
 
 
 const VIEW_FIELD: Record<ForecastView, "forecast" | "best_case" | "worst_case"> = {
@@ -51,11 +58,15 @@ function displayWindow(
 function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOption {
   const { confidence_level: confidence } = data;
 
+  // A daily run stamped with month labels repeats "Mar 2026" thirty times.
+  const period =
+    labelGranularity(data.frequency) === "day" ? formatDayMonth : formatMonth;
+
   const rawBoundary = data.boundary_index ?? data.points.length;
   const { sliced: points, offset } = displayWindow(data.points, rawBoundary);
   const boundaryIndex = rawBoundary - offset;
 
-  const labels = points.map((point) => formatMonth(point.period));
+  const labels = points.map((point) => period(point.period));
   const actuals = points.map((point) => point.actual);
 
   const field = VIEW_FIELD[view];
@@ -119,7 +130,7 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
         const point = points[index];
         if (!point) return "";
 
-        let html = tooltipHeader(formatMonth(point.period));
+        let html = tooltipHeader(period(point.period));
 
         if (point.actual !== null) {
           html += tooltipRow(CHART_COLORS.navy, "Actual", formatCompact(point.actual));
@@ -212,7 +223,7 @@ function buildOption(data: ForecastPointsResponse, view: ForecastView): ChartOpt
                   align: "center",
                 },
                 lineStyle: { color: CHART_COLORS.borderStrong, width: 1, type: "dashed" },
-                data: [{ xAxis: formatMonth(boundaryLabel) }],
+                data: [{ xAxis: period(boundaryLabel) }],
               },
             }
           : {}),
@@ -264,25 +275,25 @@ export function ForecastVsActual() {
               <DropdownMenu.Content
                 align="end"
                 sideOffset={4}
-                className="z-50 min-w-[168px] rounded-card border border-border bg-surface p-1 shadow-popover"
+                className={MENU_CONTENT}
               >
                 <DropdownMenu.Item
                   disabled={!runId}
                   onSelect={() => runId && downloadExport(runId, "csv")}
-                  className="cursor-pointer rounded-chip px-2 py-1.5 text-meta text-text-primary outline-none data-[highlighted]:bg-surface-muted data-[disabled]:text-text-muted"
+                  className={MENU_ITEM}
                 >
                   Download series (CSV)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   disabled={!runId}
                   onSelect={() => runId && downloadExport(runId, "json")}
-                  className="cursor-pointer rounded-chip px-2 py-1.5 text-meta text-text-primary outline-none data-[highlighted]:bg-surface-muted data-[disabled]:text-text-muted"
+                  className={MENU_ITEM}
                 >
                   Download run detail (JSON)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   onSelect={() => void refetch()}
-                  className="cursor-pointer rounded-chip px-2 py-1.5 text-meta text-text-primary outline-none data-[highlighted]:bg-surface-muted"
+                  className={MENU_ITEM}
                 >
                   Refresh
                 </DropdownMenu.Item>
@@ -296,18 +307,19 @@ export function ForecastVsActual() {
         {isLoading ? (
           <div className="space-y-2 px-1 pt-2" aria-hidden>
             <Skeleton className="h-3 w-40" />
-            <Skeleton className="h-[186px] w-full rounded-[9px]" />
+            <Skeleton className="chart-box w-full rounded-[9px]" />
           </div>
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => void refetch()} />
         ) : option && data && data.points.length > 0 ? (
-          <EChart option={option} height={CHART_HEIGHT} ariaLabel="Forecast versus actual over time" />
+          <EChart option={option} ariaLabel="Forecast versus actual over time" />
         ) : (
-          <div className="flex h-[218px] items-center justify-center">
-            <p className="text-caption text-text-muted">
-              No series available for the selected range.
-            </p>
-          </div>
+          <EmptyState
+            className="chart-box"
+            icon={LineChart}
+            title="Nothing to plot"
+            message="No series falls inside the selected window — widen the forecast range."
+          />
         )}
       </div>
     </Card>

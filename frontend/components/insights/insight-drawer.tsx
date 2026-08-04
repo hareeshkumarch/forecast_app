@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { Badge } from "@/components/ui/primitives";
-import { formatMetric } from "@/lib/format";
+import { formatMetric, humanizeKey } from "@/lib/format";
 import { useUiStore } from "@/stores/ui-store";
 import type { InsightSeverity } from "@/types/api";
 
@@ -23,11 +23,6 @@ const SEVERITY_LABEL: Record<InsightSeverity, string> = {
   critical: "Critical",
 };
 
-
-function humanizeKey(key: string): string {
-  const spaced = key.replace(/_/g, " ");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 function formatSupportingValue(value: unknown): string {
   if (value === null || value === undefined) return "—";

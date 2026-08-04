@@ -133,7 +133,7 @@ export function AddConnectorModal() {
       onClose={closeModal}
       title="Add Connector"
       description="Connect a data source. Credentials are encrypted before they are stored and are never returned to the browser."
-      width="620px"
+      size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={closeModal}>
@@ -171,7 +171,7 @@ export function AddConnectorModal() {
             <span className="mb-1.5 block text-caption font-medium text-text-secondary">
               Connector type
             </span>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
               {(types ?? []).map((type) => {
                 const Logo = CONNECTOR_LOGOS[type.type as ConnectorLogoKey] ?? CONNECTOR_LOGOS.csv;
                 const isActive = type.type === selectedType;
@@ -208,7 +208,7 @@ export function AddConnectorModal() {
                 />
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {activeType.fields.map((field) => (
                   <FormFieldInput
                     key={field.key}
@@ -297,7 +297,7 @@ function FormFieldInput({
 
   if (field.kind === "textarea") {
     return (
-      <div className="col-span-2">
+      <div className="sm:col-span-2">
         <Field label={field.label} required={field.required} hint={field.help_text}>
           <textarea
             value={String(value ?? "")}

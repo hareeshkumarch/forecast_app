@@ -153,7 +153,17 @@ export function useConnectorSchemas(id: string | null) {
 
 
 export function useTestConnector() {
-  return useMutation({ mutationFn: api.testConnector });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.testConnector,
+
+
+    onSettled: (_data, _error, variables) => {
+      if (variables.connector_id) {
+        void client.invalidateQueries({ queryKey: queryKeys.connectors });
+      }
+    },
+  });
 }
 
 export function useCreateConnector() {

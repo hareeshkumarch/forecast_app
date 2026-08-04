@@ -40,9 +40,14 @@ export function formatDayMonth(iso: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-export function formatDateRange(start: string | null, end: string | null): string {
+export function formatDateRange(
+  start: string | null,
+  end: string | null,
+  granularity: "day" | "month" = "month",
+): string {
   if (!start || !end) return "All dates";
-  return `${formatMonth(start)} – ${formatMonth(end)}`;
+  const format = granularity === "day" ? formatDayMonth : formatMonth;
+  return `${format(start)} – ${format(end)}`;
 }
 
 export function formatRelativeTime(iso: string | null): string {
@@ -62,6 +67,12 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+
+export function humanizeKey(key: string): string {
+  const spaced = key.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 

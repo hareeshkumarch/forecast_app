@@ -119,7 +119,7 @@ export function UploadDatasetModal() {
       onClose={closeModal}
       title="Upload Dataset"
       description={`CSV or XLSX, up to ${MAX_MB} MB.`}
-      width="640px"
+      size="lg"
       footer={
         result ? (
           <>
@@ -205,7 +205,7 @@ export function UploadDatasetModal() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Time column"
               required

@@ -1,7 +1,9 @@
 "use client";
 
 
-import { Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { Globe2 } from "lucide-react";
+
+import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
 import { useRegions } from "@/hooks/use-dashboard";
 import { formatCompact, formatPercent, formatSignedPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -75,11 +77,11 @@ export function RegionTable() {
             </table>
           </div>
         ) : (
-          <div className="flex h-[180px] items-center justify-center px-4">
-            <p className="text-center text-caption text-text-muted">
-              No regional breakdown — the dataset has no region dimension.
-            </p>
-          </div>
+          <EmptyState
+            icon={Globe2}
+            title="No regional breakdown"
+            message="Map a region column when you run a forecast to split it by geography."
+          />
         )}
       </div>
     </Card>

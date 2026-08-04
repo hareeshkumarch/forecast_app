@@ -1,7 +1,9 @@
 "use client";
 
 
-import { Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import { Activity } from "lucide-react";
+
+import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
 import { Sparkline } from "@/components/dashboard/sparkline";
 import { useDrivers } from "@/hooks/use-dashboard";
 import { formatCompact, formatSignedPercent } from "@/lib/format";
@@ -81,11 +83,11 @@ export function DriverTable() {
             </table>
           </div>
         ) : (
-          <div className="flex h-[180px] items-center justify-center px-4">
-            <p className="text-center text-caption text-text-muted">
-              Driver decomposition needs a completed forecast run.
-            </p>
-          </div>
+          <EmptyState
+            icon={Activity}
+            title="No drivers yet"
+            message="Driver decomposition needs a completed forecast run."
+          />
         )}
       </div>
     </Card>

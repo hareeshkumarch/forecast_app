@@ -13,7 +13,7 @@ import {
   useStartForecast,
 } from "@/hooks/use-dashboard";
 import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
-import { humanizeModel } from "@/lib/format";
+import { llmRunFields, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastFrequency } from "@/types/api";
@@ -21,19 +21,13 @@ import type { ForecastFrequency } from "@/types/api";
 const FREQUENCIES: ForecastFrequency[] = ["daily", "weekly", "monthly", "quarterly"];
 const NONE = "__none__";
 
-const PROVIDER_MODELS: Record<string, string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4o", "o3-mini"],
-  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
-  groq: ["llama-3.3-70b-versatile", "deepseek-r1-distill-llama-70b"],
-  xai: ["grok-2-latest", "grok-beta"],
-  gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
-  openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.5-flash"],
-  custom: ["custom-model"],
-};
+const SELECT =
+  "h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none";
 
 export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
+  const openModal = useUiStore((state) => state.openModal);
   const activeRunId = useUiStore((state) => state.activeRunId);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const setRunId = useUiStore((state) => state.setRunId);
@@ -55,39 +49,9 @@ export function ForecastModal() {
   const [maxFolds, setMaxFolds] = useState(5);
   const [metricFocus, setMetricFocus] = useState<"balanced" | "wmape" | "smape" | "rmse">("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
-  const [llmProvider, setLlmProvider] = useState<string>("openai");
-  const [llmApiKey, setLlmApiKey] = useState<string>("");
-  const [llmModel, setLlmModel] = useState<string>("gpt-4o-mini");
-  const [llmBaseUrl, setLlmBaseUrl] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   const { data: dataset } = useDataset(datasetId || null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("forecast_hub_llm_config");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.provider) setLlmProvider(parsed.provider);
-        if (parsed.apiKey) setLlmApiKey(parsed.apiKey);
-        if (parsed.model) setLlmModel(parsed.model);
-        if (parsed.baseUrl) setLlmBaseUrl(parsed.baseUrl);
-      }
-    } catch {}
-  }, []);
-
-  function updateLlmConfig(provider: string, apiKey: string, model: string, baseUrl: string) {
-    setLlmProvider(provider);
-    setLlmApiKey(apiKey);
-    setLlmModel(model);
-    setLlmBaseUrl(baseUrl);
-    try {
-      localStorage.setItem(
-        "forecast_hub_llm_config",
-        JSON.stringify({ provider, apiKey, model, baseUrl }),
-      );
-    } catch {}
-  }
 
   const progress = useForecastProgress(activeRunId, (event) => {
     if (event.status === "completed") {
@@ -128,6 +92,7 @@ export function ForecastModal() {
       setError(null);
       startMutation.reset();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function handleRun() {
@@ -155,10 +120,8 @@ export function ForecastModal() {
         max_folds: maxFolds,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
-        llm_provider: llmProvider || null,
-        llm_api_key: llmApiKey.trim() || null,
-        llm_model: llmModel.trim() || null,
-        llm_base_url: llmBaseUrl.trim() || null,
+
+        ...llmRunFields(loadLlmConfig()),
       },
       {
         onSuccess: (run) => setActiveRun(run.id),
@@ -184,7 +147,7 @@ export function ForecastModal() {
       onClose={handleClose}
       title="Run Forecast"
       description="Fits five candidate models, backtests them and selects a winner."
-      width="580px"
+      size="md"
       footer={
         activeRunId ? (
           <Button variant="secondary" onClick={handleClose}>
@@ -210,7 +173,7 @@ export function ForecastModal() {
             <select
               value={datasetId}
               onChange={(event) => setDatasetId(event.target.value)}
-              className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
+              className={SELECT}
             >
               <option value="">Select a dataset…</option>
               {(datasets ?? []).map((item) => (
@@ -225,12 +188,12 @@ export function ForecastModal() {
             <Input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Frequency" required>
               <select
                 value={frequency}
                 onChange={(event) => setFrequency(event.target.value as ForecastFrequency)}
-                className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta capitalize text-text-primary focus:border-accent focus:outline-none"
+                className={cn(SELECT, "capitalize")}
               >
                 {FREQUENCIES.map((item) => (
                   <option key={item} value={item} className="capitalize">
@@ -261,7 +224,7 @@ export function ForecastModal() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Region column">
               <DimensionSelect
                 value={regionColumn}
@@ -297,7 +260,7 @@ export function ForecastModal() {
 
           {showAdvanced ? (
             <div className="space-y-3 rounded-card border border-border bg-surface-muted/30 p-3">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <Field label="Validation Folds" hint="1 to 10">
                   <Input
                     type="number"
@@ -312,7 +275,7 @@ export function ForecastModal() {
                   <select
                     value={metricFocus}
                     onChange={(e) => setMetricFocus(e.target.value as any)}
-                    className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
+                    className={SELECT}
                   >
                     <option value="balanced">Balanced (Default)</option>
                     <option value="wmape">wMAPE Focus (70%)</option>
@@ -334,73 +297,17 @@ export function ForecastModal() {
             </div>
           ) : null}
 
-          <div className="space-y-3 rounded-card border border-border bg-surface-muted/30 p-3">
-            <p className="text-caption font-semibold text-text-primary">
-              AI Insights LLM Provider (Optional Frontend Config)
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="LLM Provider">
-                <select
-                  value={llmProvider}
-                  onChange={(e) => {
-                    const p = e.target.value;
-                    const defaultModel = PROVIDER_MODELS[p]?.[0] ?? "gpt-4o-mini";
-                    updateLlmConfig(p, llmApiKey, defaultModel, llmBaseUrl);
-                  }}
-                  className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta capitalize text-text-primary focus:border-accent focus:outline-none"
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                  <option value="groq">Groq</option>
-                  <option value="xai">xAI (Grok)</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="custom">Custom / Ollama</option>
-                </select>
-              </Field>
-
-              <Field label="API Key" hint="Saved in Browser">
-                <Input
-                  type="password"
-                  placeholder="sk-..."
-                  value={llmApiKey}
-                  onChange={(e) => updateLlmConfig(llmProvider, e.target.value, llmModel, llmBaseUrl)}
-                />
-              </Field>
-
-              <Field label="LLM Model">
-                {PROVIDER_MODELS[llmProvider] ? (
-                  <select
-                    value={llmModel}
-                    onChange={(e) => updateLlmConfig(llmProvider, llmApiKey, e.target.value, llmBaseUrl)}
-                    className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
-                  >
-                    {PROVIDER_MODELS[llmProvider].map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    placeholder="model-name"
-                    value={llmModel}
-                    onChange={(e) => updateLlmConfig(llmProvider, llmApiKey, e.target.value, llmBaseUrl)}
-                  />
-                )}
-              </Field>
-            </div>
-
-            {llmProvider === "custom" || llmProvider === "openrouter" ? (
-              <Field label="Custom Base URL" hint="e.g. http://localhost:11434/v1">
-                <Input
-                  placeholder="https://..."
-                  value={llmBaseUrl}
-                  onChange={(e) => updateLlmConfig(llmProvider, llmApiKey, llmModel, e.target.value)}
-                />
-              </Field>
-            ) : null}
-          </div>
+          <p className="text-caption text-text-muted">
+            Insights are reworded by an LLM when one is configured in{" "}
+            <button
+              type="button"
+              onClick={() => openModal("settings")}
+              className="font-medium text-accent hover:underline"
+            >
+              Settings
+            </button>
+            . The numbers are computed either way.
+          </p>
 
           {error ? <p className="text-caption text-negative">{error}</p> : null}
         </div>
@@ -422,7 +329,7 @@ function DimensionSelect({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-8 w-full rounded-input border border-border bg-surface px-2 text-meta text-text-primary focus:border-accent focus:outline-none"
+      className={SELECT}
     >
       <option value={NONE}>None</option>
       {options.map((name) => (
@@ -531,5 +438,3 @@ function ProgressPanel({
     </div>
   );
 }
-
-export { humanizeModel };
