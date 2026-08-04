@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import numpy.typing as npt
 
 from app.forecasting.diagnostics import SeriesProfile
+from app.forecasting.models import Forecaster
+from app.models.enums import ModelKind
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -32,23 +35,22 @@ class Transform:
             return array.copy()
 
         correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
-        restored = np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
-        return restored
+        return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
 
 
 @dataclass(slots=True)
 class TransformedForecaster:
-    inner: object
+    inner: Forecaster
     transform: Transform
 
     @property
-    def kind(self):
+    def kind(self) -> ModelKind:
         return self.inner.kind
 
-    def fit(self, y: FloatArray, periods: list) -> None:
+    def fit(self, y: FloatArray, periods: list[date]) -> None:
         self.inner.fit(self.transform.forward(y), periods)
 
-    def predict(self, horizon: int, future_periods: list) -> FloatArray:
+    def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         return self.transform.inverse(self.inner.predict(horizon, future_periods))
 
     @property

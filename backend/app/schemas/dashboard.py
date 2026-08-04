@@ -10,7 +10,6 @@ from app.schemas.common import ORMModel
 
 
 class KpiCard(BaseModel):
-
     key: str
     label: str
     value: float
@@ -20,8 +19,8 @@ class KpiCard(BaseModel):
     comparison_label: str | None = None
     delta: float | None = None
     delta_display: str | None = None
-    direction: str = "flat"                    
-    tone: str = "neutral"                                 
+    direction: str = "flat"
+    tone: str = "neutral"
 
 
 class DashboardSummary(BaseModel):
@@ -105,7 +104,6 @@ class InsightResponse(BaseModel):
 
 
 class DashboardQuery(BaseModel):
-
     run_id: uuid.UUID | None = None
     start: date | None = None
     end: date | None = None

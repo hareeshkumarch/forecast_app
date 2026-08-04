@@ -6,7 +6,6 @@ from app.models.enums import ConnectorStatus, ConnectorType
 
 
 class UnavailableDriverAdapter(ConnectorAdapter):
-
     required_package: str = ""
     install_hint: str = ""
 
@@ -16,8 +15,6 @@ class UnavailableDriverAdapter(ConnectorAdapter):
         try:
             return importlib.util.find_spec(self.required_package) is not None
         except (ImportError, ModuleNotFoundError, ValueError):
-
-
             return False
 
     def test(self) -> TestOutcome:
@@ -116,12 +113,15 @@ class SalesforceAdapter(UnavailableDriverAdapter):
 
 
 class RedshiftAdapter(PostgresAdapter):
-
     type = ConnectorType.REDSHIFT
     display_name = "Amazon Redshift"
     default_port = 5439
     form_fields = (
-        FormField("host", "Cluster endpoint", placeholder="my-cluster.abc123.eu-west-1.redshift.amazonaws.com"),
+        FormField(
+            "host",
+            "Cluster endpoint",
+            placeholder="my-cluster.abc123.eu-west-1.redshift.amazonaws.com",
+        ),
         FormField("port", "Port", required=False, kind="number", placeholder="5439"),
         FormField("database", "Database", placeholder="dev"),
         FormField("username", "Username", secret=True),

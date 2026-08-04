@@ -14,7 +14,6 @@ from app.models.enums import ConnectorStatus, ConnectorType
 
 
 class FileAdapter(ConnectorAdapter):
-
     supports_import = True
     suffixes: ClassVar[set[str]] = set()
 
@@ -23,10 +22,8 @@ class FileAdapter(ConnectorAdapter):
         if not raw:
             raise ConnectorError("No file path is configured for this connector.")
 
-
         root = settings.uploads_dir.resolve()
         candidate = (root / raw.replace("\\", "/")).resolve()
-
 
         if not candidate.is_relative_to(root):
             raise ConnectorError(

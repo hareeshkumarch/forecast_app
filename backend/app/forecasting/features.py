@@ -15,7 +15,6 @@ FloatArray = npt.NDArray[np.float64]
 
 @dataclass(slots=True)
 class FeatureSpec:
-
     lags: list[int]
     rolling_windows: list[int]
     use_calendar: bool = True
@@ -24,18 +23,17 @@ class FeatureSpec:
     seasonal_period: int = 12
     names: list[str] = field(default_factory=list)
 
-    @property
-    def max_lag(self) -> int:
-        window_reach = max(self.rolling_windows, default=0)
-        return max([*self.lags, window_reach, 1])
-
 
 def build_feature_spec(
     n_observations: int,
     frequency: ForecastFrequency,
     profile: SeriesProfile | None = None,
 ) -> FeatureSpec:
-    period = profile.seasonal_period if profile and profile.seasonal_period > 1 else seasonal_period(frequency)
+    period = (
+        profile.seasonal_period
+        if profile and profile.seasonal_period > 1
+        else seasonal_period(frequency)
+    )
     seasonal = profile.has_seasonality if profile is not None else n_observations >= 2 * period + 4
 
     lags = [1, 2, 3]

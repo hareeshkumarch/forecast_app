@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,7 @@ from typing import Any
 import duckdb
 
 from app.core.errors import ValidationError
-from app.forecasting.frequency import TRUNCATE_EVERY
-from app.models.enums import ForecastFrequency
+from app.models.enums import ForecastFrequency, MeasureAggregation
 
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
     ForecastFrequency.DAILY: "day",
@@ -19,7 +19,16 @@ DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
     ForecastFrequency.QUARTERLY: "quarter",
 }
 
-assert set(DATE_TRUNC_PART) == set(TRUNCATE_EVERY), "frequency maps must stay in sync"
+assert set(DATE_TRUNC_PART) == set(ForecastFrequency), "every frequency needs a truncation part"
+
+AGGREGATIONS: dict[MeasureAggregation, str] = {
+    MeasureAggregation.SUM: "SUM",
+    MeasureAggregation.MEAN: "AVG",
+    MeasureAggregation.MEDIAN: "MEDIAN",
+    MeasureAggregation.LAST: "LAST",
+    MeasureAggregation.MIN: "MIN",
+    MeasureAggregation.MAX: "MAX",
+}
 
 
 def _quote(identifier: str) -> str:
@@ -37,7 +46,7 @@ def _as_date(value: object) -> date:
 
 
 @contextmanager
-def connect():
+def connect() -> Iterator[duckdb.DuckDBPyConnection]:
     connection = duckdb.connect(database=":memory:")
     try:
         yield connection
@@ -50,6 +59,10 @@ class AggregatedSeries:
     periods: list[date]
     values: list[float]
     weights: list[float] | None = None
+    row_counts: list[int] = field(default_factory=list)
+    rows_scanned: int = 0
+    rows_usable: int = 0
+    duplicate_rows: int = 0
 
 
 def _source(parquet_path: Path) -> str:
@@ -65,14 +78,21 @@ def aggregate_series(
     weight_column: str | None = None,
     start: date | None = None,
     end: date | None = None,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
 ) -> AggregatedSeries:
     part = DATE_TRUNC_PART[frequency]
+    reducer = AGGREGATIONS[aggregation]
     time_sql = _quote(time_column)
     target_sql = _quote(target_column)
 
-    select_weight = f", SUM(TRY_CAST({_quote(weight_column)} AS DOUBLE)) AS w" if weight_column else ""
+    select_weight = (
+        f", SUM(TRY_CAST({_quote(weight_column)} AS DOUBLE)) AS w" if weight_column else ""
+    )
 
-    where = [f"TRY_CAST({time_sql} AS DATE) IS NOT NULL", f"TRY_CAST({target_sql} AS DOUBLE) IS NOT NULL"]
+    where = [
+        f"TRY_CAST({time_sql} AS DATE) IS NOT NULL",
+        f"TRY_CAST({target_sql} AS DOUBLE) IS NOT NULL",
+    ]
     params: list[Any] = []
     if start is not None:
         where.append(f"TRY_CAST({time_sql} AS DATE) >= ?")
@@ -81,10 +101,13 @@ def aggregate_series(
         where.append(f"TRY_CAST({time_sql} AS DATE) <= ?")
         params.append(end)
 
+    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
+
     sql = f"""
         SELECT
             date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
-            SUM(TRY_CAST({target_sql} AS DOUBLE)) AS value
+            {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value,
+            COUNT(*) AS row_count
             {select_weight}
         FROM {_source(parquet_path)}
         WHERE {" AND ".join(where)}
@@ -92,8 +115,21 @@ def aggregate_series(
         ORDER BY period
     """
 
+    scan_sql = f"""
+        SELECT
+            COUNT(*) AS scanned,
+            COUNT(*) FILTER (
+                WHERE TRY_CAST({time_sql} AS DATE) IS NOT NULL
+                  AND TRY_CAST({target_sql} AS DOUBLE) IS NOT NULL
+            ) AS usable
+        FROM {_source(parquet_path)}
+    """
+
     with connect() as connection:
         rows = connection.execute(sql, params).fetchall()
+        scan = connection.execute(scan_sql).fetchone()
+
+    scanned, usable = scan if scan else (0, 0)
 
     if not rows:
         raise ValidationError(
@@ -103,9 +139,18 @@ def aggregate_series(
 
     periods = [_as_date(row[0]) for row in rows]
     values = [float(row[1]) for row in rows]
-    weights = [float(row[2] or 0.0) for row in rows] if weight_column else None
+    row_counts = [int(row[2]) for row in rows]
+    weights = [float(row[3] or 0.0) for row in rows] if weight_column else None
 
-    return AggregatedSeries(periods=periods, values=values, weights=weights)
+    return AggregatedSeries(
+        periods=periods,
+        values=values,
+        weights=weights,
+        row_counts=row_counts,
+        rows_scanned=int(scanned or 0),
+        rows_usable=int(usable or 0),
+        duplicate_rows=max(sum(row_counts) - len(row_counts), 0),
+    )
 
 
 @dataclass(slots=True)
@@ -206,32 +251,4 @@ def aggregate_segments(
 def column_names(parquet_path: Path) -> list[str]:
     with connect() as connection:
         cursor = connection.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT 0")
-        return [description[0] for description in cursor.description]
-
-
-def sample_rows(parquet_path: Path, limit: int = 20) -> list[dict[str, Any]]:
-    with connect() as connection:
-        cursor = connection.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT {int(limit)}")
-        columns = [description[0] for description in cursor.description]
-        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
-
-
-def quantity_series(
-    parquet_path: Path,
-    time_column: str,
-    quantity_column: str,
-    frequency: ForecastFrequency,
-) -> list[float]:
-    part = DATE_TRUNC_PART[frequency]
-    time_sql = _quote(time_column)
-    sql = f"""
-        SELECT
-            date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
-            SUM(TRY_CAST({_quote(quantity_column)} AS DOUBLE)) AS value
-        FROM {_source(parquet_path)}
-        WHERE TRY_CAST({time_sql} AS DATE) IS NOT NULL
-        GROUP BY period
-        ORDER BY period
-    """
-    with connect() as connection:
-        return [float(row[1] or 0.0) for row in connection.execute(sql).fetchall()]
+        return [str(description[0]) for description in cursor.description or []]

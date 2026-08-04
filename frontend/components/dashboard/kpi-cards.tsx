@@ -64,7 +64,7 @@ export function KpiCards() {
   if (isError) {
     return (
       <Card>
-        <ErrorState message={error?.message} onRetry={() => void refetch()} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       </Card>
     );
   }

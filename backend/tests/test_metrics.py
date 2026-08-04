@@ -20,7 +20,6 @@ def test_known_values() -> None:
     actual = np.array([100.0, 200.0, 300.0])
     predicted = np.array([110.0, 180.0, 330.0])
 
-
     assert mae(actual, predicted) == pytest.approx(20.0)
     assert rmse(actual, predicted) == pytest.approx(math.sqrt((100 + 400 + 900) / 3))
 
@@ -30,7 +29,6 @@ def test_known_values() -> None:
 def test_nan_pairs_are_ignored_not_zeroed() -> None:
     actual = np.array([100.0, np.nan, 300.0])
     predicted = np.array([110.0, 200.0, 330.0])
-
 
     assert mae(actual, predicted) == pytest.approx(20.0)
 
@@ -69,7 +67,6 @@ def test_wmape_with_explicit_weights() -> None:
     actual = np.array([100.0, 100.0])
     predicted = np.array([90.0, 110.0])
     weights = np.array([1.0, 0.0])
-
 
     assert wmape(actual, predicted, weights) == pytest.approx(10.0)
 

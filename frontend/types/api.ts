@@ -23,10 +23,13 @@ export type ModelKind =
   | "naive"
   | "seasonal_naive"
   | "holt_winters"
+  | "ets"
   | "theta"
   | "croston"
   | "sarimax"
-  | "gradient_boosting";
+  | "prophet"
+  | "gradient_boosting"
+  | "ensemble";
 
 export type PointKind = "actual" | "fitted" | "forecast";
 
@@ -48,12 +51,21 @@ export type ForecastView = "base" | "best" | "worst";
 
 export type ExportFormat = "csv" | "xlsx" | "json";
 
+export type MeasureAggregation = "sum" | "mean" | "median" | "last" | "min" | "max";
+
+export type GapFill = "auto" | "interpolate" | "zero" | "none";
+
+export type OutlierTreatment = "none" | "winsorise";
+
+export type IssueSeverity = "info" | "warning" | "severe";
+
 
 export interface ApiErrorBody {
   error: {
     code: string;
     message: string;
     detail: Record<string, unknown>;
+    request_id?: string;
   };
 }
 
@@ -377,6 +389,43 @@ export interface Insight {
 export interface InsightResponse {
   run_id: string | null;
   items: Insight[];
+}
+
+export interface QualityIssue {
+  code: string;
+  severity: IssueSeverity;
+  message: string;
+  remedy: string;
+  count: number;
+}
+
+export interface DataQualityResponse {
+  dataset_id: string;
+  time_column: string;
+  target_column: string;
+  frequency: ForecastFrequency;
+  aggregation: MeasureAggregation;
+  gap_fill: GapFill;
+
+  rows_scanned: number;
+  rows_usable: number;
+  periods_present: number;
+  periods_expected: number;
+  coverage: number;
+  gap_count: number;
+  longest_gap: number;
+  duplicate_rows: number;
+  partial_periods: number;
+  outlier_periods: number;
+  negative_periods: number;
+  zero_periods: number;
+  constant_target: boolean;
+  range_start: string | null;
+  range_end: string | null;
+  fill_applied: GapFill;
+  blocked: boolean;
+  severity: IssueSeverity;
+  issues: QualityIssue[];
 }
 
 export interface HealthResponse {

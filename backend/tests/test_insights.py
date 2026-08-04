@@ -101,7 +101,7 @@ def test_worst_case_risk_is_silent_when_downside_is_small() -> None:
 def test_anomaly_detects_a_real_outlier() -> None:
     history = [100.0] * 20
     fitted = [100.0] * 20
-    history[-2] = 400.0                                     
+    history[-2] = 400.0
 
     insight = anomaly(make_context(history=history, fitted=fitted))
 
@@ -131,12 +131,7 @@ def test_category_decline_picks_the_worst_category() -> None:
 
 
 def test_category_decline_silent_when_all_growing() -> None:
-    assert (
-        category_decline(
-            make_context(categories=[SegmentFact("A", 400.0, 10.0, 100.0)])
-        )
-        is None
-    )
+    assert category_decline(make_context(categories=[SegmentFact("A", 400.0, 10.0, 100.0)])) is None
 
 
 def test_engine_ranks_critical_above_informational() -> None:
@@ -183,9 +178,7 @@ def test_a_broken_generator_does_not_blank_the_rail(monkeypatch) -> None:
     def exploding(_: InsightContext):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(
-        engine_module, "GENERATORS", (exploding, worst_case_risk, accuracy_change)
-    )
+    monkeypatch.setattr(engine_module, "GENERATORS", (exploding, worst_case_risk, accuracy_change))
 
     insights = engine_module.generate_insights(
         make_context(point_forecast=[100.0] * 6, worst_case=[70.0] * 6)

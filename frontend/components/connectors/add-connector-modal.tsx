@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/connector-logos";
 import { Modal } from "@/components/ui/modal";
-import { Button, Field, Input, Skeleton } from "@/components/ui/primitives";
+import { Button, Field, InlineError, Input, Skeleton } from "@/components/ui/primitives";
+import { errorMessage } from "@/lib/errors";
 import { useConnectorTypes, useCreateConnector, useTestConnector } from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
@@ -120,7 +121,7 @@ export function AddConnectorModal() {
       { name: name.trim(), type: selectedType, config, credentials },
       {
         onSuccess: () => closeModal(),
-        onError: (error) => setFormError(error.message),
+        onError: (error) => setFormError(errorMessage(error)),
       },
     );
   }
@@ -260,10 +261,8 @@ export function AddConnectorModal() {
                 </div>
               ) : null}
 
-              {testMutation.isError ? (
-                <p className="text-caption text-negative">{testMutation.error.message}</p>
-              ) : null}
-              {formError ? <p className="text-caption text-negative">{formError}</p> : null}
+              {testMutation.isError ? <InlineError error={testMutation.error} /> : null}
+              <InlineError message={formError ?? undefined} />
             </>
           ) : null}
         </div>

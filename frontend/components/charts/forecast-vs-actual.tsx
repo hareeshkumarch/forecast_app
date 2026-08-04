@@ -347,7 +347,7 @@ export function ForecastVsActual() {
             <Skeleton className="chart-box w-full rounded-[9px]" />
           </div>
         ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => void refetch()} />
+          <ErrorState error={error} onRetry={() => void refetch()} />
         ) : option && data && data.points.length > 0 ? (
           <EChart option={option} ariaLabel="Forecast versus actual over time" />
         ) : (

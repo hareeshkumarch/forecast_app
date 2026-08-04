@@ -7,7 +7,13 @@ import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
-import type { DashboardFilters, ExportFormat, ForecastFrequency } from "@/types/api";
+import type {
+  DashboardFilters,
+  ExportFormat,
+  ForecastFrequency,
+  GapFill,
+  MeasureAggregation,
+} from "@/types/api";
 
 
 function filterKey(filters: DashboardFilters) {
@@ -27,6 +33,7 @@ export const queryKeys = {
   datasets: ["datasets"] as const,
   dataset: (id: string) => ["datasets", id] as const,
   datasetProfile: (id: string) => ["datasets", id, "profile"] as const,
+  datasetQuality: (id: string, key: string) => ["datasets", id, "quality", key] as const,
   runs: ["forecasts"] as const,
   run: (id: string) => ["forecasts", id] as const,
   runMetrics: (id: string) => ["forecasts", id, "metrics"] as const,
@@ -126,6 +133,35 @@ export function useDataset(id: string | null | undefined) {
     queryKey: queryKeys.dataset(id ?? "none"),
     queryFn: () => api.getDataset(id as string),
     enabled: Boolean(id),
+  });
+}
+
+
+export function useDatasetQuality(
+  id: string | null,
+  params: {
+    time_column: string | null;
+    target_column: string | null;
+    frequency: ForecastFrequency;
+    aggregation: MeasureAggregation;
+    gap_fill: GapFill;
+  },
+) {
+  const ready = Boolean(id && params.time_column && params.target_column);
+  const key = [params.time_column, params.target_column, params.frequency, params.aggregation, params.gap_fill].join("|");
+
+  return useQuery({
+    queryKey: queryKeys.datasetQuality(id ?? "none", key),
+    queryFn: () =>
+      api.getDatasetQuality(id as string, {
+        time_column: params.time_column as string,
+        target_column: params.target_column as string,
+        frequency: params.frequency,
+        aggregation: params.aggregation,
+        gap_fill: params.gap_fill,
+      }),
+    enabled: ready,
+    retry: false,
   });
 }
 

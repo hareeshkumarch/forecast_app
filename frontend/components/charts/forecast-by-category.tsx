@@ -110,7 +110,7 @@ export function ForecastByCategory() {
             </div>
           </div>
         ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => void refetch()} />
+          <ErrorState error={error} onRetry={() => void refetch()} />
         ) : option && data && data.rows.length > 0 ? (
           <div className="category-layout">
             

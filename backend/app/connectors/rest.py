@@ -49,7 +49,6 @@ class RestApiAdapter(ConnectorAdapter):
         headers = {"Accept": "application/json"}
         token = self.credentials.get("token", "").strip()
         if token:
-
             headers["Authorization"] = token if " " in token else f"Bearer {token}"
         return headers
 
@@ -64,7 +63,9 @@ class RestApiAdapter(ConnectorAdapter):
                 response = client.get(url, headers=self._headers())
         except ConnectorError as exc:
             return TestOutcome(
-                ok=False, status=ConnectorStatus.ERROR, message=exc.message,
+                ok=False,
+                status=ConnectorStatus.ERROR,
+                message=exc.message,
                 latency_ms=self._timed(started),
             )
         except httpx.TimeoutException:
@@ -149,7 +150,6 @@ class RestApiAdapter(ConnectorAdapter):
                     records = body[key]
                     break
             else:
-
                 records = [body]
         else:
             raise ConnectorError(
@@ -188,9 +188,7 @@ class RestApiAdapter(ConnectorAdapter):
                 response.raise_for_status()
                 records = self._extract(response.json())
         except httpx.HTTPStatusError as exc:
-            raise ConnectorError(
-                f"The endpoint returned HTTP {exc.response.status_code}."
-            ) from exc
+            raise ConnectorError(f"The endpoint returned HTTP {exc.response.status_code}.") from exc
         except httpx.HTTPError as exc:
             raise ConnectorError(f"Request failed: {type(exc).__name__}.") from exc
         except ValueError as exc:
@@ -198,7 +196,6 @@ class RestApiAdapter(ConnectorAdapter):
 
         if not records:
             raise ConnectorError("The endpoint returned no records.")
-
 
         flattened = [
             {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 from sqlalchemy import delete, func, select
@@ -11,19 +12,30 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
+from app.core.storage import file_exists
+from app.datasets import quality, queries
 from app.datasets.ingest import persist_upload, write_parquet
-from app.datasets.profiler import DatasetProfileResult, profile_frame, suggestions
+from app.datasets.profiler import (
+    ColumnProfile,
+    DatasetProfileResult,
+    profile_frame,
+    suggestions,
+)
 from app.models.entities import Dataset, DatasetColumn
-from app.models.enums import ColumnRole, DatasetStatus, ForecastFrequency
-from app.schemas.dataset import ColumnSuggestion, DatasetProfile
+from app.models.enums import (
+    ColumnRole,
+    DatasetStatus,
+    ForecastFrequency,
+    GapFill,
+    MeasureAggregation,
+)
+from app.schemas.dataset import ColumnSuggestion, DatasetColumnRead, DatasetProfile
 
 logger = get_logger(__name__)
 
 
 async def list_datasets(session: AsyncSession, *, limit: int = 100) -> list[Dataset]:
-    result = await session.execute(
-        select(Dataset).order_by(Dataset.created_at.desc()).limit(limit)
-    )
+    result = await session.execute(select(Dataset).order_by(Dataset.created_at.desc()).limit(limit))
     return list(result.scalars().all())
 
 
@@ -66,7 +78,6 @@ async def create_from_upload(
         time_column=time_column,
         target_column=target_column,
         frequency=profile.detected_frequency,
-
         horizon=_default_horizon(profile.detected_frequency),
     )
     session.add(dataset)
@@ -74,7 +85,6 @@ async def create_from_upload(
 
     _attach_columns(session, dataset, profile)
     await session.flush()
-
 
     return await get_dataset(session, dataset.id), profile
 
@@ -132,9 +142,7 @@ def _default_horizon(frequency: ForecastFrequency | None) -> int:
     }.get(frequency or ForecastFrequency.MONTHLY, 6)
 
 
-def _attach_columns(
-    session: AsyncSession, dataset: Dataset, profile: DatasetProfileResult
-) -> None:
+def _attach_columns(session: AsyncSession, dataset: Dataset, profile: DatasetProfileResult) -> None:
     for column in profile.columns:
         session.add(
             DatasetColumn(
@@ -186,7 +194,6 @@ async def configure(
     if name:
         dataset.name = name[:200]
 
-
     for column in dataset.columns:
         if column.name == time_column:
             column.role = ColumnRole.TIME
@@ -199,9 +206,7 @@ async def configure(
     return dataset
 
 
-def build_profile_response(
-    dataset: Dataset, profile: DatasetProfileResult
-) -> DatasetProfile:
+def build_profile_response(dataset: Dataset, profile: DatasetProfileResult) -> DatasetProfile:
     cells = max(1, profile.row_count * profile.column_count)
 
     return DatasetProfile(
@@ -229,7 +234,7 @@ def _suggestions(profile: DatasetProfileResult, role: str) -> list[ColumnSuggest
     ]
 
 
-def _column_payload(column) -> dict:
+def _column_payload(column: ColumnProfile) -> dict[str, object]:
     return {
         "id": uuid.uuid4(),
         "name": column.name,
@@ -259,9 +264,10 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
 
     def rank(column: DatasetColumn, *, date_axis: bool) -> float:
 
-
         base = 0.9 if column.role in (ColumnRole.TIME, ColumnRole.TARGET) else 0.6
-        return base if (column.is_date_candidate if date_axis else column.is_target_candidate) else 0.0
+        return (
+            base if (column.is_date_candidate if date_axis else column.is_target_candidate) else 0.0
+        )
 
     return DatasetProfile(
         dataset_id=dataset.id,
@@ -272,7 +278,7 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
         date_range_start=dataset.date_range_start,
         date_range_end=dataset.date_range_end,
         detected_frequency=dataset.frequency,
-        columns=list(columns),  # type: ignore[misc] — Pydantic reads them via from_attributes
+        columns=[DatasetColumnRead.model_validate(column) for column in columns],
         time_column_suggestions=[
             ColumnSuggestion(
                 name=c.name, kind=c.kind, confidence=rank(c, date_axis=True), reason=c.dtype
@@ -321,7 +327,6 @@ def guess_segment_columns(dataset: Dataset) -> tuple[str | None, str | None]:
         (c for c in dimensions if c != region and any(w in c.lower() for w in category_words)), None
     )
 
-
     remaining = [c for c in dimensions if c not in (region, category)]
     if region is None and remaining:
         region = remaining.pop(0)
@@ -333,3 +338,48 @@ def guess_segment_columns(dataset: Dataset) -> tuple[str | None, str | None]:
 
 def date_bounds(dataset: Dataset) -> tuple[date | None, date | None]:
     return dataset.date_range_start, dataset.date_range_end
+
+
+async def assess_quality(
+    session: AsyncSession,
+    dataset_id: uuid.UUID,
+    *,
+    time_column: str,
+    target_column: str,
+    frequency: ForecastFrequency,
+    aggregation: MeasureAggregation,
+    gap_fill: GapFill,
+) -> quality.QualityReport:
+    dataset = await get_dataset(session, dataset_id)
+
+    if not await file_exists(dataset.parquet_path):
+        raise ValidationError("This dataset has no stored data file. Re-upload it first.")
+
+    available = {column.name for column in dataset.columns}
+    for role, column in (("time", time_column), ("target", target_column)):
+        if column not in available:
+            raise ValidationError(
+                f"'{column}' is not a column in this dataset (selected as the {role} column).",
+                detail={"available_columns": sorted(available)},
+            )
+
+    def _assess() -> quality.QualityReport:
+        series = queries.aggregate_series(
+            Path(dataset.parquet_path or ""),
+            time_column,
+            target_column,
+            frequency,
+            aggregation=aggregation,
+        )
+        return quality.build_report(
+            rows_scanned=series.rows_scanned,
+            rows_usable=series.rows_usable,
+            duplicate_rows=series.duplicate_rows,
+            row_counts=series.row_counts,
+            periods=series.periods,
+            values=series.values,
+            frequency=frequency,
+            fill=gap_fill,
+        )
+
+    return await asyncio.to_thread(_assess)

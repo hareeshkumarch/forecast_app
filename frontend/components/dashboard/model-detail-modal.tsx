@@ -43,7 +43,7 @@ export function ModelDetailModal() {
           <Skeleton className="h-32 w-full" />
         </div>
       ) : isError ? (
-        <ErrorState message={error?.message} onRetry={() => void refetch()} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       ) : !data ? (
         <p className="text-caption text-text-muted">
           Run a forecast to see how its model was chosen.

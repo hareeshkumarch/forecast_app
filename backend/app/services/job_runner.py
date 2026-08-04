@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
@@ -41,9 +42,7 @@ class ProgressEvent:
 
 @dataclass
 class ProgressBus:
-
     _subscribers: dict[uuid.UUID, set[asyncio.Queue[ProgressEvent]]] = field(default_factory=dict)
-
 
     _latest: dict[uuid.UUID, ProgressEvent] = field(default_factory=dict)
 
@@ -53,7 +52,6 @@ class ProgressBus:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-
                 try:
                     queue.get_nowait()
                     queue.put_nowait(event)
@@ -95,7 +93,6 @@ progress_bus = ProgressBus()
 
 
 class ExecutorRegistry:
-
     def __init__(self) -> None:
         self._executor: ProcessPoolExecutor | None = None
 
@@ -103,7 +100,9 @@ class ExecutorRegistry:
         if self._executor is not None:
             return
         workers = max(1, settings.forecast_workers)
-        self._executor = ProcessPoolExecutor(max_workers=workers)
+        self._executor = ProcessPoolExecutor(
+            max_workers=workers, mp_context=multiprocessing.get_context("spawn")
+        )
         logger.info("Started forecast process pool with %d worker(s).", workers)
 
     def shutdown(self) -> None:
@@ -116,7 +115,6 @@ class ExecutorRegistry:
     @property
     def executor(self) -> ProcessPoolExecutor:
         if self._executor is None:
-
             self.start()
         assert self._executor is not None
         return self._executor

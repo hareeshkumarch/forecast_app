@@ -7,7 +7,9 @@ from fastapi import APIRouter, File, Form, Response, UploadFile, status
 from app.api.deps import SessionDep
 from app.core.config import settings
 from app.core.errors import PayloadTooLargeError, ValidationError
+from app.models.enums import ForecastFrequency, GapFill, MeasureAggregation
 from app.schemas.dataset import (
+    DataQualityResponse,
     DatasetConfigureRequest,
     DatasetDetail,
     DatasetProfile,
@@ -38,7 +40,6 @@ async def upload_dataset(
 ) -> DatasetUploadResponse:
     if not file.filename:
         raise ValidationError("The upload is missing a filename.")
-
 
     chunks: list[bytes] = []
     total = 0
@@ -107,3 +108,55 @@ async def configure_dataset(
 async def delete_dataset(dataset_id: uuid.UUID, session: SessionDep) -> Response:
     await dataset_service.delete_dataset(session, dataset_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{dataset_id}/quality",
+    response_model=DataQualityResponse,
+    summary="Assess a column and frequency choice before running a forecast",
+)
+async def dataset_quality(
+    dataset_id: uuid.UUID,
+    session: SessionDep,
+    time_column: str,
+    target_column: str,
+    frequency: ForecastFrequency = ForecastFrequency.MONTHLY,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+    gap_fill: GapFill = GapFill.AUTO,
+) -> DataQualityResponse:
+    report = await dataset_service.assess_quality(
+        session,
+        dataset_id,
+        time_column=time_column,
+        target_column=target_column,
+        frequency=frequency,
+        aggregation=aggregation,
+        gap_fill=gap_fill,
+    )
+
+    return DataQualityResponse(
+        dataset_id=dataset_id,
+        time_column=time_column,
+        target_column=target_column,
+        frequency=frequency,
+        aggregation=aggregation,
+        gap_fill=gap_fill,
+        range_start=report.range_start,
+        range_end=report.range_end,
+        coverage=round(report.coverage, 4),
+        blocked=report.blocked,
+        issues=[issue.as_dict() for issue in report.issues],
+        rows_scanned=report.rows_scanned,
+        rows_usable=report.rows_usable,
+        periods_present=report.periods_present,
+        periods_expected=report.periods_expected,
+        gap_count=report.gap_count,
+        longest_gap=report.longest_gap,
+        duplicate_rows=report.duplicate_rows,
+        partial_periods=report.partial_periods,
+        outlier_periods=report.outlier_periods,
+        negative_periods=report.negative_periods,
+        zero_periods=report.zero_periods,
+        constant_target=report.constant_target,
+        fill_applied=report.fill_applied,
+    )

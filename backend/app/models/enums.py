@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-try:
-    from enum import StrEnum
-except ImportError:
-    from enum import Enum
-
-    class StrEnum(str, Enum):
-        pass
+from enum import StrEnum
 
 
 class ConnectorType(StrEnum):
@@ -24,7 +18,6 @@ class ConnectorType(StrEnum):
 
 
 class ConnectorStatus(StrEnum):
-
     NOT_CONFIGURED = "not_configured"
     CONFIGURED = "configured"
     CONNECTED = "connected"
@@ -80,6 +73,33 @@ class ModelKind(StrEnum):
     PROPHET = "prophet"
     GRADIENT_BOOSTING = "gradient_boosting"
     ENSEMBLE = "ensemble"
+
+
+class MeasureAggregation(StrEnum):
+    SUM = "sum"
+    MEAN = "mean"
+    MEDIAN = "median"
+    LAST = "last"
+    MIN = "min"
+    MAX = "max"
+
+
+class GapFill(StrEnum):
+    AUTO = "auto"
+    INTERPOLATE = "interpolate"
+    ZERO = "zero"
+    NONE = "none"
+
+
+class OutlierTreatment(StrEnum):
+    NONE = "none"
+    WINSORISE = "winsorise"
+
+
+class IssueSeverity(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    SEVERE = "severe"
 
 
 class PointKind(StrEnum):

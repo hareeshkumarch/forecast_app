@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Query
 from starlette.responses import FileResponse
 
 from app.api.deps import SessionDep
 from app.core.errors import NotFoundError
+from app.core.storage import file_exists
 from app.models.enums import ExportFormat
 from app.reporting import exporter
 from app.services import forecast_service
@@ -23,16 +23,13 @@ router = APIRouter(prefix="/exports", tags=["exports"])
 async def export_forecast(
     forecast_id: uuid.UUID,
     session: SessionDep,
-    format: ExportFormat = Query(
-        default=ExportFormat.CSV, description="csv, xlsx or json."
-    ),
+    format: ExportFormat = Query(default=ExportFormat.CSV, description="csv, xlsx or json."),
 ) -> FileResponse:
     run = await forecast_service.get_run(session, forecast_id)
     job = await exporter.create_export(session, forecast_id, format)
 
-    if not job.file_path or not Path(job.file_path).exists():
+    if not job.file_path or not await file_exists(job.file_path):
         raise NotFoundError("The export file could not be found after generation.")
-
 
     await session.commit()
 

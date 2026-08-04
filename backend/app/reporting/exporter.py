@@ -100,7 +100,9 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
         select(RegionalForecast).where(RegionalForecast.run_id == run.id)
     )
     categories = await session.execute(
-        select(CategoryForecast).where(CategoryForecast.run_id == run.id).order_by(CategoryForecast.rank)
+        select(CategoryForecast)
+        .where(CategoryForecast.run_id == run.id)
+        .order_by(CategoryForecast.rank)
     )
     drivers = await session.execute(
         select(ForecastDriver).where(ForecastDriver.run_id == run.id).order_by(ForecastDriver.rank)
@@ -153,8 +155,6 @@ def _write(
     frame = pl.DataFrame(rows, infer_schema_length=None)
 
     if export_format is ExportFormat.CSV:
-
-
         frame.write_csv(path)
         return
 
@@ -181,7 +181,6 @@ def _write(
         }
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         return
-
 
     try:
         import xlsxwriter

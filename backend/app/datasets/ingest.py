@@ -142,7 +142,6 @@ def persist_upload(content: bytes, filename: str, dataset_id: str) -> IngestResu
     try:
         frame = read_tabular(raw_path, suffix)
     except Exception:
-
         raw_path.unlink(missing_ok=True)
         raise
 

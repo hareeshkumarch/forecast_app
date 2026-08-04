@@ -33,7 +33,7 @@ export function RegionTable() {
             ))}
           </div>
         ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => void refetch()} />
+          <ErrorState error={error} onRetry={() => void refetch()} />
         ) : data && data.rows.length > 0 ? (
           
           

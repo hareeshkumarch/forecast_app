@@ -112,7 +112,7 @@ export function InsightsRailBody() {
             </div>
           ))
         ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => void refetch()} />
+          <ErrorState error={error} onRetry={() => void refetch()} />
         ) : items.length === 0 ? (
           <EmptyState
             className="rounded-card border border-dashed border-border"

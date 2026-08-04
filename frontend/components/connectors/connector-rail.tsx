@@ -4,7 +4,7 @@
 import { Download, Plug, Plus } from "lucide-react";
 
 import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/connector-logos";
-import { Button, Skeleton } from "@/components/ui/primitives";
+import { Button, InlineError, Skeleton } from "@/components/ui/primitives";
 import { useConnectors, useTestConnector } from "@/hooks/use-dashboard";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -206,7 +206,7 @@ function ConnectorActions({
           {result.message}
         </p>
       ) : testMutation.isError ? (
-        <p className="text-caption text-negative">{testMutation.error.message}</p>
+        <InlineError error={testMutation.error} />
       ) : null}
     </div>
   );

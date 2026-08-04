@@ -9,8 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.enums import ConnectorStatus, ConnectorType
 from app.schemas.common import ORMModel, StrictModel
 
-RowLimit = Annotated[int, Field(ge=1, le=5_000_000)]
-
 
 class ConnectorConfig(StrictModel):
     host: str | None = None
@@ -50,7 +48,6 @@ class ConnectorUpdate(BaseModel):
 
 
 class ConnectorTestRequest(BaseModel):
-
     connector_id: uuid.UUID | None = None
     type: ConnectorType | None = None
     config: ConnectorConfig = Field(default_factory=ConnectorConfig)

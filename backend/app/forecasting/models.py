@@ -3,17 +3,19 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import numpy.typing as npt
 
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
-from app.forecasting.tuning import MIN_VALIDATION_ROWS, SearchSpace, tune
+from app.forecasting.tuning import MIN_VALIDATION_ROWS, SearchSpace, as_float, as_int, tune
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
+
+FittedModel = Any
 
 RANDOM_STATE = 20260804
 
@@ -31,7 +33,8 @@ _APPROX_DAYS: dict[ForecastFrequency, float] = {
 
 
 class Forecaster(Protocol):
-    kind: ModelKind
+    @property
+    def kind(self) -> ModelKind: ...
 
     def fit(self, y: FloatArray, periods: list[date]) -> None: ...
 
@@ -80,7 +83,7 @@ class NaiveForecaster:
             self._drift = float((finite[-1] - finite[0]) / (finite.size - 1))
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
-        steps = np.arange(1, horizon + 1, dtype=float)
+        steps = np.arange(1, horizon + 1, dtype=np.float64)
         return self._last + self._drift * steps
 
     @property
@@ -110,7 +113,7 @@ class SeasonalNaiveForecaster:
         if y.size < period:
             raise ValueError(f"Seasonal naive needs at least {period} observations.")
 
-        self._season = np.asarray(y[-period:], dtype=float)
+        self._season = np.asarray(y[-period:], dtype=np.float64)
         self._drift = 0.0
 
         if self.profile is not None and self.profile.has_trend and y.size >= 2 * period:
@@ -120,8 +123,8 @@ class SeasonalNaiveForecaster:
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         period = len(self._season)
-        base = np.array([self._season[i % period] for i in range(horizon)], dtype=float)
-        return base + self._drift * np.arange(1, horizon + 1, dtype=float)
+        base = np.array([self._season[i % period] for i in range(horizon)], dtype=np.float64)
+        return base + self._drift * np.arange(1, horizon + 1, dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -139,7 +142,7 @@ class HoltWintersForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     kind: ModelKind = field(default=ModelKind.HOLT_WINTERS, init=False)
-    _fitted: object | None = field(default=None, init=False)
+    _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
 
     def _configurations(self, y: FloatArray) -> list[dict[str, object]]:
@@ -196,7 +199,7 @@ class HoltWintersForecaster:
                 if not np.isfinite(score):
                     score = float(getattr(fitted, "aic", np.inf))
 
-                forecast = np.asarray(fitted.forecast(1), dtype=float)
+                forecast = np.asarray(fitted.forecast(1), dtype=np.float64)
                 if not np.all(np.isfinite(forecast)):
                     continue
 
@@ -218,7 +221,7 @@ class HoltWintersForecaster:
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._fitted is None:
             raise RuntimeError("fit() must be called before predict().")
-        return np.asarray(self._fitted.forecast(horizon), dtype=float)
+        return np.asarray(self._fitted.forecast(horizon), dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -234,7 +237,7 @@ class AutoEtsForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     kind: ModelKind = field(default=ModelKind.ETS, init=False)
-    _fitted: object | None = field(default=None, init=False)
+    _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
 
     def _taxonomy(self, y: FloatArray) -> list[tuple[str, str | None, str | None, bool]]:
@@ -280,7 +283,7 @@ class AutoEtsForecaster:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     model = ETSModel(
-                        np.asarray(y, dtype=float),
+                        np.asarray(y, dtype=np.float64),
                         error=error,
                         trend=trend,
                         seasonal=season,
@@ -317,7 +320,7 @@ class AutoEtsForecaster:
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._fitted is None:
             raise RuntimeError("fit() must be called before predict().")
-        return np.asarray(self._fitted.forecast(horizon), dtype=float)
+        return np.asarray(self._fitted.forecast(horizon), dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -337,7 +340,7 @@ class ProphetForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
-    _fitted: object | None = field(default=None, init=False)
+    _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
 
     @staticmethod
@@ -376,12 +379,10 @@ class ProphetForecaster:
 
         flags = self._seasonality_flags(y)
         multiplicative = (
-            self.profile is not None
-            and self.profile.transform == "log"
-            and bool(np.all(y > 0))
+            self.profile is not None and self.profile.transform == "log" and bool(np.all(y > 0))
         )
 
-        frame = pd.DataFrame({"ds": pd.to_datetime(periods), "y": np.asarray(y, dtype=float)})
+        frame = pd.DataFrame({"ds": pd.to_datetime(periods), "y": np.asarray(y, dtype=np.float64)})
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -409,7 +410,7 @@ class ProphetForecaster:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             forecast = self._fitted.predict(frame)
-        return np.asarray(forecast["yhat"].to_numpy(), dtype=float)
+        return np.asarray(forecast["yhat"].to_numpy(), dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -425,7 +426,7 @@ class ThetaForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     kind: ModelKind = field(default=ModelKind.THETA, init=False)
-    _fitted: object | None = field(default=None, init=False)
+    _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
@@ -442,7 +443,7 @@ class ThetaForecaster:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model = ThetaModel(
-                np.asarray(y, dtype=float),
+                np.asarray(y, dtype=np.float64),
                 period=period if seasonal else 1,
                 deseasonalize=seasonal,
                 method="mul" if multiplicative else "add",
@@ -459,7 +460,7 @@ class ThetaForecaster:
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._fitted is None:
             raise RuntimeError("fit() must be called before predict().")
-        return np.asarray(self._fitted.forecast(horizon), dtype=float)
+        return np.asarray(self._fitted.forecast(horizon), dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -498,11 +499,11 @@ class CrostonForecaster:
         return squared / max(sizes.size - 1, 1)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
-        occurrences = np.flatnonzero(np.asarray(y, dtype=float) > 0)
+        occurrences = np.flatnonzero(np.asarray(y, dtype=np.float64) > 0)
         if occurrences.size < 2:
             raise ValueError("Croston needs at least two non-zero demands.")
 
-        sizes = np.asarray(y, dtype=float)[occurrences]
+        sizes = np.asarray(y, dtype=np.float64)[occurrences]
         intervals = np.diff(np.concatenate([[-1], occurrences])).astype(float)
 
         best_alpha, best_error = 0.1, float("inf")
@@ -524,7 +525,7 @@ class CrostonForecaster:
         }
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
-        return np.full(horizon, self._rate, dtype=float)
+        return np.full(horizon, self._rate, dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -541,7 +542,7 @@ class SarimaxForecaster:
     profile: SeriesProfile | None = None
     order: tuple[int, int, int] | None = None
     kind: ModelKind = field(default=ModelKind.SARIMAX, init=False)
-    _fitted: object | None = field(default=None, init=False)
+    _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
     _harmonics: int = field(default=0, init=False)
     _period: int = field(default=1, init=False)
@@ -574,7 +575,7 @@ class SarimaxForecaster:
     def _exog(self, size: int, offset: int = 0) -> FloatArray | None:
         if self._harmonics <= 0:
             return None
-        index = np.arange(offset, offset + size, dtype=float)
+        index = np.arange(offset, offset + size, dtype=np.float64)
         return _fourier_terms(index, self._period, self._harmonics)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
@@ -644,7 +645,7 @@ class SarimaxForecaster:
         if self._fitted is None:
             raise RuntimeError("fit() must be called before predict().")
         exog = self._exog(horizon, offset=self._train_size)
-        return np.asarray(self._fitted.forecast(steps=horizon, exog=exog), dtype=float)
+        return np.asarray(self._fitted.forecast(steps=horizon, exog=exog), dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -652,7 +653,11 @@ class SarimaxForecaster:
 
     @property
     def min_observations(self) -> int:
-        widest = max(sum(order) for order in self._search_space(np.zeros(0))) if self.order is None else sum(self.order)
+        widest = (
+            max(sum(order) for order in self._search_space(np.zeros(0)))
+            if self.order is None
+            else sum(self.order)
+        )
         seasonal = self.profile is not None and self.profile.has_seasonality
         period = self.profile.seasonal_period if self.profile else 0
         parameters = widest + 1 + (2 if seasonal and period <= MAX_STATE_SPACE_PERIOD else 0)
@@ -667,7 +672,7 @@ class GradientBoostingForecaster:
     max_depth: int | None = None
     learning_rate: float | None = None
     kind: ModelKind = field(default=ModelKind.GRADIENT_BOOSTING, init=False)
-    _model: object | None = field(default=None, init=False)
+    _model: FittedModel = field(default=None, init=False)
     _spec: FeatureSpec | None = field(default=None, init=False)
     _history: FloatArray = field(default_factory=lambda: np.array([]), init=False)
     _periods: list[date] = field(default_factory=list, init=False)
@@ -687,15 +692,15 @@ class GradientBoostingForecaster:
             }
         )
 
-    def _estimator(self, params: dict[str, object], n_rows: int):
+    def _estimator(self, params: dict[str, object], n_rows: int) -> FittedModel:
         from sklearn.ensemble import HistGradientBoostingRegressor
 
         early = n_rows >= 80
         return HistGradientBoostingRegressor(
-            max_depth=int(params["max_depth"]),
-            learning_rate=float(params["learning_rate"]),
-            min_samples_leaf=int(params["min_samples_leaf"]),
-            l2_regularization=float(params["l2_regularization"]),
+            max_depth=as_int(params["max_depth"], 3),
+            learning_rate=as_float(params["learning_rate"], 0.06),
+            min_samples_leaf=as_int(params["min_samples_leaf"], 2),
+            l2_regularization=as_float(params["l2_regularization"], 0.0),
             max_iter=int(np.clip(n_rows * 6, 120, 600)),
             early_stopping=early,
             validation_fraction=0.15 if early else None,
@@ -740,9 +745,9 @@ class GradientBoostingForecaster:
             matrix,
             target,
             space,
-            lambda params, train_x, train_y, valid_x: self._estimator(params, len(train_y))
-            .fit(train_x, train_y)
-            .predict(valid_x),
+            lambda params, train_x, train_y, valid_x: (
+                self._estimator(params, len(train_y)).fit(train_x, train_y).predict(valid_x)
+            ),
             max(1, min(horizon, 12)),
         )
 
@@ -752,7 +757,7 @@ class GradientBoostingForecaster:
         self._model = model
         self._spec = spec
         self._hyper = {**result.params, **result.as_dict()}
-        self._history = np.asarray(y, dtype=float).copy()
+        self._history = np.asarray(y, dtype=np.float64).copy()
         self._periods = list(periods)
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
@@ -771,7 +776,7 @@ class GradientBoostingForecaster:
             history = np.append(history, value)
             periods.append(next_period)
 
-        return np.array(predictions, dtype=float)
+        return np.array(predictions, dtype=np.float64)
 
     @property
     def params(self) -> dict[str, object]:
@@ -805,11 +810,11 @@ class EnsembleForecaster:
         ModelKind.SARIMAX,
     )
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
-    _fitted: list[object] = field(default_factory=list, init=False)
+    _fitted: list[Forecaster] = field(default_factory=list, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
-        fitted: list[object] = []
+        fitted: list[Forecaster] = []
         joined: list[str] = []
         skipped: list[str] = []
 
@@ -840,7 +845,9 @@ class EnsembleForecaster:
 
         stacked = []
         for model in self._fitted:
-            prediction = np.asarray(model.predict(horizon, future_periods), dtype=float).ravel()
+            prediction = np.asarray(
+                model.predict(horizon, future_periods), dtype=np.float64
+            ).ravel()
             if prediction.size == horizon and np.all(np.isfinite(prediction)):
                 stacked.append(prediction)
 
@@ -890,8 +897,8 @@ def build_candidates(
         GradientBoostingForecaster(
             frequency,
             profile,
-            max_depth=int(gbm_depth) if gbm_depth is not None else None,
-            learning_rate=float(gbm_lr) if gbm_lr is not None else None,
+            max_depth=as_int(gbm_depth, 3) if gbm_depth is not None else None,
+            learning_rate=as_float(gbm_lr, 0.06) if gbm_lr is not None else None,
         ),
         EnsembleForecaster(frequency, profile),
     ]
@@ -925,4 +932,3 @@ def build_candidate(
         if candidate.kind == kind:
             return candidate
     raise ValueError(f"Unknown candidate kind: {kind}")
-

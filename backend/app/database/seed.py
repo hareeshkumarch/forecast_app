@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from sqlalchemy import func, select
 
@@ -34,10 +35,7 @@ SEED_CONNECTORS: tuple[tuple[str, ConnectorType, dict], ...] = (
 async def seed_connectors() -> int:
     created = 0
     async with session_scope() as session:
-        existing = {
-            name
-            for (name,) in (await session.execute(select(Connector.name))).all()
-        }
+        existing = {name for (name,) in (await session.execute(select(Connector.name))).all()}
 
         for name, connector_type, config in SEED_CONNECTORS:
             if name in existing:
@@ -59,9 +57,7 @@ async def seed_connectors() -> int:
 
 async def seed_dataset() -> Dataset | None:
     async with session_scope() as session:
-        existing = await session.execute(
-            select(Dataset).where(Dataset.name == SAMPLE_DATASET_NAME)
-        )
+        existing = await session.execute(select(Dataset).where(Dataset.name == SAMPLE_DATASET_NAME))
         found = existing.scalar_one_or_none()
         if found is not None:
             logger.info("Sample dataset already present; skipping.")
@@ -73,7 +69,6 @@ async def seed_dataset() -> Dataset | None:
             SAMPLE_FILENAME,
             name=SAMPLE_DATASET_NAME,
         )
-
 
         dataset = await dataset_service.configure(
             session,
@@ -95,7 +90,7 @@ async def seed_dataset() -> Dataset | None:
         return dataset
 
 
-async def seed_forecast(dataset_id) -> None:
+async def seed_forecast(dataset_id: uuid.UUID) -> None:
     async with session_scope() as session:
         completed = await session.execute(
             select(func.count())
@@ -137,7 +132,9 @@ async def seed_forecast(dataset_id) -> None:
                 ),
             )
         else:
-            logger.warning("Seed forecast finished with status %s: %s", run.status, run.error_message)
+            logger.warning(
+                "Seed forecast finished with status %s: %s", run.status, run.error_message
+            )
 
 
 async def seed() -> None:

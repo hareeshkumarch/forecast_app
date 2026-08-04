@@ -27,6 +27,7 @@ INTERMITTENT_METRIC_WEIGHTS: dict[str, float] = {
 def metric_weights_for(intermittent: bool) -> dict[str, float]:
     return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else METRIC_WEIGHTS)
 
+
 COMPLEXITY_PENALTY: dict[ModelKind, float] = {
     ModelKind.NAIVE: 0.00,
     ModelKind.SEASONAL_NAIVE: 0.01,
@@ -110,9 +111,7 @@ def _normalise(values: list[float]) -> list[float]:
         return [0.0 if math.isfinite(v) and v <= high else 1.0 for v in values]
 
     span = high - low
-    return [
-        min(max((v - low) / span, 0.0), 1.0) if math.isfinite(v) else 1.0 for v in values
-    ]
+    return [min(max((v - low) / span, 0.0), 1.0) if math.isfinite(v) else 1.0 for v in values]
 
 
 def select_model(
@@ -134,13 +133,13 @@ def select_model(
     if not usable:
         ran = [r for r in results if not r.failed]
         fallback = ran[0] if ran else (results[0] if results else None)
-        scored = [
+        unscored: list[ScoredCandidate] = [
             ScoredCandidate(result=r, score=float("inf"), rank=i + 1, selected=r is fallback)
             for i, r in enumerate(results)
         ]
-        winner = next((c for c in scored if c.selected), None)
+        winner = next((c for c in unscored if c.selected), None)
         return Selection(
-            candidates=scored,
+            candidates=unscored,
             winner=winner,
             rationale=(
                 "No candidate produced a scoreable backtest; fell back to "
@@ -149,15 +148,11 @@ def select_model(
             scoring_rule=rule_str,
         )
 
-    normalised = {
-        metric: _normalise([getattr(r, metric) for r in usable]) for metric in weights
-    }
+    normalised = {metric: _normalise([getattr(r, metric) for r in usable]) for metric in weights}
 
     scored: list[ScoredCandidate] = []
     for index, result in enumerate(usable):
-        composite = sum(
-            weight * normalised[metric][index] for metric, weight in weights.items()
-        )
+        composite = sum(weight * normalised[metric][index] for metric, weight in weights.items())
         composite += penalties.get(result.model, 0.0) * penalty_scale(n_observations, result.model)
         scored.append(ScoredCandidate(result=result, score=composite, rank=0))
 
@@ -173,7 +168,10 @@ def select_model(
         scored.append(ScoredCandidate(result=result, score=float("inf"), rank=offset))
 
     return Selection(
-        candidates=scored, winner=winner, rationale=_rationale(winner, scored), scoring_rule=rule_str
+        candidates=scored,
+        winner=winner,
+        rationale=_rationale(winner, scored),
+        scoring_rule=rule_str,
     )
 
 

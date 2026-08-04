@@ -37,7 +37,7 @@ export function DriverTable() {
             ))}
           </div>
         ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => void refetch()} />
+          <ErrorState error={error} onRetry={() => void refetch()} />
         ) : data && data.rows.length > 0 ? (
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[440px] border-collapse">

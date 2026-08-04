@@ -8,6 +8,7 @@ import type {
   ConnectorTypeInfo,
   DashboardFilters,
   DashboardSummary,
+  DataQualityResponse,
   Dataset,
   DatasetDetail,
   DatasetProfile,
@@ -18,8 +19,11 @@ import type {
   ForecastMetricsResponse,
   ForecastPointsResponse,
   ForecastRun,
+  GapFill,
   HealthResponse,
   InsightResponse,
+  MeasureAggregation,
+  OutlierTreatment,
   RegionResponse,
 } from "@/types/api";
 
@@ -32,13 +36,21 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly detail: Record<string, unknown>;
+  readonly requestId: string | null;
 
-  constructor(status: number, code: string, message: string, detail: Record<string, unknown>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    detail: Record<string, unknown>,
+    requestId: string | null = null,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.requestId = requestId;
   }
 
   get isRetryable(): boolean {
@@ -102,8 +114,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(
       response.status,
       body?.error.code ?? "http_error",
-      body?.error.message ?? `Request failed with status ${response.status}.`,
+      body?.error.message ?? `The request failed with status ${response.status}.`,
       body?.error.detail ?? {},
+      body?.error.request_id ?? response.headers.get("X-Request-ID"),
     );
   }
 
@@ -162,6 +175,17 @@ export const listDatasets = () => request<Dataset[]>("/api/datasets");
 
 export const getDataset = (id: string) => request<DatasetDetail>(`/api/datasets/${id}`);
 
+export const getDatasetQuality = (
+  id: string,
+  params: {
+    time_column: string;
+    target_column: string;
+    frequency: ForecastFrequency;
+    aggregation?: MeasureAggregation;
+    gap_fill?: GapFill;
+  },
+) => request<DataQualityResponse>(`/api/datasets/${id}/quality${buildQuery(params)}`);
+
 export const getDatasetProfile = (id: string) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`);
 
@@ -206,6 +230,9 @@ export const startForecast = (payload: {
   frequency?: ForecastFrequency | null;
   horizon?: number | null;
   confidence_level?: number;
+  aggregation?: MeasureAggregation;
+  gap_fill?: GapFill;
+  outlier_treatment?: OutlierTreatment;
   max_folds?: number | null;
   metric_weights?: Record<string, number> | null;
   sarimax_order?: number[] | null;

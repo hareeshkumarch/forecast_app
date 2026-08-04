@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-import polars as pl
-
 from app.models.enums import ForecastFrequency
 
 SEASONAL_PERIODS: dict[ForecastFrequency, int] = {
@@ -18,13 +16,6 @@ SEASONAL_CANDIDATES: dict[ForecastFrequency, tuple[int, ...]] = {
     ForecastFrequency.WEEKLY: (4, 13, 26, 52),
     ForecastFrequency.MONTHLY: (3, 4, 6, 12),
     ForecastFrequency.QUARTERLY: (4,),
-}
-
-TRUNCATE_EVERY: dict[ForecastFrequency, str] = {
-    ForecastFrequency.DAILY: "1d",
-    ForecastFrequency.WEEKLY: "1w",
-    ForecastFrequency.MONTHLY: "1mo",
-    ForecastFrequency.QUARTERLY: "1q",
 }
 
 APPROX_DAYS: dict[ForecastFrequency, float] = {
@@ -78,10 +69,6 @@ def add_periods(anchor: date, count: int, frequency: ForecastFrequency) -> date:
 
 def future_periods(last_period: date, horizon: int, frequency: ForecastFrequency) -> list[date]:
     return [add_periods(last_period, step, frequency) for step in range(1, horizon + 1)]
-
-
-def truncate_expr(column: str, frequency: ForecastFrequency) -> pl.Expr:
-    return pl.col(column).dt.truncate(TRUNCATE_EVERY[frequency]).dt.date().alias(column)
 
 
 def infer_frequency(periods: list[date]) -> ForecastFrequency | None:
