@@ -1,67 +1,82 @@
-version: "3.9"
+# Forecasting Platform — full stack in one command:
+#
+#   docker compose up --build
+#
+#   postgres  → durable store for connectors, datasets, forecast runs, insights
+#   backend   → FastAPI on :8000 (runs Alembic migrations + seed on boot)
+#   frontend  → Next.js App Router on :3000
+#
+# No Redis, no Celery, no message broker. CPU-bound model training runs in an
+# in-process ProcessPoolExecutor (see app/services/job_runner.py), which is the
+# right amount of machinery for a single-node POC.
 
 services:
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    ports:
-      - "5000:5000"
+  postgres:
+    image: postgres:16-alpine
     environment:
-      - ML_ENGINE_URL=http://ml-engine:8001
-      - NODE_ENV=production
-    depends_on:
-      - ml-engine
-    restart: unless-stopped
-
-  ml-engine:
-    build:
-      context: ./ml_engine
+      POSTGRES_USER: ${POSTGRES_USER:-forecasting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forecasting}
+      POSTGRES_DB: ${POSTGRES_DB:-forecasting}
     ports:
-      - "8001:8001"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - forecast-data:/app/uploads
-      - forecast-db:/app/data
-    environment:
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/forecast.db
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      - redis
+      # Named volume, so rows survive `docker compose down` and restarts.
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forecasting} -d ${POSTGRES_DB:-forecasting}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
-  celery-worker:
+  backend:
     build:
-      context: ./ml_engine
-    command: celery -A app.workers.celery_worker.celery_app worker --loglevel=info
-    volumes:
-      - forecast-data:/app/uploads
-      - forecast-db:/app/data
+      context: ./backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/forecast.db
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      # Alembic drives migrations synchronously, so it needs the psycopg URL.
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      STORAGE_ROOT: /storage
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
+      RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Bind-mounted so uploaded files and generated Parquet/exports are
+      # inspectable from the host and survive rebuilds.
+      - ./storage:/storage
     depends_on:
-      - redis
-      - ml-engine
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
     restart: unless-stopped
 
-  redis:
-    image: redis:7-alpine
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked in at build time: Next.js inlines NEXT_PUBLIC_* into the client bundle.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     ports:
-      - "6379:6379"
-    restart: unless-stopped
-
-  mlflow-server:
-    image: python:3.11-slim
-    ports:
-      - "5001:5001"
-    command: >
-      bash -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5001"
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      # Server-side fetches (RSC, route handlers) go over the compose network.
+      API_BASE_URL: http://backend:8000
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NODE_ENV: production
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  forecast-data:
-  forecast-db:
+  postgres-data:

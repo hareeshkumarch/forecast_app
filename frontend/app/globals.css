@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  --canvas: #fbfaf7;
+  --surface: #ffffff;
+  --surface-muted: #f7f4ee;
+  --border: #e7e1d7;
+  --border-strong: #d8d0c4;
+
+  --text-primary: #18202f;
+  --text-secondary: #687080;
+  --text-muted: #9297a1;
+
+  --accent: #b87b19;
+  --accent-soft: #fbf1df;
+
+  --navy: #213b58;
+  --teal: #527f79;
+  --gold: #d19b3d;
+  --sand: #e5c078;
+
+  --positive: #338563;
+  --positive-soft: #e7f3ec;
+  --negative: #d45b59;
+  --negative-soft: #fbe9e8;
+  --warning: #bd7b21;
+  --warning-soft: #fbf0de;
+
+  /* Fixed layout rails, referenced by both CSS and the Playwright test. */
+  --header-height: 74px;
+  --rail-width: 224px;
+  --insights-width: 320px;
+  --workspace-padding: 24px;
+}
+
+/* ------------------------------------------------------------------ base */
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Tabular figures keep numeric columns aligned without a monospace font. */
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------- scrolls */
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------ primitives */
+
+@layer components {
+  .card {
+    @apply rounded-card border border-border bg-surface;
+  }
+
+  .panel-title {
+    @apply text-subhead font-semibold text-text-primary;
+  }
+
+  .eyebrow {
+    @apply text-micro font-semibold uppercase tracking-[0.09em] text-text-muted;
+  }
+
+  .table-header {
+    @apply text-caption font-medium uppercase tracking-[0.045em] text-text-muted;
+  }
+
+  .num {
+    @apply tabular-nums;
+  }
+}
+
+/* -------------------------------------------------------------- skeleton */
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-muted);
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+/*
+ * Playwright sets this class on <html> before capturing, so screenshots are
+ * deterministic: no shimmer mid-sweep, no chart entry animation, no caret.
+ */
+.pw-freeze *,
+.pw-freeze *::before,
+.pw-freeze *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  caret-color: transparent !important;
+  scroll-behavior: auto !important;
+}

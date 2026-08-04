@@ -1,0 +1,81 @@
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
+
+    app_name: str = "Forecasting Platform"
+    log_level: str = "INFO"
+
+    database_url: str = "postgresql+asyncpg://forecasting:forecasting@localhost:5432/forecasting"
+    sync_database_url: str = "postgresql+psycopg://forecasting:forecasting@localhost:5432/forecasting"
+
+    storage_root: Path = Path("./storage")
+
+                                                                            
+    cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+
+    credential_secret_key: str = "dev-only-insecure-key-change-me"
+
+                                    
+    max_upload_bytes: int = 20 * 1024 * 1024
+
+    forecast_workers: int = 2
+    run_seed_on_startup: bool = True
+
+                                               
+    forecast_max_folds: int = 5
+    metric_weight_wmape: float = 0.50
+    metric_weight_smape: float = 0.30
+    metric_weight_rmse: float = 0.20
+    sarimax_order_p: int = 1
+    sarimax_order_d: int = 1
+    sarimax_order_q: int = 1
+    gbm_max_depth: int = 3
+    gbm_learning_rate: float = 0.06
+
+                                                       
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
+    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
+    llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
+    llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
+
+                                                  
+    anthropic_api_key: str | None = None
+    insight_llm_model: str = "claude-3-5-sonnet-20241022"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        cleaned = self.cors_origins_raw.strip().strip("[]")
+        return [origin.strip().strip("\"'") for origin in cleaned.split(",") if origin.strip()]
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.storage_root / "uploads"
+
+    @property
+    def parquet_dir(self) -> Path:
+        return self.storage_root / "parquet"
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.storage_root / "exports"
+
+    def ensure_directories(self) -> None:
+        for directory in (self.uploads_dir, self.parquet_dir, self.exports_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
