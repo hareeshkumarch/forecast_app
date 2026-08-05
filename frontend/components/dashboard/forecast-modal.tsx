@@ -19,6 +19,7 @@ import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
 import { Select, type SelectOption } from "@/components/ui/select";
 import {
   useDataset,
+  useDatasetProfile,
   useDatasetQuality,
   useDatasets,
   useRefreshDashboard,
@@ -103,6 +104,8 @@ export function ForecastModal() {
   const [confidence, setConfidence] = useState(80);
   const [regionColumn, setRegionColumn] = useState(NONE);
   const [categoryColumn, setCategoryColumn] = useState(NONE);
+  const [grainOne, setGrainOne] = useState(NONE);
+  const [grainTwo, setGrainTwo] = useState(NONE);
   const [weightColumn, setWeightColumn] = useState(NONE);
   const [aggregation, setAggregation] = useState<MeasureAggregation>("sum");
   const [gapFill, setGapFill] = useState<GapFill>("auto");
@@ -114,6 +117,7 @@ export function ForecastModal() {
   const [error, setError] = useState<string | null>(null);
 
   const { data: dataset } = useDataset(datasetId || null);
+  const { data: profile } = useDatasetProfile(datasetId || null);
 
   const quality = useDatasetQuality(datasetId || null, {
     time_column: dataset?.time_column ?? null,
@@ -199,6 +203,7 @@ export function ForecastModal() {
         confidence_level: confidence / 100,
         region_column: regionColumn === NONE ? null : regionColumn,
         category_column: categoryColumn === NONE ? null : categoryColumn,
+        group_by: grain,
         weight_column: weightColumn === NONE ? null : weightColumn,
         aggregation,
         gap_fill: gapFill,
@@ -227,6 +232,18 @@ export function ForecastModal() {
   const dimensions = dataset?.columns.filter((column) => column.role === "dimension") ?? [];
   const numerics = dataset?.columns.filter((column) => column.kind === "numeric") ?? [];
   const blocked = quality.data?.blocked ?? false;
+
+  // Order matters — it is the order the tree nests in — so a second column
+  // without a first would silently become the first.
+  const grain = [grainOne, grainTwo].filter((column) => column !== NONE);
+
+  // Distinct counts are already profiled, so the number of series a grain
+  // implies can be shown before the run rather than discovered during it.
+  const maxSeries = profile?.max_series;
+  const grainSize = grain.reduce((product, column) => {
+    const distinct = dimensions.find((c) => c.name === column)?.distinct_count ?? 0;
+    return distinct > 0 ? product * distinct : product;
+  }, 1);
 
   return (
     <Modal
@@ -331,6 +348,55 @@ export function ForecastModal() {
                 />
               </Field>
             </div>
+          </Section>
+
+          <Section
+            title="Forecast grain"
+            note={grain.length === 0 ? "Optional" : `${grain.join(" · ")}`}
+          >
+            <p className="mb-2.5 text-caption text-text-muted">
+              Left alone, the whole dataset is summed into one series and forecast once. Give it a
+              grain and every combination is forecast in its own right, then reconciled so the
+              levels still add up.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Forecast each" hint="The outer level of the tree">
+                <DimensionSelect
+                  value={grainOne}
+                  onChange={(next) => {
+                    setGrainOne(next);
+                    if (next === NONE || next === grainTwo) setGrainTwo(NONE);
+                  }}
+                  options={dimensions.map((column) => column.name)}
+                />
+              </Field>
+              <Field
+                label="Then by"
+                hint={grainOne === NONE ? "Pick an outer level first" : "Nested inside it"}
+              >
+                <DimensionSelect
+                  value={grainTwo}
+                  onChange={setGrainTwo}
+                  disabled={grainOne === NONE}
+                  options={dimensions
+                    .map((column) => column.name)
+                    .filter((name) => name !== grainOne)}
+                />
+              </Field>
+            </div>
+            {grain.length > 0 ? (
+              <p className="mt-2 text-caption text-text-muted">
+                {maxSeries && grainSize > maxSeries ? (
+                  <>
+                    About {grainSize.toLocaleString()} combinations. The largest{" "}
+                    {maxSeries.toLocaleString()} are forecast individually and the rest are pooled
+                    into an “Others” series, so the total stays whole.
+                  </>
+                ) : (
+                  <>About {grainSize.toLocaleString()} series, each with its own model.</>
+                )}
+              </p>
+            ) : null}
           </Section>
 
           <Section title="How to read the data">
@@ -472,15 +538,18 @@ function DimensionSelect({
   value,
   onChange,
   options,
+  disabled,
 }: {
   value: string;
   onChange: (next: string) => void;
   options: string[];
+  disabled?: boolean;
 }) {
   return (
     <Select
       value={value}
       onChange={onChange}
+      disabled={disabled}
       options={[
         { value: NONE, label: "None" },
         ...options.map((name) => ({ value: name, label: name })),

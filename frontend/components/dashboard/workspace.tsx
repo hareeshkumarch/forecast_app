@@ -10,15 +10,20 @@ import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { ModelHealthStrip } from "@/components/dashboard/model-health-strip";
 import { RegionTable } from "@/components/dashboard/region-table";
-import { Button } from "@/components/ui/primitives";
+import { Button, Skeleton } from "@/components/ui/primitives";
 import { useSummary } from "@/hooks/use-dashboard";
 import { humanizeModel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 export function Workspace() {
-  const { data: summary, isSuccess } = useSummary();
+  const { data: summary, isSuccess, isPending } = useSummary();
   const openModal = useUiStore((state) => state.openModal);
+
+  // Only once the summary has actually answered — a slow first load must not
+  // flash the guide at someone who has fifty runs, and must not shimmer a
+  // whole dashboard at someone who is about to be shown the guide instead.
+  const firstRun = isSuccess && !summary.has_data;
 
   return (
     <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
@@ -68,27 +73,40 @@ export function Workspace() {
         </div>
       </div>
 
-      {isSuccess && !summary.has_data ? (
-        <div className="mt-4">
+      {/*
+       * Before the first run the five analytical panels have nothing to say,
+       * and stacking five "no data yet" cards under the guide buries the one
+       * thing the screen is for. The guide gets the screen until there is a
+       * forecast to show.
+       */}
+      {isPending ? (
+        <div className="mt-4 space-y-3" aria-busy>
+          <Skeleton className="h-[92px] w-full rounded-card" />
+          <Skeleton className="h-[220px] w-full rounded-card" />
+        </div>
+      ) : firstRun ? (
+        <div className="mt-4" data-first-run>
           <GettingStarted />
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className="mt-4">
+            <KpiCards />
+          </div>
 
-      <div className="mt-4">
-        <KpiCards />
-      </div>
+          <ModelHealthStrip />
 
-      <ModelHealthStrip />
+          <div className="grid-charts mt-3">
+            <ForecastVsActual />
+            <ForecastByCategory />
+          </div>
 
-      <div className="grid-charts mt-3">
-        <ForecastVsActual />
-        <ForecastByCategory />
-      </div>
-
-      <div className="grid-panels mt-3">
-        <RegionTable />
-        <DriverTable />
-      </div>
+          <div className="grid-panels mt-3">
+            <RegionTable />
+            <DriverTable />
+          </div>
+        </>
+      )}
     </main>
   );
 }

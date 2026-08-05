@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from datetime import date
 from pathlib import Path
 
 import polars as pl
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -21,6 +20,7 @@ from app.models.entities import (
     ForecastMetric,
     ForecastPoint,
     ForecastRun,
+    ForecastSeries,
     RegionalForecast,
 )
 from app.models.enums import ExportFormat, ExportStatus
@@ -30,9 +30,13 @@ logger = get_logger(__name__)
 
 MEDIA_TYPES: dict[ExportFormat, str] = {
     ExportFormat.CSV: "text/csv",
-    ExportFormat.XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ExportFormat.JSON: "application/json",
+    ExportFormat.PDF: "application/pdf",
 }
+
+# A PDF is read rather than processed, so it carries the horizon and the
+# breakdowns and stops there. Anyone who wants every period of history has
+# the CSV, which carries all of it.
+PDF_MAX_ROWS = 120
 
 
 async def create_export(
@@ -71,15 +75,28 @@ async def create_export(
     return job
 
 
+#: What a point belongs to when it belongs to the run rather than to a series.
+TOP_LINE = "Total"
+
+
 async def _collect_rows(session: AsyncSession, run: ForecastRun) -> list[dict]:
+    """
+    Every point in the run, each saying which series it came from.
+
+    A grouped run stores a curve per series as well as its own top line. Without
+    the label they arrive as dozens of identical-looking rows per period, which
+    is what a flat export of a tree looks like when the tree is left out.
+    """
     result = await session.execute(
-        select(ForecastPoint)
+        select(ForecastPoint, ForecastSeries.label)
+        .outerjoin(ForecastSeries, ForecastPoint.series_id == ForecastSeries.id)
         .where(ForecastPoint.run_id == run.id)
-        .order_by(ForecastPoint.period, ForecastPoint.kind)
+        .order_by(ForecastSeries.label.nulls_first(), ForecastPoint.period, ForecastPoint.kind)
     )
 
     return [
         {
+            "series": label or TOP_LINE,
             "period": point.period.isoformat() if isinstance(point.period, date) else point.period,
             "kind": point.kind.value,
             "actual": point.actual,
@@ -90,7 +107,7 @@ async def _collect_rows(session: AsyncSession, run: ForecastRun) -> list[dict]:
             "base_case": point.base_case,
             "worst_case": point.worst_case,
         }
-        for point in result.scalars().all()
+        for point, label in result.all()
     ]
 
 
@@ -108,7 +125,30 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
         select(ForecastDriver).where(ForecastDriver.run_id == run.id).order_by(ForecastDriver.rank)
     )
 
+    # Worst first, by the same value-at-risk the triage screen ranks on, so the
+    # report opens on the series someone has to do something about.
+    series = await session.execute(
+        select(ForecastSeries)
+        .where(ForecastSeries.run_id == run.id, ForecastSeries.level > 0)
+        .order_by(
+            ForecastSeries.wmape.is_(None).asc(),
+            (func.abs(ForecastSeries.forecast_total) * ForecastSeries.wmape).desc(),
+        )
+    )
+
     return {
+        "series": [
+            {
+                "series": s.label,
+                "forecast": s.forecast_total,
+                "wmape_pct": s.wmape,
+                "value_at_risk": (
+                    abs(s.forecast_total) * s.wmape / 100.0 if s.wmape is not None else None
+                ),
+                "measured": s.accuracy_measured,
+            }
+            for s in series.scalars().all()
+        ],
         "metrics": [
             {"name": m.name, "value": m.value, "unit": m.unit, "previous_value": m.previous_value}
             for m in metrics.scalars().all()
@@ -152,53 +192,13 @@ def _write(
     run: ForecastRun,
     sheets: dict[str, list[dict]],
 ) -> None:
-    frame = pl.DataFrame(rows, infer_schema_length=None)
-
     if export_format is ExportFormat.CSV:
-        frame.write_csv(path)
+        pl.DataFrame(rows, infer_schema_length=None).write_csv(path)
         return
 
-    if export_format is ExportFormat.JSON:
-        payload = {
-            "run": {
-                "id": str(run.id),
-                "name": run.name,
-                "selected_model": run.selected_model.value if run.selected_model else None,
-                "selection_rationale": run.selection_rationale,
-                "frequency": run.frequency.value,
-                "horizon": run.horizon,
-                "confidence_level": run.confidence_level,
-                "used_fallback": run.used_fallback,
-                "fallback_reason": run.fallback_reason,
-                "history_start": run.history_start.isoformat() if run.history_start else None,
-                "history_end": run.history_end.isoformat() if run.history_end else None,
-                "forecast_start": run.forecast_start.isoformat() if run.forecast_start else None,
-                "forecast_end": run.forecast_end.isoformat() if run.forecast_end else None,
-                "exported_at": utcnow().isoformat(),
-            },
-            "points": rows,
-            **sheets,
-        }
-        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        return
+    from app.reporting import pdf
 
-    try:
-        import xlsxwriter
-
-        workbook = xlsxwriter.Workbook(str(path), {"default_date_format": "yyyy-mm-dd"})
-        try:
-            frame.write_excel(workbook=workbook, worksheet="forecast", autofit=True)
-            for sheet_name, sheet_rows in sheets.items():
-                if not sheet_rows:
-                    continue
-                pl.DataFrame(sheet_rows, infer_schema_length=None).write_excel(
-                    workbook=workbook, worksheet=sheet_name[:31], autofit=True
-                )
-        finally:
-            workbook.close()
-    except (ImportError, ModuleNotFoundError, Exception) as exc:
-        logger.warning("xlsxwriter unavailable (%s); falling back to CSV file generation.", exc)
-        frame.write_csv(path)
+    pdf.build(path, run, rows, sheets, max_rows=PDF_MAX_ROWS)
 
 
 def export_media_type(export_format: ExportFormat) -> str:

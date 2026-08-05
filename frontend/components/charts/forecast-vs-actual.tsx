@@ -275,12 +275,29 @@ function buildOption(
   };
 }
 
-export function ForecastVsActual() {
+/**
+ * The run's history and horizon, or one series' if given a `seriesId`.
+ *
+ * The same panel either way: a series that gets its own chart should look and
+ * behave like the top line's, because it is the same question asked of a
+ * smaller slice.
+ */
+export function ForecastVsActual({
+  seriesId,
+  title = "Forecast vs Actual",
+  subtitle,
+  showActions = true,
+}: {
+  seriesId?: string | null;
+  title?: string;
+  subtitle?: string;
+  showActions?: boolean;
+} = {}) {
   const { data: summary } = useSummary();
   const view = useUiStore((state) => state.view);
   const runId = summary?.run_id ?? null;
 
-  const { data, isLoading, isError, error, refetch } = useForecastPoints(runId);
+  const { data, isLoading, isError, error, refetch } = useForecastPoints(runId, seriesId);
 
   const revision = useThemeRevision();
   const option = useMemo(
@@ -292,9 +309,10 @@ export function ForecastVsActual() {
   return (
     <Card className="flex min-w-0 flex-col">
       <PanelHeader
-        title="Forecast vs Actual"
-        subtitle={summary?.run_name ?? undefined}
+        title={title}
+        subtitle={subtitle ?? summary?.run_name ?? undefined}
         actions={
+          !showActions ? null : (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button
@@ -323,10 +341,10 @@ export function ForecastVsActual() {
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   disabled={!runId}
-                  onSelect={() => runId && downloadExport(runId, "json")}
+                  onSelect={() => runId && downloadExport(runId, "pdf")}
                   className={MENU_ITEM}
                 >
-                  Download run detail (JSON)
+                  Download report (PDF)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   onSelect={() => void refetch()}
@@ -337,6 +355,7 @@ export function ForecastVsActual() {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
+          )
         }
       />
 
@@ -354,8 +373,17 @@ export function ForecastVsActual() {
           <EmptyState
             className="chart-box"
             icon={LineChart}
-            title="Nothing to plot"
-            message="No series falls inside the selected window — widen the forecast range."
+            // Without a run there is no window to widen, and saying so sends a
+            // new user hunting through a date filter for data that was never
+            // there.
+            title={runId ? "Nothing in this window" : "No forecast yet"}
+            message={
+              !runId
+                ? "Run a forecast and its history and horizon will be plotted here."
+                : seriesId
+                  ? "This series has no periods inside the selected range."
+                  : "No period falls inside the selected range — widen it to see the series."
+            }
           />
         )}
       </div>

@@ -129,9 +129,9 @@ def test_one_diverged_candidate_cannot_flatten_the_ranking() -> None:
     selection = select_model(results, metric_weights={"wmape": 1.0})
 
     assert selection.winner is not None
-    assert selection.winner.result.model is ModelKind.CROSTON, (
-        "the lowest wMAPE must win even when another candidate diverged"
-    )
+    assert (
+        selection.winner.result.model is ModelKind.CROSTON
+    ), "the lowest wMAPE must win even when another candidate diverged"
 
 
 def test_divergence_guard_rejects_runaway_forecasts() -> None:

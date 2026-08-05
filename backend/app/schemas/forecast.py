@@ -14,6 +14,7 @@ from app.models.enums import (
     OutlierTreatment,
     PointKind,
     RunStatus,
+    SeriesStatus,
 )
 from app.schemas.common import (
     Identifier,
@@ -41,6 +42,8 @@ class ForecastRunRequest(StrictModel):
     weight_column: Identifier | None = None
     region_column: Identifier | None = None
     category_column: Identifier | None = None
+    #: The grain to forecast at, outermost first. Empty forecasts one total.
+    group_by: Annotated[list[Identifier], Field(max_length=4)] = Field(default_factory=list)
     frequency: ForecastFrequency | None = None
     horizon: Horizon | None = None
     confidence_level: Probability = 0.8
@@ -73,6 +76,15 @@ class ForecastRunRequest(StrictModel):
             raise ValueError("Metric weights cannot be negative.")
         if sum(value.values()) <= 0:
             raise ValueError("Metric weights must sum to more than zero.")
+        return value
+
+    @field_validator("group_by")
+    @classmethod
+    def _grain_has_no_repeats(cls, value: list[str]) -> list[str]:
+        # Order is the nesting order, so a repeat is a mistake rather than
+        # something to quietly collapse.
+        if len(set(value)) != len(value):
+            raise ValueError("The forecast grain lists the same column twice.")
         return value
 
     @model_validator(mode="after")
@@ -142,6 +154,72 @@ class ForecastPointRead(ORMModel):
     worst_case: float | None
 
 
+class SeriesRow(ORMModel):
+    """One series in a grouped run, as the triage list needs it."""
+
+    id: uuid.UUID
+    parent_id: uuid.UUID | None
+    level: NonNegativeInt
+    key: dict[str, str]
+    label: str
+    status: SeriesStatus
+    blocked_reason: str | None
+    model: ModelKind | None
+    wmape: float | None
+    accuracy: float | None
+    accuracy_measured: bool
+    folds: NonNegativeInt
+    forecast_total: float
+    current_total: float
+    prior_total: float | None
+    share: float | None
+
+    @computed_field
+    @property
+    def value_at_risk(self) -> float | None:
+        """
+        How much of this series' forecast its own measured error could be
+        wrong about. Big and accurate is fine; big and wrong is the thing a
+        planner has to spend Monday on, and neither number says that alone.
+        """
+        if self.wmape is None:
+            return None
+        return round(abs(self.forecast_total) * self.wmape / 100.0, 4)
+
+    @computed_field
+    @property
+    def change_vs_prior(self) -> float | None:
+        """
+        How this series has moved between its last two windows.
+
+        Both cover the same span. Comparing the forecast against a window
+        instead would measure the difference in length, not in trend.
+        """
+        if not self.prior_total:
+            return None
+        return round((self.current_total - self.prior_total) / abs(self.prior_total) * 100.0, 2)
+
+
+class SeriesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    group_by: list[str]
+    sort: str
+    total: NonNegativeInt
+    limit: NonNegativeInt
+    offset: NonNegativeInt
+    #: Whether these numbers are money. Decided once here from the measure's
+    #: name, so every screen and export agrees rather than each re-guessing.
+    currency: bool
+    rows: list[SeriesRow]
+
+    @computed_field
+    @property
+    def has_more(self) -> bool:
+        return self.offset + len(self.rows) < self.total
+
+
 class ForecastRunRead(ORMModel):
     id: uuid.UUID
     dataset_id: uuid.UUID
@@ -154,6 +232,8 @@ class ForecastRunRead(ORMModel):
     weight_column: str | None
     region_column: str | None
     category_column: str | None
+    group_by: list[str]
+    series_count: NonNegativeInt
     frequency: ForecastFrequency
     horizon: Horizon
     confidence_level: Probability

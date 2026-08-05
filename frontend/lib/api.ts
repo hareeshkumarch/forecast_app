@@ -26,6 +26,8 @@ import type {
   MeasureAggregation,
   OutlierTreatment,
   RegionResponse,
+  SeriesResponse,
+  SeriesSort,
 } from "@/types/api";
 
 export const API_BASE_URL =
@@ -228,6 +230,7 @@ export const startForecast = (payload: {
   weight_column?: string | null;
   region_column?: string | null;
   category_column?: string | null;
+  group_by?: string[];
   frequency?: ForecastFrequency | null;
   horizon?: number | null;
   confidence_level?: number;
@@ -253,8 +256,22 @@ export const startForecast = (payload: {
 export const getForecastMetrics = (id: string) =>
   request<ForecastMetricsResponse>(`/api/forecasts/${id}/metrics`);
 
-export const getForecastPoints = (id: string, params: { start?: string; end?: string } = {}) =>
-  request<ForecastPointsResponse>(`/api/forecasts/${id}/points${buildQuery(params)}`);
+export const getForecastPoints = (
+  id: string,
+  params: { start?: string; end?: string; series_id?: string } = {},
+) => request<ForecastPointsResponse>(`/api/forecasts/${id}/points${buildQuery(params)}`);
+
+export const getForecastSeries = (
+  id: string,
+  params: {
+    sort?: SeriesSort;
+    level?: number;
+    parent_id?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+) => request<SeriesResponse>(`/api/forecasts/${id}/series${buildQuery(params)}`);
 
 export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/${id}/events`;
 

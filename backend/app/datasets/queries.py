@@ -10,6 +10,7 @@ from typing import Any
 import duckdb
 
 from app.core.errors import ValidationError
+from app.forecasting.frequency import comparison_window
 from app.models.enums import ForecastFrequency, MeasureAggregation
 
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
@@ -172,7 +173,7 @@ def aggregate_segments(
     segment_column: str,
     frequency: ForecastFrequency,
     *,
-    window_periods: int = 12,
+    window_periods: int | None = None,
     max_segments: int = 12,
     start: date | None = None,
     end: date | None = None,
@@ -217,8 +218,9 @@ def aggregate_segments(
         by_label.setdefault(str(label), []).append((_as_date(period), float(value)))
 
     all_periods = sorted({period for series in by_label.values() for period, _ in series})
-    current_window = set(all_periods[-window_periods:])
-    prior_window = set(all_periods[-2 * window_periods : -window_periods])
+    window = window_periods or comparison_window(frequency, len(all_periods))
+    current_window = set(all_periods[-window:])
+    prior_window = set(all_periods[-2 * window : -window])
 
     totals: list[SegmentTotals] = []
     for label, series in by_label.items():
@@ -296,7 +298,7 @@ def aggregate_grouped(
     group_columns: list[str],
     frequency: ForecastFrequency,
     *,
-    window_periods: int = 12,
+    window_periods: int | None = None,
     max_series: int = DEFAULT_MAX_SERIES,
     start: date | None = None,
     end: date | None = None,
@@ -364,8 +366,9 @@ def aggregate_grouped(
         observed.setdefault(key, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
 
     calendar = sorted({period for series in observed.values() for period in series})
-    current_window = calendar[-window_periods:]
-    prior_window = calendar[-2 * window_periods : -window_periods]
+    window = window_periods or comparison_window(frequency, len(calendar))
+    current_window = calendar[-window:]
+    prior_window = calendar[-2 * window : -window]
 
     def build(key: tuple[str, ...], by_period: dict[date, float]) -> GroupedSeries:
         values = [by_period.get(period, 0.0) for period in calendar]

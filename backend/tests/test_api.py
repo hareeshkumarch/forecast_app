@@ -331,14 +331,44 @@ async def test_insights_are_generated_from_the_run(client: AsyncClient) -> None:
         assert insight["severity"] in {"positive", "info", "warning", "critical"}
 
 
-@pytest.mark.parametrize("fmt", ["csv", "json", "xlsx"])
-async def test_export_formats(client: AsyncClient, fmt: str) -> None:
+@pytest.mark.parametrize(
+    ("fmt", "magic", "media"),
+    [
+        ("csv", b"series,period,", "text/csv"),
+        # A PDF that a reader will not open is worse than no PDF, so the file
+        # is checked for what it claims to be rather than merely for bytes.
+        ("pdf", b"%PDF-", "application/pdf"),
+    ],
+)
+async def test_export_formats(client: AsyncClient, fmt: str, magic: bytes, media: str) -> None:
     run = await _seed_and_run(client)
 
     response = await client.get(f"/api/exports/{run['id']}?format={fmt}")
     assert response.status_code == 200
-    assert len(response.content) > 0
+    assert response.content.startswith(magic), response.content[:40]
+    assert media in response.headers["content-type"]
     assert "attachment" in response.headers["content-disposition"]
+    assert f".{fmt}" in response.headers["content-disposition"]
+
+
+async def test_a_retired_export_format_is_refused(client: AsyncClient) -> None:
+    run = await _seed_and_run(client)
+
+    response = await client.get(f"/api/exports/{run['id']}?format=xlsx")
+    assert response.status_code == 422
+
+
+async def test_the_pdf_report_carries_the_run_it_describes(client: AsyncClient) -> None:
+    run = await _seed_and_run(client)
+
+    response = await client.get(f"/api/exports/{run['id']}?format=pdf")
+    body = response.content
+
+    assert body.startswith(b"%PDF-")
+    assert body.rstrip().endswith(b"%%EOF"), "a truncated PDF opens as a damaged file"
+    # The title is metadata, so it survives compression of the page streams.
+    assert run["name"].encode() in body
+    assert len(body) > 2_000, "a report with no content would still be a valid PDF"
 
 
 async def test_export_of_missing_run_is_404(client: AsyncClient) -> None:

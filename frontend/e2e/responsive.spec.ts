@@ -16,6 +16,11 @@ const insightsRail = (page: Page) => page.locator('aside[aria-label="Forecast in
 async function load(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+  // The heading renders before the summary answers, and until it does the
+  // workspace shows neither the panels nor the guide — so a layout assertion
+  // made here would measure a placeholder.
+  await expect(page.locator(".grid-charts, [data-first-run]")).toBeVisible({ timeout: 15_000 });
 }
 
 test("the page never scrolls horizontally", async ({ page }) => {

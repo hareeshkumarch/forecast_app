@@ -31,9 +31,9 @@ pymysql==1.1.1
 pymssql==2.3.2
 httpx==0.28.1
 openpyxl==3.1.5
-# Polars reads .xlsx through fastexcel and writes through xlsxwriter.
+# Polars reads .xlsx uploads through fastexcel; reportlab writes the PDF report.
 fastexcel==0.12.0
-xlsxwriter==3.2.0
+reportlab==4.2.5
 
 # ---- distributed work ----------------------------------------------------
 # Optional at runtime: without CELERY_BROKER_URL the platform fits models in

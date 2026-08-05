@@ -139,9 +139,15 @@ class InsightSeverity(StrEnum):
 
 
 class ExportFormat(StrEnum):
+    """
+    What a finished run can be handed over as.
+
+    CSV for anything that will be worked on further, PDF for anything that
+    will be read or circulated as-is.
+    """
+
     CSV = "csv"
-    XLSX = "xlsx"
-    JSON = "json"
+    PDF = "pdf"
 
 
 class ExportStatus(StrEnum):

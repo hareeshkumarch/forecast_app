@@ -372,3 +372,36 @@ def test_a_flat_series_keeps_its_zero_width_band() -> None:
 
     widths = [high - low for low, high in zip(output.lower_bound, output.upper_bound, strict=True)]
     assert max(widths) < 1.0, "a constant series is genuinely predictable"
+
+
+def test_the_comparison_window_is_a_year_wherever_the_history_holds_two() -> None:
+    """
+    "Versus the period before" has to mean the same span whatever the data
+    arrives at. Fixed per frequency it did not: 90 days is a quarter, 26 weeks
+    is half a year, and 12 months is a year — the same column meaning three
+    different things depending on the dataset.
+    """
+    from app.forecasting.frequency import comparison_window, periods_per_year
+
+    for frequency, year in (
+        (ForecastFrequency.DAILY, 365),
+        (ForecastFrequency.WEEKLY, 52),
+        (ForecastFrequency.MONTHLY, 12),
+        (ForecastFrequency.QUARTERLY, 4),
+    ):
+        assert periods_per_year(frequency) == year
+        assert comparison_window(frequency, 4 * year) == year
+        assert comparison_window(frequency, 2 * year) == year
+
+
+def test_a_short_history_is_compared_against_what_it_has() -> None:
+    from app.forecasting.frequency import comparison_window
+
+    # Six months of daily data cannot hold two years, so it compares three
+    # months against three rather than reporting nothing at all.
+    assert comparison_window(ForecastFrequency.DAILY, 180) == 90
+    assert comparison_window(ForecastFrequency.MONTHLY, 18) == 9
+
+    # And never a window of zero, which would make every comparison undefined.
+    for observations in (0, 1, 2, 3):
+        assert comparison_window(ForecastFrequency.MONTHLY, observations) >= 1

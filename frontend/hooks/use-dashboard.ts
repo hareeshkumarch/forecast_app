@@ -14,7 +14,17 @@ import type {
   ForecastFrequency,
   GapFill,
   MeasureAggregation,
+  SeriesSort,
 } from "@/types/api";
+
+export interface SeriesQuery {
+  sort: SeriesSort;
+  level?: number;
+  parentId?: string;
+  search?: string;
+  limit: number;
+  offset: number;
+}
 
 
 function filterKey(filters: DashboardFilters) {
@@ -38,8 +48,9 @@ export const queryKeys = {
   runs: ["forecasts"] as const,
   run: (id: string) => ["forecasts", id] as const,
   runMetrics: (id: string) => ["forecasts", id, "metrics"] as const,
-  runPoints: (id: string, start?: string | null, end?: string | null) =>
-    ["forecasts", id, "points", start ?? null, end ?? null] as const,
+  runPoints: (id: string, start?: string | null, end?: string | null, seriesId?: string | null) =>
+    ["forecasts", id, "points", start ?? null, end ?? null, seriesId ?? null] as const,
+  runSeries: (id: string, query: SeriesQuery) => ["forecasts", id, "series", query] as const,
   summary: (f: DashboardFilters) => ["dashboard", "summary", filterKey(f)] as const,
   regions: (f: DashboardFilters) => ["dashboard", "regions", filterKey(f)] as const,
   categories: (f: DashboardFilters) => ["dashboard", "categories", filterKey(f)] as const,
@@ -126,16 +137,40 @@ export function useLlmUsage(days = 30) {
 }
 
 
-export function useForecastPoints(runId: string | null | undefined) {
+export function useForecastPoints(runId: string | null | undefined, seriesId?: string | null) {
   const filters = useDashboardFilters();
   return useQuery({
-    queryKey: queryKeys.runPoints(runId ?? "none", filters.start, filters.end),
+    queryKey: queryKeys.runPoints(runId ?? "none", filters.start, filters.end, seriesId),
     queryFn: () =>
       api.getForecastPoints(runId as string, {
         ...(filters.start ? { start: filters.start } : {}),
         ...(filters.end ? { end: filters.end } : {}),
+        ...(seriesId ? { series_id: seriesId } : {}),
       }),
     enabled: Boolean(runId),
+  });
+}
+
+/**
+ * A page of a grouped run's series.
+ *
+ * The previous page stays on screen while the next one loads — paging a triage
+ * list that blanks between pages loses your place every time you move.
+ */
+export function useForecastSeries(runId: string | null | undefined, query: SeriesQuery) {
+  return useQuery({
+    queryKey: queryKeys.runSeries(runId ?? "none", query),
+    queryFn: () =>
+      api.getForecastSeries(runId as string, {
+        sort: query.sort,
+        limit: query.limit,
+        offset: query.offset,
+        ...(query.level === undefined ? {} : { level: query.level }),
+        ...(query.parentId ? { parent_id: query.parentId } : {}),
+        ...(query.search ? { search: query.search } : {}),
+      }),
+    enabled: Boolean(runId),
+    placeholderData: (previous) => previous,
   });
 }
 
@@ -150,6 +185,14 @@ export function useForecastMetrics(runId: string | null | undefined) {
 
 export function useDatasets() {
   return useQuery({ queryKey: queryKeys.datasets, queryFn: api.listDatasets });
+}
+
+export function useDatasetProfile(id: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.datasetProfile(id ?? "none"),
+    queryFn: () => api.getDatasetProfile(id as string),
+    enabled: Boolean(id),
+  });
 }
 
 export function useDataset(id: string | null | undefined) {

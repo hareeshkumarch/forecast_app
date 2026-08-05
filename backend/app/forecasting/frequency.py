@@ -37,6 +37,31 @@ def seasonal_period(frequency: ForecastFrequency) -> int:
     return SEASONAL_PERIODS[frequency]
 
 
+def periods_per_year(frequency: ForecastFrequency) -> int:
+    return max(1, round(365.25 / APPROX_DAYS[frequency]))
+
+
+def comparison_window(frequency: ForecastFrequency, n_observations: int) -> int:
+    """
+    How many periods each side of a "versus the period before" comparison covers.
+
+    A year wherever the history holds two of them: that is what the comparison
+    is understood to mean, and a whole number of years is what cancels the
+    seasonality out of it. Where the history is shorter the window is the
+    largest that still leaves something to compare against, so a six-month
+    daily series is compared three months against three rather than reporting
+    nothing at all.
+
+    Fixing this per frequency instead — 90 days, 26 weeks, 12 months — quietly
+    made one column mean "versus last quarter" on one dataset and "versus last
+    year" on the next.
+    """
+    year = periods_per_year(frequency)
+    if n_observations >= 2 * year:
+        return year
+    return max(1, n_observations // 2)
+
+
 def candidate_periods(frequency: ForecastFrequency, n_observations: int) -> list[int]:
     return [
         period

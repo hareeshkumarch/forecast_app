@@ -73,7 +73,6 @@ def test_accuracy_degradation_is_flagged() -> None:
 
 
 def test_forecast_gap_detects_growth() -> None:
-
     insight = forecast_gap(make_context(point_forecast=[200.0] * 6))
 
     assert insight is not None

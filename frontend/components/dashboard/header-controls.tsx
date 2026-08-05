@@ -39,9 +39,8 @@ export const VIEWS: ViewOption[] = [
 ];
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; hint: string }[] = [
-  { value: "csv", label: "CSV", hint: "Forecast series" },
-  { value: "xlsx", label: "Excel", hint: "All sheets" },
-  { value: "json", label: "JSON", hint: "Full run detail" },
+  { value: "csv", label: "CSV", hint: "Every period, to work on further" },
+  { value: "pdf", label: "PDF report", hint: "The horizon and breakdowns, to circulate" },
 ];
 
 const PRESET_COUNTS = [3, 6, 12] as const;
