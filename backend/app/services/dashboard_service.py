@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.datasets.profiler import is_currency_like
+from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import (
     CategoryForecast,
     ForecastDriver,
@@ -135,16 +136,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             comparison_label=_actual_window_label(run),
             higher_is_better=True,
         ),
-        _card(
-            key="forecast_accuracy",
-            label="Forecast Accuracy",
-            value=accuracy.value if accuracy else float("nan"),
-            unit="percent",
-            currency=False,
-            comparison=accuracy.previous_value if accuracy else None,
-            comparison_label="vs previous run",
-            higher_is_better=True,
-        ),
+        _accuracy_card(run, accuracy),
         _card(
             key="weighted_mape",
             label="Weighted MAPE",
@@ -245,6 +237,42 @@ def _actual_window_label(run: ForecastRun) -> str:
     if start and end:
         return f"{start:%b %Y} – {end:%b %Y}"  # noqa: RUF001
     return "historical actuals"
+
+
+def _accuracy_card(run: ForecastRun, backtest: ForecastMetric | None) -> KpiCard:
+    """
+    Accuracy, saying which kind it is.
+
+    Two different numbers have a claim on this card. Before the horizon has
+    been lived through there is only the backtest figure — how the method does
+    on history it was not fitted on. Afterwards there is the figure that
+    actually settles the question, and showing the backtest one instead would
+    let a forecast that missed by a fifth read as 97% accurate.
+    """
+    if run.realized_wmape is not None:
+        return _card(
+            key="forecast_accuracy",
+            label="Accuracy vs Actual",
+            value=accuracy_from_wmape(run.realized_wmape),
+            unit="percent",
+            currency=False,
+            # Against what the backtest expected, which is the comparison that
+            # says whether this forecast behaved as the method promised.
+            comparison=backtest.value if backtest else None,
+            comparison_label="vs backtest",
+            higher_is_better=True,
+        )
+
+    return _card(
+        key="forecast_accuracy",
+        label="Backtest Accuracy",
+        value=backtest.value if backtest else float("nan"),
+        unit="percent",
+        currency=False,
+        comparison=backtest.previous_value if backtest else None,
+        comparison_label="vs previous run",
+        higher_is_better=True,
+    )
 
 
 def _card(

@@ -189,6 +189,9 @@ function SeriesTable({
   // Whether the numbers are money is the server's call, not a second guess at
   // the column name that could disagree with what the export decided.
   const currency = data?.currency ?? true;
+  // The realized column exists only once this run has been graded against
+  // actuals; before that there is nothing behind it but empty cells.
+  const scored = rows.some((row) => row.scored_periods > 0);
   const showing = data
     ? `${data.offset + 1}–${data.offset + rows.length} of ${data.total}`
     : "";
@@ -301,6 +304,16 @@ function SeriesTable({
                     <th className="px-3 py-2 text-right font-medium">
                       Accuracy
                     </th>
+                    {/* Only once something has been graded. A column of
+                      dashes on an unscored run is noise, not information. */}
+                    {scored ? (
+                      <th
+                        className="hidden px-3 py-2 text-right font-medium sm:table-cell"
+                        title="The error this series turned out to have, against actuals"
+                      >
+                        In the event
+                      </th>
+                    ) : null}
                     <th className="px-4 py-2 text-right font-medium">
                       At risk
                     </th>
@@ -312,6 +325,7 @@ function SeriesTable({
                       key={row.id}
                       row={row}
                       currency={currency}
+                      scored={scored}
                       selected={selected?.id === row.id}
                       onSelect={() =>
                         setSelected((current) =>
@@ -355,11 +369,13 @@ function SeriesTable({
 function SeriesRowCells({
   row,
   currency,
+  scored,
   selected,
   onSelect,
 }: {
   row: SeriesRow;
   currency: boolean;
+  scored: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -438,6 +454,32 @@ function SeriesRowCells({
           className="justify-end"
         />
       </td>
+      {scored ? (
+        <td className="hidden px-3 py-2 text-right num sm:table-cell">
+          {row.realized_wmape === null ? (
+            <span
+              className="text-text-muted"
+              title="Not graded against actuals"
+            >
+              —
+            </span>
+          ) : (
+            <span
+              // Against the error its own backtest predicted: worse than
+              // expected is the row worth opening, and neither number says
+              // that on its own.
+              className={
+                row.wmape !== null && row.realized_wmape > row.wmape
+                  ? "text-negative"
+                  : "text-positive"
+              }
+              title={`Backtest expected ${formatPercent(row.wmape ?? 0)}`}
+            >
+              {formatPercent(100 - row.realized_wmape)}
+            </span>
+          )}
+        </td>
+      ) : null}
       <td className="px-4 py-2 text-right">
         {row.value_at_risk === null ? (
           <span

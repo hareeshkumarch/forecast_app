@@ -27,10 +27,13 @@ from app.schemas.forecast import (
     ForecastRunRead,
     ForecastRunRequest,
     ModelCandidateRead,
+    ScorecardResponse,
+    ScoreRequest,
     SeriesResponse,
     SeriesRow,
+    SeriesScoreRow,
 )
-from app.services import forecast_service, series_service
+from app.services import forecast_service, scoring_service, series_service
 from app.services.job_runner import progress_bus
 
 logger = get_logger(__name__)
@@ -39,6 +42,12 @@ router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
 
 SSE_KEEPALIVE_SECONDS = 15.0
+
+#: How many of a scorecard's series come back by default, and at most. The
+#: scorecard itself is the headline; the list under it is a triage queue, and
+#: a queue nobody reaches the end of is the same as a shorter one.
+SCORE_SERIES_LIMIT = 25
+MAX_SCORE_SERIES = series_service.MAX_PAGE
 
 
 @router.get("", response_model=list[ForecastRunRead], summary="List forecast runs")
@@ -153,6 +162,75 @@ async def get_points(
         confidence_level=run.confidence_level,
         boundary_index=boundary,
         points=[ForecastPointRead.model_validate(p) for p in points],
+    )
+
+
+@router.get(
+    "/{run_id}/score",
+    response_model=ScorecardResponse,
+    summary="How this forecast did against what actually happened",
+)
+async def get_score(
+    run_id: uuid.UUID,
+    session: SessionDep,
+    limit: int = Query(default=SCORE_SERIES_LIMIT, ge=0, le=MAX_SCORE_SERIES),
+) -> ScorecardResponse:
+    run = await forecast_service.get_run(session, run_id)
+    card = await scoring_service.stored_scorecard(session, run_id)
+    return _scorecard(card, run.target_column, limit)
+
+
+@router.post(
+    "/{run_id}/score",
+    response_model=ScorecardResponse,
+    summary="Score this forecast against actuals that have since arrived",
+)
+async def score(
+    run_id: uuid.UUID,
+    session: SessionDep,
+    payload: ScoreRequest | None = None,
+    limit: int = Query(default=SCORE_SERIES_LIMIT, ge=0, le=MAX_SCORE_SERIES),
+) -> ScorecardResponse:
+    run = await forecast_service.get_run(session, run_id)
+    card = await scoring_service.score_run(
+        session, run_id, dataset_id=payload.dataset_id if payload else None
+    )
+    await session.commit()
+    return _scorecard(card, run.target_column, limit)
+
+
+def _scorecard(
+    card: scoring_service.Scorecard, target_column: str, limit: int
+) -> ScorecardResponse:
+    """
+    Worst first, and bounded: a 500-series run would otherwise put its whole
+    tree in a response nobody reads past the top of.
+    """
+    ranked = sorted(
+        card.series,
+        key=lambda row: (row.wmape is None, -(row.wmape or 0.0), row.label),
+    )
+
+    return ScorecardResponse(
+        run_id=card.run_id,
+        scored_at=card.scored_at,
+        source_dataset_id=card.source_dataset_id,
+        source_dataset_name=card.source_dataset_name,
+        horizon=card.horizon,
+        scored_periods=card.scored_periods,
+        pending_periods=card.pending_periods,
+        covered_through=card.covered_through,
+        forecast_total=card.forecast_total,
+        actual_total=card.actual_total,
+        wmape=card.wmape,
+        mae=card.mae,
+        bias=card.bias,
+        coverage=card.coverage,
+        confidence_level=card.confidence_level,
+        unforecast_keys=card.unforecast_keys,
+        currency=is_currency_like(target_column),
+        blocked_reason=card.blocked_reason,
+        series=[SeriesScoreRow.model_validate(row, from_attributes=True) for row in ranked[:limit]],
     )
 
 

@@ -2,6 +2,7 @@
 
 import { Download, FileBarChart2, FileText, Plus, RefreshCw } from "lucide-react";
 
+import { Scorecard } from "@/components/reports/scorecard";
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { downloadExport, useForecastRuns } from "@/hooks/use-dashboard";
 import { formatRelativeTime, humanizeModel } from "@/lib/format";
@@ -72,6 +73,8 @@ function RunCard({ run }: { run: ForecastRun }) {
         </p>
       ) : null}
 
+      <Scorecard run={run} />
+
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
         <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "csv")}>
           CSV
@@ -127,7 +130,7 @@ export function ReportsWorkspace() {
           <EmptyState
             icon={FileBarChart2}
             title="No reports yet"
-            message="Run a forecast to create exportable CSV, Excel, and JSON reports."
+            message="Run a forecast to create a CSV extract and a PDF report."
             action={<Button variant="primary" onClick={() => openModal("configure-forecast")}>Create a forecast</Button>}
           />
         </Card>

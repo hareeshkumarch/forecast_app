@@ -240,6 +240,17 @@ export interface ForecastRun {
   completed_at: string | null;
   error_message: string | null;
   created_at: string;
+  /**
+   * How the forecast actually did, once its periods had been lived through.
+   * Distinct from the backtest metrics, which say what the model would have
+   * done rather than what it did. Null until the run has been scored.
+   */
+  scored_at: string | null;
+  scored_periods: number;
+  realized_wmape: number | null;
+  realized_bias: number | null;
+  realized_coverage: number | null;
+  realized_accuracy: number | null;
 }
 
 export interface ModelCandidate {
@@ -324,6 +335,11 @@ export interface SeriesRow {
   value_at_risk: number | null;
   /** Movement between the two actual windows. Not the forecast, which covers only the horizon. */
   change_vs_prior: number | null;
+  /** How many of this series' forecast periods have been graded against actuals. */
+  scored_periods: number;
+  /** The error it turned out to have. `wmape` above is the one its backtest expected. */
+  realized_wmape: number | null;
+  realized_actual_total: number | null;
 }
 
 export interface SeriesResponse {
@@ -337,6 +353,50 @@ export interface SeriesResponse {
   currency: boolean;
   rows: SeriesRow[];
   has_more: boolean;
+}
+
+export interface SeriesScoreRow {
+  series_id: string;
+  label: string;
+  level: number;
+  forecast_total: number;
+  actual_total: number | null;
+  wmape: number | null;
+  scored_periods: number;
+  /** Why this series could not be graded — a pooled tail, or nothing recorded. */
+  unscored_reason: string | null;
+  /** Signed, forecast less actual, in the measure's own units. */
+  miss: number | null;
+}
+
+export interface Scorecard {
+  run_id: string;
+  scored_at: string | null;
+  source_dataset_id: string | null;
+  source_dataset_name: string | null;
+  horizon: number;
+  scored_periods: number;
+  /** Periods still being lived through. Real forecasts nobody can grade yet. */
+  pending_periods: number;
+  covered_through: string | null;
+  forecast_total: number;
+  actual_total: number;
+  wmape: number | null;
+  mae: number | null;
+  /** Signed, as a share of actual: whether it ran high or low. */
+  bias: number | null;
+  /** The share of actuals that landed inside the interval. */
+  coverage: number | null;
+  confidence_level: number | null;
+  /** Combinations the source recorded that the run never forecast. */
+  unforecast_keys: number;
+  currency: boolean;
+  blocked_reason: string | null;
+  series: SeriesScoreRow[];
+  scored: boolean;
+  accuracy: number | null;
+  /** Whether at least as many actuals landed inside the band as it promised. */
+  intervals_held: boolean | null;
 }
 
 export interface ForecastProgressEvent {

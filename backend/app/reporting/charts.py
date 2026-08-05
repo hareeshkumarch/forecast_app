@@ -1,5 +1,5 @@
 """
-The two pictures the report needs.
+The pictures the report needs.
 
 A table of forty numbers does not show that a forecast turns, or that one
 series carries a quarter of the risk. Both are drawn rather than described,
@@ -72,6 +72,7 @@ class ForecastChart(Flowable):
         width: float,
         height: float,
         currency: bool = True,
+        realized: list[float | None] | None = None,
     ) -> None:
         super().__init__()
         self.history = history
@@ -81,6 +82,10 @@ class ForecastChart(Flowable):
         self.width = width
         self.height = height
         self.currency = currency
+        #: What actually happened over the horizon, once it has been lived
+        #: through and scored. One entry per forecast period, None where that
+        #: period has not settled — a partly-graded horizon is the normal case.
+        self.realized = realized or []
 
     def wrap(self, *_args: Any) -> tuple[float, float]:
         return self.width, self.height
@@ -96,8 +101,9 @@ class ForecastChart(Flowable):
         plot_height = self.height - pad_bottom - pad_top
 
         band = [v for v in (*self.lower, *self.upper) if v is not None]
-        ceiling = _nice_ceiling(max([*values, *band]))
-        floor = min([*values, *band, 0.0])
+        settled = [v for v in self.realized if v is not None]
+        ceiling = _nice_ceiling(max([*values, *band, *settled]))
+        floor = min([*values, *band, *settled, 0.0])
         span = ceiling - floor or 1.0
 
         count = len(values)
@@ -160,6 +166,35 @@ class ForecastChart(Flowable):
         canvas.setDash(3, 2)
         self._polyline(canvas, x, y, values[max(split - 1, 0) :], max(split - 1, 0))
         canvas.setDash()
+
+        # ---- what actually happened, where the horizon has been lived through
+        #
+        # Drawn last and solid, so the eye reads it against the dashed forecast
+        # rather than the other way round. The gap between the two lines is the
+        # whole point of the picture.
+        graded = [
+            (split + index, value)
+            for index, value in enumerate(self.realized)
+            if value is not None and split + index < count
+        ]
+        if graded:
+            canvas.setStrokeColor(POSITIVE)
+            canvas.setLineWidth(1.3)
+            path = canvas.beginPath()
+            path.moveTo(x(graded[0][0]), y(graded[0][1]))
+            for index, value in graded[1:]:
+                path.lineTo(x(index), y(value))
+            canvas.drawPath(path, stroke=1, fill=0)
+
+            canvas.setFillColor(POSITIVE)
+            for index, value in graded:
+                canvas.circle(x(index), y(value), 1.5, stroke=0, fill=1)
+
+            # Keyed at the top of the plot rather than beside the line: at the
+            # right-hand edge the label had nowhere to go that the line it named
+            # was not already occupying.
+            canvas.setFont("Helvetica", 6.5)
+            canvas.drawRightString(self.width, pad_bottom + plot_height + 1.5 * mm, "Actual")
 
         # ---- the ends of the calendar
         canvas.setFont("Helvetica", 6.5)
@@ -224,6 +259,98 @@ class RiskChart(Flowable):
 
             canvas.setFillColor(MUTED)
             canvas.drawRightString(self.width, top + bar / 2 - 2.2, _compact(value, self.currency))
+
+
+class ScoreChart(Flowable):
+    """
+    What was forecast against what happened, a period at a time.
+
+    Paired bars rather than two lines: over a handful of settled periods the
+    question is not the shape of the curve but the size of each gap, and bars
+    put those gaps side by side where they can be compared directly.
+    """
+
+    def __init__(
+        self,
+        rows: list[tuple[date, float, float]],
+        width: float,
+        height: float,
+        currency: bool = True,
+    ) -> None:
+        super().__init__()
+        self.rows = rows
+        self.width = width
+        self.height = height
+        self.currency = currency
+
+    def wrap(self, *_args: Any) -> tuple[float, float]:
+        return self.width, self.height
+
+    def draw(self) -> None:
+        canvas = self.canv
+        if not self.rows:
+            return
+
+        pad_left, pad_bottom, pad_top = 22 * mm, 9 * mm, 5 * mm
+        plot_width = self.width - pad_left
+        plot_height = self.height - pad_bottom - pad_top
+        if plot_height <= 0 or plot_width <= 0:
+            return
+
+        values = [value for _, forecast, actual in self.rows for value in (forecast, actual)]
+        ceiling = _nice_ceiling(max(values)) or 1.0
+        floor = min([*values, 0.0])
+        span = ceiling - floor or 1.0
+
+        def y(value: float) -> float:
+            return pad_bottom + (value - floor) / span * plot_height
+
+        canvas.setFont("Helvetica", 6.5)
+        for line in range(GRID_LINES + 1):
+            value = floor + span * line / GRID_LINES
+            at = y(value)
+            canvas.setStrokeColor(GRID)
+            canvas.setLineWidth(0.4)
+            canvas.line(pad_left, at, self.width, at)
+            canvas.setFillColor(FAINT)
+            canvas.drawRightString(pad_left - 2 * mm, at - 1.6, _compact(value, self.currency))
+
+        slot = plot_width / len(self.rows)
+        bar = min(slot * 0.32, 9 * mm)
+        # Zero, or the bottom of the axis where everything is above it. A
+        # measure that can go negative — a net change, a margin — grows its
+        # bars downward from here rather than collapsing onto it.
+        base = y(max(floor, 0.0))
+
+        for index, (period, forecast, actual) in enumerate(self.rows):
+            centre = pad_left + (index + 0.5) * slot
+
+            for offset, value, colour in (
+                (-bar, forecast, ACCENT),
+                (0.0, actual, POSITIVE),
+            ):
+                top = y(value)
+                canvas.setFillColor(colour)
+                canvas.rect(
+                    centre + offset,
+                    min(base, top),
+                    bar,
+                    max(abs(top - base), MIN_BAND_HEIGHT),
+                    stroke=0,
+                    fill=1,
+                )
+
+            canvas.setFont("Helvetica", 6.5)
+            canvas.setFillColor(FAINT)
+            canvas.drawCentredString(centre, 3.5 * mm, period.isoformat())
+
+        # ---- which bar is which, next to the bars themselves
+        canvas.setFont("Helvetica", 6.5)
+        for offset, label, colour in ((0.0, "Forecast", ACCENT), (18 * mm, "Actual", POSITIVE)):
+            canvas.setFillColor(colour)
+            canvas.rect(pad_left + offset, self.height - 3 * mm, 3 * mm, 2.4, stroke=0, fill=1)
+            canvas.setFillColor(MUTED)
+            canvas.drawString(pad_left + offset + 4.5 * mm, self.height - 3 * mm, label)
 
 
 def _clip(text: str, limit: int) -> str:

@@ -30,8 +30,10 @@ from reportlab.platypus import (
 
 from app.database.base import utcnow
 from app.datasets.profiler import is_currency_like
+from app.forecasting.frequency import comparison_window
+from app.forecasting.metrics import accuracy_from_wmape, intervals_held
 from app.models.entities import ForecastRun
-from app.reporting.charts import ForecastChart, RiskChart
+from app.reporting.charts import ForecastChart, RiskChart, ScoreChart
 from app.reporting.palette import ACCENT, BAND, FAINT, INK, MUTED, RULE
 
 #: Matches `exporter.TOP_LINE` — a point that belongs to the run, not a series.
@@ -41,6 +43,12 @@ TOP_LINE = "Total"
 #: table underneath is the better way to read the tail.
 RISK_BARS = 12
 CHART_HEIGHT = 52 * mm
+
+#: The share of realized error that has to point one way before the report
+#: calls it a lean. A half is where the misses stop cancelling each other out —
+#: expressed against the run's own error rather than as a fixed percentage, so
+#: it means the same thing for a volatile series and a steady one.
+DIRECTIONAL_SHARE = 0.5
 
 MARGIN = 16 * mm
 
@@ -192,7 +200,7 @@ def build(
     )
 
     # The shape of the thing, before any of the numbers describing it.
-    chart = _forecast_chart(rows, width, currency)
+    chart = _forecast_chart(rows, run, width, currency)
     if chart is not None:
         story.append(chart)
         story.append(Spacer(1, 4))
@@ -232,6 +240,13 @@ def build(
             )
         )
 
+    # ---- how it actually did, where the horizon has been lived through
+    #
+    # Before the backtest section deliberately: when both exist this is the
+    # number that answers the question, and a backtest figure read first tends
+    # to be the one that gets remembered.
+    story.extend(_scorecard_section(run, rows, width, currency, style))
+
     # ---- how well it has done
     metrics = sheets.get("metrics") or []
     if metrics:
@@ -239,7 +254,8 @@ def build(
         story.append(
             Paragraph(
                 "Every figure below comes from backtesting: the model was refitted on earlier "
-                "windows and scored against periods it had not seen.",
+                "windows and scored against periods it had not seen — what the method can be "
+                "expected to do, rather than what this forecast turned out to do.",
                 style["body"],
             )
         )
@@ -442,8 +458,137 @@ def build(
     document.build(story, onFirstPage=decorate, onLaterPages=decorate)
 
 
+def _scorecard_section(
+    run: ForecastRun,
+    rows: list[dict[str, Any]],
+    width: float,
+    currency: bool,
+    style: dict[str, ParagraphStyle],
+) -> list[Any]:
+    """
+    How the forecast actually did, where the horizon has been lived through.
+
+    Absent entirely until the run has been scored — an empty section headed
+    "how it did" reads as a failure rather than as a horizon still running.
+    """
+    if run.scored_at is None or not run.scored_periods:
+        return []
+
+    graded = _graded_periods(rows)
+    if not graded:
+        return []
+
+    accuracy = None if run.realized_wmape is None else accuracy_from_wmape(run.realized_wmape)
+    forecast_total = sum(forecast for _, forecast, _ in graded)
+    actual_total = sum(actual for _, _, actual in graded)
+
+    measures = [
+        ["Accuracy", _percent(accuracy)],
+        ["Error (wMAPE)", _percent(run.realized_wmape)],
+        ["Average miss", _number(run.realized_mae)],
+        ["Bias", _signed(run.realized_bias)],
+        ["Periods graded", f"{run.scored_periods} of {run.horizon}"],
+        ["Forecast", _number(forecast_total)],
+        ["Actual", _number(actual_total)],
+    ]
+    if run.realized_coverage is not None:
+        measures.insert(
+            4,
+            [
+                f"Inside the {run.confidence_level * 100:.0f}% interval",
+                _percent(run.realized_coverage, 0),
+            ],
+        )
+
+    lede = (
+        "Measured against what happened, not against a backtest. "
+        f"{'Every period' if run.scored_periods >= run.horizon else 'Only the periods'} "
+        "that had finished when this was scored is included; a period still being "
+        "lived through is left out rather than compared against part of itself."
+    )
+    verdict = _verdict(run)
+
+    return [
+        KeepTogether(
+            [
+                Paragraph("HOW THIS FORECAST ACTUALLY DID", style["section"]),
+                Paragraph(lede, style["body"]),
+                Spacer(1, 6),
+                ScoreChart(
+                    rows=graded,
+                    width=width,
+                    height=CHART_HEIGHT,
+                    currency=currency,
+                ),
+                Spacer(1, 8),
+                _table(["", ""], measures, [56 * mm, width - 56 * mm], style),
+            ]
+        ),
+        *(
+            [
+                Spacer(1, 6),
+                Paragraph(
+                    verdict,
+                    ParagraphStyle("verdict", parent=style["body"], textColor=ACCENT),
+                ),
+            ]
+            if verdict
+            else []
+        ),
+    ]
+
+
+def _graded_periods(rows: list[dict[str, Any]]) -> list[tuple[date, float, float]]:
+    """The run's own forecast periods that carry an actual, in calendar order."""
+    graded = [
+        (
+            date.fromisoformat(str(row["period"])),
+            float(row["forecast"]),
+            float(row["actual"]),
+        )
+        for row in rows
+        if row.get("series", TOP_LINE) == TOP_LINE
+        and row.get("kind") == "forecast"
+        and row.get("forecast") is not None
+        and row.get("actual") is not None
+    ]
+    return sorted(graded, key=lambda graded_row: graded_row[0])
+
+
+def _verdict(run: ForecastRun) -> str:
+    """
+    The one sentence a reader takes away, in the language of the fault.
+
+    Bias and interval coverage are different failures needing different fixes,
+    and neither is visible in the accuracy figure that sits above them.
+    """
+    parts: list[str] = []
+
+    # Bias and wMAPE are both percentages of actual, so their ratio is exactly
+    # the share of the error that points one way. Past a half the misses have
+    # stopped cancelling, and the fix is a different one from "be more
+    # accurate" — which is the only reason to say it out loud.
+    bias, error = run.realized_bias, run.realized_wmape
+    if bias is not None and error and abs(bias) >= error * DIRECTIONAL_SHARE:
+        direction = "high" if bias > 0 else "low"
+        parts.append(
+            f"It ran {direction} by {abs(bias):.1f}% overall — with "
+            f"{min(abs(bias) / error, 1.0) * 100:.0f}% of the error pointing the same way, this "
+            "is a lean to correct rather than scatter to live with."
+        )
+
+    if intervals_held(run.realized_coverage, run.confidence_level) is False:
+        parts.append(
+            f"Actuals landed inside the {run.confidence_level * 100:.0f}% interval "
+            f"{run.realized_coverage or 0.0:.0f}% of the time, so the interval was narrower "
+            "than it claimed."
+        )
+
+    return " ".join(parts)
+
+
 def _forecast_chart(
-    rows: list[dict[str, Any]], width: float, currency: bool
+    rows: list[dict[str, Any]], run: ForecastRun, width: float, currency: bool
 ) -> ForecastChart | None:
     """
     The run's own history and horizon. Returns None where there is nothing to
@@ -456,6 +601,14 @@ def _forecast_chart(
         for row in top_line
         if row.get("kind") == "actual" and row.get("actual") is not None
     ]
+    # Only the recent past. Three years of history behind a three-month horizon
+    # squeezes the forecast into a sliver at the right-hand edge, and the
+    # forecast is what the picture is for. Two comparison windows is what the
+    # engine itself uses to judge seasonality — long enough to show the pattern
+    # being extrapolated, derived from the frequency rather than picked.
+    context = 2 * comparison_window(run.frequency, len(history))
+    history = history[-context:] if len(history) > context else history
+
     horizon = [
         (date.fromisoformat(str(row["period"])), float(row["forecast"]))
         for row in top_line
@@ -464,14 +617,17 @@ def _forecast_chart(
     if len(history) + len(horizon) < 2:
         return None
 
-    bounds = [
-        (row.get("lower_bound"), row.get("upper_bound"))
-        for row in top_line
-        if row.get("kind") == "forecast"
-    ]
-    lower = [float(low) for low, _ in bounds if low is not None]
-    upper = [float(high) for _, high in bounds if high is not None]
+    ahead = [row for row in top_line if row.get("kind") == "forecast"]
+    lower = [float(row["lower_bound"]) for row in ahead if row.get("lower_bound") is not None]
+    upper = [float(row["upper_bound"]) for row in ahead if row.get("upper_bound") is not None]
     complete = len(lower) == len(upper) == len(horizon)
+
+    # What happened over the horizon, once it has been scored. Aligned with the
+    # forecast period by period, with a hole where a period has not settled.
+    realized = [
+        None if row.get("actual") is None else float(row["actual"])
+        for row in sorted(ahead, key=lambda row: str(row.get("period", "")))
+    ]
 
     return ForecastChart(
         history=history,
@@ -481,6 +637,7 @@ def _forecast_chart(
         width=width,
         height=CHART_HEIGHT,
         currency=currency,
+        realized=realized if any(value is not None for value in realized) else [],
     )
 
 

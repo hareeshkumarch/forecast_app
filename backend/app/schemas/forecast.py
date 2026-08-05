@@ -28,6 +28,17 @@ from app.schemas.common import (
 
 SCORABLE_METRICS = frozenset({"wmape", "smape", "rmse", "mae"})
 
+
+def _accuracy(wmape: float | None) -> float | None:
+    """Accuracy as the rest of the platform defines it, rounded for the wire."""
+    from app.forecasting.metrics import accuracy_from_wmape
+
+    if wmape is None:
+        return None
+    value = accuracy_from_wmape(wmape)
+    return None if value != value else round(value, 2)
+
+
 Horizon = Annotated[int, Field(ge=1, le=365)]
 Folds = Annotated[int, Field(ge=1, le=10)]
 TreeDepth = Annotated[int, Field(ge=1, le=10)]
@@ -174,6 +185,12 @@ class SeriesRow(ORMModel):
     prior_total: float | None
     share: float | None
 
+    # Filled once the periods this series forecast have been lived through.
+    # `wmape` above is what the backtest expected; this is what happened.
+    scored_periods: NonNegativeInt = 0
+    realized_wmape: float | None = None
+    realized_actual_total: float | None = None
+
     @computed_field
     @property
     def value_at_risk(self) -> float | None:
@@ -220,6 +237,81 @@ class SeriesResponse(BaseModel):
         return self.offset + len(self.rows) < self.total
 
 
+class ScoreRequest(StrictModel):
+    #: Which dataset supplies the actuals. Omitted, the newest one that covers
+    #: the horizon and holds the run's columns is used.
+    dataset_id: uuid.UUID | None = None
+
+
+class SeriesScoreRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    series_id: uuid.UUID
+    label: str
+    level: NonNegativeInt
+    forecast_total: float
+    actual_total: float | None
+    wmape: float | None
+    scored_periods: NonNegativeInt
+    unscored_reason: str | None
+
+    @computed_field
+    @property
+    def miss(self) -> float | None:
+        """How far off in the measure's own units — signed, forecast less actual."""
+        if self.actual_total is None:
+            return None
+        return round(self.forecast_total - self.actual_total, 4)
+
+
+class ScorecardResponse(BaseModel):
+    """A finished forecast measured against what happened."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    scored_at: datetime | None
+    source_dataset_id: uuid.UUID | None
+    source_dataset_name: str | None
+
+    horizon: NonNegativeInt
+    scored_periods: NonNegativeInt
+    pending_periods: NonNegativeInt
+    covered_through: date | None
+
+    forecast_total: float
+    actual_total: float
+    wmape: float | None
+    mae: float | None
+    bias: float | None
+    coverage: float | None
+    confidence_level: Probability | None
+
+    unforecast_keys: NonNegativeInt
+    currency: bool
+    blocked_reason: str | None
+    series: list[SeriesScoreRow] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def scored(self) -> bool:
+        return self.scored_periods > 0
+
+    @computed_field
+    @property
+    def accuracy(self) -> float | None:
+        """The realized counterpart of the accuracy every run already reports."""
+        return _accuracy(self.wmape)
+
+    @computed_field
+    @property
+    def intervals_held(self) -> bool | None:
+        """Whether the interval kept the promise it made. See `forecasting.metrics`."""
+        from app.forecasting.metrics import intervals_held
+
+        return intervals_held(self.coverage, self.confidence_level)
+
+
 class ForecastRunRead(ORMModel):
     id: uuid.UUID
     dataset_id: uuid.UUID
@@ -253,10 +345,23 @@ class ForecastRunRead(ORMModel):
     error_message: str | None
     created_at: datetime
 
+    # How it actually did. Distinct from `metrics`, which are backtest numbers
+    # and therefore say what the model would have done, not what it did.
+    scored_at: datetime | None = None
+    scored_periods: NonNegativeInt = 0
+    realized_wmape: float | None = None
+    realized_bias: float | None = None
+    realized_coverage: float | None = None
+
     @computed_field
     @property
     def is_terminal(self) -> bool:
         return self.status in (RunStatus.COMPLETED, RunStatus.FAILED)
+
+    @computed_field
+    @property
+    def realized_accuracy(self) -> float | None:
+        return _accuracy(self.realized_wmape)
 
 
 class ForecastRunDetail(ForecastRunRead):

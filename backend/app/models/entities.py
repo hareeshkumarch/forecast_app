@@ -161,8 +161,13 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     columns: Mapped[list[DatasetColumn]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetColumn.position"
     )
+    # A run points at two datasets: the one it was fitted on and, once scored,
+    # the one that supplied the actuals. Only the first owns the run, so both
+    # sides have to name the column they mean.
     runs: Mapped[list[ForecastRun]] = relationship(
-        back_populates="dataset", cascade="all, delete-orphan"
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+        foreign_keys="ForecastRun.dataset_id",
     )
 
 
@@ -253,7 +258,30 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[str | None] = mapped_column(Text)
 
-    dataset: Mapped[Dataset] = relationship(back_populates="runs")
+    # How the forecast actually did, once the periods it covered had been
+    # lived through. Every other accuracy number on this row is a backtest
+    # number — measured inside the history the model was fitted on — and says
+    # what the model would have done rather than what it did.
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scored_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("datasets.id", ondelete="SET NULL")
+    )
+    # Only whole periods count, so this reaches the horizon in steps.
+    scored_periods: Mapped[int] = mapped_column(Integer, default=0)
+    # How far the actuals reached when the score was taken. Stored rather than
+    # re-read, because the source keeps growing and the question is what was
+    # known at the time.
+    scored_through: Mapped[date | None] = mapped_column(Date)
+    realized_wmape: Mapped[float | None] = mapped_column(Float)
+    realized_mae: Mapped[float | None] = mapped_column(Float)
+    # Signed, as a percentage of actual: whether it ran high or low, which is
+    # a different fault from being far out and needs a different fix.
+    realized_bias: Mapped[float | None] = mapped_column(Float)
+    # The share of actuals that landed inside the interval. An 80% interval
+    # that catches 40% of them is not an 80% interval.
+    realized_coverage: Mapped[float | None] = mapped_column(Float)
+
+    dataset: Mapped[Dataset] = relationship(back_populates="runs", foreign_keys=[dataset_id])
     candidates: Mapped[list[ModelCandidate]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
@@ -377,6 +405,11 @@ class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_total: Mapped[float] = mapped_column(Float, default=0.0)
     prior_total: Mapped[float | None] = mapped_column(Float)
     share: Mapped[float | None] = mapped_column(Float)
+
+    # Filled once the periods this series forecast have been lived through.
+    scored_periods: Mapped[int] = mapped_column(Integer, default=0)
+    realized_wmape: Mapped[float | None] = mapped_column(Float)
+    realized_actual_total: Mapped[float | None] = mapped_column(Float)
 
     run: Mapped[ForecastRun] = relationship(back_populates="series")
     children: Mapped[list[ForecastSeries]] = relationship(
