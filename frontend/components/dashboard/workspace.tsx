@@ -20,6 +20,10 @@ export function Workspace() {
   const { data: summary, isSuccess } = useSummary();
   const openModal = useUiStore((state) => state.openModal);
 
+  // Only once the summary has actually answered — a slow first load must not
+  // flash the guide at someone who has fifty runs.
+  const firstRun = isSuccess && !summary.has_data;
+
   return (
     <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
@@ -68,27 +72,35 @@ export function Workspace() {
         </div>
       </div>
 
-      {isSuccess && !summary.has_data ? (
+      {/*
+       * Before the first run the five analytical panels have nothing to say,
+       * and stacking five "no data yet" cards under the guide buries the one
+       * thing the screen is for. The guide gets the screen until there is a
+       * forecast to show.
+       */}
+      {firstRun ? (
         <div className="mt-4">
           <GettingStarted />
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div className="mt-4">
+            <KpiCards />
+          </div>
 
-      <div className="mt-4">
-        <KpiCards />
-      </div>
+          <ModelHealthStrip />
 
-      <ModelHealthStrip />
+          <div className="grid-charts mt-3">
+            <ForecastVsActual />
+            <ForecastByCategory />
+          </div>
 
-      <div className="grid-charts mt-3">
-        <ForecastVsActual />
-        <ForecastByCategory />
-      </div>
-
-      <div className="grid-panels mt-3">
-        <RegionTable />
-        <DriverTable />
-      </div>
+          <div className="grid-panels mt-3">
+            <RegionTable />
+            <DriverTable />
+          </div>
+        </>
+      )}
     </main>
   );
 }

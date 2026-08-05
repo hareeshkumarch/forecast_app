@@ -354,8 +354,15 @@ export function ForecastVsActual() {
           <EmptyState
             className="chart-box"
             icon={LineChart}
-            title="Nothing to plot"
-            message="No series falls inside the selected window — widen the forecast range."
+            // Without a run there is no window to widen, and saying so sends a
+            // new user hunting through a date filter for data that was never
+            // there.
+            title={runId ? "Nothing in this window" : "No forecast yet"}
+            message={
+              runId
+                ? "No period falls inside the selected range — widen it to see the series."
+                : "Run a forecast and its history and horizon will be plotted here."
+            }
           />
         )}
       </div>

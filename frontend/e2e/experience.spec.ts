@@ -28,11 +28,21 @@ test("the theme is applied before paint and survives a reload", async ({ page })
   // Read before any hydration effect could have run.
   expect(await theme(page)).toBe("dark");
 
+  // Asserted as "dark", not as a hex: the point is that the dark tokens are
+  // live before paint, and pinning the literal only breaks the test whenever
+  // the palette is retuned.
   const canvas = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim(),
   );
-  expect(canvas).toBe("#14161b");
+  expect(canvas).toMatch(/^#[0-9a-f]{6}$/i);
+  expect(luminance(canvas)).toBeLessThan(0.2);
 });
+
+/** Rough perceived brightness, 0 (black) to 1 (white). */
+function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 test("the keyboard toggles the theme and the palette drives it too", async ({ page }, testInfo) => {
   await load(page);

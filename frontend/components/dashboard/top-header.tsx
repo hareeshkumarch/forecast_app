@@ -4,12 +4,9 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   BookOpen,
-  Menu,
   Monitor,
   MoreVertical,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Sparkles,
   Sun,
@@ -27,7 +24,7 @@ import {
   StatusControl,
 } from "@/components/dashboard/header-controls";
 import { ICON_BUTTON, IconButton, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
-import { useInsights } from "@/hooks/use-dashboard";
+import { useInsights, useSummary } from "@/hooks/use-dashboard";
 import { RAIL_MEDIA, useMediaQuery } from "@/hooks/use-media-query";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -38,6 +35,7 @@ const DOCS_URL = `${API_BASE_URL}/docs`;
 
 const SECTION_LABEL: Record<AppSection, string> = {
   dashboard: "Dashboard",
+  series: "Series",
   reports: "Reports",
   connectors: "Connectors",
   usage: "LLM Usage",
@@ -47,6 +45,7 @@ const SECTION_LABEL: Record<AppSection, string> = {
 export function TopHeader({ section }: { section: AppSection }) {
   const openRail = useUiStore((state) => state.openRail);
   const { data: insights } = useInsights();
+  const { data: summary } = useSummary();
   const theme = usePrefsStore((state) => state.theme);
   const resolvedTheme = usePrefsStore((state) => state.resolvedTheme);
   const toggleTheme = usePrefsStore((state) => state.toggleTheme);
@@ -54,7 +53,10 @@ export function TopHeader({ section }: { section: AppSection }) {
   const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
   const isDesktop = useMediaQuery(RAIL_MEDIA.navigation);
 
-  const isDashboard = section === "dashboard";
+  // Run, scenario, range and export all act on a forecast. Before the first
+  // one they are controls that cannot do anything, and offering them is what
+  // makes a new workspace feel broken rather than empty.
+  const isDashboard = section === "dashboard" && (summary?.has_data ?? false);
   const insightCount = insights?.items.length ?? 0;
   const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun;
 
@@ -65,7 +67,6 @@ export function TopHeader({ section }: { section: AppSection }) {
     : sidebarCollapsed
       ? "Expand navigation"
       : "Collapse navigation";
-  const NavIcon = !isDesktop ? Menu : sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
 
   return (
     <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-2 sm:gap-2.5 sm:px-5">
@@ -91,16 +92,6 @@ export function TopHeader({ section }: { section: AppSection }) {
             <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
               Forecast Hub
             </span>
-            {/* The affordance is always on screen rather than waiting for a
-                hover the brand mark used to disappear under — and that no
-                touch device ever produces. */}
-            <NavIcon
-              className={cn(
-                "h-4 w-4 shrink-0 text-text-muted transition-colors duration-fast",
-                "group-hover:text-text-secondary",
-              )}
-              aria-hidden
-            />
           </button>
         </Tooltip.Trigger>
         <Tooltip.Portal>
