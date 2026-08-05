@@ -1,7 +1,9 @@
 "use client";
 
-import { Download, FileBarChart2, FileText, Plus, RefreshCw } from "lucide-react";
+import { Download, FileBarChart2, FileText, Plus } from "lucide-react";
 
+import { Scorecard } from "@/components/reports/scorecard";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { downloadExport, useForecastRuns } from "@/hooks/use-dashboard";
 import { formatRelativeTime, humanizeModel } from "@/lib/format";
@@ -31,37 +33,37 @@ function RunCard({ run }: { run: ForecastRun }) {
 
       <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
-          <dt className="text-caption text-text-muted">Selected model</dt>
+          <dt className="text-caption text-text-muted">Method used</dt>
           <dd className="mt-0.5 truncate text-meta font-medium text-text-primary">
             {run.selected_model ? humanizeModel(run.selected_model) : "Not selected"}
           </dd>
         </div>
         <div>
-          <dt className="text-caption text-text-muted">Confidence</dt>
+          <dt className="text-caption text-text-muted">Range covers</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary num">
             {Math.round(run.confidence_level * 100)}%
           </dd>
         </div>
         <div>
-          <dt className="text-caption text-text-muted">Forecast window</dt>
+          <dt className="text-caption text-text-muted">Covers</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary">
             {run.forecast_start && run.forecast_end ? `${run.forecast_start} – ${run.forecast_end}` : "Pending"}
           </dd>
         </div>
         <div>
-          <dt className="text-caption text-text-muted">Data treatment</dt>
+          <dt className="text-caption text-text-muted">Repeated dates</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary">
-            {run.aggregation} · {run.gap_fill}
+            Added up{run.gap_fill === "none" ? "" : " · gaps filled in"}
           </dd>
         </div>
         <div className="col-span-2">
           {/* Without this a run that forecast 500 series reads exactly like one
               that forecast a single total. */}
-          <dt className="text-caption text-text-muted">Forecast grain</dt>
+          <dt className="text-caption text-text-muted">Broken down by</dt>
           <dd className="mt-0.5 truncate text-meta font-medium text-text-primary">
             {run.group_by.length > 0
-              ? `${run.group_by.join(" · ")} — ${run.series_count.toLocaleString()} series`
-              : "One total series"}
+              ? `${run.group_by.join(" and ")} — ${run.series_count.toLocaleString()} lines`
+              : "Nothing — one overall total"}
           </dd>
         </div>
       </dl>
@@ -71,6 +73,8 @@ function RunCard({ run }: { run: ForecastRun }) {
           {run.error_message}
         </p>
       ) : null}
+
+      <Scorecard run={run} />
 
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
         <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "csv")}>
@@ -85,7 +89,8 @@ function RunCard({ run }: { run: ForecastRun }) {
 }
 
 export function ReportsWorkspace() {
-  const { data, isLoading, isError, error, refetch, isFetching } = useForecastRuns();
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
+    useForecastRuns();
   const openModal = useUiStore((state) => state.openModal);
   const runs = data ?? [];
   const completed = runs.filter((run) => run.status === "completed").length;
@@ -102,7 +107,11 @@ export function ReportsWorkspace() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" icon={RefreshCw} loading={isFetching} onClick={() => void refetch()}>Refresh</Button>
+          <RefreshButton
+            updatedAt={dataUpdatedAt}
+            isFetching={isFetching}
+            onRefresh={() => void refetch()}
+          />
           <Button variant="primary" icon={Plus} onClick={() => openModal("configure-forecast")}>New forecast</Button>
         </div>
       </div>
@@ -127,7 +136,7 @@ export function ReportsWorkspace() {
           <EmptyState
             icon={FileBarChart2}
             title="No reports yet"
-            message="Run a forecast to create exportable CSV, Excel, and JSON reports."
+            message="Run a forecast to create a CSV extract and a PDF report."
             action={<Button variant="primary" onClick={() => openModal("configure-forecast")}>Create a forecast</Button>}
           />
         </Card>

@@ -29,25 +29,44 @@ export function ModelHealthStrip() {
       </span>
       <div className="min-w-[190px] flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-meta font-semibold text-text-primary">Model health</p>
-          <Badge tone="positive"><CheckCircle2 className="h-3 w-3" aria-hidden /> Selected</Badge>
+          <p className="text-meta font-semibold text-text-primary">
+            How this forecast was made
+          </p>
+          <Badge tone="positive"><CheckCircle2 className="h-3 w-3" aria-hidden /> Best of {scored.length}</Badge>
         </div>
+        {/*
+          * A sentence rather than a row of acronyms. wMAPE and RMSE mean
+          * nothing to the person this screen is for, and the two of them side
+          * by side mostly prompt the question "which one do I look at?" —
+          * they are still a click away for anyone who wants them.
+          */}
         <p className="mt-0.5 text-caption text-text-muted">
-          {humanizeModel(data.selected_model)} won across {selected?.folds ?? 0} folds
-          {runnerUp ? ` ahead of ${humanizeModel(runnerUp.model)}` : ""}.
+          We tried {scored.length} method{scored.length === 1 ? "" : "s"} on your history and kept{" "}
+          <span className="font-medium text-text-secondary">{humanizeModel(data.selected_model)}</span>
+          {runnerUp ? `, which beat ${humanizeModel(runnerUp.model)}` : ""}
+          {selected?.folds ? ` over ${selected.folds} test${selected.folds === 1 ? "" : "s"}` : ""}.
         </p>
       </div>
       <dl className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div><dt className="text-caption text-text-muted">wMAPE</dt><dd className="text-meta font-semibold text-text-primary num">{selected?.wmape == null ? "—" : `${selected.wmape.toFixed(1)}%`}</dd></div>
-        <div><dt className="text-caption text-text-muted">RMSE</dt><dd className="text-meta font-semibold text-text-primary num">{selected?.rmse == null ? "—" : formatCompact(selected.rmse)}</dd></div>
-        <div><dt className="text-caption text-text-muted">Candidates</dt><dd className="text-meta font-semibold text-text-primary num">{scored.length}/{data.candidates.length}</dd></div>
+        <div title="How far off this method was when tested on periods it had not seen">
+          <dt className="text-caption text-text-muted">Off by, on average</dt>
+          <dd className="text-meta font-semibold text-text-primary num">
+            {selected?.wmape == null ? "—" : `${selected.wmape.toFixed(1)}%`}
+          </dd>
+        </div>
+        <div title="The size of a typical miss, in the units you are forecasting">
+          <dt className="text-caption text-text-muted">Typical miss</dt>
+          <dd className="text-meta font-semibold text-text-primary num">
+            {selected?.rmse == null ? "—" : formatCompact(selected.rmse)}
+          </dd>
+        </div>
       </dl>
       <button
         type="button"
         onClick={() => openModal("model-detail")}
         className="inline-flex min-h-11 items-center gap-1.5 rounded-input px-2.5 text-meta font-medium text-accent transition-colors duration-fast hover:bg-accent-soft sm:min-h-8"
       >
-        Open model lab <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+        See the detail <ArrowRight className="h-3.5 w-3.5" aria-hidden />
       </button>
     </Card>
   );

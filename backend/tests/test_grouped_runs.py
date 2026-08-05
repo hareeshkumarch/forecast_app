@@ -206,6 +206,7 @@ def test_a_chunk_survives_the_trip_a_broker_would_put_it_through() -> None:
         frequency=MONTHLY,
         horizon=3,
         max_folds=1,
+        confidence_level=0.8,
         total_path=[1000.0, 1000.0, 1000.0],
         forecast_periods=[date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)],
     )

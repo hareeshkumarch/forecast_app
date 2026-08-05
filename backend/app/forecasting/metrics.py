@@ -70,6 +70,29 @@ def accuracy_from_wmape(value: float) -> float:
     return float(max(0.0, 100.0 - value))
 
 
+#: Slack for comparing two percentages arrived at by different arithmetic.
+#: Far below any difference a reader could see.
+FLOAT_TOLERANCE = 1e-9
+
+
+def intervals_held(coverage: float | None, confidence_level: float | None) -> bool | None:
+    """
+    Whether a prediction interval kept the promise it made.
+
+    Coverage is noisy over a handful of periods, so this asks the weaker
+    question a short horizon can actually answer: did at least as many actuals
+    land inside as the stated confidence claimed? The tolerance is for float
+    comparison alone — four actuals inside five is exactly 80%, and that should
+    not fail an 80% interval on the last bit of a double.
+
+    One definition, because the report and the API were each deciding this and
+    a run could pass on screen while failing on paper.
+    """
+    if coverage is None or confidence_level is None:
+        return None
+    return coverage + FLOAT_TOLERANCE >= confidence_level * 100.0
+
+
 def evaluate(
     y_true: FloatArray,
     y_pred: FloatArray,

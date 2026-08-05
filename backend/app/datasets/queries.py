@@ -13,6 +13,17 @@ from app.core.errors import ValidationError
 from app.forecasting.frequency import comparison_window
 from app.models.enums import ForecastFrequency, MeasureAggregation
 
+#: What the tail of a long list is pooled under once it passes `max_series`.
+#: A pooled row stands for many combinations and matches none of them, so
+#: anything that has to look a series back up in the source data — scoring it
+#: against actuals, above all — has to recognise it rather than treat it as a
+#: combination that recorded nothing.
+POOLED_LABEL = "Others"
+POOLED_KEY = "(others)"
+
+#: What a missing grouping value is called, on both sides of the comparison.
+MISSING_KEY = "(none)"
+
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
     ForecastFrequency.DAILY: "day",
     ForecastFrequency.WEEKLY: "week",
@@ -252,7 +263,7 @@ def aggregate_segments(
         # so it can be forecast like any other segment.
         pooled = [sum(values) for values in zip(*(t.values for t in tail), strict=True)]
         others = SegmentTotals(
-            label="Others",
+            label=POOLED_LABEL,
             current_total=sum(t.current_total for t in tail),
             prior_total=(
                 sum(t.prior_total or 0.0 for t in tail)
@@ -272,6 +283,102 @@ def column_names(parquet_path: Path) -> list[str]:
     with connect() as connection:
         cursor = connection.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT 0")
         return [str(description[0]) for description in cursor.description or []]
+
+
+@dataclass(slots=True)
+class ObservedWindow:
+    """What a file recorded over a stretch of the calendar, and how far it goes."""
+
+    #: The last date the file carries at all — not the last one in the window.
+    #: A period is only finished if this reaches past the end of it.
+    covered_through: date | None
+    totals: dict[date, float]
+    by_key: dict[tuple[str, ...], dict[date, float]]
+
+
+def observed_window(
+    parquet_path: Path,
+    time_column: str,
+    target_column: str,
+    frequency: ForecastFrequency,
+    *,
+    start: date,
+    end: date,
+    group_columns: list[str] | None = None,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+) -> ObservedWindow:
+    """
+    Actuals over `start`..`end`, aggregated exactly as a run aggregated its history.
+
+    Used to score a finished forecast, so it has to reduce the raw rows the
+    same way the run did — a forecast of a monthly sum compared against a
+    monthly mean is not a comparison at all.
+    """
+    part = DATE_TRUNC_PART[frequency]
+    reducer = AGGREGATIONS[aggregation]
+    time_sql = _quote(time_column)
+    target_sql = _quote(target_column)
+    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
+
+    where = (
+        f"TRY_CAST({time_sql} AS DATE) IS NOT NULL "
+        f"AND TRY_CAST({target_sql} AS DOUBLE) IS NOT NULL "
+        f"AND TRY_CAST({time_sql} AS DATE) BETWEEN ? AND ?"
+    )
+    window: list[Any] = [start, end]
+
+    totals_sql = f"""
+        SELECT
+            date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
+            {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
+        FROM {_source(parquet_path)}
+        WHERE {where}
+        GROUP BY period
+        ORDER BY period
+    """
+
+    # Over the whole file rather than the window: the question is how far the
+    # data reaches, and a window that ends early cannot answer it.
+    reach_sql = f"""
+        SELECT MAX(TRY_CAST({time_sql} AS DATE))
+        FROM {_source(parquet_path)}
+        WHERE TRY_CAST({time_sql} AS DATE) IS NOT NULL
+    """
+
+    by_key: dict[tuple[str, ...], dict[date, float]] = {}
+    with connect() as connection:
+        totals = {
+            _as_date(row[0]): float(row[1] or 0.0)
+            for row in connection.execute(totals_sql, list(window)).fetchall()
+        }
+        reach = connection.execute(reach_sql).fetchone()
+
+        if group_columns:
+            depth = len(group_columns)
+            select_keys = ", ".join(
+                f"COALESCE(CAST({_quote(column)} AS VARCHAR), '{MISSING_KEY}') AS k{index}"
+                for index, column in enumerate(group_columns)
+            )
+            group_keys = ", ".join(f"k{index}" for index in range(depth))
+            keyed_sql = f"""
+                SELECT
+                    {select_keys},
+                    date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
+                    {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
+                FROM {_source(parquet_path)}
+                WHERE {where}
+                GROUP BY {group_keys}, period
+            """
+            for row in connection.execute(keyed_sql, list(window)).fetchall():
+                key = tuple(str(value) for value in row[:depth])
+                by_key.setdefault(key, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
+
+    covered = reach[0] if reach else None
+    return ObservedWindow(
+        covered_through=_as_date(covered) if covered is not None else None,
+        totals=totals,
+        by_key=by_key,
+    )
 
 
 @dataclass(slots=True)
@@ -337,7 +444,7 @@ def aggregate_grouped(
 
     order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
     select_keys = ", ".join(
-        f"COALESCE(CAST({column} AS VARCHAR), '(none)') AS k{index}"
+        f"COALESCE(CAST({column} AS VARCHAR), '{MISSING_KEY}') AS k{index}"
         for index, column in enumerate(group_sql)
     )
     group_keys = ", ".join(f"k{index}" for index in range(len(group_sql)))
@@ -391,8 +498,8 @@ def aggregate_grouped(
         pooled = [sum(column) for column in zip(*(s.values for s in tail), strict=True)]
         head.append(
             GroupedSeries(
-                key=dict.fromkeys(group_columns, "(others)"),
-                label="Others",
+                key=dict.fromkeys(group_columns, POOLED_KEY),
+                label=POOLED_LABEL,
                 periods=list(calendar),
                 values=pooled,
                 current_total=sum(s.current_total for s in tail),

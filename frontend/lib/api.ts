@@ -26,6 +26,7 @@ import type {
   MeasureAggregation,
   OutlierTreatment,
   RegionResponse,
+  Scorecard,
   SeriesResponse,
   SeriesSort,
 } from "@/types/api";
@@ -272,6 +273,21 @@ export const getForecastSeries = (
     offset?: number;
   } = {},
 ) => request<SeriesResponse>(`/api/forecasts/${id}/series${buildQuery(params)}`);
+
+/** The score already computed, or the reason there is none yet. Never recomputes. */
+export const getScorecard = (id: string) => request<Scorecard>(`/api/forecasts/${id}/score`);
+
+/**
+ * Grades the forecast against actuals and stores the result.
+ *
+ * Omitting the dataset uses the newest one that covers the horizon and holds
+ * the run's columns, which is what a caller wants in every ordinary case.
+ */
+export const scoreForecast = (id: string, datasetId?: string) =>
+  request<Scorecard>(`/api/forecasts/${id}/score`, {
+    method: "POST",
+    body: JSON.stringify({ dataset_id: datasetId ?? null }),
+  });
 
 export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/${id}/events`;
 

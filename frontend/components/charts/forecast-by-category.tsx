@@ -97,7 +97,7 @@ export function ForecastByCategory() {
 
   return (
     <Card className="flex min-w-0 flex-col">
-      <PanelHeader title="Forecast by Category" subtitle="Share of total forecast" />
+      <PanelHeader title="Forecast by Category" subtitle="Where the forecast comes from" />
 
       <div className="min-h-0 flex-1 px-3 pb-3">
         {isLoading ? (

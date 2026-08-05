@@ -25,8 +25,8 @@ export function DriverTable() {
   return (
     <Card className="flex min-w-0 flex-col">
       <PanelHeader
-        title="Top Drivers Impacting Forecast"
-        subtitle="Decomposed contribution to forecast movement"
+        title="What is moving the number"
+        subtitle="What is pushing the number up or down"
       />
 
       <div className="min-h-0 flex-1 px-1 pb-2">

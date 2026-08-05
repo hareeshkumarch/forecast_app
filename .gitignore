@@ -28,6 +28,8 @@ npm-debug.log*
 
 # Storage / Database runtime files
 storage/dev.db*
+# Scratch database from a local run of the end-to-end job.
+.e2e-storage/
 storage/uploads/*
 !storage/uploads/.gitkeep
 storage/parquet/*

@@ -51,6 +51,7 @@ export const queryKeys = {
   runPoints: (id: string, start?: string | null, end?: string | null, seriesId?: string | null) =>
     ["forecasts", id, "points", start ?? null, end ?? null, seriesId ?? null] as const,
   runSeries: (id: string, query: SeriesQuery) => ["forecasts", id, "series", query] as const,
+  runScore: (id: string) => ["forecasts", id, "score"] as const,
   summary: (f: DashboardFilters) => ["dashboard", "summary", filterKey(f)] as const,
   regions: (f: DashboardFilters) => ["dashboard", "regions", filterKey(f)] as const,
   categories: (f: DashboardFilters) => ["dashboard", "categories", filterKey(f)] as const,
@@ -171,6 +172,43 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
       }),
     enabled: Boolean(runId),
     placeholderData: (previous) => previous,
+  });
+}
+
+/** The score already stored for a run, or the reason there is none yet. */
+export function useScorecard(runId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.runScore(runId ?? "none"),
+    queryFn: () => api.getScorecard(runId as string),
+    enabled: Boolean(runId),
+  });
+}
+
+/**
+ * Grades a run against actuals.
+ *
+ * Everything the score touches is invalidated on success — the run row carries
+ * the realized figures, the series rows carry their own, and the points now
+ * have actuals on them.
+ */
+export function useScoreForecast(runId: string) {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (datasetId?: string) => api.scoreForecast(runId, datasetId),
+    onSuccess: (card) => {
+      client.setQueryData(queryKeys.runScore(runId), card);
+      void client.invalidateQueries({ queryKey: ["forecasts"] });
+      toast.success(
+        card.scored
+          ? `Scored against ${card.source_dataset_name ?? "the latest data"}.`
+          : "Nothing to score yet.",
+        card.scored
+          ? `${card.scored_periods} of ${card.horizon} periods graded.`
+          : card.blocked_reason ?? undefined,
+      );
+    },
+    onError: (error: unknown) => toast.error("Could not score this forecast", errorMessage(error)),
   });
 }
 
