@@ -595,6 +595,10 @@ class SeriesResult:
     accuracy_measured: bool
     folds: int
     forecast_total: float
+    #: The last full window of actuals, and the one before it. Both cover the
+    #: same span, so the change between them is a like-for-like trend — which
+    #: the forecast total, covering only the horizon, would not be.
+    current_total: float
     prior_total: float | None
     share: float | None
     status: SeriesStatus
@@ -668,13 +672,14 @@ def assemble_grouped(
     )
     reconcile_tree(root, total)
 
+    actuals = _roll_up_actuals(root, by_label)
     total_sum = float(np.sum(total))
     results: list[SeriesResult] = []
 
     for node in walk(root):
         path = node.reconciled if node.reconciled is not None else np.zeros(total.size)
         value = float(np.sum(path))
-        source = by_label.get(node.label)
+        current, prior = actuals[node.label]
         fit = fitted.get(node.label)
 
         results.append(
@@ -690,7 +695,8 @@ def assemble_grouped(
                 accuracy_measured=fit is not None,
                 folds=fit.folds if fit else 0,
                 forecast_total=round(value, 4),
-                prior_total=source.prior_total if source else None,
+                current_total=round(current, 4),
+                prior_total=round(prior, 4) if prior is not None else None,
                 share=round(value / total_sum * 100.0, 2) if total_sum else None,
                 status=(
                     SeriesStatus.ESTIMATED
@@ -703,6 +709,34 @@ def assemble_grouped(
 
     _attach_parents(root, results)
     return results
+
+
+def _roll_up_actuals(
+    root: Node, leaves: dict[str, SegmentInput]
+) -> dict[str, tuple[float, float | None]]:
+    """
+    Each node's own history, summed up from the leaves beneath it.
+
+    A parent has no series of its own to read these from, but its trend is
+    exactly the sum of its children's — so it is worth carrying up rather than
+    leaving every level above the grain without one.
+    """
+    totals: dict[str, tuple[float, float | None]] = {}
+
+    def visit(node: Node) -> tuple[float, float | None]:
+        if node.is_leaf:
+            leaf = leaves.get(node.label)
+            measured = (leaf.current_total, leaf.prior_total) if leaf else (0.0, None)
+        else:
+            parts = [visit(child) for child in node.children]
+            priors = [prior for _, prior in parts if prior is not None]
+            measured = (sum(current for current, _ in parts), sum(priors) if priors else None)
+
+        totals[node.label] = measured
+        return measured
+
+    visit(root)
+    return totals
 
 
 def _attach_parents(root: Node, results: list[SeriesResult]) -> None:

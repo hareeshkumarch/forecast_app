@@ -15,6 +15,7 @@ import { TopHeader } from "@/components/dashboard/top-header";
 import { UploadDatasetModal } from "@/components/dashboard/upload-dataset-modal";
 import { Workspace } from "@/components/dashboard/workspace";
 import { ReportsWorkspace } from "@/components/reports/reports-workspace";
+import { SeriesWorkspace } from "@/components/series/series-workspace";
 import { SettingsWorkspace } from "@/components/settings/settings-workspace";
 import { Toaster } from "@/components/ui/toaster";
 import { AllInsightsModal } from "@/components/insights/all-insights-modal";
@@ -24,6 +25,7 @@ import { UsageWorkspace } from "@/components/usage/usage-workspace";
 
 const WORKSPACES: Record<AppSection, ComponentType> = {
   dashboard: Workspace,
+  series: SeriesWorkspace,
   reports: ReportsWorkspace,
   connectors: ConnectorsWorkspace,
   usage: UsageWorkspace,

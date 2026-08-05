@@ -371,6 +371,10 @@ class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     folds: Mapped[int] = mapped_column(Integer, default=0)
 
     forecast_total: Mapped[float] = mapped_column(Float, default=0.0)
+    # The last full window of actuals and the one before it — same span, so the
+    # change between them is a trend. The forecast total covers only the
+    # horizon and cannot be compared with either.
+    current_total: Mapped[float] = mapped_column(Float, default=0.0)
     prior_total: Mapped[float | None] = mapped_column(Float)
     share: Mapped[float | None] = mapped_column(Float)
 

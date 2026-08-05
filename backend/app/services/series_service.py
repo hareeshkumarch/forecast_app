@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -410,6 +410,7 @@ async def persist(
                 accuracy_measured=result.accuracy_measured,
                 folds=result.folds,
                 forecast_total=result.forecast_total,
+                current_total=result.current_total,
                 prior_total=result.prior_total,
                 share=result.share,
             )
@@ -433,6 +434,65 @@ async def persist(
 
     run.series_count = len(results)
     await session.flush()
+
+
+# How the triage list can be ordered. Value at risk is the default because it
+# is the only one that answers "what should I look at first": a big series
+# forecast badly costs more than a small one forecast worse.
+SORTS: dict[str, Any] = {
+    "value_at_risk": (func.abs(ForecastSeries.forecast_total) * ForecastSeries.wmape).desc(),
+    "wmape": ForecastSeries.wmape.desc(),
+    "forecast_total": ForecastSeries.forecast_total.desc(),
+    "label": ForecastSeries.label.asc(),
+}
+DEFAULT_SORT = "value_at_risk"
+MAX_PAGE = 200
+
+
+async def list_series(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    sort: str = DEFAULT_SORT,
+    level: int | None = None,
+    search: str | None = None,
+    parent_id: uuid.UUID | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[ForecastSeries], int]:
+    """
+    A page of a run's series, and how many there are in total.
+
+    A series with no measured error has no value at risk to rank on, so those
+    sort last however the list is ordered: an unknown is not evidence of a
+    problem, and burying the measured ones behind them would defeat the point.
+    """
+    where = [ForecastSeries.run_id == run_id]
+    if level is not None:
+        where.append(ForecastSeries.level == level)
+    if parent_id is not None:
+        where.append(ForecastSeries.parent_id == parent_id)
+    if search:
+        where.append(ForecastSeries.label.ilike(f"%{search.strip()}%"))
+
+    total = await session.scalar(select(func.count()).select_from(ForecastSeries).where(*where))
+
+    ordering = SORTS.get(sort, SORTS[DEFAULT_SORT])
+    result = await session.execute(
+        select(ForecastSeries)
+        .where(*where)
+        .order_by(
+            # NULLS LAST is not portable across SQLite and Postgres, so the
+            # nullness is ordered explicitly first.
+            ForecastSeries.wmape.is_(None).asc() if sort != "label" else null(),
+            ordering,
+            ForecastSeries.label.asc(),
+        )
+        .limit(max(1, min(limit, MAX_PAGE)))
+        .offset(max(0, offset))
+    )
+
+    return list(result.scalars().all()), int(total or 0)
 
 
 def _publish_fitting(run_id: uuid.UUID, done: int, total: int) -> None:

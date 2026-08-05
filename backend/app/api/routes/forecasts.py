@@ -26,8 +26,10 @@ from app.schemas.forecast import (
     ForecastRunRead,
     ForecastRunRequest,
     ModelCandidateRead,
+    SeriesResponse,
+    SeriesRow,
 )
-from app.services import forecast_service
+from app.services import forecast_service, series_service
 from app.services.job_runner import progress_bus
 
 logger = get_logger(__name__)
@@ -60,6 +62,7 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         weight_column=payload.weight_column,
         region_column=payload.region_column,
         category_column=payload.category_column,
+        group_by=payload.group_by,
         frequency=payload.frequency,
         horizon=payload.horizon,
         confidence_level=payload.confidence_level,
@@ -130,9 +133,14 @@ async def get_points(
     session: SessionDep,
     start: date | None = Query(default=None),
     end: date | None = Query(default=None),
+    series_id: uuid.UUID | None = Query(
+        default=None, description="Scope to one series of a grouped run; omit for the top line."
+    ),
 ) -> ForecastPointsResponse:
     run = await forecast_service.get_run(session, run_id)
-    points = await forecast_service.points_for_run(session, run_id, start=start, end=end)
+    points = await forecast_service.points_for_run(
+        session, run_id, start=start, end=end, series_id=series_id
+    )
 
     boundary = next(
         (index for index, point in enumerate(points) if point.kind is PointKind.FORECAST), None
@@ -144,6 +152,48 @@ async def get_points(
         confidence_level=run.confidence_level,
         boundary_index=boundary,
         points=[ForecastPointRead.model_validate(p) for p in points],
+    )
+
+
+@router.get(
+    "/{run_id}/series",
+    response_model=SeriesResponse,
+    summary="Series in a grouped run, worst first",
+)
+async def get_series(
+    run_id: uuid.UUID,
+    session: SessionDep,
+    sort: str = Query(
+        default=series_service.DEFAULT_SORT,
+        description=f"One of: {', '.join(series_service.SORTS)}.",
+    ),
+    level: int | None = Query(default=None, ge=0, description="0 is the run's own total."),
+    parent_id: uuid.UUID | None = Query(default=None, description="Only this series' children."),
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=series_service.MAX_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> SeriesResponse:
+    run = await forecast_service.get_run(session, run_id)
+
+    rows, total = await series_service.list_series(
+        session,
+        run_id,
+        sort=sort,
+        level=level,
+        parent_id=parent_id,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+
+    return SeriesResponse(
+        run_id=run.id,
+        group_by=list(run.group_by or []),
+        sort=sort if sort in series_service.SORTS else series_service.DEFAULT_SORT,
+        total=total,
+        limit=limit,
+        offset=offset,
+        rows=[SeriesRow.model_validate(row) for row in rows],
     )
 
 

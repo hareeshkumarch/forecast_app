@@ -6,6 +6,7 @@ import {
   Database,
   FileBarChart2,
   LayoutDashboard,
+  Layers,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -19,13 +20,20 @@ import { useUiStore } from "@/stores/ui-store";
 
 export const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
   { href: "/", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
+  { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
   { href: "/reports", label: "Reports", description: "Runs and exports", icon: FileBarChart2 },
   { href: "/connectors", label: "Connectors", description: "Data sources", icon: Database },
   { href: "/usage", label: "LLM Usage", description: "Tokens and cost", icon: Activity },
   { href: "/settings", label: "Settings", description: "Theme and providers", icon: Settings },
 ];
 
-export type AppSection = "dashboard" | "reports" | "connectors" | "usage" | "settings";
+export type AppSection =
+  | "dashboard"
+  | "series"
+  | "reports"
+  | "connectors"
+  | "usage"
+  | "settings";
 
 /**
  * The rail's two widths.

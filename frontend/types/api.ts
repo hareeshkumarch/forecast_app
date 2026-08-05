@@ -216,6 +216,9 @@ export interface ForecastRun {
   weight_column: string | null;
   region_column: string | null;
   category_column: string | null;
+  /** The grain this run forecasts at, outermost first. Empty means one total. */
+  group_by: string[];
+  series_count: number;
   frequency: ForecastFrequency;
   horizon: number;
   confidence_level: number;
@@ -288,6 +291,47 @@ export interface ForecastPointsResponse {
   
   boundary_index: number | null;
   points: ForecastPoint[];
+}
+
+export type SeriesStatus = "forecast" | "estimated" | "pooled" | "blocked";
+
+export type SeriesSort = "value_at_risk" | "wmape" | "forecast_total" | "label";
+
+export interface SeriesRow {
+  id: string;
+  parent_id: string | null;
+  /** 0 is the run's own total; each grouping column adds a level. */
+  level: number;
+  key: Record<string, string>;
+  label: string;
+  status: SeriesStatus;
+  blocked_reason: string | null;
+  model: ModelKind | null;
+  wmape: number | null;
+  accuracy: number | null;
+  /** False when this series was apportioned rather than fitted in its own right. */
+  accuracy_measured: boolean;
+  folds: number;
+  forecast_total: number;
+  /** The last full window of actuals, and the one before it — same span, so comparable. */
+  current_total: number;
+  prior_total: number | null;
+  share: number | null;
+  /** forecast × its own error: how much of this number could be wrong. Null when nothing was measured. */
+  value_at_risk: number | null;
+  /** Movement between the two actual windows. Not the forecast, which covers only the horizon. */
+  change_vs_prior: number | null;
+}
+
+export interface SeriesResponse {
+  run_id: string;
+  group_by: string[];
+  sort: SeriesSort;
+  total: number;
+  limit: number;
+  offset: number;
+  rows: SeriesRow[];
+  has_more: boolean;
 }
 
 export interface ForecastProgressEvent {
