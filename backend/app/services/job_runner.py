@@ -6,6 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import settings
@@ -16,6 +17,7 @@ logger = get_logger(__name__)
 
 
 _QUEUE_MAXSIZE = 64
+_LATEST_MAXSIZE = 2_048
 
 
 @dataclass(slots=True)
@@ -27,6 +29,7 @@ class ProgressEvent:
     message: str | None = None
     selected_model: str | None = None
     error: str | None = None
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +40,7 @@ class ProgressEvent:
             "message": self.message,
             "selected_model": self.selected_model,
             "error": self.error,
+            "updated_at": self.updated_at.isoformat(),
         }
 
 
@@ -47,7 +51,20 @@ class ProgressBus:
     _latest: dict[uuid.UUID, ProgressEvent] = field(default_factory=dict)
 
     def publish(self, event: ProgressEvent) -> None:
+        current = self._latest.get(event.run_id)
+        if current is not None:
+            terminal = (RunStatus.COMPLETED, RunStatus.FAILED)
+            if current.status in terminal:
+                return
+            if event.status not in terminal and (
+                event.progress < current.progress or event.updated_at <= current.updated_at
+            ):
+                logger.debug("Ignored an out-of-order progress frame for run %s", event.run_id)
+                return
+        # Reinsert so dictionary order is an inexpensive LRU clock.
+        self._latest.pop(event.run_id, None)
         self._latest[event.run_id] = event
+        self._trim_latest()
         for queue in list(self._subscribers.get(event.run_id, ())):
             try:
                 queue.put_nowait(event)
@@ -83,10 +100,22 @@ class ProgressBus:
                 subscribers.discard(queue)
                 if not subscribers:
                     self._subscribers.pop(run_id, None)
+            self._trim_latest()
 
     def forget(self, run_id: uuid.UUID) -> None:
         self._latest.pop(run_id, None)
         self._subscribers.pop(run_id, None)
+
+    def _trim_latest(self) -> None:
+        """Bounds terminal snapshots without evicting active subscriptions."""
+        if len(self._latest) <= _LATEST_MAXSIZE:
+            return
+        terminal = (RunStatus.COMPLETED, RunStatus.FAILED)
+        for run_id, event in list(self._latest.items()):
+            if len(self._latest) <= _LATEST_MAXSIZE:
+                break
+            if event.status in terminal and not self._subscribers.get(run_id):
+                self._latest.pop(run_id, None)
 
 
 progress_bus = ProgressBus()
@@ -99,6 +128,19 @@ def publish_progress(event: ProgressEvent) -> None:
     stream served by another process — or another API instance — sees it too.
     """
     progress_bus.publish(event)
+
+    if settings.distributed:
+        try:
+            from celery import current_task
+
+            task_id = getattr(getattr(current_task, "request", None), "id", None)
+            if task_id:
+                current_task.update_state(state="PROGRESS", meta=event.to_dict())
+        except Exception:
+            # The application stream and durable snapshot remain authoritative;
+            # Celery's own result metadata is useful for operators, not a reason
+            # to fail a forecast.
+            logger.debug("Could not update Celery progress metadata", exc_info=True)
 
     if settings.progress_channel_url:
         from app.services.progress_relay import publish_from_worker

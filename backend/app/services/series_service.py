@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.database.session import session_scope
 from app.datasets import queries
+from app.datasets.queries import DEFAULT_MAX_SERIES
 from app.forecasting.engine import (
     LeafFit,
     SegmentInput,
@@ -81,7 +82,9 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
     from app.services import dataset_service, forecast_service
 
     async with session_scope() as session:
-        run = await forecast_service.get_run(session, run_id)
+        run = await forecast_service.get_run_state(session, run_id)
+        if run.status is not RunStatus.RUNNING:
+            return None
         group_by = [str(column) for column in (run.group_by or [])]
         if not group_by:
             return None
@@ -95,6 +98,7 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
         confidence_level = run.confidence_level
         time_column, target_column = run.time_column, run.target_column
         aggregation = run.aggregation
+        max_series = max(1, min(overrides.max_series or DEFAULT_MAX_SERIES, DEFAULT_MAX_SERIES))
 
     leaves = await asyncio.to_thread(
         _aggregate_leaves,
@@ -104,6 +108,7 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
         group_by,
         frequency,
         aggregation,
+        max_series,
     )
 
     return GroupedPlan(
@@ -125,6 +130,7 @@ def _aggregate_leaves(
     group_by: list[str],
     frequency: ForecastFrequency,
     aggregation: MeasureAggregation,
+    max_series: int,
 ) -> list[SegmentInput]:
     grouped = queries.aggregate_grouped(
         parquet_path,
@@ -133,6 +139,7 @@ def _aggregate_leaves(
         group_by,
         frequency,
         aggregation=aggregation,
+        max_series=max_series,
     )
     # The window the aggregation settled on, so the recent slice matches the
     # totals it reported rather than a second, differently-sized guess.
@@ -175,12 +182,23 @@ async def forecast_series(run_id: uuid.UUID) -> RunStatus:
     finished by `finalise`, on whichever worker runs the callback. Returns
     COMPLETED when the leaves were fitted here.
     """
-    plan = await plan_for(run_id)
-    if plan is None or not plan.leaves:
-        logger.info("Run %s has a grain but no series to forecast.", run_id)
-        return RunStatus.COMPLETED
+    from app.services import forecast_service
 
-    _publish_fitting(run_id, 0, len(plan.leaves))
+    plan = await plan_for(run_id)
+    if plan is None:
+        return RunStatus.FAILED
+    if not plan.leaves:
+        logger.info("Run %s has a grain but no series to forecast.", run_id)
+        completed = await forecast_service.complete_run(run_id)
+        return RunStatus.COMPLETED if completed else RunStatus.FAILED
+
+    if not await forecast_service.checkpoint_progress(
+        run_id,
+        FIT_FROM,
+        "fitting_series",
+        f"Forecasting series 0 of {len(plan.leaves):,}...",
+    ):
+        return RunStatus.FAILED
 
     if settings.distributed:
         forget_series_count(run_id)
@@ -188,8 +206,7 @@ async def forecast_series(run_id: uuid.UUID) -> RunStatus:
         return RunStatus.RUNNING
 
     fits = await _fit_here(run_id, plan)
-    await finalise(run_id, fits, plan=plan)
-    return RunStatus.COMPLETED
+    return await finalise(run_id, fits, plan=plan)
 
 
 async def _fit_here(run_id: uuid.UUID, plan: GroupedPlan) -> list[LeafFit]:
@@ -276,16 +293,38 @@ def dispatch(run_id: uuid.UUID, plan: GroupedPlan) -> None:
 
     correlation = request_id.get()
     header = [
-        fit_series_task.s(_chunk_job(run_id, plan, chunk), correlation)
-        for chunk in _chunks(plan.leaves)
+        fit_series_task.s(_chunk_job(run_id, plan, chunk), correlation).set(
+            task_id=_series_task_id(run_id, index)
+        )
+        for index, chunk in enumerate(_chunks(plan.leaves))
     ]
-    chord(header)(finalise_series_task.s(str(run_id), correlation))
+    callback = finalise_series_task.s(str(run_id), correlation).set(
+        task_id=_series_finalise_task_id(run_id)
+    )
+    chord(header)(callback)
     logger.info(
         "Run %s fanned out over %d task(s) for %d series.",
         run_id,
         len(header),
         len(plan.leaves),
     )
+
+
+def cancellation_task_ids(run_id: uuid.UUID, max_series: int) -> list[str]:
+    """Every deterministic child id a bounded grouped run can create."""
+    chunk_count = (max(1, max_series) + FAN_OUT_CHUNK - 1) // FAN_OUT_CHUNK
+    return [
+        *(_series_task_id(run_id, index) for index in range(chunk_count)),
+        _series_finalise_task_id(run_id),
+    ]
+
+
+def _series_task_id(run_id: uuid.UUID, index: int) -> str:
+    return str(uuid.uuid5(run_id, f"series-chunk:{index}"))
+
+
+def _series_finalise_task_id(run_id: uuid.UUID) -> str:
+    return str(uuid.uuid5(run_id, "series-finalise"))
 
 
 def _chunk_job(run_id: uuid.UUID, plan: GroupedPlan, chunk: list[SegmentInput]) -> dict[str, Any]:
@@ -335,10 +374,16 @@ def blocked_chunk(job: dict[str, Any], reason: str) -> list[dict[str, Any]]:
     they are apportioned from their parent, the levels still add up, and each
     row carries the reason rather than quietly going missing.
     """
-    return [
+    rows = [
         LeafFit(label=str(leaf["label"]), blocked_reason=reason).to_dict()
         for leaf in job.get("leaves", [])
     ]
+    run_id = uuid.UUID(str(job["run_id"]))
+    total = int(job.get("series_total") or 0)
+    counted = count_series(run_id, len(rows))
+    if counted is not None and total:
+        _publish_fitting(run_id, min(counted, total), total)
+    return rows
 
 
 async def finalise(
@@ -346,7 +391,7 @@ async def finalise(
     fits: list[LeafFit],
     *,
     plan: GroupedPlan | None = None,
-) -> None:
+) -> RunStatus:
     """
     Assembles the tree from the fits, stores it, and completes the run.
 
@@ -357,10 +402,12 @@ async def finalise(
 
     resolved = plan or await plan_for(run_id)
     if resolved is None:
-        await forecast_service.complete_run(run_id)
-        return
+        return RunStatus.FAILED
 
-    _publish(run_id, STORE_AT, "storing_series", "Storing the series forecasts...")
+    if not await forecast_service.checkpoint_progress(
+        run_id, STORE_AT, "storing_series", "Storing the series forecasts..."
+    ):
+        return RunStatus.FAILED
 
     results = assemble_grouped(
         resolved.leaves,
@@ -373,7 +420,9 @@ async def finalise(
     history_periods = resolved.leaves[0].periods if resolved.leaves else []
 
     async with session_scope() as session:
-        run = await forecast_service.get_run(session, run_id)
+        run = await forecast_service.get_run_state(session, run_id)
+        if run.status is not RunStatus.RUNNING:
+            return RunStatus.FAILED
         await persist(session, run, results, resolved.forecast_periods, history_periods)
 
     blocked = sum(1 for row in results if row.blocked_reason)
@@ -382,7 +431,8 @@ async def finalise(
             "Run %s stored %d series, %d of them apportioned.", run_id, len(results), blocked
         )
 
-    await forecast_service.complete_run(run_id)
+    completed = await forecast_service.complete_run(run_id)
+    return RunStatus.COMPLETED if completed else RunStatus.FAILED
 
 
 async def persist(

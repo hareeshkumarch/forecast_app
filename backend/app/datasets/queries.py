@@ -10,7 +10,7 @@ from typing import Any
 import duckdb
 
 from app.core.errors import ValidationError
-from app.forecasting.frequency import comparison_window
+from app.forecasting.frequency import comparison_window, periods_per_year
 from app.models.enums import ForecastFrequency, MeasureAggregation
 
 #: What the tail of a long list is pooled under once it passes `max_series`.
@@ -424,6 +424,11 @@ def aggregate_grouped(
     if not group_columns:
         raise ValidationError("Grouped aggregation needs at least one grouping column.")
 
+    # This function is also used outside the API schema, so enforce the same
+    # hard ceiling here rather than trusting every caller to validate it.
+    max_series = max(1, min(int(max_series), DEFAULT_MAX_SERIES))
+    requested_window = max(1, int(window_periods)) if window_periods else None
+
     part = DATE_TRUNC_PART[frequency]
     reducer = AGGREGATIONS[aggregation]
     time_sql = _quote(time_column)
@@ -448,16 +453,85 @@ def aggregate_grouped(
         for index, column in enumerate(group_sql)
     )
     group_keys = ", ".join(f"k{index}" for index in range(len(group_sql)))
+    qualified_keys = ", ".join(
+        f"values_by_period.k{index}" for index in range(len(group_sql))
+    )
+    rank_order = ", ".join(f"k{index}" for index in range(len(group_sql)))
+    keep_count = max_series - 1
+    pooled_condition = (
+        f"ranked_keys.series_total > {max_series} "
+        f"AND ranked_keys.series_rank > {keep_count}"
+    )
+    bounded_keys = ",\n            ".join(
+        f"CASE WHEN {pooled_condition} THEN '{POOLED_KEY}' "
+        f"ELSE values_by_period.k{index} END AS k{index}"
+        for index in range(len(group_sql))
+    )
+
+    if requested_window:
+        ranking_window = str(requested_window)
+    else:
+        year = periods_per_year(frequency)
+        ranking_window = (
+            f"CASE WHEN periods.period_count >= {2 * year} THEN {year} "
+            "ELSE GREATEST(1, CAST(FLOOR(periods.period_count / 2) AS INTEGER)) END"
+        )
 
     sql = f"""
+        WITH values_by_period AS (
+            SELECT
+                {select_keys},
+                date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
+                {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
+            FROM {_source(parquet_path)}
+            WHERE {" AND ".join(where)}
+            GROUP BY {group_keys}, period
+        ),
+        periods AS (
+            SELECT
+                period,
+                ROW_NUMBER() OVER (ORDER BY period DESC) AS recent_rank,
+                COUNT(*) OVER () AS period_count
+            FROM (SELECT DISTINCT period FROM values_by_period)
+        ),
+        key_totals AS (
+            SELECT
+                {qualified_keys},
+                SUM(
+                    CASE WHEN periods.recent_rank <= {ranking_window}
+                         THEN values_by_period.value ELSE 0 END
+                ) AS current_total
+            FROM values_by_period
+            JOIN periods USING (period)
+            GROUP BY {qualified_keys}
+        ),
+        ranked_keys AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (ORDER BY current_total DESC, {rank_order}) AS series_rank,
+                COUNT(*) OVER () AS series_total
+            FROM key_totals
+        ),
+        bounded AS (
+            SELECT
+                {bounded_keys},
+                values_by_period.period,
+                values_by_period.value,
+                ({pooled_condition}) AS pooled,
+                CASE WHEN {pooled_condition}
+                     THEN ranked_keys.series_total - {keep_count} ELSE 0 END AS pooled_from
+            FROM values_by_period
+            JOIN ranked_keys USING ({group_keys})
+        )
         SELECT
-            {select_keys},
-            date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
-            {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
-        FROM {_source(parquet_path)}
-        WHERE {" AND ".join(where)}
-        GROUP BY {group_keys}, period
-        ORDER BY {group_keys}, period
+            {group_keys},
+            period,
+            SUM(value) AS value,
+            pooled,
+            MAX(pooled_from) AS pooled_from
+        FROM bounded
+        GROUP BY {group_keys}, period, pooled
+        ORDER BY pooled, {group_keys}, period
     """
 
     with connect() as connection:
@@ -467,50 +541,40 @@ def aggregate_grouped(
         return []
 
     depth = len(group_columns)
-    observed: dict[tuple[str, ...], dict[date, float]] = {}
+    observed: dict[tuple[tuple[str, ...], bool], dict[date, float]] = {}
+    pooled_counts: dict[tuple[tuple[str, ...], bool], int] = {}
     for row in rows:
         key = tuple(str(value) for value in row[:depth])
-        observed.setdefault(key, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
+        pooled = bool(row[depth + 2])
+        bucket = (key, pooled)
+        observed.setdefault(bucket, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
+        pooled_counts[bucket] = int(row[depth + 3] or 0)
 
     calendar = sorted({period for series in observed.values() for period in series})
-    window = window_periods or comparison_window(frequency, len(calendar))
+    window = requested_window or comparison_window(frequency, len(calendar))
     current_window = calendar[-window:]
     prior_window = calendar[-2 * window : -window]
 
-    def build(key: tuple[str, ...], by_period: dict[date, float]) -> GroupedSeries:
+    def build(
+        bucket: tuple[tuple[str, ...], bool], by_period: dict[date, float]
+    ) -> GroupedSeries:
+        key, pooled = bucket
         values = [by_period.get(period, 0.0) for period in calendar]
         return GroupedSeries(
             key=dict(zip(group_columns, key, strict=True)),
-            label=SERIES_LABEL_SEPARATOR.join(key),
+            label=POOLED_LABEL if pooled else SERIES_LABEL_SEPARATOR.join(key),
             periods=list(calendar),
             values=values,
             current_total=sum(by_period.get(period, 0.0) for period in current_window),
             prior_total=(
                 sum(by_period.get(period, 0.0) for period in prior_window) if prior_window else None
             ),
+            pooled_from=pooled_counts[bucket],
         )
 
-    series = [build(key, by_period) for key, by_period in observed.items()]
-    series.sort(key=lambda s: s.current_total, reverse=True)
-
-    if len(series) > max_series:
-        head, tail = series[: max_series - 1], series[max_series - 1 :]
-        pooled = [sum(column) for column in zip(*(s.values for s in tail), strict=True)]
-        head.append(
-            GroupedSeries(
-                key=dict.fromkeys(group_columns, POOLED_KEY),
-                label=POOLED_LABEL,
-                periods=list(calendar),
-                values=pooled,
-                current_total=sum(s.current_total for s in tail),
-                prior_total=(
-                    sum(s.prior_total or 0.0 for s in tail)
-                    if any(s.prior_total is not None for s in tail)
-                    else None
-                ),
-                pooled_from=len(tail),
-            )
-        )
-        series = head
+    series = [build(bucket, by_period) for bucket, by_period in observed.items()]
+    # Preserve the established UX: individually forecast groups are ranked by
+    # their recent value and the pooled tail is always shown last.
+    series.sort(key=lambda item: (item.pooled_from > 0, -item.current_total, item.label))
 
     return series

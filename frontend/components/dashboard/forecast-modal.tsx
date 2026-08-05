@@ -22,6 +22,7 @@ import {
   useDatasetProfile,
   useDatasetQuality,
   useDatasets,
+  useCancelForecastRun,
   useRefreshDashboard,
   useStartForecast,
 } from "@/hooks/use-dashboard";
@@ -95,6 +96,7 @@ export function ForecastModal() {
 
   const { data: datasets } = useDatasets();
   const startMutation = useStartForecast();
+  const cancelMutation = useCancelForecastRun();
   const refreshDashboard = useRefreshDashboard();
 
   const [datasetId, setDatasetId] = useState("");
@@ -112,6 +114,7 @@ export function ForecastModal() {
   const [outlierTreatment, setOutlierTreatment] = useState<OutlierTreatment>("none");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [maxFolds, setMaxFolds] = useState(5);
+  const [seriesLimit, setSeriesLimit] = useState(500);
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +141,11 @@ export function ForecastModal() {
           : "The dashboard now reflects this run.",
       );
     } else if (event.status === "failed") {
-      toast.error("Forecast failed", event.error ?? "The run did not finish.");
+      if (event.stage === "cancelled") {
+        toast.info("Forecast cancelled", "No more model work will be started for this run.");
+      } else {
+        toast.error("Forecast failed", event.error ?? "The run did not finish.");
+      }
     }
   });
 
@@ -169,6 +176,10 @@ export function ForecastModal() {
     setWeightColumn(weight?.name ?? NONE);
     setAggregation(suggestAggregation(dataset.target_column));
   }, [dataset]);
+
+  useEffect(() => {
+    if (profile?.max_series) setSeriesLimit(profile.max_series);
+  }, [profile?.dataset_id, profile?.max_series]);
 
   useEffect(() => {
     if (!open) {
@@ -209,6 +220,7 @@ export function ForecastModal() {
         gap_fill: gapFill,
         outlier_treatment: outlierTreatment,
         max_folds: maxFolds,
+        max_series: grain.length > 0 ? seriesLimit : undefined,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
 
@@ -222,11 +234,23 @@ export function ForecastModal() {
   }
 
   function handleClose() {
-    
     if (progress.status === "completed" || progress.status === "failed") {
       setActiveRun(null);
     }
     closeModal();
+  }
+
+  function handleClearPreviousRun() {
+    setActiveRun(null);
+    setError(null);
+  }
+
+  function handleCancelRun() {
+    if (!activeRunId) return;
+    const confirmed = window.confirm(
+      "Cancel this forecast? Completed work for this run will not be used.",
+    );
+    if (confirmed) cancelMutation.mutate(activeRunId);
   }
 
   const dimensions = dataset?.columns.filter((column) => column.role === "dimension") ?? [];
@@ -240,6 +264,7 @@ export function ForecastModal() {
   // Distinct counts are already profiled, so the number of series a grain
   // implies can be shown before the run rather than discovered during it.
   const maxSeries = profile?.max_series;
+  const effectiveSeriesLimit = Math.min(seriesLimit, maxSeries ?? seriesLimit);
   const grainSize = grain.reduce((product, column) => {
     const distinct = dimensions.find((c) => c.name === column)?.distinct_count ?? 0;
     return distinct > 0 ? product * distinct : product;
@@ -253,10 +278,24 @@ export function ForecastModal() {
       description="Fits every eligible candidate model, backtests them, and selects a winner."
       size="md"
       footer={
-        activeRunId ? (
-          <Button variant="secondary" onClick={handleClose}>
-            {progress.status === "completed" || progress.status === "failed" ? "Close" : "Run in background"}
-          </Button>
+        activeRunId && (progress.status === "completed" || progress.status === "failed") ? (
+          <>
+            <Button variant="ghost" onClick={handleClose}>Close</Button>
+            <Button variant="primary" onClick={handleClearPreviousRun}>Start another forecast</Button>
+          </>
+        ) : activeRunId ? (
+          <>
+            <Button
+              variant="danger"
+              onClick={handleCancelRun}
+              loading={cancelMutation.isPending}
+            >
+              Cancel forecast
+            </Button>
+            <Button variant="secondary" onClick={handleClose}>
+              Run in background
+            </Button>
+          </>
         ) : (
           <>
             <Button variant="ghost" onClick={handleClose}>
@@ -386,11 +425,12 @@ export function ForecastModal() {
             </div>
             {grain.length > 0 ? (
               <p className="mt-2 text-caption text-text-muted">
-                {maxSeries && grainSize > maxSeries ? (
+                {grainSize > effectiveSeriesLimit ? (
                   <>
-                    About {grainSize.toLocaleString()} combinations. The largest{" "}
-                    {maxSeries.toLocaleString()} are forecast individually and the rest are pooled
-                    into an “Others” series, so the total stays whole.
+                    About {grainSize.toLocaleString()} combinations, limited to{" "}
+                    {effectiveSeriesLimit.toLocaleString()} output series. The largest groups are
+                    kept and the tail is pooled into “Others”, so the total stays whole. Change the
+                    limit in Advanced settings.
                   </>
                 ) : (
                   <>About {grainSize.toLocaleString()} series, each with its own model.</>
@@ -451,13 +491,13 @@ export function ForecastModal() {
                 )}
                 aria-hidden
               />
-              Advanced model settings
+              Advanced settings
             </button>
 
             {showAdvanced ? (
               <div
                 id="advanced-model-settings"
-                className="mt-3 grid grid-cols-1 gap-3 rounded-card border border-border bg-surface-muted/40 p-3 sm:grid-cols-3"
+                className="mt-3 grid grid-cols-1 gap-3 rounded-card border border-border bg-surface-muted/40 p-3 sm:grid-cols-2"
               >
                 <Field label="Validation folds" hint="Backtest windows, 1 to 10">
                   <Input
@@ -482,6 +522,24 @@ export function ForecastModal() {
                     onChange={(e) => setGbmDepth(Number(e.target.value) || 3)}
                   />
                 </Field>
+
+                {grain.length > 0 ? (
+                  <Field
+                    label="Series limit"
+                    hint={`1 to ${(maxSeries ?? 500).toLocaleString()}; overflow is pooled`}
+                  >
+                    <Input
+                      type="number"
+                      min={1}
+                      max={maxSeries ?? 500}
+                      value={seriesLimit}
+                      onChange={(event) => {
+                        const next = Number(event.target.value) || 1;
+                        setSeriesLimit(Math.max(1, Math.min(maxSeries ?? 500, next)));
+                      }}
+                    />
+                  </Field>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -571,8 +629,11 @@ function ProgressPanel({
     "aggregating",
     "backtesting",
     "fitting",
+    "building_outputs",
     "persisting",
     "generating_insights",
+    "fitting_series",
+    "storing_series",
     "complete",
   ];
   const currentIndex = stages.indexOf(progress.stage);
@@ -601,7 +662,14 @@ function ProgressPanel({
       {progress.isReconnecting ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Reconnecting to the progress stream — the forecast is still running.
+          Live connection interrupted; retrying. Celery is still running the forecast.
+        </p>
+      ) : null}
+
+      {progress.isPolling ? (
+        <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          Live stream unavailable; status is refreshing every 2 seconds.
         </p>
       ) : null}
 

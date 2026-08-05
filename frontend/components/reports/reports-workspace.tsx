@@ -1,14 +1,15 @@
 "use client";
 
-import { Download, FileBarChart2, FileText, Plus } from "lucide-react";
+import { Activity, Download, Eye, FileBarChart2, FileText, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Scorecard } from "@/components/reports/scorecard";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
-import { downloadExport, useForecastRuns } from "@/hooks/use-dashboard";
+import { downloadExport, useDeleteForecastRun, useForecastRuns } from "@/hooks/use-dashboard";
 import { formatRelativeTime, humanizeModel } from "@/lib/format";
 import { useUiStore } from "@/stores/ui-store";
-import type { ForecastRun, RunStatus } from "@/types/api";
+import type { ForecastRun, MeasureAggregation, RunStatus } from "@/types/api";
 
 const STATUS_TONE: Record<RunStatus, "neutral" | "positive" | "negative" | "warning"> = {
   pending: "neutral",
@@ -17,8 +18,30 @@ const STATUS_TONE: Record<RunStatus, "neutral" | "positive" | "negative" | "warn
   failed: "negative",
 };
 
-function RunCard({ run }: { run: ForecastRun }) {
+const AGGREGATION_LABEL: Record<MeasureAggregation, string> = {
+  sum: "Added together",
+  mean: "Averaged",
+  median: "Median value",
+  last: "Latest value",
+  min: "Lowest value",
+  max: "Highest value",
+};
+
+function RunCard({
+  run,
+  clearing,
+  clearDisabled,
+  onOpen,
+  onClear,
+}: {
+  run: ForecastRun;
+  clearing: boolean;
+  clearDisabled: boolean;
+  onOpen: (run: ForecastRun) => void;
+  onClear: (run: ForecastRun) => void;
+}) {
   const ready = run.status === "completed";
+  const working = run.status === "pending" || run.status === "running";
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -39,7 +62,7 @@ function RunCard({ run }: { run: ForecastRun }) {
           </dd>
         </div>
         <div>
-          <dt className="text-caption text-text-muted">Range covers</dt>
+          <dt className="text-caption text-text-muted">Confidence band</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary num">
             {Math.round(run.confidence_level * 100)}%
           </dd>
@@ -51,9 +74,9 @@ function RunCard({ run }: { run: ForecastRun }) {
           </dd>
         </div>
         <div>
-          <dt className="text-caption text-text-muted">Repeated dates</dt>
+          <dt className="text-caption text-text-muted">Duplicate periods</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary">
-            Added up{run.gap_fill === "none" ? "" : " · gaps filled in"}
+            {AGGREGATION_LABEL[run.aggregation]}
           </dd>
         </div>
         <div className="col-span-2">
@@ -76,12 +99,43 @@ function RunCard({ run }: { run: ForecastRun }) {
 
       <Scorecard run={run} />
 
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
-        <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "csv")}>
-          CSV
-        </Button>
-        <Button size="sm" icon={FileText} disabled={!ready} onClick={() => downloadExport(run.id, "pdf")}>
-          PDF report
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            icon={working ? Activity : Eye}
+            disabled={!ready && !working}
+            onClick={() => onOpen(run)}
+          >
+            {working ? "Track progress" : "View forecast"}
+          </Button>
+          <Button
+            size="sm"
+            icon={Download}
+            disabled={!ready}
+            onClick={() => downloadExport(run.id, "csv")}
+          >
+            CSV
+          </Button>
+          <Button
+            size="sm"
+            icon={FileText}
+            disabled={!ready}
+            onClick={() => downloadExport(run.id, "pdf")}
+          >
+            PDF report
+          </Button>
+        </div>
+        <Button
+          size="sm"
+          variant="danger"
+          icon={Trash2}
+          loading={clearing}
+          disabled={clearDisabled || run.status === "pending" || run.status === "running"}
+          onClick={() => onClear(run)}
+        >
+          Clear run
         </Button>
       </div>
     </Card>
@@ -89,13 +143,43 @@ function RunCard({ run }: { run: ForecastRun }) {
 }
 
 export function ReportsWorkspace() {
+  const router = useRouter();
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
     useForecastRuns();
   const openModal = useUiStore((state) => state.openModal);
+  const selectedRunId = useUiStore((state) => state.runId);
+  const activeRunId = useUiStore((state) => state.activeRunId);
+  const setRunId = useUiStore((state) => state.setRunId);
+  const setActiveRun = useUiStore((state) => state.setActiveRun);
+  const clearRun = useDeleteForecastRun();
   const runs = data ?? [];
   const completed = runs.filter((run) => run.status === "completed").length;
   const active = runs.filter((run) => run.status === "pending" || run.status === "running").length;
   const failed = runs.filter((run) => run.status === "failed").length;
+
+  function handleClear(run: ForecastRun) {
+    const confirmed = window.confirm(
+      `Clear "${run.name}"? This permanently removes its forecast results and generated exports.`,
+    );
+    if (!confirmed) return;
+
+    clearRun.mutate(run.id, {
+      onSuccess: () => {
+        if (selectedRunId === run.id) setRunId(null);
+        if (activeRunId === run.id) setActiveRun(null);
+      },
+    });
+  }
+
+  function handleOpen(run: ForecastRun) {
+    if (run.status === "pending" || run.status === "running") {
+      setActiveRun(run.id);
+      openModal("configure-forecast");
+      return;
+    }
+    setRunId(run.id);
+    router.push("/");
+  }
 
   return (
     <main id="main-content" className="scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
@@ -142,7 +226,16 @@ export function ReportsWorkspace() {
         </Card>
       ) : (
         <section className="mt-4 space-y-3" aria-label="Forecast reports">
-          {runs.map((run) => <RunCard key={run.id} run={run} />)}
+          {runs.map((run) => (
+            <RunCard
+              key={run.id}
+              run={run}
+              clearing={clearRun.isPending && clearRun.variables === run.id}
+              clearDisabled={clearRun.isPending}
+              onOpen={handleOpen}
+              onClear={handleClear}
+            />
+          ))}
         </section>
       )}
     </main>

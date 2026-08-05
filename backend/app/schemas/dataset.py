@@ -91,9 +91,9 @@ class DatasetProfile(BaseModel):
     @property
     def max_series(self) -> int:
         """
-        How many combinations a run will forecast individually before pooling
-        the tail. Reported rather than repeated in the client, which would
-        promise a different number the day this one changes.
+        Maximum output series, including the pooled tail when one is needed.
+        Reported rather than repeated in the client, which would promise a
+        different number the day this one changes.
         """
         return DEFAULT_MAX_SERIES
 

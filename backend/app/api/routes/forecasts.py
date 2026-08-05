@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -16,13 +17,14 @@ from app.core.logging import get_logger
 from app.database.session import session_scope
 from app.datasets.profiler import is_currency_like
 from app.forecasting.selection import SCORING_RULE
-from app.models.entities import ModelCandidate
+from app.models.entities import ForecastRun, ModelCandidate
 from app.models.enums import PointKind, RunStatus
 from app.schemas.forecast import (
     ForecastMetricRead,
     ForecastMetricsResponse,
     ForecastPointRead,
     ForecastPointsResponse,
+    ForecastProgressEvent,
     ForecastRunDetail,
     ForecastRunRead,
     ForecastRunRequest,
@@ -34,7 +36,8 @@ from app.schemas.forecast import (
     SeriesScoreRow,
 )
 from app.services import forecast_service, scoring_service, series_service
-from app.services.job_runner import progress_bus
+from app.services.job_runner import ProgressEvent, progress_bus
+from app.services.progress_relay import latest_from_store
 
 logger = get_logger(__name__)
 
@@ -80,6 +83,7 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         gap_fill=payload.gap_fill,
         outlier_treatment=payload.outlier_treatment,
         max_folds=payload.max_folds,
+        max_series=payload.max_series,
         metric_weights=payload.metric_weights,
         sarimax_order=payload.sarimax_order,
         gbm_max_depth=payload.gbm_max_depth,
@@ -107,10 +111,37 @@ async def cancel_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunRead:
     return ForecastRunRead.model_validate(run)
 
 
+@router.delete(
+    "/{run_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear a finished forecast run",
+)
+async def delete_run(run_id: uuid.UUID, session: SessionDep) -> Response:
+    await forecast_service.delete_run(session, run_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{run_id}", response_model=ForecastRunDetail, summary="Get a forecast run")
 async def get_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunDetail:
     run = await forecast_service.get_run(session, run_id)
-    return ForecastRunDetail.model_validate(run)
+    detail = ForecastRunDetail.model_validate(run)
+    current = await _current_progress(run)
+    detail.status = current.status
+    detail.progress = current.progress
+    detail.stage = current.stage
+    detail.error_message = current.error or detail.error_message
+    detail.progress_updated_at = current.updated_at
+    return detail
+
+
+@router.get(
+    "/{run_id}/progress",
+    response_model=ForecastProgressEvent,
+    summary="Current recoverable forecast progress",
+)
+async def get_progress(run_id: uuid.UUID, session: SessionDep) -> dict:
+    run = await forecast_service.get_run_state(session, run_id)
+    return (await _current_progress(run)).to_dict()
 
 
 @router.get(
@@ -284,39 +315,52 @@ async def get_series(
 )
 async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
     async with session_scope() as session:
-        run = await forecast_service.get_run(session, run_id)
-        initial = {
-            "run_id": str(run.id),
-            "status": run.status.value,
-            "progress": run.progress,
-            "stage": run.stage,
-            "message": None,
-            "selected_model": run.selected_model.value if run.selected_model else None,
-            "error": run.error_message,
-        }
-        terminal = run.status in (RunStatus.COMPLETED, RunStatus.FAILED)
+        run = await forecast_service.get_run_state(session, run_id)
+        initial = await _current_progress(run)
+        terminal = initial.status in (RunStatus.COMPLETED, RunStatus.FAILED)
 
     async def event_source() -> AsyncIterator[bytes]:
-        yield _sse(initial)
+        yield _sse(initial.to_dict())
         if terminal:
             return
 
+        # Seed the in-process monotonic guard with a snapshot restored from
+        # Redis. Without this, the first late frame after an API restart could
+        # move a recovered progress bar backwards.
+        progress_bus.publish(initial)
         subscription = progress_bus.subscribe(run_id).__aiter__()
+        next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
+            subscription.__anext__()
+        )
+        last_updated = _aware(initial.updated_at)
 
-        while True:
-            try:
-                event = await asyncio.wait_for(
-                    subscription.__anext__(), timeout=SSE_KEEPALIVE_SECONDS
-                )
-            except TimeoutError:
-                yield b": keep-alive\n\n"
-                continue
-            except StopAsyncIteration:
-                break
+        try:
+            while next_event is not None:
+                ready, _ = await asyncio.wait((next_event,), timeout=SSE_KEEPALIVE_SECONDS)
+                if not ready:
+                    # Do not cancel __anext__ on a heartbeat timeout. Cancelling
+                    # it closes the async generator and was the reason healthy
+                    # streams disconnected every 15 seconds.
+                    yield b": keep-alive\n\n"
+                    continue
 
-            yield _sse(event.to_dict())
-            if event.status in (RunStatus.COMPLETED, RunStatus.FAILED):
-                break
+                try:
+                    event = next_event.result()
+                except StopAsyncIteration:
+                    break
+
+                if _aware(event.updated_at) > last_updated:
+                    yield _sse(event.to_dict())
+                    last_updated = _aware(event.updated_at)
+                if event.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+                    break
+                next_event = asyncio.create_task(subscription.__anext__())
+        finally:
+            if next_event is not None and not next_event.done():
+                next_event.cancel()
+                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                    await next_event
+            await subscription.aclose()
 
     return StreamingResponse(
         event_source(),
@@ -331,6 +375,43 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
 
 def _sse(payload: dict) -> bytes:
     return f"data: {json.dumps(payload)}\n\n".encode()
+
+
+async def _current_progress(run: ForecastRun) -> ProgressEvent:
+    database = ProgressEvent(
+        run_id=run.id,
+        status=run.status,
+        progress=run.progress,
+        stage=run.stage,
+        selected_model=run.selected_model.value if run.selected_model else None,
+        error=run.error_message,
+        updated_at=_aware(run.updated_at),
+    )
+    if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+        return database
+
+    candidates = [database]
+    in_process = progress_bus.latest(run.id)
+    if in_process is not None:
+        candidates.append(in_process)
+    stored = await latest_from_store(run.id)
+    if stored is not None:
+        candidates.append(stored)
+    terminal = [
+        event
+        for event in candidates
+        if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
+    ]
+    if terminal:
+        # Completion and failure are authoritative even if two hosts differ by
+        # a few milliseconds. A clock-skewed running frame must never keep a
+        # browser waiting after the worker has settled.
+        return max(terminal, key=lambda event: _aware(event.updated_at))
+    return max(candidates, key=lambda event: (event.progress, _aware(event.updated_at)))
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 async def _latest_run_id(session: AsyncSession) -> uuid.UUID | None:

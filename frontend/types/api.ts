@@ -197,7 +197,7 @@ export interface DatasetProfile {
   dimension_suggestions: ColumnSuggestion[];
   preview_rows: Record<string, string | null>[];
   warnings: string[];
-  /** Combinations a run forecasts individually before pooling the tail. Server-owned. */
+  /** Maximum output series, including a pooled tail. Server-owned. */
   max_series: number;
 }
 
@@ -240,6 +240,8 @@ export interface ForecastRun {
   completed_at: string | null;
   error_message: string | null;
   created_at: string;
+  /** Timestamp of the recoverable worker progress snapshot on run detail responses. */
+  progress_updated_at?: string | null;
   /**
    * How the forecast actually did, once its periods had been lived through.
    * Distinct from the backtest metrics, which say what the model would have
@@ -407,6 +409,7 @@ export interface ForecastProgressEvent {
   message: string | null;
   selected_model: ModelKind | null;
   error: string | null;
+  updated_at?: string;
 }
 
 

@@ -6,6 +6,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
+from app.datasets.queries import DEFAULT_MAX_SERIES
 from app.models.enums import (
     ForecastFrequency,
     GapFill,
@@ -42,6 +43,7 @@ def _accuracy(wmape: float | None) -> float | None:
 Horizon = Annotated[int, Field(ge=1, le=365)]
 Folds = Annotated[int, Field(ge=1, le=10)]
 TreeDepth = Annotated[int, Field(ge=1, le=10)]
+SeriesLimit = Annotated[int, Field(ge=1, le=DEFAULT_MAX_SERIES)]
 ArimaOrder = Annotated[list[Annotated[int, Field(ge=0, le=5)]], Field(min_length=3, max_length=3)]
 
 
@@ -62,6 +64,7 @@ class ForecastRunRequest(StrictModel):
     gap_fill: GapFill = GapFill.AUTO
     outlier_treatment: OutlierTreatment = OutlierTreatment.NONE
     max_folds: Folds | None = None
+    max_series: SeriesLimit | None = None
     metric_weights: dict[str, float] | None = None
     sarimax_order: ArimaOrder | None = None
     gbm_max_depth: TreeDepth | None = None
@@ -344,6 +347,7 @@ class ForecastRunRead(ORMModel):
     completed_at: datetime | None
     error_message: str | None
     created_at: datetime
+    progress_updated_at: datetime | None = None
 
     # How it actually did. Distinct from `metrics`, which are backtest numbers
     # and therefore say what the model would have done, not what it did.
@@ -412,6 +416,7 @@ class ForecastProgressEvent(BaseModel):
     message: str | None = None
     selected_model: ModelKind | None = None
     error: str | None = None
+    updated_at: datetime
 
     @computed_field
     @property

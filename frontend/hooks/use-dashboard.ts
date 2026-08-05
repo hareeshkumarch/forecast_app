@@ -112,7 +112,7 @@ export function useInsights() {
 
 
 /** A run that has not settled yet; the list has to keep moving while it works. */
-const ACTIVE_RUN_POLL_MS = 4_000;
+const ACTIVE_RUN_POLL_MS = 2_000;
 
 export function useForecastRuns() {
   return useQuery({
@@ -126,6 +126,7 @@ export function useForecastRuns() {
       const working = runs.some((run) => run.status === "pending" || run.status === "running");
       return working ? ACTIVE_RUN_POLL_MS : false;
     },
+    refetchOnWindowFocus: "always",
   });
 }
 
@@ -382,6 +383,36 @@ export function useStartForecast() {
       void client.invalidateQueries({ queryKey: queryKeys.runs });
     },
     onError: (error: unknown) => toast.error("Could not start the forecast", errorMessage(error)),
+  });
+}
+
+
+export function useDeleteForecastRun() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.deleteForecastRun,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+      void client.invalidateQueries({ queryKey: ["forecasts"] });
+      toast.success("Forecast run cleared", "Its stored results and generated exports were removed.");
+    },
+    onError: (error: unknown) => toast.error("Could not clear the run", errorMessage(error)),
+  });
+}
+
+
+export function useCancelForecastRun() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.cancelForecastRun,
+    onSuccess: (run) => {
+      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: queryKeys.run(run.id) });
+    },
+    onError: (error: unknown) => toast.error("Could not cancel the forecast", errorMessage(error)),
   });
 }
 

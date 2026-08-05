@@ -108,8 +108,8 @@ def finalise_series_task(
     try:
         fits = [LeafFit.from_dict(row) for chunk in chunks for row in chunk]
         logger.info("Run %s collecting %d fitted series", identifier, len(fits))
-        asyncio.run(series_service.finalise(identifier, fits))
-        return {"run_id": run_id, "status": "completed", "series": len(fits)}
+        status = asyncio.run(series_service.finalise(identifier, fits))
+        return {"run_id": run_id, "status": status.value, "series": len(fits)}
     except Exception as exc:
         logger.exception("Could not finalise grouped run %s", identifier)
         asyncio.run(forecast_service.mark_failed(identifier, exc))

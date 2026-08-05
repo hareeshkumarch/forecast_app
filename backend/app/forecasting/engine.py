@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, TypedDict
@@ -164,7 +165,12 @@ def _make_factory(
     return factory
 
 
-def run_forecast(payload: ForecastInput) -> ForecastOutput:
+ProgressCallback = Callable[[str, int, int, str], None]
+
+
+def run_forecast(
+    payload: ForecastInput, progress_callback: ProgressCallback | None = None
+) -> ForecastOutput:
     values = np.asarray(payload.series.values, dtype=float)
     periods = list(payload.series.periods)
     weights = (
@@ -211,8 +217,16 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         candidates = build_candidates(frequency, payload.model_options, profile)
 
     results: list[BacktestResult] = []
-    for candidate in candidates:
+    candidate_total = len(candidates)
+    for candidate_index, candidate in enumerate(candidates, start=1):
         kind = candidate.kind
+        if progress_callback is not None:
+            progress_callback(
+                "backtesting",
+                candidate_index - 1,
+                candidate_total,
+                f"Backtesting {kind.value.replace('_', ' ')} ({candidate_index} of {candidate_total})...",
+            )
         results.append(
             run_backtest(
                 _make_factory(kind, frequency, payload.model_options),
@@ -224,6 +238,13 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
                 weights,
             )
         )
+        if progress_callback is not None:
+            progress_callback(
+                "backtesting",
+                candidate_index,
+                candidate_total,
+                f"Backtested {candidate_index} of {candidate_total} candidate models.",
+            )
 
     for kind, reason in unavailable_models().items():
         results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
@@ -240,6 +261,13 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         )
 
     winner_kind = selection.winner.result.model
+    if progress_callback is not None:
+        progress_callback(
+            "fitting",
+            0,
+            1,
+            f"Fitting {winner_kind.value.replace('_', ' ')} on the full history...",
+        )
     final_model = _make_factory(winner_kind, frequency, payload.model_options)(values, periods)
 
     try:
@@ -254,6 +282,12 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         winner_kind = ModelKind.NAIVE
         final_model = build_candidate(winner_kind, frequency, payload.model_options, profile)
         final_model.fit(values, periods)
+
+    if progress_callback is not None:
+        progress_callback("fitting", 1, 1, "Selected model fitted; preparing results...")
+
+    if progress_callback is not None:
+        progress_callback("building_outputs", 0, 1, "Building intervals and segment forecasts...")
 
     forecast_index = future_periods(periods[-1], horizon, frequency)
     point_forecast = np.asarray(final_model.predict(horizon, forecast_index), dtype=float).ravel()[
@@ -317,6 +351,9 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
         payload.max_folds,
         payload.confidence_level,
     )
+
+    if progress_callback is not None:
+        progress_callback("building_outputs", 1, 1, "Forecast outputs are ready to store.")
 
     return ForecastOutput(
         selected_model=winner_kind,

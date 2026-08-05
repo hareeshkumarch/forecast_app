@@ -75,7 +75,14 @@ class Settings(BaseSettings):
     @property
     def progress_channel_url(self) -> str:
         """Redis carries progress between the worker and whichever API serves the stream."""
-        return self.redis_url or self.broker_url
+        # A Celery broker can also be RabbitMQ. Passing an AMQP URL to
+        # redis-py makes the relay reconnect forever, so only select a URL the
+        # progress transport can actually use. The result backend is a useful
+        # fallback for RabbitMQ-broker/Redis-backend deployments.
+        for candidate in (self.redis_url, self.celery_result_backend, self.broker_url):
+            if candidate.lower().startswith(("redis://", "rediss://", "unix://")):
+                return candidate
+        return ""
 
     @property
     def cors_origins(self) -> list[str]:

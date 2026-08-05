@@ -6,7 +6,7 @@ from dataclasses import dataclass, fields
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,6 +36,7 @@ from app.insights.llm import LlmUsageRecord, llm_enabled, rewrite_insights
 from app.models.entities import (
     CategoryForecast,
     Dataset,
+    ExportJob,
     ForecastDriver,
     ForecastMetric,
     ForecastPoint,
@@ -60,19 +61,10 @@ from app.services.job_runner import ProgressEvent, executors, publish_progress
 
 logger = get_logger(__name__)
 
-STAGES: tuple[tuple[str, float], ...] = (
-    ("aggregating", 0.10),
-    ("backtesting", 0.30),
-    ("fitting", 0.75),
-    ("persisting", 0.90),
-    ("generating_insights", 0.96),
-    ("complete", 1.0),
-)
-
-
 @dataclass(slots=True)
 class RunOverrides:
     max_folds: int | None = None
+    max_series: int | None = None
     metric_weights: dict[str, float] | None = None
     sarimax_order: list[int] | None = None
     gbm_max_depth: int | None = None
@@ -163,6 +155,14 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
     return run
 
 
+async def get_run_state(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
+    """Loads the run row without report relationships for status-only paths."""
+    run = await session.get(ForecastRun, run_id)
+    if run is None:
+        raise NotFoundError(f"No forecast run with id {run_id}.")
+    return run
+
+
 async def latest_completed_run(session: AsyncSession) -> ForecastRun | None:
     result = await session.execute(
         select(ForecastRun)
@@ -197,6 +197,7 @@ async def create_run(
     gap_fill: GapFill = GapFill.AUTO,
     outlier_treatment: OutlierTreatment = OutlierTreatment.NONE,
     max_folds: int | None = None,
+    max_series: int | None = None,
     metric_weights: dict[str, float] | None = None,
     sarimax_order: list[int] | None = None,
     gbm_max_depth: int | None = None,
@@ -271,6 +272,7 @@ async def create_run(
 
     overrides = RunOverrides(
         max_folds=max_folds,
+        max_series=max_series,
         metric_weights=metric_weights,
         sarimax_order=sarimax_order,
         gbm_max_depth=gbm_max_depth,
@@ -332,7 +334,7 @@ def _validated_grain(
     return grain
 
 
-_background_tasks: set[asyncio.Task[RunStatus]] = set()
+_background_tasks: dict[uuid.UUID, asyncio.Task[RunStatus]] = {}
 
 
 async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:
@@ -343,14 +345,20 @@ async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:
     """
     if not settings.distributed:
         task = asyncio.create_task(execute_run(run.id))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        _background_tasks[run.id] = task
+
+        def discard(done: asyncio.Task[RunStatus], run_id: uuid.UUID = run.id) -> None:
+            if _background_tasks.get(run_id) is done:
+                _background_tasks.pop(run_id, None)
+
+        task.add_done_callback(discard)
         return
 
     from app.workers.tasks import run_forecast_task
 
     try:
-        queued = run_forecast_task.apply_async(
+        queued = await asyncio.to_thread(
+            run_forecast_task.apply_async,
             args=[str(run.id), request_id.get()],
             task_id=str(run.id),
         )
@@ -368,7 +376,7 @@ async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:
 
 
 async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
-    run = await get_run(session, run_id)
+    run = await get_run_state(session, run_id)
 
     if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
         raise ValidationError(f"This run already finished with status '{run.status.value}'.")
@@ -376,7 +384,32 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
     if settings.distributed and run.task_id:
         from app.workers.celery_app import celery_app
 
-        celery_app.control.revoke(run.task_id, terminate=True, signal="SIGTERM")
+        task_ids = [run.task_id]
+        if run.group_by:
+            from app.services.series_service import cancellation_task_ids
+
+            requested = RunOverrides.from_stored(run.options).max_series
+            maximum = max(
+                1,
+                min(int(requested or queries.DEFAULT_MAX_SERIES), queries.DEFAULT_MAX_SERIES),
+            )
+            task_ids.extend(cancellation_task_ids(run_id, maximum))
+
+        try:
+            await asyncio.to_thread(
+                celery_app.control.revoke,
+                task_ids,
+                terminate=True,
+                signal="SIGTERM",
+            )
+        except Exception:
+            # The atomic status guard still prevents a disconnected worker
+            # from publishing or completing this run after cancellation.
+            logger.warning("Could not deliver revoke for run %s", run_id, exc_info=True)
+    elif task := _background_tasks.get(run_id):
+        # Cancelling only the row allowed the in-process task to finish later
+        # and overwrite `cancelled` with `completed`.
+        task.cancel()
 
     run.status = RunStatus.FAILED
     run.stage = "cancelled"
@@ -397,6 +430,55 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
     return run
 
 
+async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
+    """Permanently removes one settled run and its generated artifacts."""
+    run = await get_run_state(session, run_id)
+    if run.status not in (RunStatus.COMPLETED, RunStatus.FAILED):
+        raise ValidationError("A forecast must finish or be cancelled before it can be cleared.")
+
+    exported = await session.scalars(select(ExportJob.file_path).where(ExportJob.run_id == run_id))
+    export_paths = [Path(path) for path in exported if path]
+    task_id = run.task_id
+
+    # Bulk deletion avoids materialising a large run's full series/point tree
+    # just to remove it, and also works in SQLite where FK cascades may not be
+    # enabled by the host process.
+    await _clear_results(session, run_id)
+    await session.execute(delete(ExportJob).where(ExportJob.run_id == run_id))
+    await session.execute(delete(ForecastRun).where(ForecastRun.id == run_id))
+    # Commit the database removal before touching Redis or files. If the
+    # transaction fails, the run and every export remain intact rather than
+    # leaving a stored report whose file was already removed.
+    await session.commit()
+
+    from app.services.progress_relay import forget_progress
+
+    await forget_progress(run_id)
+
+    if settings.distributed and task_id:
+        from app.workers.celery_app import celery_app
+
+        try:
+            await asyncio.to_thread(celery_app.backend.forget, task_id)
+        except Exception:
+            logger.warning("Could not clear Celery result %s", task_id, exc_info=True)
+
+    await asyncio.gather(*(_remove_export_file(path) for path in export_paths))
+
+
+async def _remove_export_file(path: Path) -> None:
+    """Deletes only generated files inside the configured export directory."""
+    root = settings.exports_dir.resolve()
+    resolved = path.resolve()
+    if resolved != root and root not in resolved.parents:
+        logger.warning("Refused to remove an export outside %s: %s", root, resolved)
+        return
+    try:
+        await asyncio.to_thread(resolved.unlink, missing_ok=True)
+    except OSError:
+        logger.warning("Could not remove export %s", resolved, exc_info=True)
+
+
 async def execute_run(run_id: uuid.UUID) -> RunStatus:
     """
     Fits the run and returns where it got to; never raises.
@@ -413,69 +495,156 @@ async def execute_run(run_id: uuid.UUID) -> RunStatus:
 
 
 async def _execute(run_id: uuid.UUID) -> RunStatus:
+    if not await checkpoint_progress(
+        run_id, 0.10, "aggregating", "Aggregating the series..."
+    ):
+        return RunStatus.FAILED
+
     async with session_scope() as session:
-        run = await get_run(session, run_id)
+        run = await get_run_state(session, run_id)
+        if run.status is not RunStatus.RUNNING:
+            return RunStatus.FAILED
         dataset = await dataset_service.get_dataset(session, run.dataset_id)
-
-        run.status = RunStatus.RUNNING
-        run.started_at = utcnow()
-        _advance(run, "aggregating", "Aggregating the series...")
-        await session.flush()
-
         grouped = bool(run.group_by)
         parquet_path = Path(dataset.parquet_path or "")
-        payload = await asyncio.to_thread(_build_payload, run, parquet_path)
 
-    _publish(run_id, RunStatus.RUNNING, 0.30, "backtesting", "Backtesting candidate models...")
+    payload = await asyncio.to_thread(_build_payload, run, parquet_path)
+
+    if not await checkpoint_progress(
+        run_id, 0.30, "backtesting", "Backtesting candidate models..."
+    ):
+        return RunStatus.FAILED
 
     try:
-        output: ForecastOutput = await executors.run(run_forecast, payload)
+        if settings.distributed:
+            output: ForecastOutput = await executors.run(
+                _run_forecast_with_progress, payload, run_id, grouped
+            )
+        else:
+            output = await executors.run(run_forecast, payload)
     except InsufficientDataError as exc:
         raise ForecastError(str(exc)) from exc
 
     # A grouped run is only part-way here: the top line is the number its
     # series still have to be fitted and reconciled to.
-    _publish(
+    if not await checkpoint_progress(
         run_id,
-        RunStatus.RUNNING,
-        0.55 if grouped else 0.90,
+        0.58 if grouped else 0.90,
         "persisting",
         "Storing forecast results...",
-    )
+    ):
+        return RunStatus.FAILED
 
     async with session_scope() as session:
-        run = await get_run(session, run_id)
+        run = await get_run_state(session, run_id)
+        if run.status is not RunStatus.RUNNING:
+            return RunStatus.FAILED
         await _persist_output(session, run, output)
-
         overrides = RunOverrides.from_stored(run.options)
-        _publish(
-            run_id,
-            RunStatus.RUNNING,
-            0.62 if grouped else 0.96,
-            "generating_insights",
-            "Generating insights...",
+
+    if not await checkpoint_progress(
+        run_id,
+        0.62 if grouped else 0.96,
+        "generating_insights",
+        "Generating insights...",
+    ):
+        return RunStatus.FAILED
+
+    async with session_scope() as session:
+        run = await get_run_state(session, run_id)
+        if run.status is not RunStatus.RUNNING:
+            return RunStatus.FAILED
+        await _persist_insights(
+            session,
+            run,
+            output,
+            llm_config=overrides.llm_config(),
         )
-        await _persist_insights(session, run, output, llm_config=overrides.llm_config())
 
     if grouped:
         from app.services import series_service
 
         return await series_service.forecast_series(run_id)
 
-    await complete_run(run_id)
-    return RunStatus.COMPLETED
+    completed = await complete_run(run_id)
+    return RunStatus.COMPLETED if completed else RunStatus.FAILED
 
 
-async def complete_run(run_id: uuid.UUID) -> None:
-    """Marks a run finished. The last step of both the plain and grouped paths."""
+async def checkpoint_progress(
+    run_id: uuid.UUID, progress: float, stage: str, message: str
+) -> bool:
+    """Persists a coarse checkpoint so polling survives a Redis outage."""
+    now = utcnow()
+    values: dict[str, object] = {
+        "status": RunStatus.RUNNING,
+        "progress": progress,
+        "stage": stage,
+        "updated_at": now,
+    }
+    if stage == "aggregating":
+        values["started_at"] = now
+
     async with session_scope() as session:
-        run = await get_run(session, run_id)
-        run.status = RunStatus.COMPLETED
-        run.progress = 1.0
-        run.stage = "complete"
-        run.completed_at = utcnow()
-        await session.flush()
-        selected = run.selected_model.value if run.selected_model else None
+        result = await session.execute(
+            update(ForecastRun)
+            .where(
+                ForecastRun.id == run_id,
+                ForecastRun.status.in_((RunStatus.PENDING, RunStatus.RUNNING)),
+            )
+            .values(**values)
+            .returning(ForecastRun.id)
+        )
+        accepted = result.first() is not None
+
+    if accepted:
+        _publish(run_id, RunStatus.RUNNING, progress, stage, message)
+    return accepted
+
+
+def _run_forecast_with_progress(
+    payload: ForecastInput, run_id: uuid.UUID, grouped: bool
+) -> ForecastOutput:
+    """Runs inside Celery and publishes candidate-level progress to Redis."""
+
+    def report(stage: str, done: int, total: int, message: str) -> None:
+        if stage == "backtesting":
+            start, end = (0.30, 0.52) if grouped else (0.30, 0.76)
+            progress = start + (end - start) * (done / total if total else 1.0)
+        elif stage == "fitting":
+            start, end = (0.53, 0.56) if grouped else (0.78, 0.86)
+            progress = start + (end - start) * (done / total if total else 1.0)
+        else:
+            start, end = (0.565, 0.575) if grouped else (0.87, 0.89)
+            progress = start + (end - start) * (done / total if total else 1.0)
+        _publish(run_id, RunStatus.RUNNING, progress, stage, message)
+
+    return run_forecast(payload, report)
+
+
+async def complete_run(run_id: uuid.UUID) -> bool:
+    """Atomically marks an active run finished; cancellation always wins."""
+    now = utcnow()
+    async with session_scope() as session:
+        result = await session.execute(
+            update(ForecastRun)
+            .where(
+                ForecastRun.id == run_id,
+                ForecastRun.status.in_((RunStatus.PENDING, RunStatus.RUNNING)),
+            )
+            .values(
+                status=RunStatus.COMPLETED,
+                progress=1.0,
+                stage="complete",
+                completed_at=now,
+                updated_at=now,
+            )
+            .returning(ForecastRun.selected_model)
+        )
+        row = result.first()
+
+    if row is None:
+        return False
+    selected = row[0].value if row[0] else None
 
     publish_progress(
         ProgressEvent(
@@ -487,6 +656,7 @@ async def complete_run(run_id: uuid.UUID) -> None:
             selected_model=selected,
         )
     )
+    return True
 
 
 def _build_payload(run: ForecastRun, parquet_path: Path) -> ForecastInput:
@@ -780,8 +950,6 @@ async def _previous_metrics(session: AsyncSession, run: ForecastRun) -> dict[str
 
 
 async def _clear_results(session: AsyncSession, run_id: uuid.UUID) -> None:
-    from sqlalchemy import delete
-
     for model in (
         ModelCandidate,
         ForecastMetric,
@@ -808,13 +976,6 @@ def _looks_like_currency(column: str) -> bool:
     return is_currency_like(column)
 
 
-def _advance(run: ForecastRun, stage: str, message: str) -> None:
-    progress = dict(STAGES).get(stage, run.progress)
-    run.stage = stage
-    run.progress = progress
-    _publish(run.id, RunStatus.RUNNING, progress, stage, message)
-
-
 def _publish(
     run_id: uuid.UUID, status: RunStatus, progress: float, stage: str, message: str
 ) -> None:
@@ -825,17 +986,35 @@ def _publish(
 
 async def mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
     message = getattr(exc, "message", None) or str(exc) or type(exc).__name__
+    recorded = False
 
     try:
         async with session_scope() as session:
-            run = await get_run(session, run_id)
-            run.status = RunStatus.FAILED
-            run.stage = "failed"
-            run.error_message = message[:2000]
-            run.completed_at = utcnow()
-            await session.flush()
+            now = utcnow()
+            result = await session.execute(
+                update(ForecastRun)
+                .where(
+                    ForecastRun.id == run_id,
+                    ForecastRun.status.in_((RunStatus.PENDING, RunStatus.RUNNING)),
+                )
+                .values(
+                    status=RunStatus.FAILED,
+                    progress=1.0,
+                    stage="failed",
+                    error_message=message[:2000],
+                    completed_at=now,
+                    updated_at=now,
+                )
+                .returning(ForecastRun.id)
+            )
+            recorded = result.first() is not None
     except Exception:
         logger.exception("Could not record failure for run %s", run_id)
+
+    # A cancelled, completed or explicitly cleared run is authoritative. Do
+    # not resurrect a stale terminal frame after that transition won the race.
+    if not recorded:
+        return
 
     publish_progress(
         ProgressEvent(

@@ -18,6 +18,7 @@ import type {
   ForecastFrequency,
   ForecastMetricsResponse,
   ForecastPointsResponse,
+  ForecastProgressEvent,
   ForecastRun,
   GapFill,
   HealthResponse,
@@ -223,6 +224,15 @@ export const listForecastRuns = () => request<ForecastRun[]>("/api/forecasts");
 
 export const getForecastRun = (id: string) => request<ForecastRun>(`/api/forecasts/${id}`);
 
+export const getForecastProgress = (id: string) =>
+  request<ForecastProgressEvent>(`/api/forecasts/${id}/progress`);
+
+export const cancelForecastRun = (id: string) =>
+  request<ForecastRun>(`/api/forecasts/${id}/cancel`, { method: "POST" });
+
+export const deleteForecastRun = (id: string) =>
+  request<void>(`/api/forecasts/${id}`, { method: "DELETE" });
+
 export const startForecast = (payload: {
   dataset_id: string;
   name?: string;
@@ -239,6 +249,7 @@ export const startForecast = (payload: {
   gap_fill?: GapFill;
   outlier_treatment?: OutlierTreatment;
   max_folds?: number | null;
+  max_series?: number | null;
   metric_weights?: Record<string, number> | null;
   sarimax_order?: number[] | null;
   gbm_max_depth?: number | null;
