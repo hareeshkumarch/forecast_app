@@ -700,6 +700,10 @@ async def test_the_dashboard_stops_showing_a_backtest_number_once_it_knows_bette
     The accuracy KPI has to say which kind of accuracy it is. Left as the
     backtest figure, a forecast that missed by a fifth reads as 97% accurate
     on the first screen anyone opens.
+
+    The error card beside it has to move in the same tense, or the pair
+    contradicts itself: 2.8% typical error next to 82% accuracy invites the
+    reader to do the subtraction and conclude the screen is broken.
     """
     from app.schemas.dashboard import DashboardQuery
     from app.services import dashboard_service
@@ -712,14 +716,25 @@ async def test_the_dashboard_stops_showing_a_backtest_number_once_it_knows_bette
         return next(kpi for kpi in summary.kpis if kpi.key == "forecast_accuracy")
 
     before = await card()
-    assert before.label == "Backtest Accuracy"  # type: ignore[attr-defined]
+    assert before.label == "Expected Accuracy"  # type: ignore[attr-defined]
 
     scored = await scoring_service.score_run(session, run_id, dataset_id=full)
     await session.commit()
     session.expire_all()
 
     after = await card()
-    assert after.label == "Accuracy vs Actual"  # type: ignore[attr-defined]
+    assert after.label == "Actual Accuracy"  # type: ignore[attr-defined]
     assert after.value == pytest.approx(scored.accuracy_percent, abs=0.01)  # type: ignore[attr-defined]
     assert after.comparison_value == pytest.approx(before.value)  # type: ignore[attr-defined]
-    assert after.comparison_label == "vs backtest"  # type: ignore[attr-defined]
+    assert after.comparison_label == "vs expected"  # type: ignore[attr-defined]
+
+    async def error_card() -> object:
+        summary = await dashboard_service.summary(session, DashboardQuery(run_id=run_id))
+        return next(kpi for kpi in summary.kpis if kpi.key == "weighted_mape")
+
+    graded = await error_card()
+    assert graded.label == "Actual Error"  # type: ignore[attr-defined]
+    assert graded.value == pytest.approx(scored.wmape, abs=0.01)  # type: ignore[attr-defined]
+    # A percentage's move is in points; the percent change of a percentage is
+    # both true and useless — 2.8% to 18.3% is not "+543%" to anyone.
+    assert graded.delta_display.endswith(" pts")  # type: ignore[attr-defined]

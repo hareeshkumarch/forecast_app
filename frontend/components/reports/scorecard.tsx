@@ -42,11 +42,11 @@ export function Scorecard({ run }: { run: ForecastRun }) {
         <div className="flex items-center gap-2">
           <Target aria-hidden className="size-3.5 text-text-muted" />
           <h3 className="text-caption font-semibold uppercase tracking-[0.04em] text-text-muted">
-            Versus actual
+            How it turned out
           </h3>
           {graded && card ? (
             <Badge tone={verdictTone(card)}>
-              {card.scored_periods} of {card.horizon} periods graded
+              {card.scored_periods} of {card.horizon} periods checked
             </Badge>
           ) : null}
         </div>
@@ -59,16 +59,16 @@ export function Scorecard({ run }: { run: ForecastRun }) {
           disabled={isLoading}
           onClick={() => score.mutate(undefined)}
         >
-          {graded ? "Re-score" : "Score against actuals"}
+          {graded ? "Check again" : "Check against real results"}
         </Button>
       </div>
 
       {isLoading ? (
-        <p className="mt-2 text-caption text-text-muted">Checking…</p>
+        <p className="mt-2 text-caption text-text-muted">Looking for real results…</p>
       ) : !card || !graded ? (
         <p className="mt-2 text-caption text-text-muted">
           {card?.blocked_reason ??
-            "Not scored yet — no dataset covers the period this run forecast."}
+            "Not checked yet — no data has arrived for the periods this forecast covers."}
         </p>
       ) : (
         <Graded card={card} run={run} />
@@ -87,9 +87,9 @@ function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
     <>
       <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Figure
-          label="Accuracy in the event"
+          label="How accurate it was"
           value={formatPercent(card.accuracy)}
-          note={expected === null ? undefined : `${formatPercent(expected)} expected`}
+          note={expected === null ? undefined : `${formatPercent(expected)} was expected`}
           tone={accuracyTone(card.accuracy, expected)}
         />
         <Figure
@@ -105,8 +105,8 @@ function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
         <Figure
           label={
             card.confidence_level === null
-              ? "Inside the interval"
-              : `Inside the ${Math.round(card.confidence_level * 100)}% interval`
+              ? "Landed in range"
+              : `Landed in the expected range`
           }
           value={card.coverage === null ? "—" : formatPercent(card.coverage, 0)}
           tone={card.intervals_held === null ? undefined : card.intervals_held ? "good" : "bad"}
@@ -161,26 +161,30 @@ function summary(card: ScorecardData): string {
   const parts: string[] = [];
 
   parts.push(
-    `Measured against ${card.source_dataset_name ?? "later data"}` +
+    `Checked against ${card.source_dataset_name ?? "your latest data"}` +
       (card.covered_through ? `, which runs to ${card.covered_through}.` : "."),
   );
 
   if (card.pending_periods > 0) {
+    const many = card.pending_periods === 1;
     parts.push(
-      `${card.pending_periods} period${card.pending_periods === 1 ? "" : "s"} of the horizon ` +
-        "had not finished, so nothing is claimed about them.",
+      `${card.pending_periods} more period${many ? " has" : "s have"} not finished yet, ` +
+        `so ${many ? "it is" : "they are"} left out rather than half-counted.`,
     );
   }
   if (card.intervals_held === false && card.confidence_level !== null) {
     parts.push(
-      `The ${Math.round(card.confidence_level * 100)}% interval caught ` +
-        `${formatPercent(card.coverage, 0)} of the actuals, so it was narrower than it claimed.`,
+      `Results landed in the expected range only ${formatPercent(card.coverage, 0)} of the ` +
+        `time instead of ${Math.round(card.confidence_level * 100)}%, so that range was too ` +
+        "narrow — treat the next one as wider than it looks.",
     );
   }
   if (card.unforecast_keys > 0) {
+    const one = card.unforecast_keys === 1;
     parts.push(
-      `${card.unforecast_keys} combination${card.unforecast_keys === 1 ? "" : "s"} appeared that ` +
-        "this run never forecast; they count in the total but in no series.",
+      `${card.unforecast_keys} new ${one ? "line" : "lines"} of business appeared that this ` +
+        `forecast never covered, so ${one ? "it counts" : "they count"} in the total but in no ` +
+        "single row below.",
     );
   }
 

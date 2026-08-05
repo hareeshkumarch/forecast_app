@@ -43,11 +43,11 @@ const PAGE_SIZE = 25;
 const SORTS: { value: SeriesSort; label: string; hint: string }[] = [
   {
     value: "value_at_risk",
-    label: "Value at risk",
-    hint: "Forecast times its own error — what to look at first",
+    label: "Biggest risk",
+    hint: "Where the most money could be wrong",
   },
-  { value: "wmape", label: "Error", hint: "Worst forecast accuracy first" },
-  { value: "forecast_total", label: "Forecast", hint: "Largest series first" },
+  { value: "wmape", label: "Least accurate", hint: "The lines we trust least, first" },
+  { value: "forecast_total", label: "Biggest", hint: "The largest numbers first" },
   { value: "label", label: "Name", hint: "Alphabetical" },
 ];
 
@@ -90,7 +90,7 @@ export function SeriesWorkspace() {
           </h1>
           <p className="mt-0.5 text-caption text-text-muted">
             {run?.group_by.length
-              ? `${run.series_count.toLocaleString()} series across ${run.group_by.join(" · ")}`
+              ? `${run.series_count.toLocaleString()} lines, broken down by ${run.group_by.join(" and ")}`
               : "Forecasts broken down by the grain a run was given"}
           </p>
         </header>
@@ -208,7 +208,7 @@ function SeriesTable({
           subtitle={
             selected.accuracy_measured && selected.model
               ? `${humanizeModel(selected.model)} · ${formatPercent(selected.accuracy)} accurate over ${selected.folds} fold${selected.folds === 1 ? "" : "s"}`
-              : (selected.blocked_reason ?? "Apportioned from its parent")
+              : (selected.blocked_reason ?? "Estimated from the group above it — not fitted on its own")
           }
           showActions={false}
         />
@@ -216,10 +216,10 @@ function SeriesTable({
 
       <Card className="overflow-hidden">
         <PanelHeader
-          title="Triage"
+          title="Where to look first"
           subtitle={
             sort === "value_at_risk"
-              ? "Forecast times its own error, largest first"
+              ? "The lines where the most money could be wrong, at the top"
               : SORTS.find((s) => s.value === sort)?.hint
           }
         />
@@ -297,24 +297,30 @@ function SeriesTable({
                       whether the number beside it can be trusted. */}
                     <th
                       className="hidden px-3 py-2 text-right font-medium sm:table-cell"
-                      title="How the actuals moved between the last two windows"
+                      title="How this series has moved between the last two comparable periods"
                     >
                       Trend
                     </th>
-                    <th className="px-3 py-2 text-right font-medium">
-                      Accuracy
+                    <th
+                      className="px-3 py-2 text-right font-medium"
+                      title="How accurate we expect this line to be, from testing on its past"
+                    >
+                      {scored ? "Expected" : "Accuracy"}
                     </th>
                     {/* Only once something has been graded. A column of
                       dashes on an unscored run is noise, not information. */}
                     {scored ? (
                       <th
                         className="hidden px-3 py-2 text-right font-medium sm:table-cell"
-                        title="The error this series turned out to have, against actuals"
+                        title="How accurate it actually turned out to be"
                       >
-                        In the event
+                        Actual
                       </th>
                     ) : null}
-                    <th className="px-4 py-2 text-right font-medium">
+                    <th
+                      className="px-4 py-2 text-right font-medium"
+                      title="How much of this line's forecast its own error could be wrong about"
+                    >
                       At risk
                     </th>
                   </tr>
@@ -423,7 +429,7 @@ function SeriesRowCells({
             <span title={row.blocked_reason}>
               <Badge tone="warning" className="shrink-0">
                 <TriangleAlert className="h-2.5 w-2.5" aria-hidden />
-                Apportioned
+                Estimated
               </Badge>
             </span>
           ) : null}
@@ -473,7 +479,7 @@ function SeriesRowCells({
                   ? "text-negative"
                   : "text-positive"
               }
-              title={`Backtest expected ${formatPercent(row.wmape ?? 0)}`}
+              title={`Expected ${formatPercent(row.wmape ?? 0)} before the event`}
             >
               {formatPercent(100 - row.realized_wmape)}
             </span>
@@ -484,7 +490,7 @@ function SeriesRowCells({
         {row.value_at_risk === null ? (
           <span
             className="text-text-muted"
-            title="Nothing was measured for this series"
+            title="This series was estimated from its group, so there is no error to report"
           >
             —
           </span>

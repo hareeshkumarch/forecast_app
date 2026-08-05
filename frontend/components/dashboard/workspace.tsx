@@ -10,14 +10,14 @@ import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { ModelHealthStrip } from "@/components/dashboard/model-health-strip";
 import { RegionTable } from "@/components/dashboard/region-table";
-import { Button, Skeleton } from "@/components/ui/primitives";
+import { Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useSummary } from "@/hooks/use-dashboard";
 import { humanizeModel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 export function Workspace() {
-  const { data: summary, isSuccess, isPending } = useSummary();
+  const { data: summary, isSuccess, isPending, isError, error, refetch } = useSummary();
   const openModal = useUiStore((state) => state.openModal);
 
   // Only once the summary has actually answered — a slow first load must not
@@ -80,16 +80,38 @@ export function Workspace() {
        * forecast to show.
        */}
       {isPending ? (
-        <div className="mt-4 space-y-3" aria-busy>
+        <div className="mt-4 space-y-3" aria-busy data-workspace="loading">
           <Skeleton className="h-[92px] w-full rounded-card" />
           <Skeleton className="h-[220px] w-full rounded-card" />
         </div>
+      ) : isError ? (
+        /*
+         * A question the summary could not answer is not the same as one it
+         * has not answered yet, and treating them alike left this screen
+         * shimmering for ever with the API down.
+         *
+         * It also looped: every panel below asks for the same summary, so the
+         * moment the query gave up and the panels mounted, one of them
+         * refetched on mount, the query went back to pending, the panels
+         * unmounted, and the whole dashboard oscillated a few times a second
+         * against a backend that was not there.
+         */
+        <div className="mt-4" data-workspace="error">
+          <Card>
+            <ErrorState
+              error={error}
+              title="We can't reach your data right now"
+              message="Nothing has been lost — your forecasts are safe. This usually clears on its own in a moment."
+              onRetry={() => void refetch()}
+            />
+          </Card>
+        </div>
       ) : firstRun ? (
-        <div className="mt-4" data-first-run>
+        <div className="mt-4" data-first-run data-workspace="first-run">
           <GettingStarted />
         </div>
       ) : (
-        <>
+        <div data-workspace="data">
           <div className="mt-4">
             <KpiCards />
           </div>
@@ -105,7 +127,7 @@ export function Workspace() {
             <RegionTable />
             <DriverTable />
           </div>
-        </>
+        </div>
       )}
     </main>
   );

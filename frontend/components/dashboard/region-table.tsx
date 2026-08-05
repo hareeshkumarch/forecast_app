@@ -24,7 +24,7 @@ export function RegionTable() {
 
   return (
     <Card className="flex min-w-0 flex-col">
-      <PanelHeader title="Forecast by Region" subtitle="Next horizon, by geography" />
+      <PanelHeader title="Forecast by Region" subtitle="What each region is expected to bring in" />
 
       <div className="min-h-0 flex-1 px-1 pb-2">
         {isLoading ? (

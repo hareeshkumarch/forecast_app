@@ -9,9 +9,13 @@ async function load(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  // Until the summary answers the workspace shows neither the panels nor the
-  // guide, so anything measured before this point is a placeholder.
-  await expect(page.locator(".grid-charts, [data-first-run]")).toBeVisible({ timeout: 15_000 });
+  // The workspace resolves into exactly one of four states, and three of them
+  // are settled: the panels, the first-run guide, or an error the summary
+  // could not get past. Waiting for the panels alone made every test here
+  // depend on a reachable API, which this job deliberately does not run.
+  await expect(page.locator('[data-workspace]:not([data-workspace="loading"])')).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);

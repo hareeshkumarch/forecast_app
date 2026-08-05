@@ -1,10 +1,11 @@
 "use client";
 
-import { Activity, Clock3, Coins, Cpu, RefreshCw, Send, TriangleAlert } from "lucide-react";
+import { Activity, Clock3, Coins, Cpu, Send, TriangleAlert } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Badge, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { RefreshButton } from "@/components/ui/refresh-button";
 import { Select } from "@/components/ui/select";
 import { useLlmUsage } from "@/hooks/use-dashboard";
 import { axisLabel, axisLine, chartColors, splitLine, tooltipStyle } from "@/lib/chart-theme";
@@ -121,7 +122,8 @@ function SectionTitle({ title, subtitle, actions }: { title: string; subtitle: s
 
 export function UsageWorkspace() {
   const [days, setDays] = useState(30);
-  const { data, isLoading, isError, error, refetch, isFetching } = useLlmUsage(days);
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
+    useLlmUsage(days);
   const revision = useThemeRevision();
   const option = useMemo(() => {
     void revision;
@@ -147,7 +149,11 @@ export function UsageWorkspace() {
             options={WINDOWS}
             className="w-[152px]"
           />
-          <Button variant="ghost" icon={RefreshCw} loading={isFetching} onClick={() => void refetch()}>Refresh</Button>
+          <RefreshButton
+            updatedAt={dataUpdatedAt}
+            isFetching={isFetching}
+            onRefresh={() => void refetch()}
+          />
         </div>
       </div>
 

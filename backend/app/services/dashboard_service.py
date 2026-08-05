@@ -137,16 +137,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             higher_is_better=True,
         ),
         _accuracy_card(run, accuracy),
-        _card(
-            key="weighted_mape",
-            label="Weighted MAPE",
-            value=wmape.value if wmape else float("nan"),
-            unit="percent",
-            currency=False,
-            comparison=wmape.previous_value if wmape else None,
-            comparison_label="vs previous run",
-            higher_is_better=False,
-        ),
+        _error_card(run, wmape),
         _card(
             key="best_case",
             label="Best Case",
@@ -239,6 +230,42 @@ def _actual_window_label(run: ForecastRun) -> str:
     return "historical actuals"
 
 
+def _error_card(run: ForecastRun, backtest: ForecastMetric | None) -> KpiCard:
+    """
+    How far off the numbers are, in the same tense as the card beside it.
+
+    These two are read as a pair, and mixing tenses makes them contradict: a
+    backtest error of 3% sitting next to a realized accuracy of 82% invites the
+    reader to work out that the second implies 18% and conclude the screen is
+    broken. Whichever kind of accuracy is on show, this is the same kind.
+
+    "Weighted MAPE" is what the measure is called in the literature and nowhere
+    else; the person reading this wants to know how far off to expect to be.
+    """
+    if run.realized_wmape is not None:
+        return _card(
+            key="weighted_mape",
+            label="Actual Error",
+            value=run.realized_wmape,
+            unit="percent",
+            currency=False,
+            comparison=backtest.value if backtest else None,
+            comparison_label="vs expected",
+            higher_is_better=False,
+        )
+
+    return _card(
+        key="weighted_mape",
+        label="Expected Error",
+        value=backtest.value if backtest else float("nan"),
+        unit="percent",
+        currency=False,
+        comparison=backtest.previous_value if backtest else None,
+        comparison_label="vs previous run",
+        higher_is_better=False,
+    )
+
+
 def _accuracy_card(run: ForecastRun, backtest: ForecastMetric | None) -> KpiCard:
     """
     Accuracy, saying which kind it is.
@@ -252,20 +279,23 @@ def _accuracy_card(run: ForecastRun, backtest: ForecastMetric | None) -> KpiCard
     if run.realized_wmape is not None:
         return _card(
             key="forecast_accuracy",
-            label="Accuracy vs Actual",
+            label="Actual Accuracy",
             value=accuracy_from_wmape(run.realized_wmape),
             unit="percent",
             currency=False,
             # Against what the backtest expected, which is the comparison that
             # says whether this forecast behaved as the method promised.
             comparison=backtest.value if backtest else None,
-            comparison_label="vs backtest",
+            comparison_label="vs expected",
             higher_is_better=True,
         )
 
     return _card(
         key="forecast_accuracy",
-        label="Backtest Accuracy",
+        # Before the horizon has been lived through this is a projection from
+        # testing on past periods, and saying so is what keeps it from being
+        # mistaken for the real thing later.
+        label="Expected Accuracy",
         value=backtest.value if backtest else float("nan"),
         unit="percent",
         currency=False,
@@ -295,8 +325,17 @@ def _card(
     tone = "neutral"
 
     if comparison is not None and math.isfinite(comparison) and comparison != 0:
-        delta = (safe_value - comparison) / abs(comparison) * 100.0
-        delta_display = f"{delta:+.1f}%"
+        if unit == "percent":
+            # A percentage's move is measured in points, not as a percentage of
+            # itself. An error going from 2.8% to 18.3% is fifteen points worse;
+            # calling it "+543%" is arithmetically true and tells the reader
+            # nothing they can act on.
+            delta = safe_value - comparison
+            delta_display = f"{delta:+.1f} pts"
+        else:
+            delta = (safe_value - comparison) / abs(comparison) * 100.0
+            delta_display = f"{delta:+.1f}%"
+
         if abs(delta) < 0.05:
             direction, tone = "flat", "neutral"
         else:
