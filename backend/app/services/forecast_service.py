@@ -39,6 +39,7 @@ from app.models.entities import (
     ForecastMetric,
     ForecastPoint,
     ForecastRun,
+    ForecastSeries,
     Insight,
     LlmUsageEvent,
     ModelCandidate,
@@ -187,6 +188,7 @@ async def create_run(
     weight_column: str | None = None,
     region_column: str | None = None,
     category_column: str | None = None,
+    group_by: list[str] | None = None,
     frequency: ForecastFrequency | None = None,
     horizon: int | None = None,
     confidence_level: float = 0.8,
@@ -237,6 +239,8 @@ async def create_run(
                 detail={"available_columns": sorted(available)},
             )
 
+    grain = _validated_grain(group_by, available, resolved_time, resolved_target)
+
     if region_column is None or category_column is None:
         guessed_region, guessed_category = dataset_service.guess_segment_columns(dataset)
         region_column = region_column or guessed_region
@@ -253,6 +257,7 @@ async def create_run(
         weight_column=weight_column,
         region_column=region_column,
         category_column=category_column,
+        group_by=grain,
         frequency=resolved_frequency,
         horizon=resolved_horizon,
         confidence_level=confidence_level,
@@ -288,6 +293,42 @@ async def create_run(
         )
     )
     return run
+
+
+def _validated_grain(
+    group_by: list[str] | None, available: set[str], time_column: str, target_column: str
+) -> list[str]:
+    """
+    The columns a run forecasts at, checked before it is queued.
+
+    Order matters — it is the order the tree nests in — so duplicates are
+    rejected rather than quietly dropped. Grouping by the time or target column
+    would ask for one series per period or per value, which is never meant.
+    """
+    if not group_by:
+        return []
+
+    grain = [column.strip() for column in group_by if column and column.strip()]
+
+    unknown = [column for column in grain if column not in available]
+    if unknown:
+        raise ValidationError(
+            f"{', '.join(repr(c) for c in unknown)} is not a column in this dataset "
+            "(selected as a forecast grain).",
+            detail={"available_columns": sorted(available)},
+        )
+
+    if len(set(grain)) != len(grain):
+        raise ValidationError("The forecast grain lists the same column twice.")
+
+    reserved = {column for column in grain if column in (time_column, target_column)}
+    if reserved:
+        raise ValidationError(
+            f"{', '.join(repr(c) for c in sorted(reserved))} cannot be a forecast grain: "
+            "it is already the time or target column."
+        )
+
+    return grain
 
 
 _background_tasks: set[asyncio.Task[RunStatus]] = set()
@@ -356,17 +397,21 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
 
 
 async def execute_run(run_id: uuid.UUID) -> RunStatus:
-    """Fits the run and returns its terminal status; never raises."""
+    """
+    Fits the run and returns where it got to; never raises.
+
+    A grouped run can come back RUNNING rather than COMPLETED: its top line is
+    done and its series have been handed to the workers, which finish it.
+    """
     try:
-        await _execute(run_id)
-        return RunStatus.COMPLETED
+        return await _execute(run_id)
     except Exception as exc:
         logger.exception("Forecast run %s failed", run_id)
         await mark_failed(run_id, exc)
         return RunStatus.FAILED
 
 
-async def _execute(run_id: uuid.UUID) -> None:
+async def _execute(run_id: uuid.UUID) -> RunStatus:
     async with session_scope() as session:
         run = await get_run(session, run_id)
         dataset = await dataset_service.get_dataset(session, run.dataset_id)
@@ -376,6 +421,7 @@ async def _execute(run_id: uuid.UUID) -> None:
         _advance(run, "aggregating", "Aggregating the series...")
         await session.flush()
 
+        grouped = bool(run.group_by)
         parquet_path = Path(dataset.parquet_path or "")
         payload = await asyncio.to_thread(_build_payload, run, parquet_path)
 
@@ -386,16 +432,43 @@ async def _execute(run_id: uuid.UUID) -> None:
     except InsufficientDataError as exc:
         raise ForecastError(str(exc)) from exc
 
-    _publish(run_id, RunStatus.RUNNING, 0.90, "persisting", "Storing forecast results...")
+    # A grouped run is only part-way here: the top line is the number its
+    # series still have to be fitted and reconciled to.
+    _publish(
+        run_id,
+        RunStatus.RUNNING,
+        0.55 if grouped else 0.90,
+        "persisting",
+        "Storing forecast results...",
+    )
 
     async with session_scope() as session:
         run = await get_run(session, run_id)
         await _persist_output(session, run, output)
 
         overrides = RunOverrides.from_stored(run.options)
-        _publish(run_id, RunStatus.RUNNING, 0.96, "generating_insights", "Generating insights...")
+        _publish(
+            run_id,
+            RunStatus.RUNNING,
+            0.62 if grouped else 0.96,
+            "generating_insights",
+            "Generating insights...",
+        )
         await _persist_insights(session, run, output, llm_config=overrides.llm_config())
 
+    if grouped:
+        from app.services import series_service
+
+        return await series_service.forecast_series(run_id)
+
+    await complete_run(run_id)
+    return RunStatus.COMPLETED
+
+
+async def complete_run(run_id: uuid.UUID) -> None:
+    """Marks a run finished. The last step of both the plain and grouped paths."""
+    async with session_scope() as session:
+        run = await get_run(session, run_id)
         run.status = RunStatus.COMPLETED
         run.progress = 1.0
         run.stage = "complete"
@@ -716,6 +789,7 @@ async def _clear_results(session: AsyncSession, run_id: uuid.UUID) -> None:
         ModelCandidate,
         ForecastMetric,
         ForecastPoint,
+        ForecastSeries,
         RegionalForecast,
         CategoryForecast,
         ForecastDriver,
@@ -786,8 +860,19 @@ async def points_for_run(
     *,
     start: date | None = None,
     end: date | None = None,
+    series_id: uuid.UUID | None = None,
 ) -> list[ForecastPoint]:
-    statement = select(ForecastPoint).where(ForecastPoint.run_id == run_id)
+    """
+    The run's own top line by default. A grouped run also stores a curve per
+    series, so pass series_id to scope to one of them; without it those rows
+    would be summed into the headline.
+    """
+    statement = select(ForecastPoint).where(
+        ForecastPoint.run_id == run_id,
+        ForecastPoint.series_id == series_id
+        if series_id is not None
+        else ForecastPoint.series_id.is_(None),
+    )
     if start is not None:
         statement = statement.where(ForecastPoint.period >= start)
     if end is not None:

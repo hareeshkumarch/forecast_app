@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+
 import numpy as np
 import numpy.typing as npt
 
@@ -72,3 +75,118 @@ def coherence_gap(segment_forecasts: list[FloatArray], total_forecast: FloatArra
     if abs(direct) < MIN_RECONCILABLE_TOTAL:
         return 0.0
     return float(abs(implied - direct) / abs(direct))
+
+
+@dataclass(slots=True)
+class Node:
+    """A series in the tree, with whatever has been forecast for it so far."""
+
+    key: dict[str, str]
+    label: str
+    level: int
+    children: list[Node] = field(default_factory=list)
+
+    #: The independently produced forecast, before reconciliation.
+    forecast: FloatArray | None = None
+    #: Historical share of its parent, used where a forecast is unavailable.
+    share: float = 0.0
+    #: Filled by `reconcile_tree`.
+    reconciled: FloatArray | None = None
+
+    @property
+    def is_leaf(self) -> bool:
+        return not self.children
+
+
+def build_tree(
+    leaves: list[tuple[dict[str, str], str, FloatArray, float]],
+    group_by: list[str],
+) -> Node:
+    """
+    Assembles the parent levels implied by the grouping order.
+
+    Grouping by ["region", "sku"] gives a total, one node per region, and one
+    per region-and-sku. Intermediate levels exist so the split can be applied
+    a level at a time, which is what keeps a region's own trend from being
+    overwritten by its children's.
+    """
+    root = Node(key={}, label="Total", level=0)
+    index: dict[tuple[str, ...], Node] = {(): root}
+
+    for key, label, forecast, share in leaves:
+        path: tuple[str, ...] = ()
+        parent = root
+
+        for depth, column in enumerate(group_by, start=1):
+            path = (*path, key.get(column, "(none)"))
+            node = index.get(path)
+            if node is None:
+                node = Node(
+                    key=dict(zip(group_by[:depth], path, strict=True)),
+                    label=SEPARATOR.join(path),
+                    level=depth,
+                )
+                index[path] = node
+                parent.children.append(node)
+            parent = node
+
+        parent.forecast = forecast
+        parent.share = share
+        parent.label = label
+
+    _roll_up(root)
+    return root
+
+
+SEPARATOR = " · "
+
+
+def _roll_up(node: Node) -> None:
+    """A parent's own forecast and share are the sum of its children's."""
+    if node.is_leaf:
+        return
+
+    for child in node.children:
+        _roll_up(child)
+
+    available = [c.forecast for c in node.children if c.forecast is not None]
+    if available and node.forecast is None:
+        node.forecast = bottom_up(available)
+    node.share = sum(c.share for c in node.children) or node.share
+
+
+def reconcile_tree(root: Node, total: FloatArray) -> None:
+    """
+    Pushes a known total down the tree, one level at a time.
+
+    Each level's children are reconciled to their own parent rather than to the
+    grand total, so a node keeps the shape its own forecast gave it while every
+    level still adds up to the one above.
+    """
+    root.reconciled = np.asarray(total, dtype=float)
+
+    queue = [root]
+    while queue:
+        node = queue.pop(0)
+        if node.is_leaf or node.reconciled is None:
+            continue
+
+        paths = [
+            child.forecast if child.forecast is not None else node.reconciled * child.share
+            for child in node.children
+        ]
+        shares = [child.share for child in node.children]
+
+        for child, path in zip(
+            node.children, reconcile_to_total(paths, node.reconciled, shares), strict=True
+        ):
+            child.reconciled = path
+
+        queue.extend(node.children)
+
+
+def walk(node: Node) -> Iterator[Node]:
+    """Every node, parents before children."""
+    yield node
+    for child in node.children:
+        yield from walk(child)

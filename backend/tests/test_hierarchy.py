@@ -7,7 +7,14 @@ import pytest
 
 from app.forecasting.engine import ForecastInput, SegmentInput, SeriesInput, run_forecast
 from app.forecasting.frequency import add_periods
-from app.forecasting.hierarchy import bottom_up, coherence_gap, reconcile_to_total
+from app.forecasting.hierarchy import (
+    bottom_up,
+    build_tree,
+    coherence_gap,
+    reconcile_to_total,
+    reconcile_tree,
+    walk,
+)
 from app.models.enums import ForecastFrequency
 
 MONTHLY = ForecastFrequency.MONTHLY
@@ -181,3 +188,171 @@ def test_no_segments_is_not_an_error() -> None:
 
     assert output.regions == []
     assert output.categories == []
+
+
+# ---------------------------------------------------------------- the tree
+
+
+def _leaf(region: str, sku: str, forecast: list[float], share: float):
+    return ({"region": region, "sku": sku}, f"{region} · {sku}", np.array(forecast), share)
+
+
+def test_the_tree_grows_the_levels_the_grouping_implies() -> None:
+    root = build_tree(
+        [
+            _leaf("North", "A", [10.0], 0.4),
+            _leaf("North", "B", [10.0], 0.2),
+            _leaf("South", "A", [10.0], 0.4),
+        ],
+        ["region", "sku"],
+    )
+
+    assert root.level == 0
+    assert {child.label for child in root.children} == {"North", "South"}
+
+    north = next(c for c in root.children if c.label == "North")
+    assert north.level == 1
+    assert {c.label for c in north.children} == {"North · A", "North · B"}
+    assert north.share == pytest.approx(0.6), "a parent's share is its children's"
+
+    assert len(list(walk(root))) == 6
+
+
+def test_every_level_adds_up_after_reconciliation() -> None:
+    root = build_tree(
+        [
+            _leaf("North", "A", [40.0, 40.0], 0.4),
+            _leaf("North", "B", [20.0, 20.0], 0.2),
+            _leaf("South", "A", [40.0, 40.0], 0.4),
+        ],
+        ["region", "sku"],
+    )
+    total = np.array([200.0, 240.0])
+
+    reconcile_tree(root, total)
+
+    assert np.allclose(root.reconciled, total)
+
+    regions = [c.reconciled for c in root.children]
+    assert np.allclose(bottom_up(regions), total), "regions must sum to the total"
+
+    leaves = [n.reconciled for n in walk(root) if n.is_leaf]
+    assert np.allclose(bottom_up(leaves), total), "leaves must sum to the total"
+
+    for parent in root.children:
+        children = [c.reconciled for c in parent.children]
+        assert np.allclose(bottom_up(children), parent.reconciled), f"{parent.label} does not close"
+
+
+def test_a_child_keeps_its_own_direction_inside_its_parent() -> None:
+    root = build_tree(
+        [
+            _leaf("North", "Rising", [10.0, 90.0], 0.25),
+            _leaf("North", "Falling", [90.0, 10.0], 0.25),
+            _leaf("South", "Flat", [50.0, 50.0], 0.5),
+        ],
+        ["region", "sku"],
+    )
+
+    reconcile_tree(root, np.array([200.0, 200.0]))
+
+    north = next(c for c in root.children if c.label == "North")
+    rising = next(c for c in north.children if c.label.endswith("Rising"))
+    falling = next(c for c in north.children if c.label.endswith("Falling"))
+
+    assert rising.reconciled[0] < rising.reconciled[1]
+    assert falling.reconciled[0] > falling.reconciled[1]
+
+
+def test_grouped_forecasting_measures_every_leaf_it_can() -> None:
+    from app.forecasting.engine import SegmentInput, forecast_grouped
+
+    history = periods(HISTORY)
+    t = np.arange(HISTORY)
+
+    leaves = []
+    for region, slope in (("North", 40.0), ("South", -30.0)):
+        for sku, base in (("A", 1200.0), ("B", 900.0)):
+            values = base + slope * t + 80 * np.sin(2 * np.pi * t / 12)
+            leaves.append(
+                SegmentInput(
+                    label=f"{region} · {sku}",
+                    current_total=float(np.sum(values[-12:])),
+                    prior_total=float(np.sum(values[-24:-12])),
+                    series=[float(v) for v in values[-12:]],
+                    periods=history,
+                    values=[float(v) for v in values],
+                    key={"region": region, "sku": sku},
+                )
+            )
+
+    total = np.asarray([sum(leaf.values[i] for leaf in leaves) for i in range(HISTORY)])
+    total_path = np.full(HORIZON, float(np.mean(total[-6:])))
+
+    results = forecast_grouped(leaves, ["region", "sku"], total_path, MONTHLY, HORIZON, None)
+
+    levels = {row.level for row in results}
+    assert levels == {0, 1, 2}, "total, regions and leaves must all be present"
+
+    leaf_rows = [row for row in results if row.level == 2]
+    assert len(leaf_rows) == 4
+    assert all(row.accuracy_measured for row in leaf_rows)
+    assert all(row.model is not None for row in leaf_rows)
+
+    # Each level closes on the same number.
+    root = next(row for row in results if row.level == 0)
+    assert sum(r.forecast_total for r in results if r.level == 1) == pytest.approx(
+        root.forecast_total, rel=1e-6
+    )
+    assert sum(r.forecast_total for r in leaf_rows) == pytest.approx(root.forecast_total, rel=1e-6)
+
+
+def test_a_leaf_that_cannot_be_validated_is_apportioned_and_says_so() -> None:
+    from app.forecasting.engine import SegmentInput, forecast_grouped
+    from app.models.enums import SeriesStatus
+
+    history = periods(HISTORY)
+    t = np.arange(HISTORY)
+    solid = 1000 + 20 * t
+
+    leaves = [
+        SegmentInput(
+            label="Established",
+            current_total=float(np.sum(solid[-12:])),
+            prior_total=float(np.sum(solid[-24:-12])),
+            series=[float(v) for v in solid[-12:]],
+            periods=history,
+            values=[float(v) for v in solid],
+            key={"sku": "Established"},
+        ),
+        SegmentInput(
+            label="Brand new",
+            current_total=300.0,
+            prior_total=None,
+            series=[100.0] * 3,
+            periods=history[-3:],
+            values=[100.0, 100.0, 100.0],
+            key={"sku": "Brand new"},
+        ),
+    ]
+
+    total_path = np.full(HORIZON, 1500.0)
+    results = forecast_grouped(leaves, ["sku"], total_path, MONTHLY, HORIZON, None)
+
+    new = next(row for row in results if row.label == "Brand new")
+    assert new.accuracy_measured is False
+    assert new.model is None
+    assert new.status is SeriesStatus.ESTIMATED
+    assert new.blocked_reason
+    assert new.forecast_total > 0, "an unvalidated leaf still gets a number"
+
+    root = next(row for row in results if row.level == 0)
+    assert sum(r.forecast_total for r in results if r.level == 1) == pytest.approx(
+        root.forecast_total, rel=1e-6
+    )
+
+
+def test_grouping_by_nothing_returns_nothing() -> None:
+    from app.forecasting.engine import forecast_grouped
+
+    assert forecast_grouped([], ["sku"], np.zeros(3), MONTHLY, 3, None) == []

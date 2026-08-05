@@ -270,3 +270,137 @@ def column_names(parquet_path: Path) -> list[str]:
     with connect() as connection:
         cursor = connection.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT 0")
         return [str(description[0]) for description in cursor.description or []]
+
+
+@dataclass(slots=True)
+class GroupedSeries:
+    """One combination of the grouping columns, on the run's shared calendar."""
+
+    key: dict[str, str]
+    label: str
+    periods: list[date]
+    values: list[float]
+    current_total: float
+    prior_total: float | None
+    pooled_from: int = 0
+
+
+DEFAULT_MAX_SERIES = 500
+SERIES_LABEL_SEPARATOR = " · "
+
+
+def aggregate_grouped(
+    parquet_path: Path,
+    time_column: str,
+    target_column: str,
+    group_columns: list[str],
+    frequency: ForecastFrequency,
+    *,
+    window_periods: int = 12,
+    max_series: int = DEFAULT_MAX_SERIES,
+    start: date | None = None,
+    end: date | None = None,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+) -> list[GroupedSeries]:
+    """
+    A series per combination of `group_columns`, reindexed onto one calendar.
+
+    Every series shares the same periods so their seasonality lines up and they
+    can be summed at any level. A combination that recorded nothing in a period
+    genuinely recorded nothing, so the hole is a zero rather than a gap.
+
+    Combinations beyond `max_series` are pooled into one `Others` series rather
+    than dropped: the total has to stay whole.
+    """
+    if not group_columns:
+        raise ValidationError("Grouped aggregation needs at least one grouping column.")
+
+    part = DATE_TRUNC_PART[frequency]
+    reducer = AGGREGATIONS[aggregation]
+    time_sql = _quote(time_column)
+    target_sql = _quote(target_column)
+    group_sql = [_quote(column) for column in group_columns]
+
+    where = [
+        f"TRY_CAST({time_sql} AS DATE) IS NOT NULL",
+        f"TRY_CAST({target_sql} AS DOUBLE) IS NOT NULL",
+    ]
+    params: list[Any] = []
+    if start is not None:
+        where.append(f"TRY_CAST({time_sql} AS DATE) >= ?")
+        params.append(start)
+    if end is not None:
+        where.append(f"TRY_CAST({time_sql} AS DATE) <= ?")
+        params.append(end)
+
+    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
+    select_keys = ", ".join(
+        f"COALESCE(CAST({column} AS VARCHAR), '(none)') AS k{index}"
+        for index, column in enumerate(group_sql)
+    )
+    group_keys = ", ".join(f"k{index}" for index in range(len(group_sql)))
+
+    sql = f"""
+        SELECT
+            {select_keys},
+            date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
+            {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
+        FROM {_source(parquet_path)}
+        WHERE {" AND ".join(where)}
+        GROUP BY {group_keys}, period
+        ORDER BY {group_keys}, period
+    """
+
+    with connect() as connection:
+        rows = connection.execute(sql, params).fetchall()
+
+    if not rows:
+        return []
+
+    depth = len(group_columns)
+    observed: dict[tuple[str, ...], dict[date, float]] = {}
+    for row in rows:
+        key = tuple(str(value) for value in row[:depth])
+        observed.setdefault(key, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
+
+    calendar = sorted({period for series in observed.values() for period in series})
+    current_window = calendar[-window_periods:]
+    prior_window = calendar[-2 * window_periods : -window_periods]
+
+    def build(key: tuple[str, ...], by_period: dict[date, float]) -> GroupedSeries:
+        values = [by_period.get(period, 0.0) for period in calendar]
+        return GroupedSeries(
+            key=dict(zip(group_columns, key, strict=True)),
+            label=SERIES_LABEL_SEPARATOR.join(key),
+            periods=list(calendar),
+            values=values,
+            current_total=sum(by_period.get(period, 0.0) for period in current_window),
+            prior_total=(
+                sum(by_period.get(period, 0.0) for period in prior_window) if prior_window else None
+            ),
+        )
+
+    series = [build(key, by_period) for key, by_period in observed.items()]
+    series.sort(key=lambda s: s.current_total, reverse=True)
+
+    if len(series) > max_series:
+        head, tail = series[: max_series - 1], series[max_series - 1 :]
+        pooled = [sum(column) for column in zip(*(s.values for s in tail), strict=True)]
+        head.append(
+            GroupedSeries(
+                key=dict.fromkeys(group_columns, "(others)"),
+                label="Others",
+                periods=list(calendar),
+                values=pooled,
+                current_total=sum(s.current_total for s in tail),
+                prior_total=(
+                    sum(s.prior_total or 0.0 for s in tail)
+                    if any(s.prior_total is not None for s in tail)
+                    else None
+                ),
+                pooled_from=len(tail),
+            )
+        )
+        series = head
+
+    return series

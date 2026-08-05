@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import zipfile
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -15,7 +16,7 @@ from app.datasets.ingest import (
     write_parquet,
 )
 from app.datasets.profiler import profile_frame
-from app.datasets.queries import aggregate_segments, aggregate_series
+from app.datasets.queries import aggregate_grouped, aggregate_segments, aggregate_series
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
 
@@ -287,3 +288,117 @@ def test_a_mostly_textual_column_is_not_coerced() -> None:
     frame = persist_upload(csv.encode(), "labels.csv", "coerce-labels").frame
 
     assert frame["label"].dtype == pl.Utf8
+
+
+def _panel_parquet(tmp_path, rows: list[tuple[str, str, str, float]]) -> Path:
+    frame = pl.DataFrame(
+        {
+            "period": [r[0] for r in rows],
+            "sku": [r[1] for r in rows],
+            "store": [r[2] for r in rows],
+            "units": [r[3] for r in rows],
+        }
+    )
+    path = tmp_path / "panel.parquet"
+    frame.write_parquet(path)
+    return path
+
+
+def test_grouped_aggregation_returns_one_series_per_combination(tmp_path) -> None:
+    rows = []
+    for month in range(1, 7):
+        for sku in ("A", "B"):
+            for store in ("North", "South"):
+                rows.append((f"2024-{month:02d}-01", sku, store, 10.0 * month))
+
+    path = _panel_parquet(tmp_path, rows)
+    series = aggregate_grouped(path, "period", "units", ["sku", "store"], ForecastFrequency.MONTHLY)
+
+    assert len(series) == 4
+    assert {s.label for s in series} == {"A · North", "A · South", "B · North", "B · South"}
+
+    one = series[0]
+    assert set(one.key) == {"sku", "store"}
+    assert len(one.periods) == 6
+    assert len(one.values) == 6
+
+
+def test_every_grouped_series_shares_one_calendar(tmp_path) -> None:
+    # B only trades in the last two months; its earlier periods must still exist.
+    rows = [("2024-01-01", "A", "N", 5.0), ("2024-02-01", "A", "N", 6.0)]
+    rows += [("2024-03-01", sku, "N", 7.0) for sku in ("A", "B")]
+    rows += [("2024-04-01", sku, "N", 8.0) for sku in ("A", "B")]
+
+    path = _panel_parquet(tmp_path, rows)
+    series = aggregate_grouped(path, "period", "units", ["sku"], ForecastFrequency.MONTHLY)
+
+    calendars = {tuple(s.periods) for s in series}
+    assert len(calendars) == 1, "series must line up period for period"
+
+    late = next(s for s in series if s.key["sku"] == "B")
+    assert late.values[:2] == [0.0, 0.0], "a period with no rows is a zero, not a gap"
+    assert len(late.values) == 4
+
+
+def test_grouped_totals_still_add_up_to_the_ungrouped_total(tmp_path) -> None:
+    rows = [
+        (f"2024-{month:02d}-01", sku, store, float(month * 3))
+        for month in range(1, 5)
+        for sku in ("A", "B")
+        for store in ("N", "S")
+    ]
+    path = _panel_parquet(tmp_path, rows)
+
+    grouped = aggregate_grouped(
+        path, "period", "units", ["sku", "store"], ForecastFrequency.MONTHLY
+    )
+    ungrouped = aggregate_series(path, "period", "units", ForecastFrequency.MONTHLY)
+
+    for index, period in enumerate(ungrouped.periods):
+        leaves = sum(s.values[index] for s in grouped)
+        assert leaves == pytest.approx(ungrouped.values[index]), f"{period} does not reconcile"
+
+
+def test_the_tail_is_pooled_rather_than_dropped(tmp_path) -> None:
+    rows = [
+        (f"2024-{month:02d}-01", f"SKU-{n:03d}", "N", float(100 - n))
+        for month in range(1, 4)
+        for n in range(20)
+    ]
+    path = _panel_parquet(tmp_path, rows)
+
+    series = aggregate_grouped(
+        path, "period", "units", ["sku"], ForecastFrequency.MONTHLY, max_series=5
+    )
+
+    assert len(series) == 5
+    others = series[-1]
+    assert others.label == "Others"
+    assert others.pooled_from == 16
+
+    ungrouped = aggregate_series(path, "period", "units", ForecastFrequency.MONTHLY)
+    for index in range(len(ungrouped.periods)):
+        assert sum(s.values[index] for s in series) == pytest.approx(ungrouped.values[index])
+
+
+def test_a_missing_group_value_becomes_a_named_bucket(tmp_path) -> None:
+    frame = pl.DataFrame(
+        {
+            "period": ["2024-01-01", "2024-02-01", "2024-01-01"],
+            "sku": ["A", "A", None],
+            "units": [1.0, 2.0, 3.0],
+        }
+    )
+    path = tmp_path / "nulls.parquet"
+    frame.write_parquet(path)
+
+    series = aggregate_grouped(path, "period", "units", ["sku"], ForecastFrequency.MONTHLY)
+
+    assert "(none)" in {s.key["sku"] for s in series}
+
+
+def test_grouping_by_nothing_is_refused(tmp_path) -> None:
+    path = _panel_parquet(tmp_path, [("2024-01-01", "A", "N", 1.0)])
+
+    with pytest.raises(ValidationError, match="at least one grouping column"):
+        aggregate_grouped(path, "period", "units", [], ForecastFrequency.MONTHLY)

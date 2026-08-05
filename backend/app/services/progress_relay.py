@@ -62,6 +62,46 @@ def publish_from_worker(event: ProgressEvent) -> None:
         logger.warning("Could not publish progress for run %s", event.run_id, exc_info=True)
 
 
+#: A run's series counter outlives the run only long enough to be read.
+_COUNTER_TTL = 3_600
+
+
+def _counter_key(run_id: uuid.UUID) -> str:
+    return f"{CHANNEL}:{run_id}:series"
+
+
+def count_series(run_id: uuid.UUID, done: int) -> int | None:
+    """
+    How many of a grouped run's series are finished, counted where every worker
+    can see it. A chunk task knows only its own leaves, so the running total
+    has to live outside the process.
+
+    Returns None when there is nowhere to count, in which case the caller
+    reports no number rather than a wrong one.
+    """
+    if not settings.progress_channel_url:
+        return None
+
+    try:
+        client = _client()
+        total = int(client.incrby(_counter_key(run_id), done))
+        client.expire(_counter_key(run_id), _COUNTER_TTL)
+        return total
+    except Exception:
+        logger.warning("Could not count series progress for run %s", run_id, exc_info=True)
+        return None
+
+
+def forget_series_count(run_id: uuid.UUID) -> None:
+    """Clears the counter so a re-run starts from zero rather than doubling up."""
+    if not settings.progress_channel_url:
+        return
+    try:
+        _client().delete(_counter_key(run_id))
+    except Exception:
+        logger.warning("Could not reset the series counter for run %s", run_id, exc_info=True)
+
+
 class ProgressRelay:
     """
     Bridges Redis pub/sub into the in-process bus, so an SSE stream served by

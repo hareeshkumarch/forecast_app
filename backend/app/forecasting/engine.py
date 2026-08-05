@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -12,7 +12,14 @@ from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
 from app.forecasting.frequency import future_periods
-from app.forecasting.hierarchy import coherence_gap, reconcile_to_total
+from app.forecasting.hierarchy import (
+    Node,
+    build_tree,
+    coherence_gap,
+    reconcile_to_total,
+    reconcile_tree,
+    walk,
+)
 from app.forecasting.metrics import accuracy_from_wmape
 from app.forecasting.models import (
     Forecaster,
@@ -23,7 +30,7 @@ from app.forecasting.models import (
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
-from app.models.enums import ForecastFrequency, ModelKind
+from app.models.enums import ForecastFrequency, ModelKind, SeriesStatus
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -45,6 +52,8 @@ class SegmentInput:
     series: list[float] = field(default_factory=list)
     periods: list[date] = field(default_factory=list)
     values: list[float] = field(default_factory=list)
+    #: The grouping columns that identify this leaf, when the run has a grain.
+    key: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -417,48 +426,121 @@ SEGMENT_CANDIDATES = (
 )
 
 
+TOO_LITTLE_HISTORY = "Too little history to validate a model."
+NO_CANDIDATE_HELD_UP = "No candidate model survived backtesting."
+FINAL_FIT_FAILED = "The winning model could not be fitted over the full history."
+
+
 @dataclass(slots=True)
-class _SegmentFit:
+class LeafFit:
+    """
+    One series' own model, or the reason it has none.
+
+    This is the unit of parallelism in a grouped run, so it has to survive a
+    trip through a message broker: everything on it is JSON, and a fit that did
+    not happen carries its reason rather than being absent.
+    """
+
     label: str
-    forecast: FloatArray
-    model: ModelKind | None
-    wmape: float
+    forecast: list[float] | None = None
+    model: ModelKind | None = None
+    wmape: float | None = None
+    folds: int = 0
+    blocked_reason: str | None = None
+
+    @property
+    def fitted(self) -> bool:
+        return self.forecast is not None
+
+    @property
+    def accuracy(self) -> float | None:
+        """The accuracy the measured error implies, or None if nothing was measured."""
+        if self.wmape is None:
+            return None
+        value = accuracy_from_wmape(self.wmape)
+        return round(float(value), 2) if np.isfinite(value) else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "forecast": self.forecast,
+            "model": self.model.value if self.model else None,
+            "wmape": self.wmape,
+            "folds": self.folds,
+            "blocked_reason": self.blocked_reason,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> LeafFit:
+        model = payload.get("model")
+        wmape = payload.get("wmape")
+        forecast = payload.get("forecast")
+        return cls(
+            label=str(payload["label"]),
+            forecast=[float(v) for v in forecast] if forecast is not None else None,
+            model=ModelKind(model) if model else None,
+            wmape=float(wmape) if wmape is not None else None,
+            folds=int(payload.get("folds") or 0),
+            blocked_reason=payload.get("blocked_reason"),
+        )
 
 
-def _forecast_one_segment(
-    segment: SegmentInput,
+def fit_leaf(
+    label: str,
+    periods: list[date],
+    values: list[float],
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
-) -> _SegmentFit | None:
+) -> LeafFit:
     """
     Runs the same select-and-backtest pipeline the top line gets, over a
-    cheaper roster. Returns None when the segment has too little history to
-    validate a model, which leaves it to be apportioned instead.
+    cheaper roster.
+
+    Takes a labelled history rather than a segment because that is all a fit
+    reads, and because in a grouped run this is what crosses the wire.
+
+    Never raises. A series that cannot be validated is apportioned from its
+    parent instead, and one unfittable series must not take the run with it.
     """
-    values = np.asarray(segment.values, dtype=float)
-    periods = list(segment.periods)
+    try:
+        return _fit_leaf(label, periods, values, frequency, horizon, max_folds)
+    except Exception as exc:
+        logger.warning("Series %s failed to fit: %s", label, exc)
+        return LeafFit(label=label, blocked_reason=f"{type(exc).__name__}: {exc}")
 
-    if values.size < 2 or values.size != len(periods) or not np.any(np.isfinite(values)):
-        return None
 
-    profile = profile_series(values, frequency)
+def _fit_leaf(
+    label: str,
+    periods: list[date],
+    values: list[float],
+    frequency: ForecastFrequency,
+    horizon: int,
+    max_folds: int | None,
+) -> LeafFit:
+    history = np.asarray(values, dtype=float)
+    calendar = list(periods)
+
+    if history.size < 2 or history.size != len(calendar) or not np.any(np.isfinite(history)):
+        return LeafFit(label=label, blocked_reason=TOO_LITTLE_HISTORY)
+
+    profile = profile_series(history, frequency)
     plan = plan_backtest(
-        values.size,
+        history.size,
         horizon,
         frequency,
         max_folds=max_folds,
         seasonal_period=profile.seasonal_period,
     )
-    if values.size < minimum_history(profile) or plan.n_folds == 0:
-        return None
+    if history.size < minimum_history(profile) or plan.n_folds == 0:
+        return LeafFit(label=label, blocked_reason=TOO_LITTLE_HISTORY)
 
     results = [
         run_backtest(
             _make_factory(kind, frequency, None),
             kind,
-            values,
-            periods,
+            history,
+            calendar,
             plan,
             frequency,
         )
@@ -468,32 +550,173 @@ def _forecast_one_segment(
     selection = select_model(
         results,
         metric_weights=metric_weights_for(profile.intermittent),
-        n_observations=int(values.size),
+        n_observations=int(history.size),
     )
     if selection.winner is None:
-        return None
+        return LeafFit(label=label, blocked_reason=NO_CANDIDATE_HELD_UP)
 
     kind = selection.winner.result.model
     try:
-        model = _make_factory(kind, frequency, None)(values, periods)
-        model.fit(values, periods)
+        model = _make_factory(kind, frequency, None)(history, calendar)
+        model.fit(history, calendar)
         forecast = np.asarray(
-            model.predict(horizon, future_periods(periods[-1], horizon, frequency)),
+            model.predict(horizon, future_periods(calendar[-1], horizon, frequency)),
             dtype=float,
         ).ravel()
     except Exception as exc:
-        logger.debug("Segment %s failed its final fit: %s", segment.label, exc)
-        return None
+        logger.debug("Series %s failed its final fit: %s", label, exc)
+        return LeafFit(label=label, blocked_reason=f"{FINAL_FIT_FAILED} ({exc})")
 
     if forecast.size != horizon or not np.all(np.isfinite(forecast)):
-        return None
+        return LeafFit(label=label, blocked_reason=FINAL_FIT_FAILED)
 
-    return _SegmentFit(
-        label=segment.label,
-        forecast=forecast,
+    winning = selection.winner.result
+    return LeafFit(
+        label=label,
+        forecast=[float(v) for v in forecast],
         model=kind,
-        wmape=selection.winner.result.wmape,
+        wmape=float(winning.wmape) if np.isfinite(winning.wmape) else None,
+        folds=winning.n_folds,
     )
+
+
+@dataclass(slots=True)
+class SeriesResult:
+    """One series in a grouped run, as the service needs to persist it."""
+
+    key: dict[str, str]
+    label: str
+    level: int
+    parent_label: str | None
+    forecast: list[float]
+    model: ModelKind | None
+    wmape: float | None
+    accuracy: float | None
+    accuracy_measured: bool
+    folds: int
+    forecast_total: float
+    prior_total: float | None
+    share: float | None
+    status: SeriesStatus
+    blocked_reason: str | None = None
+
+
+def forecast_grouped(
+    leaves: list[SegmentInput],
+    group_by: list[str],
+    total_path: FloatArray,
+    frequency: ForecastFrequency,
+    horizon: int,
+    max_folds: int | None,
+) -> list[SeriesResult]:
+    """
+    Fits every leaf here and assembles the tree from the results.
+
+    The sequential path, for a single-node deployment and for the tests. A run
+    with a broker fits the leaves in parallel and calls `assemble_grouped` with
+    what comes back — the assembly is identical either way.
+    """
+    if not leaves:
+        return []
+
+    fits = [
+        fit_leaf(leaf.label, leaf.periods, leaf.values, frequency, horizon, max_folds)
+        for leaf in leaves
+    ]
+    return assemble_grouped(leaves, fits, group_by, total_path)
+
+
+def assemble_grouped(
+    leaves: list[SegmentInput],
+    fits: list[LeafFit],
+    group_by: list[str],
+    total_path: FloatArray,
+) -> list[SeriesResult]:
+    """
+    Assembles the levels the grouping implies from fits already produced, and
+    reconciles the whole tree to the directly forecast total.
+
+    A leaf that could not be fitted keeps its place in the tree and is
+    apportioned instead, so the levels still add up and the row says where its
+    number came from.
+    """
+    if not leaves:
+        return []
+
+    grand_total = sum(leaf.current_total for leaf in leaves)
+    if grand_total <= 0:
+        return []
+
+    by_label = {leaf.label: leaf for leaf in leaves}
+    fitted = {fit.label: fit for fit in fits if fit.fitted}
+    blocked = {fit.label: fit.blocked_reason for fit in fits if not fit.fitted}
+
+    total = np.asarray(total_path, dtype=float)
+    root = build_tree(
+        [
+            (
+                leaf.key,
+                leaf.label,
+                np.asarray(fitted[leaf.label].forecast, dtype=float)
+                if leaf.label in fitted
+                else total * (leaf.current_total / grand_total),
+                leaf.current_total / grand_total,
+            )
+            for leaf in leaves
+        ],
+        group_by,
+    )
+    reconcile_tree(root, total)
+
+    total_sum = float(np.sum(total))
+    results: list[SeriesResult] = []
+
+    for node in walk(root):
+        path = node.reconciled if node.reconciled is not None else np.zeros(total.size)
+        value = float(np.sum(path))
+        source = by_label.get(node.label)
+        fit = fitted.get(node.label)
+
+        results.append(
+            SeriesResult(
+                key=node.key,
+                label=node.label,
+                level=node.level,
+                parent_label=None,
+                forecast=[float(v) for v in path],
+                model=fit.model if fit else None,
+                wmape=fit.wmape if fit else None,
+                accuracy=fit.accuracy if fit else None,
+                accuracy_measured=fit is not None,
+                folds=fit.folds if fit else 0,
+                forecast_total=round(value, 4),
+                prior_total=source.prior_total if source else None,
+                share=round(value / total_sum * 100.0, 2) if total_sum else None,
+                status=(
+                    SeriesStatus.ESTIMATED
+                    if node.is_leaf and node.label in blocked
+                    else SeriesStatus.FORECAST
+                ),
+                blocked_reason=blocked.get(node.label),
+            )
+        )
+
+    _attach_parents(root, results)
+    return results
+
+
+def _attach_parents(root: Node, results: list[SeriesResult]) -> None:
+    """Second pass: each result learns its parent's label, so the service can link rows."""
+    by_label = {result.label: result for result in results}
+
+    def visit(node: Node, parent_label: str | None) -> None:
+        row = by_label.get(node.label)
+        if row is not None:
+            row.parent_label = parent_label
+        for child in node.children:
+            visit(child, node.label)
+
+    visit(root, None)
 
 
 def _forecast_segments(
@@ -525,16 +748,15 @@ def _forecast_segments(
     total_forecast = float(np.sum(total_path))
     shares = [s.current_total / grand_total for s in segments]
 
-    fits = {
-        segment.label: fit
-        for segment in segments
-        if (fit := _forecast_one_segment(segment, frequency, horizon, max_folds)) is not None
-    }
+    attempted = [
+        fit_leaf(s.label, s.periods, s.values, frequency, horizon, max_folds) for s in segments
+    ]
+    fits = {fit.label: fit for fit in attempted if fit.fitted}
 
     # Reconciliation needs a path per segment: a real forecast where there is
     # one, the apportioned share everywhere else.
     paths = [
-        fits[segment.label].forecast
+        np.asarray(fits[segment.label].forecast, dtype=float)
         if segment.label in fits
         else np.asarray(total_path, dtype=float) * share
         for segment, share in zip(segments, shares, strict=True)
@@ -543,7 +765,7 @@ def _forecast_segments(
 
     if fits:
         gap = coherence_gap(
-            [fits[s.label].forecast for s in segments if s.label in fits],
+            [np.asarray(fit.forecast, dtype=float) for fit in fits.values()],
             np.asarray(total_path, dtype=float),
         )
         if gap > 0.25:
@@ -564,8 +786,7 @@ def _forecast_segments(
 
         fit = fits.get(segment.label)
         if fit is not None:
-            measured = accuracy_from_wmape(fit.wmape)
-            accuracy = round(float(measured), 2) if np.isfinite(measured) else None
+            accuracy = fit.accuracy
         else:
             accuracy = round(float(inherited), 2) if np.isfinite(inherited) else None
 
