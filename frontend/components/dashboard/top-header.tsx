@@ -1,6 +1,7 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   BookOpen,
   Menu,
@@ -68,29 +69,52 @@ export function TopHeader({ section }: { section: AppSection }) {
 
   return (
     <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-2 sm:gap-2.5 sm:px-5">
-      <button
-        type="button"
-        onClick={toggleNavigation}
-        aria-label={navigationLabel}
-        title={navigationLabel}
-        aria-expanded={isDesktop ? !sidebarCollapsed : false}
-        aria-controls="app-navigation"
-        className={cn(
-          "group flex min-h-11 items-center gap-2.5 rounded-input px-1 -mx-1",
-          "transition-colors duration-fast hover:bg-surface-muted sm:min-h-0 sm:py-1",
-        )}
-      >
-        <span
-          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent"
-          aria-hidden
-        >
-          <TrendingUp className="h-4 w-4 text-white transition-opacity duration-fast group-hover:opacity-0" />
-          <NavIcon className="absolute h-4 w-4 text-white opacity-0 transition-opacity duration-fast group-hover:opacity-100" />
-        </span>
-        <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
-          Forecast Hub
-        </span>
-      </button>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <button
+            type="button"
+            onClick={toggleNavigation}
+            aria-label={navigationLabel}
+            aria-expanded={isDesktop ? !sidebarCollapsed : false}
+            aria-controls="app-navigation"
+            className={cn(
+              "group -mx-1 flex min-h-11 items-center gap-2.5 rounded-input px-1",
+              "transition-colors duration-fast hover:bg-surface-muted sm:min-h-0 sm:py-1",
+            )}
+          >
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent"
+              aria-hidden
+            >
+              <TrendingUp className="h-4 w-4 text-white" />
+            </span>
+            <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
+              Forecast Hub
+            </span>
+            {/* The affordance is always on screen rather than waiting for a
+                hover the brand mark used to disappear under — and that no
+                touch device ever produces. */}
+            <NavIcon
+              className={cn(
+                "h-4 w-4 shrink-0 text-text-muted transition-colors duration-fast",
+                "group-hover:text-text-secondary",
+              )}
+              aria-hidden
+            />
+          </button>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            className="z-50 flex items-center gap-2 rounded-card border border-border bg-surface px-2.5 py-1.5 shadow-popover"
+          >
+            <span className="text-meta font-medium text-text-primary">{navigationLabel}</span>
+            {isDesktop ? <kbd className="kbd">[</kbd> : null}
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
 
       <span className="hidden h-5 w-px bg-border sm:block" aria-hidden />
       <span className="hidden truncate text-meta font-medium text-text-secondary sm:block">

@@ -1,5 +1,6 @@
 "use client";
 
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -48,7 +49,11 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <PreferencesBridge />
-      {children}
+      {/* App-wide, so anything can carry a tooltip — including the parts of the
+          sidebar that the mobile drawer renders outside the sidebar itself. */}
+      <Tooltip.Provider delayDuration={250} skipDelayDuration={80}>
+        {children}
+      </Tooltip.Provider>
     </QueryClientProvider>
   );
 }
