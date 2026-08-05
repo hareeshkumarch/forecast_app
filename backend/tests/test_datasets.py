@@ -402,3 +402,51 @@ def test_grouping_by_nothing_is_refused(tmp_path) -> None:
 
     with pytest.raises(ValidationError, match="at least one grouping column"):
         aggregate_grouped(path, "period", "units", [], ForecastFrequency.MONTHLY)
+
+
+@pytest.mark.parametrize(
+    ("values", "why"),
+    [
+        (["SKU-0093", "SKU-0057", "SKU-0036", "SKU-0001"], "a coded part number"),
+        (["W1", "W2", "W3", "W1"], "a one-letter warehouse code"),
+        (["E5", "E6", "E7", "E8"], "a code whose prefix looks like an exponent"),
+        (["A-1", "A-2", "B-1", "B-2"], "a hyphenated grid reference"),
+        (["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4"], "a fiscal quarter label"),
+    ],
+)
+def test_an_identifier_is_never_mistaken_for_a_number(values: list[str], why: str) -> None:
+    """
+    Stripping every non-digit as "decoration" read SKU-0093 as -93 and W1 as 1:
+    the identifier was destroyed, and the column was offered as a measure
+    rather than as something to break the forecast down by.
+    """
+    frame = pl.DataFrame({"period": ["2024-01-01"] * len(values), "code": values})
+
+    coerced = _coerce_formatted_numbers(frame)
+
+    assert coerced["code"].dtype == pl.Utf8, why
+    assert coerced["code"].to_list() == values, "and its values survive intact"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("$1,200", 1200.0),
+        ("€1.200,50".replace(".", "").replace(",", "."), 1200.50),
+        ("£950", 950.0),
+        ("¥12,000", 12000.0),
+        # Indian grouping, and a symbol no hand-written list would have had.
+        ("₹1,00,000", 100_000.0),
+        ("12.5%", 12.5),
+        ("(450)", -450.0),
+        ("1 350", 1350.0),
+        ("1.2e3", 1200.0),
+    ],
+)
+def test_a_decorated_number_is_still_a_number(text: str, expected: float) -> None:
+    frame = pl.DataFrame({"period": ["2024-01-01"] * 4, "amount": [text] * 4})
+
+    coerced = _coerce_formatted_numbers(frame)
+
+    assert coerced["amount"].dtype == pl.Float64
+    assert coerced["amount"][0] == pytest.approx(expected)

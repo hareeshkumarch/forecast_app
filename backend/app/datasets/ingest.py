@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -132,7 +134,24 @@ def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.rename(renames) if renames else frame
 
 
-NUMERIC_CLEAN_PATTERN = r"[^0-9eE+\-.]"
+def _currency_symbols() -> str:
+    """
+    Every character Unicode calls a currency symbol, escaped for a regex class.
+
+    Derived rather than listed: a hand-written set of $, €, £ silently fails
+    the first customer whose exports are in ₹ or ₦, and there is no reason to
+    make them find that out.
+    """
+    symbols = (chr(code) for code in range(0xFFFF) if unicodedata.category(chr(code)) == "Sc")
+    return "".join(re.escape(symbol) for symbol in symbols)
+
+
+#: Decoration a spreadsheet wraps a number in: thousands separators, spaces
+#: (including the non-breaking kind Excel emits), a percent sign, a currency
+#: symbol. Nothing else — stripping letters as well turned "SKU-0093" into the
+#: number -93 and "W1" into 1, destroying the identifier and hiding the column
+#: from the grain it should have been offered as.
+NUMERIC_DECORATION_PATTERN = rf"[\s,_%{_currency_symbols()}]"
 NUMERIC_COERCION_RATIO = 0.9
 NUMERIC_SAMPLE_ROWS = 500
 
@@ -158,7 +177,7 @@ def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
         text = sample.str.strip_chars()
         # Accounting negatives: (450) means -450.
         text = text.str.replace_all(r"^\((.*)\)$", "-${1}")
-        stripped = text.str.replace_all(NUMERIC_CLEAN_PATTERN, "")
+        stripped = text.str.replace_all(NUMERIC_DECORATION_PATTERN, "")
 
         parsed = stripped.cast(pl.Float64, strict=False)
         usable = parsed.drop_nulls().len()
@@ -175,7 +194,7 @@ def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
             pl.col(name)
             .str.strip_chars()
             .str.replace_all(r"^\((.*)\)$", "-${1}")
-            .str.replace_all(NUMERIC_CLEAN_PATTERN, "")
+            .str.replace_all(NUMERIC_DECORATION_PATTERN, "")
             .cast(pl.Float64, strict=False)
             .alias(name)
         )

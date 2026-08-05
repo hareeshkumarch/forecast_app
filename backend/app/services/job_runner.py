@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -78,7 +78,10 @@ class ProgressBus:
     def latest(self, run_id: uuid.UUID) -> ProgressEvent | None:
         return self._latest.get(run_id)
 
-    async def subscribe(self, run_id: uuid.UUID) -> AsyncIterator[ProgressEvent]:
+    # An AsyncGenerator, not merely an AsyncIterator: the SSE route closes the
+    # subscription when the client disconnects, and only a generator has
+    # `aclose` to close it with.
+    async def subscribe(self, run_id: uuid.UUID) -> AsyncGenerator[ProgressEvent, None]:
         queue: asyncio.Queue[ProgressEvent] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
         self._subscribers.setdefault(run_id, set()).add(queue)
 

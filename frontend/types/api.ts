@@ -427,6 +427,39 @@ export interface KpiCard {
   tone: "positive" | "negative" | "neutral";
 }
 
+export interface BreakdownRef {
+  /** The customer's own column name, e.g. "warehouse". */
+  column: string;
+  /** That name made readable, e.g. "Warehouse". */
+  label: string;
+  /** Where the numbers come from: the grouped tree, or a region/category slot. */
+  source: "series" | "region" | "category" | "";
+  /** How many distinct values it splits into — decides pie versus table. */
+  cardinality: number;
+}
+
+export interface BreakdownRow {
+  label: string;
+  forecast: number;
+  share: number;
+  prior: number | null;
+  change: number | null;
+  accuracy: number | null;
+  accuracy_measured: boolean;
+  /** Present once the run has been checked against real results. */
+  actual: number | null;
+}
+
+export interface BreakdownResponse {
+  run_id: string | null;
+  column: string;
+  label: string;
+  source: string;
+  currency: boolean;
+  total: number;
+  rows: BreakdownRow[];
+}
+
 export interface DashboardSummary {
   run_id: string | null;
   dataset_id: string | null;
@@ -437,6 +470,11 @@ export interface DashboardSummary {
   range_end: string | null;
   kpis: KpiCard[];
   has_data: boolean;
+  /**
+   * Which splits this run can offer, named after the customer's own columns.
+   * Empty for a dataset with no dimensions — a real answer, not a gap.
+   */
+  breakdowns: BreakdownRef[];
 }
 
 export interface RegionRow {

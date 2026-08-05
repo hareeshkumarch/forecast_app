@@ -54,6 +54,8 @@ export const queryKeys = {
   runScore: (id: string) => ["forecasts", id, "score"] as const,
   summary: (f: DashboardFilters) => ["dashboard", "summary", filterKey(f)] as const,
   regions: (f: DashboardFilters) => ["dashboard", "regions", filterKey(f)] as const,
+  breakdown: (f: DashboardFilters, column: string) =>
+    ["dashboard", "breakdown", column, filterKey(f)] as const,
   categories: (f: DashboardFilters) => ["dashboard", "categories", filterKey(f)] as const,
   drivers: (f: DashboardFilters) => ["dashboard", "drivers", filterKey(f)] as const,
   insights: (f: DashboardFilters) => ["dashboard", "insights", filterKey(f)] as const,
@@ -75,6 +77,19 @@ export function useSummary() {
   return useQuery({
     queryKey: queryKeys.summary(filters),
     queryFn: () => api.getSummary(filters),
+  });
+}
+
+/**
+ * One split of the forecast. Disabled until a column is known, because the
+ * available splits come from the summary and are not knowable up front.
+ */
+export function useBreakdown(column: string | null) {
+  const filters = useDashboardFilters();
+  return useQuery({
+    queryKey: queryKeys.breakdown(filters, column ?? "none"),
+    queryFn: () => api.getBreakdown(filters, column as string),
+    enabled: Boolean(column),
   });
 }
 

@@ -1,5 +1,6 @@
 import type {
   ApiErrorBody,
+  BreakdownResponse,
   CategoryResponse,
   Connector,
   ConnectorSchemaList,
@@ -304,6 +305,12 @@ export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/
 
 export const getSummary = (filters: DashboardFilters) =>
   request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`);
+
+/** The forecast split by one column this run actually has. */
+export const getBreakdown = (filters: DashboardFilters, column: string) =>
+  request<BreakdownResponse>(
+    `/api/dashboard/breakdown${buildQuery({ ...filterParams(filters), column })}`,
+  );
 
 export const getRegions = (filters: DashboardFilters) =>
   request<RegionResponse>(`/api/dashboard/regions${buildQuery(filterParams(filters))}`);

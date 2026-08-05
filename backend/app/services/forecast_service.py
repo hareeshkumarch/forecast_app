@@ -61,6 +61,7 @@ from app.services.job_runner import ProgressEvent, executors, publish_progress
 
 logger = get_logger(__name__)
 
+
 @dataclass(slots=True)
 class RunOverrides:
     max_folds: int | None = None
@@ -495,9 +496,7 @@ async def execute_run(run_id: uuid.UUID) -> RunStatus:
 
 
 async def _execute(run_id: uuid.UUID) -> RunStatus:
-    if not await checkpoint_progress(
-        run_id, 0.10, "aggregating", "Aggregating the series..."
-    ):
+    if not await checkpoint_progress(run_id, 0.10, "aggregating", "Aggregating the series..."):
         return RunStatus.FAILED
 
     async with session_scope() as session:
@@ -570,9 +569,7 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
     return RunStatus.COMPLETED if completed else RunStatus.FAILED
 
 
-async def checkpoint_progress(
-    run_id: uuid.UUID, progress: float, stage: str, message: str
-) -> bool:
+async def checkpoint_progress(run_id: uuid.UUID, progress: float, stage: str, message: str) -> bool:
     """Persists a coarse checkpoint so polling survives a Redis outage."""
     now = utcnow()
     values: dict[str, object] = {

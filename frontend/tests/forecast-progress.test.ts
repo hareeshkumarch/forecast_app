@@ -47,15 +47,23 @@ class FakeEventSource {
 }
 
 const getForecastRun = vi.fn();
+// The hook recovers progress over HTTP when the stream cannot be held open,
+// so the mock has to offer that call as well as the run itself.
+const getForecastProgress = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   forecastEventsUrl: (id: string) => `http://api.test/api/forecasts/${id}/events`,
   getForecastRun: (id: string) => getForecastRun(id),
+  getForecastProgress: (id: string) => getForecastProgress(id),
 }));
 
 beforeEach(() => {
   opened.length = 0;
   getForecastRun.mockReset();
+  getForecastProgress.mockReset();
+  // Recovery runs on mount in every test. Unless a test says otherwise it has
+  // nothing to recover, and a rejection is how the hook is told so.
+  getForecastProgress.mockRejectedValue(new Error("nothing to recover"));
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
@@ -122,13 +130,14 @@ describe("following a forecast", () => {
   });
 
   it("falls back to polling when the stream cannot be re-established", async () => {
-    getForecastRun.mockResolvedValue({
-      id: RUN_ID,
+    getForecastProgress.mockResolvedValue({
+      run_id: RUN_ID,
       status: "completed",
       progress: 1,
       stage: "complete",
+      message: null,
       selected_model: "theta",
-      error_message: null,
+      error: null,
     });
 
     const onComplete = vi.fn();
@@ -143,7 +152,7 @@ describe("following a forecast", () => {
       });
     }
 
-    await waitFor(() => expect(getForecastRun).toHaveBeenCalledWith(RUN_ID));
+    await waitFor(() => expect(getForecastProgress).toHaveBeenCalledWith(RUN_ID));
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     expect(onComplete.mock.calls[0]![0].selected_model).toBe("theta");
   });

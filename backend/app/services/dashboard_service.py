@@ -19,6 +19,9 @@ from app.models.entities import (
 )
 from app.models.enums import PointKind
 from app.schemas.dashboard import (
+    BreakdownRef,
+    BreakdownResponse,
+    BreakdownRowRead,
     CategoryResponse,
     CategoryRow,
     DashboardQuery,
@@ -31,7 +34,7 @@ from app.schemas.dashboard import (
     RegionResponse,
     RegionRow,
 )
-from app.services import forecast_service
+from app.services import breakdown_service, forecast_service
 
 VIEW_COLUMN: dict[str, str] = {
     "base": "forecast",
@@ -168,6 +171,15 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
         range_end=query.end or run.forecast_end,
         kpis=cards,
         has_data=True,
+        breakdowns=[
+            BreakdownRef(
+                column=ref.column,
+                label=ref.label,
+                source=ref.source,
+                cardinality=ref.cardinality,
+            )
+            for ref in await breakdown_service.available(session, run)
+        ],
     )
 
 
@@ -428,3 +440,35 @@ async def insights(
 
 def _is_currency(column: str) -> bool:
     return is_currency_like(column)
+
+
+async def breakdown(session: AsyncSession, query: DashboardQuery, column: str) -> BreakdownResponse:
+    """One split of the forecast, by a column this run actually has."""
+    run = await forecast_service.resolve_run(session, query.run_id)
+    if run is None:
+        return BreakdownResponse(
+            run_id=None, column=column, label=column, source="", currency=False, total=0.0
+        )
+
+    built = await breakdown_service.build(session, run, column)
+    return BreakdownResponse(
+        run_id=run.id,
+        column=built.column,
+        label=built.label,
+        source=built.source,
+        currency=built.currency,
+        total=built.total,
+        rows=[
+            BreakdownRowRead(
+                label=row.label,
+                forecast=row.forecast,
+                share=row.share,
+                prior=row.prior,
+                change=row.change,
+                accuracy=row.accuracy,
+                accuracy_measured=row.accuracy_measured,
+                actual=row.actual,
+            )
+            for row in built.rows
+        ],
+    )
