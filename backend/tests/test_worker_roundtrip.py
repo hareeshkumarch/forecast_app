@@ -91,7 +91,9 @@ async def _seed_dataset() -> uuid.UUID:
         return dataset.id
 
 
-async def _dispatch_and_follow(dataset_id: uuid.UUID) -> tuple[object, list[dict]]:
+async def _dispatch_and_follow(
+    dataset_id: uuid.UUID, **options: object
+) -> tuple[object, list[dict]]:
     import redis.asyncio as aioredis
 
     from app.core.config import settings
@@ -110,7 +112,7 @@ async def _dispatch_and_follow(dataset_id: uuid.UUID) -> tuple[object, list[dict
             name="worker round trip",
             max_folds=2,
             horizon=3,
-            llm_api_key="sk-must-not-be-stored-in-the-clear",
+            **options,  # type: ignore[arg-type]
         )
         run_id = run.id
         await session.commit()
@@ -144,7 +146,9 @@ def test_a_run_dispatched_to_a_worker_completes(worker: subprocess.Popen[bytes])
 
     async def main() -> None:
         dataset_id = await _seed_dataset()
-        run, frames = await _dispatch_and_follow(dataset_id)
+        run, frames = await _dispatch_and_follow(
+            dataset_id, llm_api_key="sk-must-not-be-stored-in-the-clear"
+        )
 
         assert run.status is RunStatus.COMPLETED, run.error_message
         assert run.selected_model is not None, "a completed run must name its winner"
@@ -167,5 +171,67 @@ def test_a_run_dispatched_to_a_worker_completes(worker: subprocess.Popen[bytes])
         overrides = RunOverrides.from_stored(run.options)
         assert overrides.max_folds == 2
         assert overrides.llm_api_key == "sk-must-not-be-stored-in-the-clear"
+
+    asyncio.run(main())
+
+
+def test_a_grouped_run_fans_out_and_a_chord_closes_it(worker: subprocess.Popen[bytes]) -> None:
+    """
+    The fan-out only really exists once a broker carries it.
+
+    A chord's callback runs on a different worker from the tasks it collects,
+    so this is the only place that proves the chunks serialise, the callback
+    fires, and something other than the process that started the run is what
+    marks it complete.
+    """
+    from sqlalchemy import select
+
+    from app.database.session import session_scope
+    from app.models.entities import ForecastSeries
+    from app.models.enums import RunStatus
+    from app.services import forecast_service
+
+    grain = ["region", "product_category"]
+
+    async def main() -> None:
+        dataset_id = await _seed_dataset()
+        run, frames = await _dispatch_and_follow(dataset_id, group_by=grain)
+
+        assert run.status is RunStatus.COMPLETED, run.error_message
+        assert run.group_by == grain
+
+        stages = [frame["stage"] for frame in frames]
+        assert "fitting_series" in stages, stages
+        assert stages[-1] == "complete"
+
+        # Progress from the chunk tasks reached the stream through Redis, and
+        # the bar never rewound as the fan-out overtook the top line.
+        progress = [frame["progress"] for frame in frames]
+        assert progress == sorted(progress), stages
+
+        async with session_scope() as session:
+            rows = list(
+                (
+                    await session.execute(
+                        select(ForecastSeries).where(ForecastSeries.run_id == run.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            stored = await forecast_service.get_run(session, run.id)
+
+        assert {row.level for row in rows} == {0, 1, 2}
+        assert len([row for row in rows if row.level == 2]) == 25
+        assert stored.series_count == len(rows)
+
+        root = next(row for row in rows if row.level == 0)
+        leaves = sum(row.forecast_total for row in rows if row.level == 2)
+        assert leaves == pytest.approx(root.forecast_total, rel=1e-6)
+
+        # Nothing was silently lost on the way through the broker.
+        assert all(row.blocked_reason is None for row in rows), [
+            (row.label, row.blocked_reason) for row in rows if row.blocked_reason
+        ]
 
     asyncio.run(main())
