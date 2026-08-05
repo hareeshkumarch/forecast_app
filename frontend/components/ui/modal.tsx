@@ -10,12 +10,14 @@ import { cn } from "@/lib/utils";
  * Widths are ceilings, not fixed sizes: every dialog shrinks to the viewport
  * with a gutter, so nothing overflows on a phone.
  */
-export type ModalSize = "sm" | "md" | "lg";
+export type ModalSize = "sm" | "md" | "lg" | "xl";
 
 const SIZES: Record<ModalSize, string> = {
   sm: "sm:max-w-[480px]",
   md: "sm:max-w-[600px]",
   lg: "sm:max-w-[680px]",
+  // A chart and its table side by side need more than a form does.
+  xl: "sm:max-w-[900px]",
 };
 
 export function Modal({

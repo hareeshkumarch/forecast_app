@@ -328,7 +328,10 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         # Redis. Without this, the first late frame after an API restart could
         # move a recovered progress bar backwards.
         progress_bus.publish(initial)
-        subscription = progress_bus.subscribe(run_id).__aiter__()
+        # No `.__aiter__()`: an async generator is already its own iterator,
+        # and asking for the iterator erases the generator type that `aclose`
+        # below depends on.
+        subscription = progress_bus.subscribe(run_id)
         next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
             subscription.__anext__()
         )
@@ -398,9 +401,7 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
     if stored is not None:
         candidates.append(stored)
     terminal = [
-        event
-        for event in candidates
-        if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
+        event for event in candidates if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
     ]
     if terminal:
         # Completion and failure are authoritative even if two hosts differ by

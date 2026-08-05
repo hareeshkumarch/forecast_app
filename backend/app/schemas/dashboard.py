@@ -3,10 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import InsightSeverity, InsightType, ModelKind
-from app.schemas.common import ORMModel
+from app.schemas.common import NonNegativeInt, ORMModel
 
 
 class KpiCard(BaseModel):
@@ -23,6 +23,42 @@ class KpiCard(BaseModel):
     tone: str = "neutral"
 
 
+class BreakdownRef(BaseModel):
+    """One way this run's forecast can be split, named as the customer named it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    label: str
+    source: str
+    cardinality: NonNegativeInt
+
+
+class BreakdownRowRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    forecast: float
+    share: float
+    prior: float | None
+    change: float | None
+    accuracy: float | None
+    accuracy_measured: bool
+    actual: float | None
+
+
+class BreakdownResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID | None
+    column: str
+    label: str
+    source: str
+    currency: bool
+    total: float
+    rows: list[BreakdownRowRead] = Field(default_factory=list)
+
+
 class DashboardSummary(BaseModel):
     run_id: uuid.UUID | None
     dataset_id: uuid.UUID | None
@@ -33,6 +69,9 @@ class DashboardSummary(BaseModel):
     range_end: date | None
     kpis: list[KpiCard] = Field(default_factory=list)
     has_data: bool = False
+    #: Which splits this run can offer. Empty for a dataset with no dimensions,
+    #: which is a real answer and not a gap to paper over with blank panels.
+    breakdowns: list[BreakdownRef] = Field(default_factory=list)
 
 
 class RegionRow(ORMModel):

@@ -3,13 +3,12 @@
 
 import { ChevronRight, Plus, Upload } from "lucide-react";
 
-import { ForecastByCategory } from "@/components/charts/forecast-by-category";
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
+import { BreakdownPanel } from "@/components/dashboard/breakdown-panel";
 import { DriverTable } from "@/components/dashboard/driver-table";
 import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { ModelHealthStrip } from "@/components/dashboard/model-health-strip";
-import { RegionTable } from "@/components/dashboard/region-table";
 import { Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useSummary } from "@/hooks/use-dashboard";
 import { humanizeModel } from "@/lib/format";
@@ -24,6 +23,7 @@ export function Workspace() {
   // flash the guide at someone who has fifty runs, and must not shimmer a
   // whole dashboard at someone who is about to be shown the guide instead.
   const firstRun = isSuccess && !summary.has_data;
+  const breakdowns = summary?.breakdowns ?? [];
 
   return (
     <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
@@ -118,15 +118,34 @@ export function Workspace() {
 
           <ModelHealthStrip />
 
+          {/*
+            * The panels come from the data, not from a fixture. A dataset with
+            * no dimensions gets the forecast and its drivers and no empty
+            * cards asking about regions it has never had; one with three gets
+            * three splits, each titled with the customer's own column name.
+            */}
           <div className="grid-charts mt-3">
             <ForecastVsActual />
-            <ForecastByCategory />
+            {breakdowns[0] ? (
+              <BreakdownPanel key={breakdowns[0].column} breakdown={breakdowns[0]} />
+            ) : (
+              <DriverTable />
+            )}
           </div>
 
-          <div className="grid-panels mt-3">
-            <RegionTable />
-            <DriverTable />
-          </div>
+          {breakdowns.length > 1 ? (
+            <div className="grid-panels mt-3">
+              {breakdowns.slice(1).map((breakdown) => (
+                <BreakdownPanel key={breakdown.column} breakdown={breakdown} />
+              ))}
+            </div>
+          ) : null}
+
+          {breakdowns.length > 0 ? (
+            <div className="grid-panels mt-3">
+              <DriverTable />
+            </div>
+          ) : null}
         </div>
       )}
     </main>

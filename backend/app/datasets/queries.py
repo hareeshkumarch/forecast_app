@@ -453,14 +453,11 @@ def aggregate_grouped(
         for index, column in enumerate(group_sql)
     )
     group_keys = ", ".join(f"k{index}" for index in range(len(group_sql)))
-    qualified_keys = ", ".join(
-        f"values_by_period.k{index}" for index in range(len(group_sql))
-    )
+    qualified_keys = ", ".join(f"values_by_period.k{index}" for index in range(len(group_sql)))
     rank_order = ", ".join(f"k{index}" for index in range(len(group_sql)))
     keep_count = max_series - 1
     pooled_condition = (
-        f"ranked_keys.series_total > {max_series} "
-        f"AND ranked_keys.series_rank > {keep_count}"
+        f"ranked_keys.series_total > {max_series} " f"AND ranked_keys.series_rank > {keep_count}"
     )
     bounded_keys = ",\n            ".join(
         f"CASE WHEN {pooled_condition} THEN '{POOLED_KEY}' "
@@ -555,9 +552,7 @@ def aggregate_grouped(
     current_window = calendar[-window:]
     prior_window = calendar[-2 * window : -window]
 
-    def build(
-        bucket: tuple[tuple[str, ...], bool], by_period: dict[date, float]
-    ) -> GroupedSeries:
+    def build(bucket: tuple[tuple[str, ...], bool], by_period: dict[date, float]) -> GroupedSeries:
         key, pooled = bucket
         values = [by_period.get(period, 0.0) for period in calendar]
         return GroupedSeries(
