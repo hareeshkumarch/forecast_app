@@ -36,6 +36,12 @@ FloatArray = npt.NDArray[np.float64]
 
 logger = get_logger(__name__)
 
+#: A forecast period can carry a rescaled band when its own level is a
+#: meaningful fraction of the largest the series reaches. Judged against the
+#: series rather than against a fixed number, because an absolute floor means
+#: one thing for revenue in millions and quite another for a conversion rate.
+SCALABLE_FRACTION = 1e-6
+
 
 @dataclass(slots=True)
 class SeriesInput:
@@ -294,10 +300,22 @@ def run_forecast(payload: ForecastInput) -> ForecastOutput:
     )
 
     regions = _forecast_segments(
-        payload.regions, point_forecast, winner_result, frequency, horizon, payload.max_folds
+        payload.regions,
+        point_forecast,
+        winner_result,
+        frequency,
+        horizon,
+        payload.max_folds,
+        payload.confidence_level,
     )
     categories = _forecast_segments(
-        payload.categories, point_forecast, winner_result, frequency, horizon, payload.max_folds
+        payload.categories,
+        point_forecast,
+        winner_result,
+        frequency,
+        horizon,
+        payload.max_folds,
+        payload.confidence_level,
     )
 
     return ForecastOutput(
@@ -443,6 +461,11 @@ class LeafFit:
 
     label: str
     forecast: list[float] | None = None
+    #: This series' own prediction interval, from its own backtest residuals.
+    #: Absent when nothing could be measured — an inherited band would claim a
+    #: precision this series never demonstrated.
+    lower: list[float] | None = None
+    upper: list[float] | None = None
     model: ModelKind | None = None
     wmape: float | None = None
     folds: int = 0
@@ -451,6 +474,10 @@ class LeafFit:
     @property
     def fitted(self) -> bool:
         return self.forecast is not None
+
+    @property
+    def banded(self) -> bool:
+        return self.lower is not None and self.upper is not None
 
     @property
     def accuracy(self) -> float | None:
@@ -464,6 +491,8 @@ class LeafFit:
         return {
             "label": self.label,
             "forecast": self.forecast,
+            "lower": self.lower,
+            "upper": self.upper,
             "model": self.model.value if self.model else None,
             "wmape": self.wmape,
             "folds": self.folds,
@@ -474,10 +503,16 @@ class LeafFit:
     def from_dict(cls, payload: dict[str, Any]) -> LeafFit:
         model = payload.get("model")
         wmape = payload.get("wmape")
-        forecast = payload.get("forecast")
+
+        def path(key: str) -> list[float] | None:
+            value = payload.get(key)
+            return [float(v) for v in value] if value is not None else None
+
         return cls(
             label=str(payload["label"]),
-            forecast=[float(v) for v in forecast] if forecast is not None else None,
+            forecast=path("forecast"),
+            lower=path("lower"),
+            upper=path("upper"),
             model=ModelKind(model) if model else None,
             wmape=float(wmape) if wmape is not None else None,
             folds=int(payload.get("folds") or 0),
@@ -492,6 +527,7 @@ def fit_leaf(
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
+    confidence_level: float,
 ) -> LeafFit:
     """
     Runs the same select-and-backtest pipeline the top line gets, over a
@@ -504,7 +540,7 @@ def fit_leaf(
     parent instead, and one unfittable series must not take the run with it.
     """
     try:
-        return _fit_leaf(label, periods, values, frequency, horizon, max_folds)
+        return _fit_leaf(label, periods, values, frequency, horizon, max_folds, confidence_level)
     except Exception as exc:
         logger.warning("Series %s failed to fit: %s", label, exc)
         return LeafFit(label=label, blocked_reason=f"{type(exc).__name__}: {exc}")
@@ -517,6 +553,7 @@ def _fit_leaf(
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
+    confidence_level: float,
 ) -> LeafFit:
     history = np.asarray(values, dtype=float)
     calendar = list(periods)
@@ -571,9 +608,23 @@ def _fit_leaf(
         return LeafFit(label=label, blocked_reason=FINAL_FIT_FAILED)
 
     winning = selection.winner.result
+
+    # The same interval machinery the top line uses, on this series' own
+    # residuals. A series never fitted gets no band at all rather than an
+    # inherited one, which would claim a precision it never demonstrated.
+    bands = build_intervals(
+        forecast,
+        winning,
+        confidence_level,
+        history=history,
+        non_negative=bool(np.all(history >= 0)),
+    )
+
     return LeafFit(
         label=label,
         forecast=[float(v) for v in forecast],
+        lower=[float(v) for v in bands.lower],
+        upper=[float(v) for v in bands.upper],
         model=kind,
         wmape=float(winning.wmape) if np.isfinite(winning.wmape) else None,
         folds=winning.n_folds,
@@ -595,6 +646,11 @@ class SeriesResult:
     accuracy_measured: bool
     folds: int
     forecast_total: float
+    #: Reconciled alongside the point forecast, so the band keeps the width its
+    #: own backtest earned rather than the one it had before scaling. Empty
+    #: where the series was apportioned and never measured.
+    lower: list[float]
+    upper: list[float]
     #: This series' own actuals over the shared calendar. Without them a chart
     #: scoped to one series shows a horizon floating on nothing.
     history: list[float]
@@ -615,6 +671,7 @@ def forecast_grouped(
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
+    confidence_level: float = 0.8,
 ) -> list[SeriesResult]:
     """
     Fits every leaf here and assembles the tree from the results.
@@ -627,7 +684,9 @@ def forecast_grouped(
         return []
 
     fits = [
-        fit_leaf(leaf.label, leaf.periods, leaf.values, frequency, horizon, max_folds)
+        fit_leaf(
+            leaf.label, leaf.periods, leaf.values, frequency, horizon, max_folds, confidence_level
+        )
         for leaf in leaves
     ]
     return assemble_grouped(leaves, fits, group_by, total_path)
@@ -692,6 +751,8 @@ def assemble_grouped(
                 level=node.level,
                 parent_label=None,
                 forecast=[float(v) for v in path],
+                lower=_rescale_band(fit.lower, fit.forecast, path) if fit and fit.banded else [],
+                upper=_rescale_band(fit.upper, fit.forecast, path) if fit and fit.banded else [],
                 model=fit.model if fit else None,
                 wmape=fit.wmape if fit else None,
                 accuracy=fit.accuracy if fit else None,
@@ -722,6 +783,44 @@ class _Actuals:
     current: float
     prior: float | None
     history: FloatArray
+
+
+def _rescale_band(
+    bound: list[float] | None,
+    fitted: list[float] | None,
+    reconciled: FloatArray,
+) -> list[float]:
+    """
+    Moves a band onto the reconciled path it now belongs to.
+
+    Reconciliation multiplies a series' level, so a band left at its original
+    height would sit beside the line instead of around it. The relative width
+    is what the backtest actually measured, so that is what is preserved.
+
+    A period the model forecast as zero has no ratio to scale by — there the
+    offset is carried across unchanged, which is the only reading that does
+    not either vanish or explode.
+    """
+    if bound is None or fitted is None:
+        return []
+
+    band = np.asarray(bound, dtype=float)
+    point = np.asarray(fitted, dtype=float)
+    target = np.asarray(reconciled, dtype=float)
+
+    if band.size != point.size or point.size != target.size:
+        return []
+
+    reference = float(np.max(np.abs(point))) if point.size else 0.0
+    if reference <= 0.0:
+        # The model forecast nothing at all; a band around it would be invented.
+        return []
+
+    usable = np.abs(point) > reference * SCALABLE_FRACTION
+    scale = np.where(usable, np.divide(target, np.where(usable, point, 1.0)), 1.0)
+    offset = (band - point) * scale
+
+    return [float(v) for v in target + offset]
 
 
 def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _Actuals]:
@@ -791,6 +890,7 @@ def _forecast_segments(
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
+    confidence_level: float,
 ) -> list[SegmentOutput]:
     """
     Forecasts every segment in its own right, then reconciles the results to
@@ -814,7 +914,8 @@ def _forecast_segments(
     shares = [s.current_total / grand_total for s in segments]
 
     attempted = [
-        fit_leaf(s.label, s.periods, s.values, frequency, horizon, max_folds) for s in segments
+        fit_leaf(s.label, s.periods, s.values, frequency, horizon, max_folds, confidence_level)
+        for s in segments
     ]
     fits = {fit.label: fit for fit in attempted if fit.fitted}
 

@@ -31,18 +31,16 @@ from reportlab.platypus import (
 from app.database.base import utcnow
 from app.datasets.profiler import is_currency_like
 from app.models.entities import ForecastRun
+from app.reporting.charts import ForecastChart, RiskChart
+from app.reporting.palette import ACCENT, BAND, FAINT, INK, MUTED, RULE
 
 #: Matches `exporter.TOP_LINE` — a point that belongs to the run, not a series.
 TOP_LINE = "Total"
 
-# The product's own palette, so a printed report and the screen it came from
-# are recognisably the same thing.
-INK = colors.HexColor("#111826")
-MUTED = colors.HexColor("#586274")
-FAINT = colors.HexColor("#8a93a3")
-ACCENT = colors.HexColor("#2c5fa8")
-RULE = colors.HexColor("#e0e6f0")
-BAND = colors.HexColor("#f6f8fb")
+#: Bars in the risk chart. Past this the picture stops being scannable and the
+#: table underneath is the better way to read the tail.
+RISK_BARS = 12
+CHART_HEIGHT = 52 * mm
 
 MARGIN = 16 * mm
 
@@ -192,6 +190,12 @@ def build(
             style["subtitle"],
         )
     )
+
+    # The shape of the thing, before any of the numbers describing it.
+    chart = _forecast_chart(rows, width, currency)
+    if chart is not None:
+        story.append(chart)
+        story.append(Spacer(1, 4))
 
     # ---- how it was made
     story.append(Paragraph("HOW THIS FORECAST WAS MADE", style["section"]))
@@ -358,7 +362,18 @@ def build(
                         "error was apportioned from its parent rather than fitted.",
                         style["body"],
                     ),
-                    Spacer(1, 5),
+                    Spacer(1, 6),
+                    RiskChart(
+                        rows=[
+                            (str(row.get("series", "")), float(row.get("value_at_risk") or 0.0))
+                            for row in shown
+                            if row.get("value_at_risk")
+                        ][:RISK_BARS],
+                        width=width,
+                        height=min(len(shown), RISK_BARS) * 6 * mm,
+                        currency=currency,
+                    ),
+                    Spacer(1, 8),
                     _table(
                         ["Series", "Forecast", "Error", "At risk"],
                         [
@@ -425,6 +440,48 @@ def build(
         _chrome(canvas, doc, run.name)
 
     document.build(story, onFirstPage=decorate, onLaterPages=decorate)
+
+
+def _forecast_chart(
+    rows: list[dict[str, Any]], width: float, currency: bool
+) -> ForecastChart | None:
+    """
+    The run's own history and horizon. Returns None where there is nothing to
+    draw — a run with no history yet would otherwise render an empty frame.
+    """
+    top_line = [row for row in rows if row.get("series", TOP_LINE) == TOP_LINE]
+
+    history = [
+        (date.fromisoformat(str(row["period"])), float(row["actual"]))
+        for row in top_line
+        if row.get("kind") == "actual" and row.get("actual") is not None
+    ]
+    horizon = [
+        (date.fromisoformat(str(row["period"])), float(row["forecast"]))
+        for row in top_line
+        if row.get("kind") == "forecast" and row.get("forecast") is not None
+    ]
+    if len(history) + len(horizon) < 2:
+        return None
+
+    bounds = [
+        (row.get("lower_bound"), row.get("upper_bound"))
+        for row in top_line
+        if row.get("kind") == "forecast"
+    ]
+    lower = [float(low) for low, _ in bounds if low is not None]
+    upper = [float(high) for _, high in bounds if high is not None]
+    complete = len(lower) == len(upper) == len(horizon)
+
+    return ForecastChart(
+        history=history,
+        forecast=horizon,
+        lower=lower if complete else [],
+        upper=upper if complete else [],
+        width=width,
+        height=CHART_HEIGHT,
+        currency=currency,
+    )
 
 
 def _humanise(value: str | None) -> str:

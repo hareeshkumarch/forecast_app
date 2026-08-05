@@ -63,6 +63,7 @@ class GroupedPlan:
     frequency: ForecastFrequency
     horizon: int
     max_folds: int | None
+    confidence_level: float
     total_path: list[float]
     forecast_periods: list[date]
 
@@ -91,6 +92,7 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
 
         periods, total_path = await _stored_total(session, run_id)
         frequency, horizon = run.frequency, run.horizon
+        confidence_level = run.confidence_level
         time_column, target_column = run.time_column, run.target_column
         aggregation = run.aggregation
 
@@ -110,6 +112,7 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
         frequency=frequency,
         horizon=horizon,
         max_folds=overrides.max_folds,
+        confidence_level=confidence_level,
         total_path=total_path,
         forecast_periods=periods,
     )
@@ -205,6 +208,7 @@ async def _fit_here(run_id: uuid.UUID, plan: GroupedPlan) -> list[LeafFit]:
             plan.frequency,
             plan.horizon,
             plan.max_folds,
+            plan.confidence_level,
         )
         for chunk in chunks
     ]
@@ -223,6 +227,7 @@ def fit_chunk(
     frequency: ForecastFrequency,
     horizon: int,
     max_folds: int | None,
+    confidence_level: float,
 ) -> list[dict[str, Any]]:
     """
     Fits a chunk of leaves. Runs in a pool worker or a Celery task, so it takes
@@ -236,6 +241,7 @@ def fit_chunk(
             frequency,
             horizon,
             max_folds,
+            confidence_level,
         ).to_dict()
         for payload in payloads
     ]
@@ -289,6 +295,7 @@ def _chunk_job(run_id: uuid.UUID, plan: GroupedPlan, chunk: list[SegmentInput]) 
         "frequency": plan.frequency.value,
         "horizon": plan.horizon,
         "max_folds": plan.max_folds,
+        "confidence_level": plan.confidence_level,
         "series_total": len(plan.leaves),
         "leaves": [_payload(leaf) for leaf in chunk],
     }
@@ -309,6 +316,7 @@ def run_chunk_job(job: dict[str, Any]) -> list[dict[str, Any]]:
         ForecastFrequency(job["frequency"]),
         int(job["horizon"]),
         job.get("max_folds"),
+        float(job["confidence_level"]),
     )
 
     total = int(job.get("series_total") or 0)
@@ -431,10 +439,14 @@ async def persist(
                 series_id=rows[result.label].id,
                 period=period,
                 kind=PointKind.FORECAST,
-                forecast=value,
+                forecast=point,
+                # Empty where the series was apportioned rather than fitted, so
+                # a chart draws no band instead of inventing one.
+                lower_bound=low,
+                upper_bound=high,
             )
             for result in below_root
-            for period, value in zip(periods, result.forecast, strict=False)
+            for period, point, low, high in _banded(periods, result)
         ]
     )
 
@@ -515,6 +527,23 @@ async def list_series(
     )
 
     return list(result.scalars().all()), int(total or 0)
+
+
+def _banded(
+    periods: list[date],
+    result: SeriesResult,
+) -> list[tuple[date, float, float | None, float | None]]:
+    """Pairs each forecast period with its bounds, or with none where there are none."""
+    banded = len(result.lower) == len(result.forecast) == len(result.upper)
+    return [
+        (
+            period,
+            point,
+            result.lower[index] if banded else None,
+            result.upper[index] if banded else None,
+        )
+        for index, (period, point) in enumerate(zip(periods, result.forecast, strict=False))
+    ]
 
 
 def _publish_fitting(run_id: uuid.UUID, done: int, total: int) -> None:

@@ -356,3 +356,73 @@ def test_grouping_by_nothing_returns_nothing() -> None:
     from app.forecasting.engine import forecast_grouped
 
     assert forecast_grouped([], ["sku"], np.zeros(3), MONTHLY, 3, None) == []
+
+
+def test_a_series_carries_a_band_its_own_backtest_earned() -> None:
+    from app.forecasting.engine import SegmentInput, forecast_grouped
+
+    history = periods(HISTORY)
+    t = np.arange(HISTORY)
+
+    leaves = [
+        SegmentInput(
+            label=f"{region} · A",
+            current_total=float(np.sum((base + 30 * t)[-12:])),
+            prior_total=float(np.sum((base + 30 * t)[-24:-12])),
+            series=[float(v) for v in (base + 30 * t)[-12:]],
+            periods=history,
+            values=[float(v) for v in base + 30 * t + 60 * np.sin(2 * np.pi * t / 12)],
+            key={"region": region},
+        )
+        for region, base in (("North", 1200.0), ("South", 800.0))
+    ]
+
+    total_path = np.full(HORIZON, 4000.0)
+    results = forecast_grouped(leaves, ["region"], total_path, MONTHLY, HORIZON, None, 0.8)
+
+    for row in results:
+        if not row.accuracy_measured:
+            continue
+
+        assert len(row.lower) == len(row.forecast) == len(row.upper), row.label
+        # The band brackets the line it belongs to, at the reconciled height —
+        # left unscaled it would sit beside the series rather than around it.
+        for low, point, high in zip(row.lower, row.forecast, row.upper, strict=True):
+            assert low <= point <= high, f"{row.label} band does not contain its own forecast"
+
+
+def test_an_apportioned_series_gets_no_band_at_all() -> None:
+    from app.forecasting.engine import SegmentInput, forecast_grouped
+
+    history = periods(HISTORY)
+    solid = 1000 + 20 * np.arange(HISTORY)
+
+    leaves = [
+        SegmentInput(
+            label="Established",
+            current_total=float(np.sum(solid[-12:])),
+            prior_total=float(np.sum(solid[-24:-12])),
+            series=[float(v) for v in solid[-12:]],
+            periods=history,
+            values=[float(v) for v in solid],
+            key={"sku": "Established"},
+        ),
+        SegmentInput(
+            label="Brand new",
+            current_total=300.0,
+            prior_total=None,
+            series=[100.0] * 3,
+            periods=history[-3:],
+            values=[100.0, 100.0, 100.0],
+            key={"sku": "Brand new"},
+        ),
+    ]
+
+    results = forecast_grouped(
+        leaves, ["sku"], np.full(HORIZON, 1500.0), MONTHLY, HORIZON, None, 0.8
+    )
+
+    new = next(row for row in results if row.label == "Brand new")
+    # An inherited band would claim a precision this series never demonstrated.
+    assert new.lower == [] and new.upper == []
+    assert new.forecast_total > 0
