@@ -595,6 +595,9 @@ class SeriesResult:
     accuracy_measured: bool
     folds: int
     forecast_total: float
+    #: This series' own actuals over the shared calendar. Without them a chart
+    #: scoped to one series shows a horizon floating on nothing.
+    history: list[float]
     #: The last full window of actuals, and the one before it. Both cover the
     #: same span, so the change between them is a like-for-like trend — which
     #: the forecast total, covering only the horizon, would not be.
@@ -679,7 +682,7 @@ def assemble_grouped(
     for node in walk(root):
         path = node.reconciled if node.reconciled is not None else np.zeros(total.size)
         value = float(np.sum(path))
-        current, prior = actuals[node.label]
+        past = actuals[node.label]
         fit = fitted.get(node.label)
 
         results.append(
@@ -695,8 +698,9 @@ def assemble_grouped(
                 accuracy_measured=fit is not None,
                 folds=fit.folds if fit else 0,
                 forecast_total=round(value, 4),
-                current_total=round(current, 4),
-                prior_total=round(prior, 4) if prior is not None else None,
+                history=[float(v) for v in past.history],
+                current_total=round(past.current, 4),
+                prior_total=round(past.prior, 4) if past.prior is not None else None,
                 share=round(value / total_sum * 100.0, 2) if total_sum else None,
                 status=(
                     SeriesStatus.ESTIMATED
@@ -711,32 +715,59 @@ def assemble_grouped(
     return results
 
 
-def _roll_up_actuals(
-    root: Node, leaves: dict[str, SegmentInput]
-) -> dict[str, tuple[float, float | None]]:
-    """
-    Each node's own history, summed up from the leaves beneath it.
+@dataclass(slots=True)
+class _Actuals:
+    """A node's own history, and the two windows its trend is read from."""
 
-    A parent has no series of its own to read these from, but its trend is
-    exactly the sum of its children's — so it is worth carrying up rather than
-    leaving every level above the grain without one.
-    """
-    totals: dict[str, tuple[float, float | None]] = {}
+    current: float
+    prior: float | None
+    history: FloatArray
 
-    def visit(node: Node) -> tuple[float, float | None]:
+
+def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _Actuals]:
+    """
+    Each node's history, summed up from the leaves beneath it.
+
+    A parent has no series of its own to read this from, but it is exactly the
+    sum of its children's — every leaf shares one calendar, which is what makes
+    the addition meaningful — so it is carried up rather than leaving every
+    level above the grain without a past.
+    """
+    totals: dict[str, _Actuals] = {}
+
+    def visit(node: Node) -> _Actuals:
         if node.is_leaf:
             leaf = leaves.get(node.label)
-            measured = (leaf.current_total, leaf.prior_total) if leaf else (0.0, None)
+            measured = (
+                _Actuals(leaf.current_total, leaf.prior_total, np.asarray(leaf.values, dtype=float))
+                if leaf
+                else _Actuals(0.0, None, np.zeros(0))
+            )
         else:
             parts = [visit(child) for child in node.children]
-            priors = [prior for _, prior in parts if prior is not None]
-            measured = (sum(current for current, _ in parts), sum(priors) if priors else None)
+            priors = [part.prior for part in parts if part.prior is not None]
+            measured = _Actuals(
+                current=sum(part.current for part in parts),
+                prior=sum(priors) if priors else None,
+                history=_sum_histories([part.history for part in parts]),
+            )
 
         totals[node.label] = measured
         return measured
 
     visit(root)
     return totals
+
+
+def _sum_histories(histories: list[FloatArray]) -> FloatArray:
+    """Adds children's histories, ignoring any that does not share the calendar."""
+    usable = [history for history in histories if history.size]
+    if not usable:
+        return np.zeros(0)
+
+    length = usable[0].size
+    aligned = [history for history in usable if history.size == length]
+    return np.sum(aligned, axis=0) if aligned else np.zeros(0)
 
 
 def _attach_parents(root: Node, results: list[SeriesResult]) -> None:

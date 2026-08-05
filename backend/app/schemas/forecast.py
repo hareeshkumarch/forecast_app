@@ -209,6 +209,9 @@ class SeriesResponse(BaseModel):
     total: NonNegativeInt
     limit: NonNegativeInt
     offset: NonNegativeInt
+    #: Whether these numbers are money. Decided once here from the measure's
+    #: name, so every screen and export agrees rather than each re-guessing.
+    currency: bool
     rows: list[SeriesRow]
 
     @computed_field

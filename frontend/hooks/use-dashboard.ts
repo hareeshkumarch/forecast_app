@@ -187,6 +187,14 @@ export function useDatasets() {
   return useQuery({ queryKey: queryKeys.datasets, queryFn: api.listDatasets });
 }
 
+export function useDatasetProfile(id: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.datasetProfile(id ?? "none"),
+    queryFn: () => api.getDatasetProfile(id as string),
+    enabled: Boolean(id),
+  });
+}
+
 export function useDataset(id: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.dataset(id ?? "none"),

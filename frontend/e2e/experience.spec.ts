@@ -8,6 +8,10 @@ import { expect, test, type Page } from "@playwright/test";
 async function load(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+
+  // Until the summary answers the workspace shows neither the panels nor the
+  // guide, so anything measured before this point is a placeholder.
+  await expect(page.locator(".grid-charts, [data-first-run]")).toBeVisible({ timeout: 15_000 });
 }
 
 const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);
@@ -40,8 +44,8 @@ test("the theme is applied before paint and survives a reload", async ({ page })
 
 /** Rough perceived brightness, 0 (black) to 1 (white). */
 function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16) / 255;
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
 }
 
 test("the keyboard toggles the theme and the palette drives it too", async ({ page }, testInfo) => {

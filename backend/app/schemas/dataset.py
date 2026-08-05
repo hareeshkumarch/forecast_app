@@ -6,6 +6,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
+from app.datasets.queries import DEFAULT_MAX_SERIES
 from app.models.enums import (
     ColumnKind,
     ColumnRole,
@@ -85,6 +86,16 @@ class DatasetProfile(BaseModel):
     dimension_suggestions: list[ColumnSuggestion]
     preview_rows: list[dict] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def max_series(self) -> int:
+        """
+        How many combinations a run will forecast individually before pooling
+        the tail. Reported rather than repeated in the client, which would
+        promise a different number the day this one changes.
+        """
+        return DEFAULT_MAX_SERIES
 
 
 class DatasetConfigureRequest(StrictModel):

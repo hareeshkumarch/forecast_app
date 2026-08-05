@@ -19,6 +19,7 @@ import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
 import { Select, type SelectOption } from "@/components/ui/select";
 import {
   useDataset,
+  useDatasetProfile,
   useDatasetQuality,
   useDatasets,
   useRefreshDashboard,
@@ -39,9 +40,6 @@ import type {
 } from "@/types/api";
 
 const NONE = "__none__";
-
-/** Matches `DEFAULT_MAX_SERIES` on the server, which pools the tail past it. */
-const MAX_SERIES = 500;
 
 const FREQUENCIES: SelectOption<ForecastFrequency>[] = [
   { value: "daily", label: "Daily", hint: "One point per day" },
@@ -119,6 +117,7 @@ export function ForecastModal() {
   const [error, setError] = useState<string | null>(null);
 
   const { data: dataset } = useDataset(datasetId || null);
+  const { data: profile } = useDatasetProfile(datasetId || null);
 
   const quality = useDatasetQuality(datasetId || null, {
     time_column: dataset?.time_column ?? null,
@@ -240,6 +239,7 @@ export function ForecastModal() {
 
   // Distinct counts are already profiled, so the number of series a grain
   // implies can be shown before the run rather than discovered during it.
+  const maxSeries = profile?.max_series;
   const grainSize = grain.reduce((product, column) => {
     const distinct = dimensions.find((c) => c.name === column)?.distinct_count ?? 0;
     return distinct > 0 ? product * distinct : product;
@@ -386,10 +386,10 @@ export function ForecastModal() {
             </div>
             {grain.length > 0 ? (
               <p className="mt-2 text-caption text-text-muted">
-                {grainSize > MAX_SERIES ? (
+                {maxSeries && grainSize > maxSeries ? (
                   <>
                     About {grainSize.toLocaleString()} combinations. The largest{" "}
-                    {MAX_SERIES.toLocaleString()} are forecast individually and the rest are pooled
+                    {maxSeries.toLocaleString()} are forecast individually and the rest are pooled
                     into an “Others” series, so the total stays whole.
                   </>
                 ) : (

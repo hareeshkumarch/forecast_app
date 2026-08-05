@@ -9,6 +9,30 @@ import polars as pl
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
+#: Measures whose numbers are money, and so are shown with a currency prefix.
+#:
+#: A guess from the column's name, and only ever a presentation one — getting it
+#: wrong costs a "$", never a forecast. It is English-only and will miss a
+#: column named `chiffre_affaires`, which is why it lives here once rather than
+#: being written out again wherever a number is formatted.
+CURRENCY_NAME_HINTS = (
+    "revenue",
+    "sales",
+    "amount",
+    "value",
+    "spend",
+    "cost",
+    "price",
+    "gmv",
+    "bookings",
+)
+
+
+def is_currency_like(column: str) -> bool:
+    lowered = column.lower()
+    return any(word in lowered for word in CURRENCY_NAME_HINTS)
+
+
 DATE_NAME_HINTS = (
     "date",
     "day",

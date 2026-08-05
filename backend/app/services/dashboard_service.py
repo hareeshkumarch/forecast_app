@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.datasets.profiler import is_currency_like
 from app.models.entities import (
     CategoryForecast,
     ForecastDriver,
@@ -359,6 +360,4 @@ async def insights(
 
 
 def _is_currency(column: str) -> bool:
-    words = ("revenue", "sales", "amount", "value", "spend", "cost", "price", "gmv", "bookings")
-    lowered = column.lower()
-    return any(word in lowered for word in words)
+    return is_currency_like(column)

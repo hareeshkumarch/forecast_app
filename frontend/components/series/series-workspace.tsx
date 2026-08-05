@@ -1,8 +1,16 @@
 "use client";
 
-import { ChevronRight, Layers, Plus, Search, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import {
+  ChevronRight,
+  Layers,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  TriangleAlert,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { AccuracyCell } from "@/components/dashboard/accuracy-cell";
 import {
   Badge,
@@ -15,8 +23,17 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
-import { useForecastRuns, useForecastSeries, type SeriesQuery } from "@/hooks/use-dashboard";
-import { formatCompact, formatSignedPercent } from "@/lib/format";
+import {
+  useForecastRuns,
+  useForecastSeries,
+  type SeriesQuery,
+} from "@/hooks/use-dashboard";
+import {
+  formatCompact,
+  formatPercent,
+  formatSignedPercent,
+  humanizeModel,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { SeriesRow, SeriesSort } from "@/types/api";
@@ -35,8 +52,16 @@ const SORTS: { value: SeriesSort; label: string; hint: string }[] = [
 ];
 
 const LEVELS = [
-  { value: "all", label: "Every level", hint: "Total, groups and the grain itself" },
-  { value: "leaf", label: "The grain only", hint: "Just the series you forecast at" },
+  {
+    value: "all",
+    label: "Every level",
+    hint: "Total, groups and the grain itself",
+  },
+  {
+    value: "leaf",
+    label: "The grain only",
+    hint: "Just the series you forecast at",
+  },
 ];
 
 /**
@@ -48,7 +73,7 @@ const LEVELS = [
  */
 export function SeriesWorkspace() {
   const filters = useDashboardFilters();
-  const { data: runs } = useForecastRuns();
+  const { data: runs, isPending, isError, error, refetch } = useForecastRuns();
 
   const run = useMemo(() => {
     if (!runs?.length) return null;
@@ -70,7 +95,23 @@ export function SeriesWorkspace() {
           </p>
         </header>
 
-        {run === null ? (
+        {/* "No completed run yet" is a claim, not a placeholder: shown while
+            the runs are still loading it tells someone with fifty of them that
+            they have none. */}
+        {isPending ? (
+          <Card className="p-4">
+            <Skeleton className="h-5 w-40" />
+            <div className="mt-4 space-y-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-9 w-full" />
+              ))}
+            </div>
+          </Card>
+        ) : isError ? (
+          <Card>
+            <ErrorState error={error} onRetry={() => void refetch()} />
+          </Card>
+        ) : run === null ? (
           <Card>
             <EmptyState
               icon={Layers}
@@ -89,26 +130,22 @@ export function SeriesWorkspace() {
             />
           </Card>
         ) : (
-          <SeriesTable
-            runId={run.id}
-            leafLevel={run.group_by.length}
-            currency={looksLikeMoney(run.target_column)}
-          />
+          <SeriesTable runId={run.id} leafLevel={run.group_by.length} />
         )}
       </div>
     </main>
   );
 }
 
-function looksLikeMoney(column: string): boolean {
-  return /revenue|sales|amount|value|spend|cost|price|gmv|bookings/i.test(column);
-}
-
 /** An empty screen that only names what is missing is a dead end. */
 function NewForecastButton({ label = "New Forecast" }: { label?: string }) {
   const openModal = useUiStore((state) => state.openModal);
   return (
-    <Button variant="primary" icon={Plus} onClick={() => openModal("configure-forecast")}>
+    <Button
+      variant="primary"
+      icon={Plus}
+      onClick={() => openModal("configure-forecast")}
+    >
       {label}
     </Button>
   );
@@ -117,16 +154,15 @@ function NewForecastButton({ label = "New Forecast" }: { label?: string }) {
 function SeriesTable({
   runId,
   leafLevel,
-  currency,
 }: {
   runId: string;
   leafLevel: number;
-  currency: boolean;
 }) {
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
   const [scope, setScope] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<SeriesRow | null>(null);
 
   const query: SeriesQuery = {
     sort,
@@ -137,10 +173,8 @@ function SeriesTable({
     ...(search.trim() ? { search: search.trim() } : {}),
   };
 
-  const { data, isLoading, isError, error, refetch, isPlaceholderData } = useForecastSeries(
-    runId,
-    query,
-  );
+  const { data, isLoading, isError, error, refetch, isPlaceholderData } =
+    useForecastSeries(runId, query);
 
   // Changing what is asked for has to start from the first page, or the offset
   // outruns a shorter result and the list comes back empty.
@@ -152,139 +186,210 @@ function SeriesTable({
   }
 
   const rows = data?.rows ?? [];
-  const showing = data ? `${data.offset + 1}–${data.offset + rows.length} of ${data.total}` : "";
+  // Whether the numbers are money is the server's call, not a second guess at
+  // the column name that could disagree with what the export decided.
+  const currency = data?.currency ?? true;
+  const showing = data
+    ? `${data.offset + 1}–${data.offset + rows.length} of ${data.total}`
+    : "";
 
   return (
-    <Card className="overflow-hidden">
-      <PanelHeader
-        title="Triage"
-        subtitle={
-          sort === "value_at_risk"
-            ? "Forecast times its own error, largest first"
-            : SORTS.find((s) => s.value === sort)?.hint
-        }
-      />
+    <div className="space-y-3">
+      {/* Finding the worst series and not being able to look at it is where
+          this screen used to stop. Level 0 is the run's own total, so it
+          scopes to nothing and the chart falls back to the top line. */}
+      {selected ? (
+        <ForecastVsActual
+          seriesId={selected.level > 0 ? selected.id : null}
+          title={selected.level > 0 ? selected.label : "Total"}
+          subtitle={
+            selected.accuracy_measured && selected.model
+              ? `${humanizeModel(selected.model)} · ${formatPercent(selected.accuracy)} accurate over ${selected.folds} fold${selected.folds === 1 ? "" : "s"}`
+              : (selected.blocked_reason ?? "Apportioned from its parent")
+          }
+          showActions={false}
+        />
+      ) : null}
 
-      {/* Below the header rather than beside it: three controls and a title do
+      <Card className="overflow-hidden">
+        <PanelHeader
+          title="Triage"
+          subtitle={
+            sort === "value_at_risk"
+              ? "Forecast times its own error, largest first"
+              : SORTS.find((s) => s.value === sort)?.hint
+          }
+        />
+
+        {/* Below the header rather than beside it: three controls and a title do
           not share a phone's width, and the title loses. */}
-      <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-        {/* Its own row on a phone: given flex-1 it would shrink to the icon
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+          {/* Its own row on a phone: given flex-1 it would shrink to the icon
             rather than push the fixed-width selects onto the next line. */}
-        <div className="relative basis-full sm:basis-auto">
-          <Search
-            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
-            aria-hidden
-          />
-          <Input
-            value={search}
-            onChange={(event) => change(setSearch)(event.target.value)}
-            placeholder="Find a series"
-            aria-label="Find a series"
-            className="w-full pl-7 sm:w-[160px]"
-          />
-        </div>
-        <Select
-          value={scope}
-          onChange={change(setScope)}
-          options={LEVELS}
-          label="Which levels to show"
-          className="w-[140px]"
-          menuClassName="w-[240px]"
-        />
-        <Select
-          value={sort}
-          onChange={change((value: string) => setSort(value as SeriesSort))}
-          options={SORTS}
-          label="Order the list by"
-          className="w-[150px]"
-          menuClassName="w-[280px]"
-        />
-      </div>
-
-      {isError ? (
-        <ErrorState error={error} onRetry={() => void refetch()} />
-      ) : isLoading ? (
-        <div className="space-y-2 px-4 pb-4">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Skeleton key={index} className="h-9 w-full" />
-          ))}
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={Search}
-          title="Nothing matches"
-          message={search ? `No series with “${search}” in its name.` : "This run stored no series."}
-        />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table
-              className={cn(
-                "w-full border-collapse text-meta sm:min-w-[720px]",
-                isPlaceholderData && "opacity-60 transition-opacity",
-              )}
-            >
-              <thead>
-                <tr className="border-y border-border text-caption text-text-muted">
-                  <th className="px-4 py-2 text-left font-medium">Series</th>
-                  <th className="px-3 py-2 text-right font-medium">Forecast</th>
-                  {/* A phone gets the three columns triage actually needs. */}
-                  <th
-                    className="hidden px-3 py-2 text-right font-medium sm:table-cell"
-                    title="How the actuals moved between the last two windows"
-                  >
-                    Trend
-                  </th>
-                  <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">
-                    Accuracy
-                  </th>
-                  <th className="px-4 py-2 text-right font-medium">At risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <SeriesRowCells key={row.id} row={row} currency={currency} />
-                ))}
-              </tbody>
-            </table>
+          <div className="relative basis-full sm:basis-auto">
+            <Search
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
+              aria-hidden
+            />
+            <Input
+              value={search}
+              onChange={(event) => change(setSearch)(event.target.value)}
+              placeholder="Find a series"
+              aria-label="Find a series"
+              className="w-full pl-7 sm:w-[160px]"
+            />
           </div>
+          <Select
+            value={scope}
+            onChange={change(setScope)}
+            options={LEVELS}
+            label="Which levels to show"
+            className="w-[140px]"
+            menuClassName="w-[240px]"
+          />
+          <Select
+            value={sort}
+            onChange={change((value: string) => setSort(value as SeriesSort))}
+            options={SORTS}
+            label="Order the list by"
+            className="w-[150px]"
+            menuClassName="w-[280px]"
+          />
+        </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
-            <p className="text-caption text-text-muted num">{showing}</p>
-            <div className="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page === 0}
-                onClick={() => setPage((current) => Math.max(0, current - 1))}
+        {isError ? (
+          <ErrorState error={error} onRetry={() => void refetch()} />
+        ) : isLoading ? (
+          <div className="space-y-2 px-4 pb-4">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="Nothing matches"
+            message={
+              search
+                ? `No series with “${search}” in its name.`
+                : "This run stored no series."
+            }
+          />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table
+                className={cn(
+                  "w-full border-collapse text-meta sm:min-w-[720px]",
+                  isPlaceholderData && "opacity-60 transition-opacity",
+                )}
               >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!data?.has_more}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                Next
-              </Button>
+                <thead>
+                  <tr className="border-y border-border text-caption text-text-muted">
+                    <th className="px-4 py-2 text-left font-medium">Series</th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      Forecast
+                    </th>
+                    {/* Trend is the one a phone can lose: accuracy is what says
+                      whether the number beside it can be trusted. */}
+                    <th
+                      className="hidden px-3 py-2 text-right font-medium sm:table-cell"
+                      title="How the actuals moved between the last two windows"
+                    >
+                      Trend
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      Accuracy
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      At risk
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <SeriesRowCells
+                      key={row.id}
+                      row={row}
+                      currency={currency}
+                      selected={selected?.id === row.id}
+                      onSelect={() =>
+                        setSelected((current) =>
+                          current?.id === row.id ? null : row,
+                        )
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </>
-      )}
-    </Card>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
+              <p className="text-caption text-text-muted num">{showing}</p>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page === 0}
+                  onClick={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!data?.has_more}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
   );
 }
 
-function SeriesRowCells({ row, currency }: { row: SeriesRow; currency: boolean }) {
+function SeriesRowCells({
+  row,
+  currency,
+  selected,
+  onSelect,
+}: {
+  row: SeriesRow;
+  currency: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const estimated = !row.accuracy_measured;
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-surface-muted/60">
+    <tr
+      onClick={onSelect}
+      aria-selected={selected}
+      className={cn(
+        "cursor-pointer border-b border-border last:border-0",
+        selected ? "bg-accent-soft" : "hover:bg-surface-muted/60",
+      )}
+    >
       {/* max-w on the cell, not the span: a table cell grows to its content
           and would push the columns that matter off a phone's screen. */}
       <td className="max-w-[46vw] px-4 py-2 sm:max-w-none">
-        <div className="flex min-w-0 items-center gap-1.5">
+        {/* A real button, so the chart is reachable by keyboard and the row
+            announces what selecting it does. */}
+        <button
+          type="button"
+          // Without this the click also reaches the row's handler and the
+          // second toggle undoes the first.
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+          aria-pressed={selected}
+          className="flex min-w-0 items-center gap-1.5 rounded-chip text-left"
+        >
           {/* Depth is the one thing a flat list of a tree has to keep. */}
           {row.level > 0 ? (
             <span
@@ -306,7 +411,7 @@ function SeriesRowCells({ row, currency }: { row: SeriesRow; currency: boolean }
               </Badge>
             </span>
           ) : null}
-        </div>
+        </button>
       </td>
       <td className="px-3 py-2 text-right num text-text-primary">
         {formatCompact(row.forecast_total, currency)}
@@ -321,9 +426,11 @@ function SeriesRowCells({ row, currency }: { row: SeriesRow; currency: boolean }
               : "text-negative",
         )}
       >
-        {row.change_vs_prior === null ? "—" : formatSignedPercent(row.change_vs_prior)}
+        {row.change_vs_prior === null
+          ? "—"
+          : formatSignedPercent(row.change_vs_prior)}
       </td>
-      <td className="hidden px-3 py-2 text-right sm:table-cell">
+      <td className="px-3 py-2 text-right">
         <AccuracyCell
           value={row.accuracy}
           measured={row.accuracy_measured}
@@ -333,11 +440,19 @@ function SeriesRowCells({ row, currency }: { row: SeriesRow; currency: boolean }
       </td>
       <td className="px-4 py-2 text-right">
         {row.value_at_risk === null ? (
-          <span className="text-text-muted" title="Nothing was measured for this series">
+          <span
+            className="text-text-muted"
+            title="Nothing was measured for this series"
+          >
             —
           </span>
         ) : (
-          <span className={cn("num", estimated ? "text-text-muted" : "text-text-primary")}>
+          <span
+            className={cn(
+              "num",
+              estimated ? "text-text-muted" : "text-text-primary",
+            )}
+          >
             {formatCompact(row.value_at_risk, currency)}
           </span>
         )}

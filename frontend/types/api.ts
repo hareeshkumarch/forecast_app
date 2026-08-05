@@ -50,7 +50,8 @@ export type InsightType =
 
 export type ForecastView = "base" | "best" | "worst";
 
-export type ExportFormat = "csv" | "xlsx" | "json";
+/** CSV to keep working on the numbers, PDF to circulate them. */
+export type ExportFormat = "csv" | "pdf";
 
 export type MeasureAggregation = "sum" | "mean" | "median" | "last" | "min" | "max";
 
@@ -196,6 +197,8 @@ export interface DatasetProfile {
   dimension_suggestions: ColumnSuggestion[];
   preview_rows: Record<string, string | null>[];
   warnings: string[];
+  /** Combinations a run forecasts individually before pooling the tail. Server-owned. */
+  max_series: number;
 }
 
 export interface DatasetUploadResponse {
@@ -330,6 +333,8 @@ export interface SeriesResponse {
   total: number;
   limit: number;
   offset: number;
+  /** Whether these numbers are money. Decided server-side so every view agrees. */
+  currency: boolean;
   rows: SeriesRow[];
   has_more: boolean;
 }

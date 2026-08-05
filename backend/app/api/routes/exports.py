@@ -23,7 +23,10 @@ router = APIRouter(prefix="/exports", tags=["exports"])
 async def export_forecast(
     forecast_id: uuid.UUID,
     session: SessionDep,
-    format: ExportFormat = Query(default=ExportFormat.CSV, description="csv, xlsx or json."),
+    format: ExportFormat = Query(
+        default=ExportFormat.CSV,
+        description="csv to keep working on the numbers, pdf to circulate them.",
+    ),
 ) -> FileResponse:
     run = await forecast_service.get_run(session, forecast_id)
     job = await exporter.create_export(session, forecast_id, format)

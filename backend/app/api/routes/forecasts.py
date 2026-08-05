@@ -14,6 +14,7 @@ from starlette.responses import StreamingResponse
 from app.api.deps import SessionDep
 from app.core.logging import get_logger
 from app.database.session import session_scope
+from app.datasets.profiler import is_currency_like
 from app.forecasting.selection import SCORING_RULE
 from app.models.entities import ModelCandidate
 from app.models.enums import PointKind, RunStatus
@@ -193,6 +194,7 @@ async def get_series(
         total=total,
         limit=limit,
         offset=offset,
+        currency=is_currency_like(run.target_column),
         rows=[SeriesRow.model_validate(row) for row in rows],
     )
 

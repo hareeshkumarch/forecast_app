@@ -158,7 +158,7 @@ export function CommandPalette() {
         run: () => setRunId(null),
       },
       ...(runId
-        ? (["csv", "xlsx", "json"] as const).map((format) => ({
+        ? (["csv", "pdf"] as const).map((format) => ({
             id: `export-${format}`,
             label: `Export ${format.toUpperCase()}`,
             group: "Export",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileBarChart2, Plus, RefreshCw } from "lucide-react";
+import { Download, FileBarChart2, FileText, Plus, RefreshCw } from "lucide-react";
 
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { downloadExport, useForecastRuns } from "@/hooks/use-dashboard";
@@ -54,6 +54,16 @@ function RunCard({ run }: { run: ForecastRun }) {
             {run.aggregation} · {run.gap_fill}
           </dd>
         </div>
+        <div className="col-span-2">
+          {/* Without this a run that forecast 500 series reads exactly like one
+              that forecast a single total. */}
+          <dt className="text-caption text-text-muted">Forecast grain</dt>
+          <dd className="mt-0.5 truncate text-meta font-medium text-text-primary">
+            {run.group_by.length > 0
+              ? `${run.group_by.join(" · ")} — ${run.series_count.toLocaleString()} series`
+              : "One total series"}
+          </dd>
+        </div>
       </dl>
 
       {run.error_message ? (
@@ -63,9 +73,12 @@ function RunCard({ run }: { run: ForecastRun }) {
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
-        <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "csv")}>CSV</Button>
-        <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "xlsx")}>Excel report</Button>
-        <Button size="sm" variant="ghost" disabled={!ready} onClick={() => downloadExport(run.id, "json")}>JSON detail</Button>
+        <Button size="sm" icon={Download} disabled={!ready} onClick={() => downloadExport(run.id, "csv")}>
+          CSV
+        </Button>
+        <Button size="sm" icon={FileText} disabled={!ready} onClick={() => downloadExport(run.id, "pdf")}>
+          PDF report
+        </Button>
       </div>
     </Card>
   );

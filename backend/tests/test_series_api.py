@@ -183,10 +183,49 @@ async def test_a_series_scopes_the_points_to_its_own_curve(client: AsyncClient) 
 
     assert headline["points"], "the run keeps its own top line"
     assert scoped["points"], "a series has a curve of its own"
-    assert len(scoped["points"]) < len(headline["points"]), "no history is stored per series"
+
+    # Its own past as well as its horizon, on the same calendar as the top
+    # line: a chart scoped to one series would otherwise be a handful of
+    # forecast points hanging on nothing.
+    assert scoped["boundary_index"] == headline["boundary_index"]
+    assert [p["period"] for p in scoped["points"]] == [p["period"] for p in headline["points"]]
+
+    history = [p for p in scoped["points"] if p["kind"] == "actual"]
+    assert history and all(p["actual"] is not None for p in history)
+    assert sum(p["actual"] for p in history) < sum(
+        p["actual"] for p in headline["points"] if p["kind"] == "actual"
+    ), "one series is a part of the whole, not the whole"
 
     total = sum(point["forecast"] or 0.0 for point in scoped["points"])
     assert total == pytest.approx(leaf["forecast_total"], rel=1e-6)
+
+
+async def test_exporting_a_grouped_run_says_which_series_each_row_is(client: AsyncClient) -> None:
+    """
+    A grouped run stores a curve per series as well as its own line. Flattened
+    without a label they export as dozens of identical-looking rows per period,
+    which is a tree with the tree left out.
+    """
+    run = await _grouped_run(client, GRAIN)
+
+    csv = (await client.get(f"/api/exports/{run['id']}?format=csv")).text
+    header, *lines = csv.strip().splitlines()
+
+    assert header.startswith("series,period,kind"), header
+    labels = {line.split(",", 1)[0] for line in lines}
+    assert "Total" in labels, "the run's own line is named rather than left blank"
+
+    # Every series below the root, plus "Total" standing in for the root —
+    # whose own curve is not stored, being the top line already.
+    assert len(labels) == run["series_count"], sorted(labels)[:5]
+    assert "Europe · Product A" in labels
+    assert "Europe" in labels, "the levels between the total and the grain are exported too"
+
+    # The PDF reports the top line and ranks the series; it must not print the
+    # whole tree as one undifferentiated column of dates.
+    pdf = (await client.get(f"/api/exports/{run['id']}?format=pdf")).content
+    assert pdf.startswith(b"%PDF-")
+    assert pdf.rstrip().endswith(b"%%EOF")
 
 
 async def test_a_run_without_a_grain_has_no_series(client: AsyncClient) -> None:

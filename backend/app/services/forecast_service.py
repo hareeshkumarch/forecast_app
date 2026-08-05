@@ -22,6 +22,7 @@ from app.core.storage import file_exists
 from app.database.base import utcnow
 from app.database.session import session_scope
 from app.datasets import quality, queries
+from app.datasets.profiler import is_currency_like
 from app.forecasting.engine import (
     ForecastInput,
     ForecastOutput,
@@ -547,20 +548,16 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
     if not column:
         return []
 
-    window = {
-        ForecastFrequency.DAILY: 90,
-        ForecastFrequency.WEEKLY: 26,
-        ForecastFrequency.MONTHLY: 12,
-        ForecastFrequency.QUARTERLY: 4,
-    }[run.frequency]
-
+    # The window is derived from the history the aggregation actually finds —
+    # a year wherever there are two of them — rather than fixed per frequency,
+    # which made "versus the period before" mean a quarter on daily data and a
+    # year on monthly.
     totals = queries.aggregate_segments(
         parquet_path,
         run.time_column,
         run.target_column,
         column,
         run.frequency,
-        window_periods=window,
     )
     return [
         SegmentInput(
@@ -808,9 +805,7 @@ def _metric_unit(name: str) -> str:
 
 
 def _looks_like_currency(column: str) -> bool:
-    words = ("revenue", "sales", "amount", "value", "spend", "cost", "price", "gmv", "bookings")
-    lowered = column.lower()
-    return any(word in lowered for word in words)
+    return is_currency_like(column)
 
 
 def _advance(run: ForecastRun, stage: str, message: str) -> None:
