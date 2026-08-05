@@ -205,7 +205,6 @@ async def get_series(
     response_class=StreamingResponse,
 )
 async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
-
     async with session_scope() as session:
         run = await forecast_service.get_run(session, run_id)
         initial = {

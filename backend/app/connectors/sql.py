@@ -231,7 +231,6 @@ class SqlServerAdapter(SqlAdapter):
         )
 
     def _limit_clause(self, limit: int) -> str:
-
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 

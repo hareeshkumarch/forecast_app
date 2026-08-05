@@ -263,7 +263,6 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
     columns = sorted(dataset.columns, key=lambda c: c.position)
 
     def rank(column: DatasetColumn, *, date_axis: bool) -> float:
-
         base = 0.9 if column.role in (ColumnRole.TIME, ColumnRole.TARGET) else 0.6
         return (
             base if (column.is_date_candidate if date_axis else column.is_target_candidate) else 0.0

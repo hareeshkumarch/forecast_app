@@ -1,0 +1,3 @@
+# A planning workspace behind a login, not a public site.
+User-agent: *
+Disallow: /
