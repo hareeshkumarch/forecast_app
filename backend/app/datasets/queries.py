@@ -13,15 +13,9 @@ from app.core.errors import ValidationError
 from app.forecasting.frequency import comparison_window, periods_per_year
 from app.models.enums import ForecastFrequency, MeasureAggregation
 
-#: What the tail of a long list is pooled under once it passes `max_series`.
-#: A pooled row stands for many combinations and matches none of them, so
-#: anything that has to look a series back up in the source data — scoring it
-#: against actuals, above all — has to recognise it rather than treat it as a
-#: combination that recorded nothing.
 POOLED_LABEL = "Others"
 POOLED_KEY = "(others)"
 
-#: What a missing grouping value is called, on both sides of the comparison.
 MISSING_KEY = "(none)"
 
 DATE_TRUNC_PART: dict[ForecastFrequency, str] = {
@@ -68,14 +62,6 @@ def connect() -> Iterator[duckdb.DuckDBPyConnection]:
 
 @contextmanager
 def _using(borrowed: duckdb.DuckDBPyConnection | None) -> Iterator[duckdb.DuckDBPyConnection]:
-    """
-    The caller's connection if it lent one, otherwise a fresh one.
-
-    Opening an in-memory DuckDB costs several times what a small query against
-    it costs to run, so a caller asking one modest question of twenty files
-    wants to pay that once rather than twenty times. Only a connection opened
-    here is closed here — a borrowed one outlives the call.
-    """
     if borrowed is not None:
         yield borrowed
         return
@@ -107,14 +93,6 @@ def aggregate_candidate_drivers(
     *,
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
 ) -> dict[str, list[float]]:
-    """
-    The dataset's other numeric columns, on the target's own calendar.
-
-    Reindexed onto `periods` rather than returned as they fall, so every column
-    lines up position for position with the target and a month the driver
-    happens to be missing does not shift everything after it. Aggregated the
-    same way the target is: a column that is a sum stays a sum.
-    """
     if not columns or not periods:
         return {}
 
@@ -144,8 +122,6 @@ def aggregate_candidate_drivers(
     out: dict[str, list[float]] = {}
     for index, name in enumerate(columns):
         series = [by_period.get(period, (None,) * len(columns))[index] for period in periods]
-        # A column that is mostly absent over the target's window cannot lead
-        # anything; leaving it out beats handing the screen a wall of gaps.
         present = sum(1 for value in series if value is not None)
         if present < len(periods) // 2:
             continue
@@ -244,8 +220,6 @@ class SegmentTotals:
     current_total: float
     prior_total: float | None
     series: list[float]
-    # The segment's whole history on the shared calendar, so it can be
-    # forecast in its own right rather than split off the top line.
     periods: list[date] = field(default_factory=list)
     values: list[float] = field(default_factory=list)
 
@@ -311,9 +285,6 @@ def aggregate_segments(
         current = sum(value for period, value in series if period in current_window)
         prior = sum(value for period, value in series if period in prior_window)
 
-        # Reindexed onto the shared calendar: a segment that sold nothing in a
-        # period genuinely sold nothing, and leaving the hole would misalign
-        # its seasonality against every other segment.
         observed = dict(series)
         values = [float(observed.get(period, 0.0)) for period in all_periods]
 
@@ -332,8 +303,6 @@ def aggregate_segments(
 
     if len(totals) > max_segments:
         head, tail = totals[: max_segments - 1], totals[max_segments - 1 :]
-        # The tail is pooled rather than dropped, and it is pooled as a series
-        # so it can be forecast like any other segment.
         pooled = [sum(values) for values in zip(*(t.values for t in tail), strict=True)]
         others = SegmentTotals(
             label=POOLED_LABEL,
@@ -363,10 +332,6 @@ def column_names(
 
 @dataclass(slots=True)
 class ObservedWindow:
-    """What a file recorded over a stretch of the calendar, and how far it goes."""
-
-    #: The last date the file carries at all — not the last one in the window.
-    #: A period is only finished if this reaches past the end of it.
     covered_through: date | None
     totals: dict[date, float]
     by_key: dict[tuple[str, ...], dict[date, float]]
@@ -384,17 +349,6 @@ def observed_window(
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
     connection: duckdb.DuckDBPyConnection | None = None,
 ) -> ObservedWindow:
-    """
-    Actuals over `start`..`end`, aggregated exactly as a run aggregated its history.
-
-    Used to score a finished forecast, so it has to reduce the raw rows the
-    same way the run did — a forecast of a monthly sum compared against a
-    monthly mean is not a comparison at all.
-
-    Pass `connection` when asking this of file after file: scoring has to read
-    every candidate source before it can pick one, and opening a database per
-    file is most of what that costs.
-    """
     part = DATE_TRUNC_PART[frequency]
     reducer = AGGREGATIONS[aggregation]
     time_sql = _quote(time_column)
@@ -418,8 +372,6 @@ def observed_window(
         ORDER BY period
     """
 
-    # Over the whole file rather than the window: the question is how far the
-    # data reaches, and a window that ends early cannot answer it.
     reach_sql = f"""
         SELECT MAX(TRY_CAST({time_sql} AS DATE))
         FROM {_source(parquet_path)}
@@ -464,8 +416,6 @@ def observed_window(
 
 @dataclass(slots=True)
 class GroupedSeries:
-    """One combination of the grouping columns, on the run's shared calendar."""
-
     key: dict[str, str]
     label: str
     periods: list[date]
@@ -492,21 +442,9 @@ def aggregate_grouped(
     end: date | None = None,
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
 ) -> list[GroupedSeries]:
-    """
-    A series per combination of `group_columns`, reindexed onto one calendar.
-
-    Every series shares the same periods so their seasonality lines up and they
-    can be summed at any level. A combination that recorded nothing in a period
-    genuinely recorded nothing, so the hole is a zero rather than a gap.
-
-    Combinations beyond `max_series` are pooled into one `Others` series rather
-    than dropped: the total has to stay whole.
-    """
     if not group_columns:
         raise ValidationError("Grouped aggregation needs at least one grouping column.")
 
-    # This function is also used outside the API schema, so enforce the same
-    # hard ceiling here rather than trusting every caller to validate it.
     max_series = max(1, min(int(max_series), DEFAULT_MAX_SERIES))
     requested_window = max(1, int(window_periods)) if window_periods else None
 
@@ -649,8 +587,6 @@ def aggregate_grouped(
         )
 
     series = [build(bucket, by_period) for bucket, by_period in observed.items()]
-    # Preserve the established UX: individually forecast groups are ranked by
-    # their recent value and the pooled tail is always shown last.
     series.sort(key=lambda item: (item.pooled_from > 0, -item.current_total, item.label))
 
     return series

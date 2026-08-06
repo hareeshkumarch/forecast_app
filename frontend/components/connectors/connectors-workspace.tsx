@@ -1,6 +1,5 @@
 "use client";
 
-
 import { Download, Pencil, Plug, Plus, Trash2 } from "lucide-react";
 
 import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/connector-logos";
@@ -10,7 +9,6 @@ import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { Connector, ConnectorStatus } from "@/types/api";
-
 
 const DISPLAY_ORDER: ConnectorLogoKey[] = [
   "bigquery",
@@ -127,10 +125,6 @@ export function ConnectorsWorkspace() {
   );
 }
 
-/**
- * Revealed under the selected connector. Selection used to be decorative —
- * these are the two things you actually want to do with a saved source.
- */
 export function ConnectorActions({
   connector,
   onImport,
@@ -143,10 +137,6 @@ export function ConnectorActions({
   const openModal = useUiStore((state) => state.openModal);
   const result = testMutation.data;
 
-  // A source nobody has configured is a card on the rail offering a type, not
-  // something the customer owns. Removing it would take the type off the
-  // screen with no way back, so editing and removing appear once there is
-  // something of theirs to edit or remove.
   const isTheirs = connector.status !== "not_configured";
 
   function handleRemove() {

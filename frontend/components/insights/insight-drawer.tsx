@@ -1,6 +1,5 @@
 "use client";
 
-
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
@@ -22,7 +21,6 @@ const SEVERITY_LABEL: Record<InsightSeverity, string> = {
   warning: "Warning",
   critical: "Critical",
 };
-
 
 function formatSupportingValue(value: unknown): string {
   if (value === null || value === undefined) return "—";

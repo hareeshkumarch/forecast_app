@@ -34,9 +34,6 @@ async def summary(session: AsyncSession, *, days: int = 30) -> LlmUsageResponse:
     now = utcnow()
     start = now - timedelta(days=days - 1)
 
-    # When the first request was ever made, so the screen can pick a window
-    # that shows activity rather than a month of flat zero with a spike at the
-    # end. Outside the window on purpose: it is a fact about the workspace.
     first_event_at = await session.scalar(select(func.min(LlmUsageEvent.created_at)))
     result = await session.execute(
         select(LlmUsageEvent)

@@ -33,9 +33,6 @@ MEDIA_TYPES: dict[ExportFormat, str] = {
     ExportFormat.PDF: "application/pdf",
 }
 
-# A PDF is read rather than processed, so it carries the horizon and the
-# breakdowns and stops there. Anyone who wants every period of history has
-# the CSV, which carries all of it.
 PDF_MAX_ROWS = 120
 
 
@@ -75,18 +72,10 @@ async def create_export(
     return job
 
 
-#: What a point belongs to when it belongs to the run rather than to a series.
 TOP_LINE = "Total"
 
 
 async def _collect_rows(session: AsyncSession, run: ForecastRun) -> list[dict]:
-    """
-    Every point in the run, each saying which series it came from.
-
-    A grouped run stores a curve per series as well as its own top line. Without
-    the label they arrive as dozens of identical-looking rows per period, which
-    is what a flat export of a tree looks like when the tree is left out.
-    """
     result = await session.execute(
         select(ForecastPoint, ForecastSeries.label)
         .outerjoin(ForecastSeries, ForecastPoint.series_id == ForecastSeries.id)
@@ -125,8 +114,6 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
         select(ForecastDriver).where(ForecastDriver.run_id == run.id).order_by(ForecastDriver.rank)
     )
 
-    # Worst first, by the same value-at-risk the triage screen ranks on, so the
-    # report opens on the series someone has to do something about.
     series = await session.execute(
         select(ForecastSeries)
         .where(ForecastSeries.run_id == run.id, ForecastSeries.level > 0)

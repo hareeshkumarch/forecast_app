@@ -14,24 +14,15 @@ import {
 } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-/**
- * The frame every analytical panel shares.
- *
- * Each one has the same four states — asking, could not ask, asked and got
- * nothing, and the answer — and each used to spell that ladder out again. Eight
- * copies is eight chances for one panel to shimmer where another shows an
- * error, and the reason the enlarge affordance existed on some cards and not
- * others.
- */
 export function Panel({
   title,
   subtitle,
-  /** What the panel is asking for. Only the four fields the ladder needs. */
+
   state,
-  /** True when the request succeeded but there is nothing to draw. */
+
   isEmpty = false,
   empty,
-  /** Given, the header carries an enlarge button that opens this. */
+
   enlarged,
   actions,
   skeleton,
@@ -65,8 +56,7 @@ export function Panel({
                   label={`Enlarge ${title.toLowerCase()}`}
                   icon={Maximize2}
                   onClick={() => setOpen(true)}
-                  // Disabled while there is nothing to look at, rather than
-                  // opening onto an empty dialog.
+
                   disabled={state.isLoading || state.isError || isEmpty}
                 />
               ) : null}

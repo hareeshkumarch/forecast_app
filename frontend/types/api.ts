@@ -1,5 +1,3 @@
-
-
 export type ConnectorType =
   | "postgresql"
   | "mysql"
@@ -50,7 +48,6 @@ export type InsightType =
 
 export type ForecastView = "base" | "best" | "worst";
 
-/** CSV to keep working on the numbers, PDF to circulate them. */
 export type ExportFormat = "csv" | "pdf";
 
 export type MeasureAggregation = "sum" | "mean" | "median" | "last" | "min" | "max";
@@ -61,7 +58,6 @@ export type OutlierTreatment = "none" | "winsorise";
 
 export type IssueSeverity = "info" | "warning" | "severe";
 
-
 export interface ApiErrorBody {
   error: {
     code: string;
@@ -70,7 +66,6 @@ export interface ApiErrorBody {
     request_id?: string;
   };
 }
-
 
 export interface Connector {
   id: string;
@@ -82,7 +77,7 @@ export interface Connector {
   last_error: string | null;
   created_at: string;
   updated_at: string;
-  
+
   credential_keys: string[];
   supports_import: boolean;
 }
@@ -130,7 +125,6 @@ export interface ConnectorSchemaList {
   connector_id: string;
   tables: SchemaTable[];
 }
-
 
 export interface DatasetColumn {
   id: string;
@@ -186,7 +180,7 @@ export interface DatasetPage {
   limit: number;
   offset: number;
   sort: DatasetSort;
-  /** Over everything held, not over the page. */
+
   ready: number;
   row_count: number;
   file_size_bytes: number;
@@ -219,7 +213,7 @@ export interface DatasetProfile {
   dimension_suggestions: ColumnSuggestion[];
   preview_rows: Record<string, string | null>[];
   warnings: string[];
-  /** Maximum output series, including a pooled tail. Server-owned. */
+
   max_series: number;
 }
 
@@ -227,7 +221,6 @@ export interface DatasetUploadResponse {
   dataset: DatasetDetail;
   profile: DatasetProfile;
 }
-
 
 export type RunState = "completed" | "active" | "failed";
 
@@ -245,7 +238,7 @@ export interface ForecastRunPage {
   limit: number;
   offset: number;
   sort: RunSort;
-  /** Counts of what exists, not of what was fetched. */
+
   counts: RunStateCounts;
   rows: ForecastRun[];
 }
@@ -262,7 +255,7 @@ export interface ForecastRun {
   weight_column: string | null;
   region_column: string | null;
   category_column: string | null;
-  /** The grain this run forecasts at, outermost first. Empty means one total. */
+
   group_by: string[];
   series_count: number;
   frequency: ForecastFrequency;
@@ -283,13 +276,9 @@ export interface ForecastRun {
   completed_at: string | null;
   error_message: string | null;
   created_at: string;
-  /** Timestamp of the recoverable worker progress snapshot on run detail responses. */
+
   progress_updated_at?: string | null;
-  /**
-   * How the forecast actually did, once its periods had been lived through.
-   * Distinct from the backtest metrics, which say what the model would have
-   * done rather than what it did. Null until the run has been scored.
-   */
+
   scored_at: string | null;
   scored_periods: number;
   realized_wmape: number | null;
@@ -307,9 +296,9 @@ export interface ModelCandidate {
   rmse: number | null;
   smape: number | null;
   wmape: number | null;
-  /** Error against the seasonal-naive benchmark; below 1 beats the free forecast. */
+
   mase: number | null;
-  /** What this candidate's uncertainty range costs, in the units of the series. */
+
   winkler: number | null;
   score: number | null;
   folds: number;
@@ -326,7 +315,6 @@ export interface ForecastMetric {
   previous_value: number | null;
 }
 
-/** A column of your own data the forecast read, and how far ahead it leads. */
 export interface LeadingColumn {
   name: string;
   lag: number;
@@ -360,7 +348,7 @@ export interface ForecastPointsResponse {
   run_id: string;
   frequency: ForecastFrequency;
   confidence_level: number;
-  
+
   boundary_index: number | null;
   points: ForecastPoint[];
 }
@@ -372,7 +360,7 @@ export type SeriesSort = "value_at_risk" | "wmape" | "forecast_total" | "label";
 export interface SeriesRow {
   id: string;
   parent_id: string | null;
-  /** 0 is the run's own total; each grouping column adds a level. */
+
   level: number;
   key: Record<string, string>;
   label: string;
@@ -380,24 +368,24 @@ export interface SeriesRow {
   blocked_reason: string | null;
   model: ModelKind | null;
   wmape: number | null;
-  /** Error against the seasonal-naive benchmark; the number to read where wMAPE is absent. */
+
   mase: number | null;
   accuracy: number | null;
-  /** False when this series was apportioned rather than fitted in its own right. */
+
   accuracy_measured: boolean;
   folds: number;
   forecast_total: number;
-  /** The last full window of actuals, and the one before it — same span, so comparable. */
+
   current_total: number;
   prior_total: number | null;
   share: number | null;
-  /** forecast × its own error: how much of this number could be wrong. Null when nothing was measured. */
+
   value_at_risk: number | null;
-  /** Movement between the two actual windows. Not the forecast, which covers only the horizon. */
+
   change_vs_prior: number | null;
-  /** How many of this series' forecast periods have been graded against actuals. */
+
   scored_periods: number;
-  /** The error it turned out to have. `wmape` above is the one its backtest expected. */
+
   realized_wmape: number | null;
   realized_actual_total: number | null;
 }
@@ -409,7 +397,7 @@ export interface SeriesResponse {
   total: number;
   limit: number;
   offset: number;
-  /** Whether these numbers are money. Decided server-side so every view agrees. */
+
   currency: boolean;
   rows: SeriesRow[];
   has_more: boolean;
@@ -423,9 +411,9 @@ export interface SeriesScoreRow {
   actual_total: number | null;
   wmape: number | null;
   scored_periods: number;
-  /** Why this series could not be graded — a pooled tail, or nothing recorded. */
+
   unscored_reason: string | null;
-  /** Signed, forecast less actual, in the measure's own units. */
+
   miss: number | null;
 }
 
@@ -436,26 +424,26 @@ export interface Scorecard {
   source_dataset_name: string | null;
   horizon: number;
   scored_periods: number;
-  /** Periods still being lived through. Real forecasts nobody can grade yet. */
+
   pending_periods: number;
   covered_through: string | null;
   forecast_total: number;
   actual_total: number;
   wmape: number | null;
   mae: number | null;
-  /** Signed, as a share of actual: whether it ran high or low. */
+
   bias: number | null;
-  /** The share of actuals that landed inside the interval. */
+
   coverage: number | null;
   confidence_level: number | null;
-  /** Combinations the source recorded that the run never forecast. */
+
   unforecast_keys: number;
   currency: boolean;
   blocked_reason: string | null;
   series: SeriesScoreRow[];
   scored: boolean;
   accuracy: number | null;
-  /** Whether at least as many actuals landed inside the band as it promised. */
+
   intervals_held: boolean | null;
 }
 
@@ -469,7 +457,6 @@ export interface ForecastProgressEvent {
   error: string | null;
   updated_at?: string;
 }
-
 
 export interface KpiCard {
   key: string;
@@ -486,13 +473,12 @@ export interface KpiCard {
 }
 
 export interface BreakdownRef {
-  /** The customer's own column name, e.g. "warehouse". */
   column: string;
-  /** That name made readable, e.g. "Warehouse". */
+
   label: string;
-  /** Where the numbers come from: the grouped tree, or a region/category slot. */
+
   source: "series" | "region" | "category" | "";
-  /** How many distinct values it splits into — decides pie versus table. */
+
   cardinality: number;
 }
 
@@ -504,7 +490,7 @@ export interface BreakdownRow {
   change: number | null;
   accuracy: number | null;
   accuracy_measured: boolean;
-  /** Present once the run has been checked against real results. */
+
   actual: number | null;
 }
 
@@ -528,12 +514,9 @@ export interface DashboardSummary {
   range_end: string | null;
   kpis: KpiCard[];
   has_data: boolean;
-  /** What to put in front of this run's money figures. Empty when it is not money. */
+
   currency_symbol: string;
-  /**
-   * Which splits this run can offer, named after the customer's own columns.
-   * Empty for a dataset with no dimensions — a real answer, not a gap.
-   */
+
   breakdowns: BreakdownRef[];
 }
 
@@ -569,12 +552,6 @@ export interface Insight {
   llm_rewritten: boolean;
 }
 
-/**
- * Which provider to talk to, for one request.
- *
- * Never stored server-side: the key lives in the browser and rides along with
- * the request that needs it.
- */
 export interface LlmRunFields {
   llm_provider: string | null;
   llm_api_key: string | null;
@@ -584,7 +561,6 @@ export interface LlmRunFields {
   llm_output_cost_per_million: number | null;
 }
 
-/** What one pass of the insight rewriter did. */
 export interface InsightRewriteResponse {
   run_id: string | null;
   considered: number;
@@ -595,7 +571,6 @@ export interface InsightRewriteResponse {
   items: Insight[];
 }
 
-/** Whether the configured provider answered, and what to do if it did not. */
 export interface LlmCheckResponse {
   ok: boolean;
   provider: string;
@@ -720,10 +695,9 @@ export interface LlmUsageResponse {
   timeseries: LlmUsagePoint[];
   by_model: LlmUsageBreakdown[];
   recent: LlmUsageEvent[];
-  /** When the very first request was made, whenever that was. */
+
   first_event_at: string | null;
 }
-
 
 export interface DashboardFilters {
   runId?: string | null;

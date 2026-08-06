@@ -34,14 +34,11 @@ describe("formatCompact", () => {
     expect(formatCompact(Number.POSITIVE_INFINITY)).toBe("—");
   });
 
-  // A group forecasting in trillions read "$33160.31B" because the suffixes
-  // stopped at billions.
   it("carries on past billions", () => {
     expect(formatCompact(33_160_310_000_000)).toBe("$33.16T");
     expect(formatCompact(4.2e12)).toBe("$4.20T");
   });
 
-  // A conversion rate of 0.0000031 read "$0", and so did every card beside it.
   it("keeps the significant digits of a value below one", () => {
     expect(formatCompact(0.42)).toBe("$0.42");
     expect(formatCompact(0.0031)).toBe("$0.0031");

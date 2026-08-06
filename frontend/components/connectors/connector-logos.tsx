@@ -1,5 +1,3 @@
-
-
 interface LogoProps {
   className?: string;
 }
@@ -7,8 +5,6 @@ interface LogoProps {
 const BASE = "h-4 w-4 shrink-0";
 
 export function BigQueryLogo({ className = BASE }: LogoProps) {
-  
-  
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <circle cx="10.6" cy="10.6" r="7.4" fill="none" stroke="#4285F4" strokeWidth="2.2" />
@@ -57,8 +53,6 @@ export function RedshiftLogo({ className = BASE }: LogoProps) {
 }
 
 export function SqlServerLogo({ className = BASE }: LogoProps) {
-  
-  
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -76,7 +70,6 @@ export function SqlServerLogo({ className = BASE }: LogoProps) {
 }
 
 export function MySqlLogo({ className = BASE }: LogoProps) {
-  
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -171,7 +164,6 @@ export function CsvLogo({ className = BASE }: LogoProps) {
     </svg>
   );
 }
-
 
 export function SupabaseLogo({ className = BASE }: LogoProps) {
   return (

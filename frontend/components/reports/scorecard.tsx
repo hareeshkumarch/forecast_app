@@ -7,13 +7,6 @@ import { useForecastMetrics, useScoreForecast, useScorecard } from "@/hooks/use-
 import { formatCompact, formatPercent, formatSignedPercent } from "@/lib/format";
 import type { ForecastRun, Scorecard as ScorecardData } from "@/types/api";
 
-/**
- * How a finished forecast did against what actually happened.
- *
- * Deliberately placed beside the backtest figures rather than instead of them:
- * the gap between "97% accurate in backtest" and "82% accurate in the event" is
- * the most useful thing on the page, and it only exists if both are shown.
- */
 export function Scorecard({ run }: { run: ForecastRun }) {
   const { data, isLoading, isError, error, refetch } = useScorecard(
     run.status === "completed" ? run.id : null,
@@ -35,9 +28,7 @@ export function Scorecard({ run }: { run: ForecastRun }) {
 
   const card = data;
   const graded = Boolean(card?.scored);
-  // Something to check it against: either it has been graded already, or the
-  // backend found a file whose calendar reaches into this forecast. Without
-  // one the button was a dead end that reported "nothing to score yet".
+
   const checkable = graded || Boolean(card?.source_dataset_id);
 
   return (
@@ -86,18 +77,6 @@ export function Scorecard({ run }: { run: ForecastRun }) {
   );
 }
 
-/**
- * The same thing in one line, for the dashboard.
- *
- * Grading a forecast against what actually happened is the most useful thing
- * this product knows about itself, and it lived at the bottom of a run card on
- * a screen nobody opens daily — forty-seven runs, none of them ever checked.
- * This puts it beside the forecast it is about.
- *
- * It says nothing at all when there is nothing to say: a run with no newer
- * data behind it is not a to-do, and a line reading "not checked" on every
- * dashboard for ever would train people to ignore the one that matters.
- */
 export function ScoreLine({ runId }: { runId: string }) {
   const { data: card } = useScorecard(runId);
   const score = useScoreForecast(runId);
@@ -107,11 +86,6 @@ export function ScoreLine({ runId }: { runId: string }) {
   const periods = `${card.scored_periods} of ${card.horizon} period${card.horizon === 1 ? "" : "s"}`;
 
   if (card.scored) {
-    /*
-     * An accuracy of nothing is not an accuracy of zero. When every actual in
-     * the horizon came back at zero there is no scale to be wrong against, and
-     * the dash a table would print reads as "it was — accurate" in a sentence.
-     */
     if (card.accuracy === null) {
       return (
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
@@ -161,8 +135,6 @@ export function ScoreLine({ runId }: { runId: string }) {
 }
 
 function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
-  // The backtest figure, fetched only once there is a realized one to set it
-  // against — on its own it is already on the run's detail screen.
   const { data: metrics } = useForecastMetrics(run.id);
   const expected = metrics?.metrics.find((metric) => metric.name === "accuracy")?.value ?? null;
 
@@ -234,12 +206,6 @@ function Figure({
   );
 }
 
-/**
- * The sentence a reader takes away.
- *
- * Every clause is a different fault needing a different fix — a lean is not
- * scatter, and an interval that under-covers is not the same as being far out.
- */
 function summary(card: ScorecardData): string {
   const parts: string[] = [];
 

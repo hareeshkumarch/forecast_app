@@ -1,6 +1,5 @@
 "use client";
 
-
 import {
   AlertTriangle,
   CalendarDays,
@@ -45,7 +44,6 @@ import type {
 
 const NONE = "__none__";
 
-//: No provider — the insights keep the wording the platform computed.
 const PLAIN = "__plain__";
 
 const FREQUENCIES: SelectOption<ForecastFrequency>[] = [
@@ -112,8 +110,7 @@ export function ForecastModal() {
   const [confidence, setConfidence] = useState(80);
   const [regionColumn, setRegionColumn] = useState(NONE);
   const [categoryColumn, setCategoryColumn] = useState(NONE);
-  // The splits are charts by default; ticking this also forecasts each
-  // combination in its own right, which is what fills the Series workspace.
+
   const [forecastEach, setForecastEach] = useState(false);
   const [weightColumn, setWeightColumn] = useState(NONE);
   const [aggregation, setAggregation] = useState<MeasureAggregation>("sum");
@@ -121,8 +118,6 @@ export function ForecastModal() {
   const [outlierTreatment, setOutlierTreatment] = useState<OutlierTreatment>("none");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // The saved config is the starting point, and the picker below writes back
-  // to it, so choosing here is also choosing for next time.
   const [llmProvider, setLlmProvider] = useState<string>(PLAIN);
   const [hasKey, setHasKey] = useState(false);
 
@@ -171,18 +166,6 @@ export function ForecastModal() {
     }
   });
 
-  /*
-   * Which file the dialog opens on, decided once per opening.
-   *
-   * Pressing Forecast on a row of the Data screen names that file, and it
-   * would be perverse to then open on a different one. Opened from anywhere
-   * else the picker keeps whatever the last visit left in it, falling back to
-   * the newest upload the first time.
-   *
-   * Once per opening matters: the target id stays set for as long as the
-   * dialog is up, so re-applying it would snap the picker back every time
-   * someone changed it by hand.
-   */
   const seeded = useRef(false);
 
   useEffect(() => {
@@ -276,8 +259,6 @@ export function ForecastModal() {
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
 
-        // The platform's own wording is a real choice, so it turns the
-        // provider off for this run rather than quietly using a saved key.
         ...(llmProvider === PLAIN
           ? llmRunFields({ ...loadLlmConfig(), apiKey: "" })
           : llmRunFields({ ...loadLlmConfig(), provider: llmProvider })),
@@ -313,17 +294,12 @@ export function ForecastModal() {
   const numerics = dataset?.columns.filter((column) => column.kind === "numeric") ?? [];
   const blocked = quality.data?.blocked ?? false;
 
-  // Order matters — it is the order the tree nests in — so a second column
-  // without a first would silently become the first.
   const splits = [regionColumn, categoryColumn].filter((column) => column !== NONE);
   const grain = forecastEach ? splits : [];
 
-  // Distinct counts are already profiled, so the number of series a grain
-  // implies can be shown before the run rather than discovered during it.
   const maxSeries = profile?.max_series;
   const effectiveSeriesLimit = Math.min(seriesLimit, maxSeries ?? seriesLimit);
-  // Counted from the splits rather than the grain, so the label can say how
-  // many series ticking the box would produce before it is ticked.
+
   const grainSize = splits.reduce((product, column) => {
     const distinct = dimensions.find((c) => c.name === column)?.distinct_count ?? 0;
     return distinct > 0 ? product * distinct : product;
@@ -422,16 +398,6 @@ export function ForecastModal() {
             </div>
           </Section>
 
-          {/*
-            * One section, because there were two and they overlapped.
-            *
-            * "Charts on the dashboard" chose the columns the splits are drawn
-            * from; "Forecast grain" chose the columns forecast separately —
-            * and it sat underneath, so in forty-seven runs nobody ever reached
-            * it and the Series workspace had never once had anything to show.
-            * They are the same two columns in almost every case. Pick them
-            * here, then say whether each combination gets its own model.
-            */}
           <Section
             title="Break it down"
             note={splits.length === 0 ? "Optional" : splits.join(" · ")}
@@ -614,13 +580,6 @@ export function ForecastModal() {
             ) : null}
           </div>
 
-          {/*
-            * Chosen here, not somewhere else. This used to be a button that
-            * opened Settings — and because a modal replaces whatever modal is
-            * already open, pressing it threw away everything the reader had
-            * configured so far. The provider belongs to the run being set up,
-            * so it is set up here, and the choice is saved for the next one.
-            */}
           <div className="rounded-card border border-border bg-surface-muted p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">

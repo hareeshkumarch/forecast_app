@@ -9,7 +9,7 @@ export interface Toast {
   tone: ToastTone;
   title: string;
   description?: string;
-  /** Optional inline action, e.g. "Undo" or "View run". */
+
   action?: { label: string; onClick: () => void };
 }
 
@@ -47,10 +47,6 @@ export const useToastStore = create<ToastState>((set, get) => ({
   clear: () => set({ toasts: [] }),
 }));
 
-/**
- * Callable outside React (mutation callbacks, event handlers) so any layer can
- * report an outcome without threading a hook through.
- */
 export const toast = {
   success: (title: string, description?: string) =>
     useToastStore.getState().push({ tone: "success", title, description }),

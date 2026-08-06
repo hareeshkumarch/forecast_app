@@ -66,13 +66,6 @@ const LEVELS = [
   },
 ];
 
-/**
- * The planner's screen: which series need a human this week.
- *
- * The dashboard answers "how is the business doing". This answers "where is
- * the forecast wrong, and does it matter" — which is a different question and
- * a different ordering, so it is a different screen.
- */
 export function SeriesWorkspace() {
   const filters = useDashboardFilters();
   const { data: runs, isPending, isError, error, refetch } = useForecastRuns({ limit: PICKER_LIMIT });
@@ -98,9 +91,6 @@ export function SeriesWorkspace() {
           </p>
         </header>
 
-        {/* "No completed run yet" is a claim, not a placeholder: shown while
-            the runs are still loading it tells someone with fifty of them that
-            they have none. */}
         {isPending ? (
           <Card className="p-4">
             <Skeleton className="h-5 w-40" />
@@ -140,7 +130,6 @@ export function SeriesWorkspace() {
   );
 }
 
-/** An empty screen that only names what is missing is a dead end. */
 function NewForecastButton({ label = "New Forecast" }: { label?: string }) {
   const openModal = useUiStore((state) => state.openModal);
   return (
@@ -164,7 +153,7 @@ function SeriesTable({
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
   const [scope, setScope] = useState("all");
   const [search, setSearch] = useState("");
-  // One request per pause in the typing, not one per letter.
+
   const settled = useDebounced(search, 250);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<SeriesRow | null>(null);
@@ -173,7 +162,7 @@ function SeriesTable({
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-    // The grain is the deepest level, which is however many columns it has.
+
     ...(scope === "leaf" ? { level: leafLevel } : {}),
     ...(settled.trim() ? { search: settled.trim() } : {}),
   };
@@ -181,8 +170,6 @@ function SeriesTable({
   const { data, isLoading, isError, error, refetch, isPlaceholderData } =
     useForecastSeries(runId, query);
 
-  // Changing what is asked for has to start from the first page, or the offset
-  // outruns a shorter result and the list comes back empty.
   function change<T>(set: (value: T) => void) {
     return (value: T) => {
       set(value);
@@ -191,11 +178,9 @@ function SeriesTable({
   }
 
   const rows = data?.rows ?? [];
-  // Whether the numbers are money is the server's call, not a second guess at
-  // the column name that could disagree with what the export decided.
+
   const currency = data?.currency ?? true;
-  // The realized column exists only once this run has been graded against
-  // actuals; before that there is nothing behind it but empty cells.
+
   const scored = rows.some((row) => row.scored_periods > 0);
   const showing = data
     ? `${data.offset + 1}–${data.offset + rows.length} of ${data.total}`
@@ -203,9 +188,7 @@ function SeriesTable({
 
   return (
     <div className="space-y-3">
-      {/* Finding the worst series and not being able to look at it is where
-          this screen used to stop. Level 0 is the run's own total, so it
-          scopes to nothing and the chart falls back to the top line. */}
+
       {selected ? (
         <ForecastVsActual
           seriesId={selected.level > 0 ? selected.id : null}
@@ -229,11 +212,8 @@ function SeriesTable({
           }
         />
 
-        {/* Below the header rather than beside it: three controls and a title do
-          not share a phone's width, and the title loses. */}
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-          {/* Its own row on a phone: given flex-1 it would shrink to the icon
-            rather than push the fixed-width selects onto the next line. */}
+
           <div className="relative basis-full sm:basis-auto">
             <Search
               className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
@@ -298,8 +278,7 @@ function SeriesTable({
                     <th className="px-3 py-2 text-right font-medium">
                       Forecast
                     </th>
-                    {/* Trend is the one a phone can lose: accuracy is what says
-                      whether the number beside it can be trusted. */}
+
                     <th
                       className="hidden px-3 py-2 text-right font-medium sm:table-cell"
                       title="How this series has moved between the last two comparable periods"
@@ -312,8 +291,7 @@ function SeriesTable({
                     >
                       {scored ? "Expected" : "Accuracy"}
                     </th>
-                    {/* Only once something has been graded. A column of
-                      dashes on an unscored run is noise, not information. */}
+
                     {scored ? (
                       <th
                         className="hidden px-3 py-2 text-right font-medium sm:table-cell"
@@ -401,15 +379,12 @@ function SeriesRowCells({
         selected ? "bg-accent-soft" : "hover:bg-surface-muted/60",
       )}
     >
-      {/* max-w on the cell, not the span: a table cell grows to its content
-          and would push the columns that matter off a phone's screen. */}
+
       <td className="max-w-[46vw] px-4 py-2 sm:max-w-none">
-        {/* A real button, so the chart is reachable by keyboard and the row
-            announces what selecting it does. */}
+
         <button
           type="button"
-          // Without this the click also reaches the row's handler and the
-          // second toggle undoes the first.
+
           onClick={(event) => {
             event.stopPropagation();
             onSelect();
@@ -417,7 +392,7 @@ function SeriesRowCells({
           aria-pressed={selected}
           className="flex min-w-0 items-center gap-1.5 rounded-chip text-left"
         >
-          {/* Depth is the one thing a flat list of a tree has to keep. */}
+
           {row.level > 0 ? (
             <span
               aria-hidden
@@ -477,9 +452,7 @@ function SeriesRowCells({
             </span>
           ) : (
             <span
-              // Against the error its own backtest predicted: worse than
-              // expected is the row worth opening, and neither number says
-              // that on its own.
+
               className={
                 row.wmape !== null && row.realized_wmape > row.wmape
                   ? "text-negative"

@@ -31,7 +31,6 @@ SCORABLE_METRICS = frozenset({"wmape", "smape", "rmse", "mae"})
 
 
 def _accuracy(wmape: float | None) -> float | None:
-    """Accuracy as the rest of the platform defines it, rounded for the wire."""
     from app.forecasting.metrics import accuracy_from_wmape
 
     if wmape is None:
@@ -55,7 +54,6 @@ class ForecastRunRequest(StrictModel):
     weight_column: Identifier | None = None
     region_column: Identifier | None = None
     category_column: Identifier | None = None
-    #: The grain to forecast at, outermost first. Empty forecasts one total.
     group_by: Annotated[list[Identifier], Field(max_length=4)] = Field(default_factory=list)
     frequency: ForecastFrequency | None = None
     horizon: Horizon | None = None
@@ -95,8 +93,6 @@ class ForecastRunRequest(StrictModel):
     @field_validator("group_by")
     @classmethod
     def _grain_has_no_repeats(cls, value: list[str]) -> list[str]:
-        # Order is the nesting order, so a repeat is a mistake rather than
-        # something to quietly collapse.
         if len(set(value)) != len(value):
             raise ValueError("The forecast grain lists the same column twice.")
         return value
@@ -126,13 +122,10 @@ class ForecastRunRequest(StrictModel):
 
 
 class LeadingColumn(BaseModel):
-    """A column of the customer's own data the forecast read, and its lead."""
-
     model_config = ConfigDict(extra="forbid")
 
     name: str
     lag: NonNegativeInt
-    #: Whether the target tends to follow the driver up or down.
     direction: str = "up"
 
 
@@ -182,8 +175,6 @@ class ForecastPointRead(ORMModel):
 
 
 class SeriesRow(ORMModel):
-    """One series in a grouped run, as the triage list needs it."""
-
     id: uuid.UUID
     parent_id: uuid.UUID | None
     level: NonNegativeInt
@@ -193,8 +184,6 @@ class SeriesRow(ORMModel):
     blocked_reason: str | None
     model: ModelKind | None
     wmape: float | None
-    #: Error against the seasonal-naive benchmark: 1.0 is "no better than
-    #: repeating last season". The number to read where wMAPE is absent.
     mase: float | None = None
     accuracy: float | None
     accuracy_measured: bool
@@ -204,8 +193,6 @@ class SeriesRow(ORMModel):
     prior_total: float | None
     share: float | None
 
-    # Filled once the periods this series forecast have been lived through.
-    # `wmape` above is what the backtest expected; this is what happened.
     scored_periods: NonNegativeInt = 0
     realized_wmape: float | None = None
     realized_actual_total: float | None = None
@@ -213,11 +200,6 @@ class SeriesRow(ORMModel):
     @computed_field
     @property
     def value_at_risk(self) -> float | None:
-        """
-        How much of this series' forecast its own measured error could be
-        wrong about. Big and accurate is fine; big and wrong is the thing a
-        planner has to spend Monday on, and neither number says that alone.
-        """
         if self.wmape is None:
             return None
         return round(abs(self.forecast_total) * self.wmape / 100.0, 4)
@@ -225,12 +207,6 @@ class SeriesRow(ORMModel):
     @computed_field
     @property
     def change_vs_prior(self) -> float | None:
-        """
-        How this series has moved between its last two windows.
-
-        Both cover the same span. Comparing the forecast against a window
-        instead would measure the difference in length, not in trend.
-        """
         if not self.prior_total:
             return None
         return round((self.current_total - self.prior_total) / abs(self.prior_total) * 100.0, 2)
@@ -245,8 +221,6 @@ class SeriesResponse(BaseModel):
     total: NonNegativeInt
     limit: NonNegativeInt
     offset: NonNegativeInt
-    #: Whether these numbers are money. Decided once here from the measure's
-    #: name, so every screen and export agrees rather than each re-guessing.
     currency: bool
     rows: list[SeriesRow]
 
@@ -257,8 +231,6 @@ class SeriesResponse(BaseModel):
 
 
 class ScoreRequest(StrictModel):
-    #: Which dataset supplies the actuals. Omitted, the newest one that covers
-    #: the horizon and holds the run's columns is used.
     dataset_id: uuid.UUID | None = None
 
 
@@ -277,15 +249,12 @@ class SeriesScoreRow(BaseModel):
     @computed_field
     @property
     def miss(self) -> float | None:
-        """How far off in the measure's own units — signed, forecast less actual."""
         if self.actual_total is None:
             return None
         return round(self.forecast_total - self.actual_total, 4)
 
 
 class ScorecardResponse(BaseModel):
-    """A finished forecast measured against what happened."""
-
     model_config = ConfigDict(extra="forbid")
 
     run_id: uuid.UUID
@@ -319,13 +288,11 @@ class ScorecardResponse(BaseModel):
     @computed_field
     @property
     def accuracy(self) -> float | None:
-        """The realized counterpart of the accuracy every run already reports."""
         return _accuracy(self.wmape)
 
     @computed_field
     @property
     def intervals_held(self) -> bool | None:
-        """Whether the interval kept the promise it made. See `forecasting.metrics`."""
         from app.forecasting.metrics import intervals_held
 
         return intervals_held(self.coverage, self.confidence_level)
@@ -366,8 +333,6 @@ class ForecastRunRead(ORMModel):
     created_at: datetime
     progress_updated_at: datetime | None = None
 
-    # How it actually did. Distinct from `metrics`, which are backtest numbers
-    # and therefore say what the model would have done, not what it did.
     scored_at: datetime | None = None
     scored_periods: NonNegativeInt = 0
     realized_wmape: float | None = None
@@ -386,8 +351,6 @@ class ForecastRunRead(ORMModel):
 
 
 class RunStateCounts(BaseModel):
-    """How the runs matching a search divide by state."""
-
     model_config = ConfigDict(extra="forbid")
 
     all: NonNegativeInt
@@ -403,8 +366,6 @@ class ForecastRunPage(BaseModel):
     limit: NonNegativeInt
     offset: NonNegativeInt
     sort: str
-    #: Counts of what exists, not of what was fetched — the screen puts these
-    #: at the top as the truth about the workspace.
     counts: RunStateCounts
     rows: list[ForecastRunRead]
 
@@ -421,8 +382,6 @@ class ForecastMetricsResponse(BaseModel):
     selected_model: ModelKind | None
     selection_rationale: str | None
     leading_columns: list[LeadingColumn] = Field(default_factory=list)
-    #: So a lead can be described in the run's own units — "6 months earlier"
-    #: rather than "6 periods".
     frequency: ForecastFrequency
     scoring_rule: str
     metrics: list[ForecastMetricRead]

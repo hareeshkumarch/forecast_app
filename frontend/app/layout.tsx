@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { Providers } from "./providers";
 
-
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
@@ -26,10 +25,6 @@ export const viewport: Viewport = {
   ],
 };
 
-/*
- * Runs before first paint so a dark-theme reload never flashes the light
- * palette. It mirrors readPrefs()/applyPrefs() in stores/prefs-store.ts.
- */
 const THEME_BOOTSTRAP = `
 (function () {
   try {

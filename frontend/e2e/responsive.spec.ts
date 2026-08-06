@@ -1,15 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/**
- * The layout contract, per breakpoint:
- *
- *   < 1024   primary navigation is a drawer
- *   >= 1024  application navigation is inline
- *   >= 1720  the contextual insights rail joins it
- *
- * and at every width the page itself never scrolls sideways.
- */
-
 const appNavigation = (page: Page) => page.locator('aside[aria-label="Primary navigation"]');
 const insightsRail = (page: Page) => page.locator('aside[aria-label="Forecast insights"]');
 
@@ -17,10 +7,6 @@ async function load(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  // The workspace resolves into exactly one of four states, and three of them
-  // are settled: the panels, the first-run guide, or an error the summary
-  // could not get past. Waiting for the panels alone made every test here
-  // depend on a reachable API, which this job deliberately does not run.
   await expect(page.locator('[data-workspace]:not([data-workspace="loading"])')).toBeVisible({
     timeout: 15_000,
   });
@@ -73,7 +59,6 @@ test("panels reflow to the width the workspace actually has", async ({ page }) =
     return { kpi: count(".grid-kpi"), charts: count(".grid-charts"), panels: count(".grid-panels") };
   });
 
-  // A phone gets one chart per row; a workspace with room gets two.
   expect(columns.charts).toBe(width < 1024 ? 1 : 2);
   expect(columns.panels).toBe(width < 880 ? 1 : 2);
 
@@ -87,7 +72,6 @@ test("the header keeps its controls reachable at every width", async ({ page }) 
 
   const width = page.viewportSize()?.width ?? 0;
 
-  // Scenario, run and window collapse into one filters button on narrow screens.
   if (width < 768) {
     await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
@@ -118,10 +102,9 @@ test("the logo collapses the rail on desktop and opens the sheet below it", asyn
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(rail).toHaveAttribute("data-collapsed", "");
-  // The width is animated, so poll rather than reading it mid-transition.
+
   await expect.poll(railWidth, { timeout: 3000 }).toBeLessThan(90);
 
-  // Labels give way to icons, but every destination stays reachable.
   await expect(page.getByRole("link", { name: "Connectors" })).toBeVisible();
 
   await page.reload();
@@ -148,7 +131,6 @@ test("a rich selector shows why to pick each option and commits the choice", asy
   const listbox = page.getByRole("listbox");
   await expect(listbox).toBeVisible();
 
-  // Every option carries the reason to pick it, not just its name.
   const quarterly = listbox.getByRole("option", { name: /Quarterly/ });
   await expect(quarterly).toContainText("One point per quarter");
 

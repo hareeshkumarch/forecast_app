@@ -1,6 +1,5 @@
 "use client";
 
-
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   AlertTriangle,
@@ -77,11 +76,6 @@ const SEVERITY_STYLES: Record<
   },
 };
 
-/**
- * Fixed sidebar from `2xl` up. It is the first thing to go when space runs
- * short: below that width the 320px it wants costs the workspace its
- * side-by-side charts, and the same cards are one tap away in the header.
- */
 export function InsightsRail() {
   return (
     <aside
@@ -93,12 +87,6 @@ export function InsightsRail() {
   );
 }
 
-/**
- * Which provider is configured in this browser, if any.
- *
- * Read after mount, not during render: the config lives in localStorage, and
- * reading it on the server would make the first paint disagree with the second.
- */
 function useConfiguredProvider(): { id: string; label: string } | null {
   const [provider, setProvider] = useState<{ id: string; label: string } | null>(null);
 
@@ -179,11 +167,6 @@ export function InsightsRailBody() {
           </DropdownMenu.Root>
         </div>
 
-        {/*
-          * Who wrote what you are reading. Without this the badge on a card
-          * was the only clue that a model had been anywhere near it, and there
-          * was nothing at all to say why it had not.
-          */}
         {items.length > 0 ? (
           <p className="mt-1 flex items-center gap-1.5 text-caption text-text-muted">
             {rewritten > 0 && provider ? (
@@ -264,7 +247,6 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
           {insight.title}
         </h3>
       </div>
-
 
       <p className="mt-1.5 line-clamp-3 text-caption leading-[16px] text-text-secondary">
         {insight.explanation}

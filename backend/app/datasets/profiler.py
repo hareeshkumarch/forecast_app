@@ -10,12 +10,6 @@ import polars as pl
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
-#: Measures whose numbers are money, and so are shown with a currency prefix.
-#:
-#: A guess from the column's name, and only ever a presentation one — getting it
-#: wrong costs a "$", never a forecast. It is English-only and will miss a
-#: column named `chiffre_affaires`, which is why it lives here once rather than
-#: being written out again wherever a number is formatted.
 CURRENCY_NAME_HINTS = (
     "revenue",
     "sales",
@@ -28,10 +22,6 @@ CURRENCY_NAME_HINTS = (
     "bookings",
 )
 
-#: The symbol for a currency the column names outright. Derived where the data
-#: says so — a column called "Chiffre d'affaires (€)" or "sales_gbp" is not
-#: guesswork — because rendering a European customer's revenue with a dollar
-#: sign is a specific, visible way of being wrong about their business.
 ISO_SYMBOLS: dict[str, str] = {
     "usd": "$",
     "eur": "€",
@@ -62,8 +52,6 @@ ISO_SYMBOLS: dict[str, str] = {
     "vnd": "₫",
 }
 
-#: A word boundary either side, so "value_gbp" and "Revenue (EUR)" match while
-#: "brought_forward" does not turn into Brazilian real.
 _ISO_PATTERN = re.compile(rf"(?<![a-z]) ?({'|'.join(ISO_SYMBOLS)})(?![a-z])")
 
 
@@ -75,12 +63,6 @@ def is_currency_like(column: str) -> bool:
 
 
 def currency_symbol(column: str) -> str | None:
-    """
-    The currency this column names, if it names one at all.
-
-    None means the column did not say, which is a different answer from "not
-    money" — the caller falls back to whatever the deployment is configured in.
-    """
     for character in column:
         if unicodedata.category(character) == "Sc":
             return character

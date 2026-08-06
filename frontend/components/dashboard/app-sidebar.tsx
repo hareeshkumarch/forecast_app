@@ -38,25 +38,8 @@ export type AppSection =
   | "usage"
   | "settings";
 
-/**
- * The rail's two widths.
- *
- * They are not arbitrary: the nav's padding (12px) plus an item's own (10px)
- * puts every icon 22px from the rail's edge, so a collapsed rail of
- * 22 + 16 + 22 leaves each icon exactly where the expanded rail had it. The
- * rail narrows around the icons rather than moving them.
- */
 const RAIL_WIDTH = { expanded: "w-rail", collapsed: "w-[60px]" } as const;
 
-/**
- * How a label behaves while the rail changes width.
- *
- * Text is the first thing to go and the last to arrive. Closing, it fades out
- * ahead of the width so it is never seen being squeezed; opening, it waits for
- * the rail to make room rather than spilling out of a 60px column and being
- * clipped. The rail animates over 200ms, so the two halves sit either side of
- * that.
- */
 const LABEL_FADE = {
   hidden: "opacity-0 duration-100",
   shown: "opacity-100 delay-150 duration-150",
@@ -73,10 +56,6 @@ function isActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-/**
- * `[` toggles the rail. Ignored while typing, so it never eats a bracket in a
- * dataset name or a query.
- */
 function useSidebarShortcut(): void {
   const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
 
@@ -149,8 +128,7 @@ function NavLink({
         )}
         aria-hidden
       />
-      {/* Positioned out of flow so a collapsed item is exactly an icon wide,
-          and so the link keeps its accessible name in both states. */}
+
       <span
         className={cn(
           "absolute left-[34px] right-2.5 truncate text-meta font-medium leading-none",
@@ -162,15 +140,6 @@ function NavLink({
     </Link>
   );
 
-  // The tinted pill and the accent icon already say which section you are in,
-  // in both widths. An edge marker on top of them would be a third signal —
-  // and the rail sits flush against the window, so it read as a clipped sliver
-  // rather than an indicator.
-  //
-  // The trigger stays mounted whether or not there is a tooltip to show:
-  // swapping the link between a wrapped and an unwrapped branch remounts it,
-  // and a freshly mounted element has no previous opacity to animate from — so
-  // the label popped in at full strength while the rail was still 60px wide.
   return (
     <li>
       <Tooltip.Root>
@@ -179,8 +148,7 @@ function NavLink({
           <Tooltip.Portal>
             <Tooltip.Content
               side="right"
-              // An item ends 12px inside the rail, so anything less than that
-              // opens the tooltip on top of the rail's own border.
+
               sideOffset={16}
               className="z-50 rounded-card border border-border bg-surface px-2.5 py-1.5 shadow-popover"
             >
@@ -200,8 +168,7 @@ export function AppSidebarBody({ collapsed = false }: { collapsed?: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-3">
-      {/* Fixed height in both states: the label goes, the rhythm stays, and
-          nothing below it shifts as the rail narrows. */}
+
       <div className="flex h-11 shrink-0 items-end px-3 pb-1.5">
         <p className={cn("eyebrow truncate", labelFade(collapsed))}>Workspace</p>
       </div>

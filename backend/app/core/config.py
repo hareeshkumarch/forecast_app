@@ -28,17 +28,10 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 20 * 1024 * 1024
 
-    #: Shown against money columns whose own name does not say which currency
-    #: they are in. A column called "revenue_eur" or "Chiffre d'affaires (€)"
-    #: overrides this; a column called "revenue" cannot, and no amount of
-    #: cleverness will tell us, so it is asked for once here.
     currency_symbol: str = "$"
 
     forecast_workers: int = 2
 
-    # Set a broker to run forecasts on Celery. Left empty the platform stays
-    # single-node and fits models in an in-process pool, which is what the
-    # tests and a laptop want.
     celery_broker_url: str = ""
     celery_result_backend: str = ""
     redis_url: str = ""
@@ -74,16 +67,10 @@ class Settings(BaseSettings):
 
     @property
     def distributed(self) -> bool:
-        """True when runs are dispatched to Celery rather than fitted in-process."""
         return bool(self.broker_url)
 
     @property
     def progress_channel_url(self) -> str:
-        """Redis carries progress between the worker and whichever API serves the stream."""
-        # A Celery broker can also be RabbitMQ. Passing an AMQP URL to
-        # redis-py makes the relay reconnect forever, so only select a URL the
-        # progress transport can actually use. The result backend is a useful
-        # fallback for RabbitMQ-broker/Redis-backend deployments.
         for candidate in (self.redis_url, self.celery_result_backend, self.broker_url):
             if candidate.lower().startswith(("redis://", "rediss://", "unix://")):
                 return candidate

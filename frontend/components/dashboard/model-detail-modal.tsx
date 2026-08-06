@@ -1,6 +1,5 @@
 "use client";
 
-
 import { Check, X } from "lucide-react";
 
 import { Modal } from "@/components/ui/modal";
@@ -16,10 +15,6 @@ function formatScore(value: number | null): string {
   return value.toFixed(3);
 }
 
-/**
- * Backs the "Model: …" chip in the workspace header. The run already reports
- * every candidate it backtested — this is where that comparison lives.
- */
 export function ModelDetailModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
@@ -169,8 +164,7 @@ function CandidateRow({ candidate }: { candidate: ModelCandidate }) {
       <td
         className={cn(
           "px-3 py-2 text-right text-meta num",
-          // Beating the free forecast is the bar. Below it, the method earned
-          // its place; above, it did not, and that is worth seeing at a glance.
+
           candidate.mase == null
             ? "text-text-muted"
             : candidate.mase < 1
@@ -191,14 +185,6 @@ function CandidateRow({ candidate }: { candidate: ModelCandidate }) {
   );
 }
 
-/**
- * What the platform tried before settling on this method's settings.
- *
- * The search has always happened and always been recorded — it arrives on
- * every candidate — and nothing had ever shown it. "We tried twenty-four
- * settings on history it had not seen" is the sentence that turns a number
- * into something a planner will act on.
- */
 function TuningNote({ params }: { params: Record<string, unknown> }) {
   const method = typeof params.tuning_method === "string" ? params.tuning_method : null;
   const evaluations =

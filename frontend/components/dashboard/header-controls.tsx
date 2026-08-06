@@ -1,6 +1,5 @@
 "use client";
 
-
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { Calendar, ChevronDown, Download, History, SlidersHorizontal } from "lucide-react";
@@ -20,10 +19,6 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ExportFormat, ForecastRun, ForecastView } from "@/types/api";
 
-/**
- * Radix reserves the empty string for "nothing selected", so the pinned-run
- * control needs a real value to mean "follow the newest run".
- */
 const LATEST_RUN = "__latest__";
 
 interface ViewOption {
@@ -57,10 +52,6 @@ const TRIGGER = cn(
   "transition-colors duration-fast hover:border-border-strong hover:bg-surface-muted",
 );
 
-/**
- * The run the dashboard is actually showing: either the one pinned in the
- * store, or whichever one the API fell back to.
- */
 export function useActiveRun(): ForecastRun | null {
   const { data: summary } = useSummary();
   const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
@@ -74,7 +65,6 @@ function runLabel(run: ForecastRun): string {
     : when.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return `${run.name}${date ? ` · ${date}` : ""}`;
 }
-
 
 export function RunControl({ className }: { className?: string }) {
   const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
@@ -126,7 +116,6 @@ export function RunControl({ className }: { className?: string }) {
   );
 }
 
-
 export function ScenarioControl({ className }: { className?: string }) {
   const view = useUiStore((state) => state.view);
   const setView = useUiStore((state) => state.setView);
@@ -157,7 +146,6 @@ export function ScenarioControl({ className }: { className?: string }) {
     </DropdownMenu.Root>
   );
 }
-
 
 export function RangeControl({ className }: { className?: string }) {
   const rangeStart = useUiStore((state) => state.rangeStart);
@@ -194,7 +182,6 @@ export function RangeControl({ className }: { className?: string }) {
   );
 }
 
-/** Shared by the desktop popover and the compact filters sheet. */
 export function RangeFields() {
   const rangeStart = useUiStore((state) => state.rangeStart);
   const rangeEnd = useUiStore((state) => state.rangeEnd);
@@ -260,12 +247,6 @@ export function RangeFields() {
   );
 }
 
-
-/**
- * One button standing in for the run / scenario / window trio on viewports
- * too narrow to line them up. Native controls inside, which phones render as
- * their own pickers.
- */
 export function CompactFilters() {
   const view = useUiStore((state) => state.view);
   const setView = useUiStore((state) => state.setView);
@@ -321,7 +302,6 @@ export function CompactFilters() {
   );
 }
 
-
 export function ExportControl() {
   const { data: summary } = useSummary();
   const runId = summary?.run_id ?? null;
@@ -360,8 +340,6 @@ export function ExportControl() {
   );
 }
 
-
-/** Live API health, in place of a decorative bell. */
 export function StatusControl() {
   const { data, isLoading, isError, dataUpdatedAt } = useHealth();
 

@@ -24,8 +24,6 @@ class KpiCard(BaseModel):
 
 
 class BreakdownRef(BaseModel):
-    """One way this run's forecast can be split, named as the customer named it."""
-
     model_config = ConfigDict(extra="forbid")
 
     column: str
@@ -69,12 +67,7 @@ class DashboardSummary(BaseModel):
     range_end: date | None
     kpis: list[KpiCard] = Field(default_factory=list)
     has_data: bool = False
-    #: What to put in front of this run's numbers, so a chart tick and a table
-    #: cell agree with the cards the server already formatted. Empty when the
-    #: target is not money.
     currency_symbol: str = ""
-    #: Which splits this run can offer. Empty for a dataset with no dimensions,
-    #: which is a real answer and not a gap to paper over with blank panels.
     breakdowns: list[BreakdownRef] = Field(default_factory=list)
 
 
@@ -116,14 +109,6 @@ class InsightResponse(BaseModel):
 
 
 class LlmCredentials(BaseModel):
-    """
-    A provider to talk to, for this request only.
-
-    Nothing here is stored: the key lives in the caller's browser and is sent
-    with the request that needs it, so the server never holds a credential it
-    was not handed. Omitting them all falls back to the server's own settings.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     llm_provider: str | None = Field(default=None, max_length=64)
@@ -142,8 +127,6 @@ class InsightRewriteRequest(LlmCredentials):
 
 
 class InsightRewriteResponse(BaseModel):
-    """What the rewriter did, in words the person who pressed the button reads."""
-
     run_id: uuid.UUID | None
     considered: NonNegativeInt = 0
     rewritten: NonNegativeInt = 0

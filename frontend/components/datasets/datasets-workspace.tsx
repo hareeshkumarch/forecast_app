@@ -26,13 +26,6 @@ type SortColumn = "name" | "row_count" | "file_size_bytes" | "created_at";
 
 const PAGE_SIZE = 25;
 
-/**
- * The column a header sorts on, and what the server calls each direction.
- *
- * The table used to sort whatever the browser happened to be holding, which
- * meant "largest file" was the largest of the first page rather than the
- * largest there is.
- */
 const SORT_KEY: Record<SortColumn, { asc: DatasetSort; desc: DatasetSort }> = {
   name: { asc: "name", desc: "name_desc" },
   row_count: { asc: "rows_asc", desc: "rows" },
@@ -47,14 +40,6 @@ const STATUS_TONE: Record<Dataset["status"], "positive" | "warning" | "negative"
   failed: "negative",
 };
 
-/**
- * Everything that has been uploaded, and what can be done with it.
- *
- * There was no such screen. Files went in through a dialog and were never seen
- * again — no way to check what a run was built on, no way to forecast the same
- * data twice without uploading it twice, and no way to remove anything, though
- * the endpoint to do so has been there all along.
- */
 export function DatasetsWorkspace() {
   const remove = useDeleteDataset();
   const openModal = useUiStore((state) => state.openModal);
@@ -83,7 +68,6 @@ export function DatasetsWorkspace() {
     offset: page * PAGE_SIZE,
   });
 
-  // Any change to what is being asked for starts at the first page.
   function change<T>(set: (value: T) => void) {
     return (value: T) => {
       set(value);
@@ -135,8 +119,6 @@ export function DatasetsWorkspace() {
         </div>
       </div>
 
-      {/* Counted over everything held, not over the page on screen — these
-          answer "how much data do we have", which a page cannot. */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Files", total.toLocaleString()],
@@ -265,7 +247,6 @@ export function DatasetsWorkspace() {
                       </div>
                     </td>
 
-                    {/* What a run on this file would forecast, without opening it. */}
                     <td className="px-3 py-2.5 text-text-secondary">
                       {dataset.target_column ? (
                         <>

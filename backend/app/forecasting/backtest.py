@@ -19,9 +19,6 @@ FloatArray = npt.NDArray[np.float64]
 
 logger = get_logger(__name__)
 
-#: z for a two-sided interval, for the levels a run can be started at. Kept
-#: here rather than reaching for scipy, which this module otherwise does not
-#: need for one lookup.
 NORMAL_QUANTILE = {0.5: 0.6745, 0.8: 1.2816, 0.9: 1.6449, 0.95: 1.9600, 0.99: 2.5758}
 
 MIN_FOLDS = 1
@@ -46,11 +43,7 @@ class BacktestResult:
     rmse: float = float("nan")
     smape: float = float("nan")
     wmape: float = float("nan")
-    #: Error against the naive forecast a person would have made for free.
-    #: The one that still reports a number where wMAPE has to give up.
     mase: float = float("nan")
-    #: What this model's intervals would cost, in the units of the series.
-    #: Point error cannot tell an honest band from a confident one.
     winkler: float = float("nan")
     fit_seconds: float = 0.0
     params: dict[str, object] = field(default_factory=dict)
@@ -292,17 +285,6 @@ def run_backtest(
 
 
 def interval_cost(result: BacktestResult, confidence_level: float) -> float:
-    """
-    What this model's intervals would have cost over the folds it was tested on.
-
-    Each fold is scored against a band built from the *other* folds' residuals,
-    so no fold helps size the interval it is then judged by. That leave-one-out
-    step is the whole point: sizing a band from the errors it is about to be
-    scored on always looks well calibrated.
-
-    Needs two folds to say anything, and reports nothing rather than a
-    flattering number when there is only one.
-    """
     if len(result.folds) < 2:
         return float("nan")
 

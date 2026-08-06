@@ -40,10 +40,6 @@ FloatArray = npt.NDArray[np.float64]
 
 logger = get_logger(__name__)
 
-#: A forecast period can carry a rescaled band when its own level is a
-#: meaningful fraction of the largest the series reaches. Judged against the
-#: series rather than against a fixed number, because an absolute floor means
-#: one thing for revenue in millions and quite another for a conversion rate.
 SCALABLE_FRACTION = 1e-6
 
 
@@ -62,7 +58,6 @@ class SegmentInput:
     series: list[float] = field(default_factory=list)
     periods: list[date] = field(default_factory=list)
     values: list[float] = field(default_factory=list)
-    #: The grouping columns that identify this leaf, when the run has a grain.
     key: dict[str, str] = field(default_factory=dict)
 
 
@@ -79,11 +74,7 @@ class ForecastInput:
     metric_weights: dict[str, float] | None = None
     model_options: dict[str, object] | None = None
     quality: dict[str, object] = field(default_factory=dict)
-    #: Other numeric columns from the same upload, on the target's calendar.
-    #: Candidates only — which of them, if any, a model ends up using is
-    #: settled by the fit, not by the caller.
     drivers: dict[str, list[float]] = field(default_factory=dict)
-    #: What the target is called, so an explanation can name it.
     target_label: str = "the total"
 
 
@@ -96,8 +87,6 @@ class SegmentOutput:
     accuracy: float | None
     share: float
     model: str | None = None
-    """True when the accuracy came from this segment's own backtest rather
-    than being inherited from the top line."""
     accuracy_measured: bool = False
 
 
@@ -129,9 +118,6 @@ class ForecastOutput:
     regions: list[SegmentOutput] = field(default_factory=list)
     categories: list[SegmentOutput] = field(default_factory=list)
     drivers: list[Driver] = field(default_factory=list)
-    #: Columns of the customer's own data the winning model actually used, and
-    #: how far ahead each one leads. Empty when none earned their place, which
-    #: is a real answer and worth showing.
     leading_columns: list[DriverLink] = field(default_factory=list)
 
 
@@ -171,10 +157,6 @@ def _make_factory(
 ) -> ModelFactory:
     def factory(y_train: FloatArray, _periods_train: list[date]) -> Forecaster:
         window_profile = profile_series(y_train, frequency)
-        # The panel spans the whole series, and every fold is a prefix of it.
-        # A driver's lag is at least the horizon, so the furthest back any row
-        # can reach is inside its own training window — the fold cannot see
-        # past its cut, which is what makes the backtest number honest.
         model = build_candidate(kind, frequency, options, window_profile, drivers)
         if kind in TRANSFORMABLE:
             return TransformedForecaster(model, build_transform(y_train, window_profile))
@@ -184,14 +166,6 @@ def _make_factory(
 
 
 def _columns_used(model: Forecaster, panel: DriverPanel) -> list[DriverLink]:
-    """
-    Which of the offered columns the fitted model kept.
-
-    Asked of the model rather than assumed from the panel: the panel is what
-    was offered, and both models that can take drivers are free to decide the
-    series forecasts better without them. Reporting the offer as though it were
-    the decision would be the more flattering answer and the wrong one.
-    """
     if not panel:
         return []
 
@@ -228,11 +202,6 @@ def run_forecast(
     profile = profile_series(values, frequency)
     floor = minimum_history(profile)
 
-    # Other numeric columns from the same upload, screened for the ones that
-    # move before the target does. Screening only earns them a place in the
-    # design matrix; the models decide out of sample whether to use them, and
-    # a dataset with nothing leading anything gets an empty panel and the
-    # forecast it would have had.
     panel = build_panel(
         values,
         {name: np.asarray(column, dtype=float) for name, column in payload.drivers.items()},
@@ -297,9 +266,6 @@ def run_forecast(
                 f"Backtested {candidate_index} of {candidate_total} candidate models.",
             )
 
-    # The combination is built from the folds the candidates have just run, so
-    # it competes on exactly the history they were judged on without anything
-    # being refitted. It stands down when it cannot beat its own best member.
     combined = combination.blend(
         results,
         frequency=frequency,
@@ -332,7 +298,6 @@ def run_forecast(
             f"Fitting {winner_kind.value.replace('_', ' ')} on the full history...",
         )
     if winner_kind is ModelKind.ENSEMBLE and combined is not None:
-        # Only the blend knows who is in it and what say each of them has.
         final_model = EnsembleForecaster(
             frequency, profile, members=combined.members, weights=combined.weights
         )
@@ -385,8 +350,6 @@ def run_forecast(
         "rmse": winner_result.rmse,
         "smape": winner_result.smape,
         "wmape": winner_result.wmape,
-        # Against the free forecast, so a series whose wMAPE has to give up
-        # still reports something rather than a dash and nothing else.
         "mase": winner_result.mase,
         "accuracy": accuracy_from_wmape(winner_result.wmape),
         "forecast_total": float(np.sum(point_forecast)),
@@ -551,10 +514,6 @@ def _in_sample_fit(
     return fitted
 
 
-# Fitting the full roster for every segment would multiply the run's cost by
-# the number of segments for very little gain: a segment carries less signal
-# than the total it came from, so the expensive candidates rarely win and often
-# overfit. These cover level, trend, seasonality and intermittency.
 SEGMENT_CANDIDATES = (
     ModelKind.NAIVE,
     ModelKind.SEASONAL_NAIVE,
@@ -571,25 +530,12 @@ FINAL_FIT_FAILED = "The winning model could not be fitted over the full history.
 
 @dataclass(slots=True)
 class LeafFit:
-    """
-    One series' own model, or the reason it has none.
-
-    This is the unit of parallelism in a grouped run, so it has to survive a
-    trip through a message broker: everything on it is JSON, and a fit that did
-    not happen carries its reason rather than being absent.
-    """
-
     label: str
     forecast: list[float] | None = None
-    #: This series' own prediction interval, from its own backtest residuals.
-    #: Absent when nothing could be measured — an inherited band would claim a
-    #: precision this series never demonstrated.
     lower: list[float] | None = None
     upper: list[float] | None = None
     model: ModelKind | None = None
     wmape: float | None = None
-    #: Error against the seasonal-naive benchmark. Carried alongside wMAPE
-    #: because an intermittent leaf routinely has no usable wMAPE at all.
     mase: float | None = None
     folds: int = 0
     blocked_reason: str | None = None
@@ -604,7 +550,6 @@ class LeafFit:
 
     @property
     def accuracy(self) -> float | None:
-        """The accuracy the measured error implies, or None if nothing was measured."""
         if self.wmape is None:
             return None
         value = accuracy_from_wmape(self.wmape)
@@ -655,16 +600,6 @@ def fit_leaf(
     max_folds: int | None,
     confidence_level: float,
 ) -> LeafFit:
-    """
-    Runs the same select-and-backtest pipeline the top line gets, over a
-    cheaper roster.
-
-    Takes a labelled history rather than a segment because that is all a fit
-    reads, and because in a grouped run this is what crosses the wire.
-
-    Never raises. A series that cannot be validated is apportioned from its
-    parent instead, and one unfittable series must not take the run with it.
-    """
     try:
         return _fit_leaf(label, periods, values, frequency, horizon, max_folds, confidence_level)
     except Exception as exc:
@@ -707,8 +642,6 @@ def _fit_leaf(
             plan,
             frequency,
             None,
-            # The band this leaf will actually quote, so the cost of getting it
-            # wrong is priced against the promise it makes rather than a default.
             confidence_level,
         )
         for kind in SEGMENT_CANDIDATES
@@ -739,9 +672,6 @@ def _fit_leaf(
 
     winning = selection.winner.result
 
-    # The same interval machinery the top line uses, on this series' own
-    # residuals. A series never fitted gets no band at all rather than an
-    # inherited one, which would claim a precision it never demonstrated.
     bands = build_intervals(
         forecast,
         winning,
@@ -764,8 +694,6 @@ def _fit_leaf(
 
 @dataclass(slots=True)
 class SeriesResult:
-    """One series in a grouped run, as the service needs to persist it."""
-
     key: dict[str, str]
     label: str
     level: int
@@ -773,23 +701,14 @@ class SeriesResult:
     forecast: list[float]
     model: ModelKind | None
     wmape: float | None
-    #: The scale-free counterpart, for series where wMAPE cannot be computed.
     mase: float | None
     accuracy: float | None
     accuracy_measured: bool
     folds: int
     forecast_total: float
-    #: Reconciled alongside the point forecast, so the band keeps the width its
-    #: own backtest earned rather than the one it had before scaling. Empty
-    #: where the series was apportioned and never measured.
     lower: list[float]
     upper: list[float]
-    #: This series' own actuals over the shared calendar. Without them a chart
-    #: scoped to one series shows a horizon floating on nothing.
     history: list[float]
-    #: The last full window of actuals, and the one before it. Both cover the
-    #: same span, so the change between them is a like-for-like trend — which
-    #: the forecast total, covering only the horizon, would not be.
     current_total: float
     prior_total: float | None
     share: float | None
@@ -806,13 +725,6 @@ def forecast_grouped(
     max_folds: int | None,
     confidence_level: float = 0.8,
 ) -> list[SeriesResult]:
-    """
-    Fits every leaf here and assembles the tree from the results.
-
-    The sequential path, for a single-node deployment and for the tests. A run
-    with a broker fits the leaves in parallel and calls `assemble_grouped` with
-    what comes back — the assembly is identical either way.
-    """
     if not leaves:
         return []
 
@@ -831,14 +743,6 @@ def assemble_grouped(
     group_by: list[str],
     total_path: FloatArray,
 ) -> list[SeriesResult]:
-    """
-    Assembles the levels the grouping implies from fits already produced, and
-    reconciles the whole tree to the directly forecast total.
-
-    A leaf that could not be fitted keeps its place in the tree and is
-    apportioned instead, so the levels still add up and the row says where its
-    number came from.
-    """
     if not leaves:
         return []
 
@@ -912,8 +816,6 @@ def assemble_grouped(
 
 @dataclass(slots=True)
 class _Actuals:
-    """A node's own history, and the two windows its trend is read from."""
-
     current: float
     prior: float | None
     history: FloatArray
@@ -924,17 +826,6 @@ def _rescale_band(
     fitted: list[float] | None,
     reconciled: FloatArray,
 ) -> list[float]:
-    """
-    Moves a band onto the reconciled path it now belongs to.
-
-    Reconciliation multiplies a series' level, so a band left at its original
-    height would sit beside the line instead of around it. The relative width
-    is what the backtest actually measured, so that is what is preserved.
-
-    A period the model forecast as zero has no ratio to scale by — there the
-    offset is carried across unchanged, which is the only reading that does
-    not either vanish or explode.
-    """
     if bound is None or fitted is None:
         return []
 
@@ -947,7 +838,6 @@ def _rescale_band(
 
     reference = float(np.max(np.abs(point))) if point.size else 0.0
     if reference <= 0.0:
-        # The model forecast nothing at all; a band around it would be invented.
         return []
 
     usable = np.abs(point) > reference * SCALABLE_FRACTION
@@ -958,14 +848,6 @@ def _rescale_band(
 
 
 def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _Actuals]:
-    """
-    Each node's history, summed up from the leaves beneath it.
-
-    A parent has no series of its own to read this from, but it is exactly the
-    sum of its children's — every leaf shares one calendar, which is what makes
-    the addition meaningful — so it is carried up rather than leaving every
-    level above the grain without a past.
-    """
     totals: dict[str, _Actuals] = {}
 
     def visit(node: Node) -> _Actuals:
@@ -993,7 +875,6 @@ def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _
 
 
 def _sum_histories(histories: list[FloatArray]) -> FloatArray:
-    """Adds children's histories, ignoring any that does not share the calendar."""
     usable = [history for history in histories if history.size]
     if not usable:
         return np.zeros(0)
@@ -1004,7 +885,6 @@ def _sum_histories(histories: list[FloatArray]) -> FloatArray:
 
 
 def _attach_parents(root: Node, results: list[SeriesResult]) -> None:
-    """Second pass: each result learns its parent's label, so the service can link rows."""
     by_label = {result.label: result for result in results}
 
     def visit(node: Node, parent_label: str | None) -> None:
@@ -1026,17 +906,6 @@ def _forecast_segments(
     max_folds: int | None,
     confidence_level: float,
 ) -> list[SegmentOutput]:
-    """
-    Forecasts every segment in its own right, then reconciles the results to
-    the top line.
-
-    The old behaviour multiplied the total by a share frozen at run time, so
-    two segments moving in opposite directions produced identical curves that
-    differed only in height, and every segment reported the top line's accuracy
-    as though it were its own. Each segment now has its own model, its own
-    backtest and its own measured error; only segments too short to validate
-    fall back to apportioning, and those say so.
-    """
     if not segments:
         return []
 
@@ -1053,8 +922,6 @@ def _forecast_segments(
     ]
     fits = {fit.label: fit for fit in attempted if fit.fitted}
 
-    # Reconciliation needs a path per segment: a real forecast where there is
-    # one, the apportioned share everywhere else.
     paths = [
         np.asarray(fits[segment.label].forecast, dtype=float)
         if segment.label in fits

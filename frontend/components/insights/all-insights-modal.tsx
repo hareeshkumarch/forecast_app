@@ -1,6 +1,5 @@
 "use client";
 
-
 import { useState } from "react";
 
 import { InsightCard } from "@/components/insights/insights-rail";
@@ -19,10 +18,6 @@ const FILTERS: { value: InsightSeverity | "all"; label: string }[] = [
   { value: "info", label: "Info" },
 ];
 
-/**
- * "View All Insights" used to open whichever insight happened to be first.
- * This is the list it promised, with the rail's cards reused verbatim.
- */
 export function AllInsightsModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
@@ -86,7 +81,6 @@ export function AllInsightsModal() {
                   key={insight.id}
                   insight={insight}
                   onOpen={() => {
-
                     closeModal();
                     openInsight(insight);
                   }}

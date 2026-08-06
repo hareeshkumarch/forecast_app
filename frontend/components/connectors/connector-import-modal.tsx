@@ -1,6 +1,5 @@
 "use client";
 
-
 import { AlertTriangle, Database, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -18,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ConnectorType, SchemaTable } from "@/types/api";
 
-/** Only these adapters run arbitrary SQL; the rest import a whole table. */
 const SQL_TYPES: ConnectorType[] = [
   "postgresql",
   "mysql",
@@ -34,10 +32,6 @@ function tableKey(table: SchemaTable): string {
   return table.schema_name ? `${table.schema_name}.${table.table_name}` : table.table_name;
 }
 
-/**
- * The other half of the connector story: the rail could always *save* a
- * source, but there was no way to pull data out of one.
- */
 export function ConnectorImportModal() {
   const modal = useUiStore((state) => state.modal);
   const connectorId = useUiStore((state) => state.modalTargetId);
@@ -75,7 +69,6 @@ export function ConnectorImportModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-
   useEffect(() => {
     if (!open || selected || tables.length === 0) return;
     const first = tables[0];
@@ -110,7 +103,6 @@ export function ConnectorImportModal() {
       },
       {
         onSuccess: () => {
-
           openModal("configure-forecast");
         },
         onError: (mutationError) => setError(errorMessage(mutationError)),

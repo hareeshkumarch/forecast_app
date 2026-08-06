@@ -1,17 +1,3 @@
-"""Give a run many forecastable series instead of exactly one.
-
-A run used to aggregate its whole dataset into a single line. It can now be
-asked for a grain — SKU by store, account by product — and forecasts every
-combination, so `forecast_series` holds the tree and every point says which
-series it belongs to.
-
-`series_id` is nullable on purpose: NULL still means the run's own top line, so
-every run made before this migration stays valid and every dashboard query that
-reads points keeps working untouched.
-
-Revision ID: 0007
-Revises: 0006
-"""
 
 from __future__ import annotations
 
@@ -87,8 +73,6 @@ def upgrade() -> None:
         ["run_id", "series_id", "period"],
     )
 
-    # The old key would have let a run store only its first series; every later
-    # one would collide on the same period.
     op.drop_constraint(
         "uq_forecast_points_run_period_kind", "forecast_points", type_="unique"
     )

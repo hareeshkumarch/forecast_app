@@ -37,12 +37,7 @@ export function ModelHealthStrip() {
           </p>
           <Badge tone="positive"><CheckCircle2 className="h-3 w-3" aria-hidden /> Best of {scored.length}</Badge>
         </div>
-        {/*
-          * A sentence rather than a row of acronyms. wMAPE and RMSE mean
-          * nothing to the person this screen is for, and the two of them side
-          * by side mostly prompt the question "which one do I look at?" —
-          * they are still a click away for anyone who wants them.
-          */}
+
         <p className="mt-0.5 text-caption text-text-muted">
           We tried {scored.length} method{scored.length === 1 ? "" : "s"} on your history and kept{" "}
           <span className="font-medium text-text-secondary">{humanizeModel(data.selected_model)}</span>
@@ -50,12 +45,6 @@ export function ModelHealthStrip() {
           {selected?.folds ? ` over ${selected.folds} test${selected.folds === 1 ? "" : "s"}` : ""}.
         </p>
 
-        {/*
-          * What the forecast looked at besides the target's own past. Worth a
-          * line of its own: "we also read your web sessions" is the single
-          * most reassuring thing this strip can say, and it only appears when
-          * the column actually earned its place in the fit.
-          */}
         {leading.length > 0 ? (
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
             <Link2 className="h-3 w-3 shrink-0 text-accent" aria-hidden />
@@ -70,10 +59,6 @@ export function ModelHealthStrip() {
           </p>
         ) : null}
 
-        {/*
-          * And how it actually did, once the periods it forecast had been
-          * lived through — the backtest above is only what it would have done.
-          */}
         <ScoreLine runId={runId} />
       </div>
       <dl className="flex flex-wrap items-center gap-x-5 gap-y-2">

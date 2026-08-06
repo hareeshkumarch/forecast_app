@@ -13,13 +13,6 @@ SCORING_RULE = (
     "metrics min-max normalised across candidates, lower is better"
 )
 
-#: What an honest interval is worth, relative to the point error.
-#:
-#: Added alongside the point-error weights rather than taken out of them, so
-#: the ranking on accuracy is unchanged and this only separates candidates that
-#: were already close. A model whose bands are narrower than its errors deserve
-#: is not more accurate than one that admits the same uncertainty out loud —
-#: it just looks better on the chart, which is the failure this catches.
 INTERVAL_WEIGHT = 0.15
 
 METRIC_WEIGHTS: dict[str, float] = {
@@ -161,9 +154,6 @@ def select_model(
 
     normalised = {metric: _normalise([getattr(r, metric) for r in usable]) for metric in weights}
 
-    # Only where enough candidates priced an interval to compare them. One
-    # fold cannot support a leave-one-out band, so on short histories this term
-    # is absent rather than guessed, and the ranking falls back to point error.
     interval_costs = [getattr(result, "winkler", float("nan")) for result in usable]
     comparable = sum(1 for cost in interval_costs if math.isfinite(cost))
     interval = _normalise(interval_costs) if comparable >= 2 else None
@@ -196,14 +186,6 @@ def select_model(
 
 
 def _rationale(winner: ScoredCandidate, scored: list[ScoredCandidate]) -> str:
-    """
-    Why this method won, for the person who has to trust the number.
-
-    This sentence sits on the dashboard and at the top of the report, so it
-    says what the figures mean rather than naming them. wMAPE, sMAPE and RMSE
-    are all still on the model screen for anyone who wants them; three
-    acronyms and a composite score are not what the first screen is for.
-    """
     name = winner.result.model.value.replace("_", " ").capitalize()
     folds = winner.result.n_folds
     parts = [

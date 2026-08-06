@@ -37,8 +37,6 @@ const WORKSPACES: Record<AppSection, ComponentType> = {
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
   return (
-    // 100dvh rather than 100vh: mobile browsers shrink the visual viewport as
-    // their chrome slides away, and vh does not follow.
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-canvas">
       <a
         href="#main-content"

@@ -1,10 +1,5 @@
 import type { ForecastFrequency } from "@/types/api";
 
-/**
- * Date arithmetic in the unit the run was actually fitted at. A "next 6
- * periods" preset means six days on a daily run and six quarters on a
- * quarterly one — stepping by months regardless would silently mislabel it.
- */
 export function addPeriods(iso: string, periods: number, frequency: ForecastFrequency): string {
   const date = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return iso.slice(0, 10);
@@ -28,7 +23,6 @@ export function addPeriods(iso: string, periods: number, frequency: ForecastFreq
   return date.toISOString().slice(0, 10);
 }
 
-/** Inclusive window: `count` periods starting at (and including) `start`. */
 export function periodWindowEnd(
   start: string,
   count: number,
@@ -37,18 +31,10 @@ export function periodWindowEnd(
   return addPeriods(start, Math.max(count - 1, 0), frequency);
 }
 
-/** Daily and weekly runs need day precision in labels; coarser ones do not. */
 export function labelGranularity(frequency: ForecastFrequency | null | undefined): "day" | "month" {
   return frequency === "daily" || frequency === "weekly" ? "day" : "month";
 }
 
-/**
- * How many periods make a year at this frequency.
- *
- * "Last year" has to mean 365 days on a daily run and four periods on a
- * quarterly one; a fixed count would quietly mean something different for
- * every dataset.
- */
 export function periodsPerYear(frequency: ForecastFrequency | null | undefined): number {
   switch (frequency) {
     case "daily":
@@ -63,8 +49,6 @@ export function periodsPerYear(frequency: ForecastFrequency | null | undefined):
   }
 }
 
-//: What one step of each frequency is called, so a lead can be described in
-//: the reader's own units rather than as "6 periods".
 const PERIOD_WORDS: Record<ForecastFrequency, [string, string]> = {
   daily: ["day", "days"],
   weekly: ["week", "weeks"],
@@ -72,7 +56,6 @@ const PERIOD_WORDS: Record<ForecastFrequency, [string, string]> = {
   quarterly: ["quarter", "quarters"],
 };
 
-/** "months", or "month" for one — the reader's unit rather than "periods". */
 export function periodWord(
   frequency: ForecastFrequency | null | undefined,
   count: number,
@@ -81,7 +64,6 @@ export function periodWord(
   return count === 1 ? singular : plural;
 }
 
-/** "6 months earlier", for a lead of six periods on a monthly run. */
 export function periodsAgo(
   periods: number,
   frequency: ForecastFrequency | null | undefined,

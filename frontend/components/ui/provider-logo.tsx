@@ -4,18 +4,6 @@ import { useId, type ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * A mark for each LLM provider, drawn inline.
- *
- * Inline because the artifact CSP blocks every external host, so a CDN logo
- * would silently render as a broken square; and because these have to work on
- * both the light and the dark ground, which a flat raster asset does not.
- *
- * OpenAI, Gemini, Claude and xAI carry their own marks. The rest are set as
- * brand-coloured monograms in the same 24-unit system — a monogram that reads
- * as deliberate beats a logo redrawn from memory and got wrong.
- */
-
 type Mark = ComponentType<{ className?: string }>;
 
 function Svg({
@@ -40,7 +28,6 @@ function Svg({
   );
 }
 
-/** The interlocking knot. Black on light, white on dark, via currentColor. */
 function OpenAiMark({ className }: { className?: string }) {
   return (
     <Svg className={cn("text-text-primary", className)}>
@@ -49,7 +36,6 @@ function OpenAiMark({ className }: { className?: string }) {
   );
 }
 
-/** Claude's burst: tapered rays around a centre, in Anthropic's coral. */
 function ClaudeMark({ className }: { className?: string }) {
   return (
     <Svg className={className} fill="#D97757">
@@ -67,12 +53,6 @@ function ClaudeMark({ className }: { className?: string }) {
   );
 }
 
-/**
- * The Gemini spark: a four-point star with deeply concave sides, on Google's
- * blue-to-magenta ramp. The curve control points sit close to the centre,
- * which is what gives the points their needle shape rather than the fat
- * diamond a straight-sided star produces.
- */
 function GeminiMark({ className }: { className?: string }) {
   const gradient = useId();
 
@@ -91,10 +71,6 @@ function GeminiMark({ className }: { className?: string }) {
   );
 }
 
-/**
- * xAI's X: two slanted bars that cross, cut square at top and bottom rather
- * than tapering, which is what separates it from every other X in a menu.
- */
 function XaiMark({ className }: { className?: string }) {
   return (
     <Svg className={cn("text-text-primary", className)}>
@@ -105,13 +81,6 @@ function XaiMark({ className }: { className?: string }) {
   );
 }
 
-/**
- * Ollama's llama, drawn as a line rather than a silhouette.
- *
- * Filled, it collapsed into a dark blob at the 14px this actually renders at —
- * the ears and the muzzle all ran together. Stroked, it reads at menu size and
- * sits with the rest of the icons instead of shouting over them.
- */
 function OllamaMark({ className }: { className?: string }) {
   return (
     <Svg className={cn("text-text-primary", className)} fill="none">
@@ -121,10 +90,10 @@ function OllamaMark({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        {/* The two ears. */}
+
         <path d="M7.8 8.4C7 7.5 6.6 6 6.8 4.6 7 3.3 7.7 2.7 8.4 3c.7.3 1.1 1.5 1.1 2.8 0 .9-.15 1.7-.3 2.2" />
         <path d="M16.2 8.4c.8-.9 1.2-2.4 1-3.8-.2-1.3-.9-1.9-1.6-1.6-.7.3-1.1 1.5-1.1 2.8 0 .9.15 1.7.3 2.2" />
-        {/* The head and the neck below it. */}
+
         <path d="M12 7.4c3.2 0 5.6 2.1 5.6 5 0 1.3-.35 2.1-.6 2.9-.2.65-.3 1.1-.3 1.6 0 1.6-.6 3.1-4.7 3.1s-4.7-1.5-4.7-3.1c0-.5-.1-.95-.3-1.6-.25-.8-.6-1.6-.6-2.9 0-2.9 2.4-5 5.6-5Z" />
       </g>
       <circle cx="10" cy="12.4" r="0.95" fill="currentColor" />
@@ -133,14 +102,6 @@ function OllamaMark({ className }: { className?: string }) {
   );
 }
 
-/**
- * A brand-coloured monogram, for a provider whose own mark is not drawn here.
- *
- * Deliberately a monogram rather than a logo redrawn from memory: a wrong
- * logo is worse than an honest initial, and this reads as a chosen tile
- * rather than a missing asset. Swapping in an official SVG later means
- * replacing one entry in MARKS.
- */
 function monogram(letter: string, background: string, foreground = "#FFFFFF"): Mark {
   function Monogram({ className }: { className?: string }) {
     const shade = useId();
@@ -184,7 +145,6 @@ const MARKS: Record<string, Mark> = {
   custom: OllamaMark,
 };
 
-/** The mark for a provider id, or a neutral one for anything unrecognised. */
 export function providerMark(provider: string): Mark {
   return MARKS[provider] ?? MARKS.custom!;
 }

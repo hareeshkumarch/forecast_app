@@ -67,9 +67,6 @@ class DatasetPage(BaseModel):
     limit: NonNegativeInt
     offset: NonNegativeInt
     sort: str
-    #: Over everything held rather than over the page: the screen reports how
-    #: many files there are, how many rows they hold and what they cost in
-    #: disk, and none of those is a question about the fifty on screen.
     ready: NonNegativeInt
     row_count: NonNegativeInt
     file_size_bytes: NonNegativeInt
@@ -106,11 +103,6 @@ class DatasetProfile(BaseModel):
     @computed_field
     @property
     def max_series(self) -> int:
-        """
-        Maximum output series, including the pooled tail when one is needed.
-        Reported rather than repeated in the client, which would promise a
-        different number the day this one changes.
-        """
         return DEFAULT_MAX_SERIES
 
 

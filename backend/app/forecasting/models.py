@@ -409,29 +409,12 @@ class ProphetForecaster:
             **search,
         }
 
-    #: How hard the trend is allowed to bend, and how much the seasonal shape
-    #: may move. Prophet's own defaults sit at 0.05 and 10.0 and are tuned for
-    #: long web-traffic series; on a couple of years of monthly business data
-    #: 0.05 is often too rigid to follow a real regime change and too loose on
-    #: a noisy one. The grid brackets the default rather than replacing it.
     CHANGEPOINT_PRIORS = (0.01, 0.05, 0.25)
     SEASONALITY_PRIORS = (1.0, 10.0)
 
     def _priors(
         self, frame: object, mode: str, flags: dict[str, bool]
     ) -> tuple[dict[str, float], dict[str, object]]:
-        """
-        The two priors that decide what this model is, chosen on held-out data.
-
-        Frozen at the library defaults these were the one thing about Prophet
-        nobody had ever looked at, while selection charged it the second-highest
-        complexity penalty against the largest parameter budget in the roster —
-        billing it for flexibility it was never allowed to use.
-
-        Prophet fits are slow, so this is a six-point grid over one held-out
-        block rather than the full cross-validated search the booster gets, and
-        it stands down entirely on a history too short to spare the block.
-        """
         import pandas as pd
         from prophet import Prophet
 
@@ -624,8 +607,6 @@ class SarimaxForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     order: tuple[int, int, int] | None = None
-    #: Columns of the customer's own data that lead the target, offered as
-    #: regressors. AICc decides whether they stay.
     drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.SARIMAX, init=False)
     _fitted: FittedModel = field(default=None, init=False)
@@ -660,11 +641,6 @@ class SarimaxForecaster:
         return (1, seasonal_d, 1 if y.size >= 3 * period else 0, period)
 
     def _exog(self, size: int, offset: int = 0, *, with_drivers: bool = True) -> FloatArray | None:
-        """
-        The regressors outside the target's own past: Fourier terms for a
-        season too long for the state space, and the customer's own leading
-        columns when the fit decided they were worth their parameters.
-        """
         blocks: list[FloatArray] = []
 
         if self._harmonics > 0:
@@ -672,10 +648,6 @@ class SarimaxForecaster:
             blocks.append(_fourier_terms(index, self._period, self._harmonics))
 
         if with_drivers and self.drivers:
-            # `columns` shifts by the lag, so asking for `offset + size` rows
-            # and taking the tail gives each row the value from `lag` periods
-            # before it — including the forecast rows, whose lag is at least
-            # the horizon and so reaches back into observed history.
             lagged = self.drivers.columns(offset + size)
             names = sorted(lagged)
             if names:
@@ -703,9 +675,6 @@ class SarimaxForecaster:
         self._harmonics = (
             min(MAX_FOURIER_HARMONICS, max(1, self._period // 8)) if long_season else 0
         )
-        # With and without the customer's own columns, judged by AICc, which
-        # already charges for every extra parameter. A driver that only fits
-        # noise cannot pay that charge, and the fit without it wins.
         driver_choices = [True, False] if self.drivers else [False]
 
         best_fit = None
@@ -794,8 +763,6 @@ class GradientBoostingForecaster:
     profile: SeriesProfile | None = None
     max_depth: int | None = None
     learning_rate: float | None = None
-    #: Columns of the customer's own data that lead the target. Offered to the
-    #: tuner, which drops them if the series is better off without.
     drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.GRADIENT_BOOSTING, init=False)
     _model: FittedModel = field(default=None, init=False)
@@ -868,11 +835,6 @@ class GradientBoostingForecaster:
                 }
             )
 
-        # Whether to use the drivers at all is tuned like any other choice, on
-        # held-out folds. Screening only said they correlate; this is the part
-        # that says the model actually forecasts better with them, and it is
-        # the only claim worth making. A driver costs rows as well as columns —
-        # the lag eats the front of the series — so it has to beat that too.
         from_driver = driver_mask(names)
         offered = bool(from_driver.any())
         if offered:
@@ -975,16 +937,6 @@ class GradientBoostingForecaster:
 
 @dataclass
 class EnsembleForecaster:
-    """
-    Several models fitted together and combined into one path.
-
-    The members and their weights are decided by `combination.blend` from the
-    backtest, not here — this is only the vehicle that refits them on the full
-    history once that decision has been made. The defaults are the roster it
-    used to carry, kept so a caller that names no members still gets something
-    sensible rather than an error.
-    """
-
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     members: tuple[ModelKind, ...] = (
@@ -992,8 +944,6 @@ class EnsembleForecaster:
         ModelKind.ETS,
         ModelKind.SARIMAX,
     )
-    #: How much say each member has. Absent, they share it equally through a
-    #: median, which is what this did before the weights existed.
     weights: dict[ModelKind, float] | None = None
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
     _fitted: list[Forecaster] = field(default_factory=list, init=False)
@@ -1051,9 +1001,6 @@ class EnsembleForecaster:
         if not stacked:
             raise RuntimeError("No ensemble member produced a usable forecast.")
 
-        # A member that failed to refit takes its weight out of the pool with
-        # it, so the survivors keep their proportions rather than the whole
-        # combination quietly shifting toward whoever is left.
         if self.weights and sum(share) > 0.0:
             return np.average(np.vstack(stacked), axis=0, weights=share)
 

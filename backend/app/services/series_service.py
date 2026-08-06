@@ -1,16 +1,3 @@
-"""
-Grouped runs: forecasting every series in a run's grain rather than one total.
-
-The top line is fitted first, by `forecast_service`, because it is the number
-every level has to add up to. This module then fits each leaf in its own right
-— in parallel where there is somewhere to fan out to — assembles the tree and
-stores it.
-
-A 500-series panel costs roughly four and a half minutes fitted one leaf at a
-time (measured: 554 ms per leaf), which is what makes the fan-out worth its
-machinery.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -45,21 +32,14 @@ from app.services.progress_relay import count_series, forget_series_count
 
 logger = get_logger(__name__)
 
-# One leaf costs about half a second, so ten of them is a task of a few seconds
-# — long enough that the broker round trip disappears into it, short enough
-# that a worker lost mid-chunk repeats very little.
 FAN_OUT_CHUNK = 10
 
-# Where the series work sits in the run's progress bar. The top line and its
-# insights are done by the time this starts.
 FIT_FROM, FIT_TO = 0.68, 0.94
 STORE_AT = 0.96
 
 
 @dataclass(slots=True)
 class GroupedPlan:
-    """Everything the tree needs except the leaf fits themselves."""
-
     leaves: list[SegmentInput]
     group_by: list[str]
     frequency: ForecastFrequency
@@ -71,15 +51,6 @@ class GroupedPlan:
 
 
 async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
-    """
-    Rebuilds a grouped run's leaves and the total they must add up to.
-
-    Derived rather than carried. The dataset file does not change once
-    uploaded and the aggregation is deterministic, so a worker holding nothing
-    but a run id reconstructs exactly what the dispatcher saw — and the panel
-    never has to travel through the broker to reach the callback that
-    assembles it.
-    """
     from app.services import dataset_service, forecast_service
 
     async with session_scope() as session:
@@ -142,8 +113,6 @@ def _aggregate_leaves(
         aggregation=aggregation,
         max_series=max_series,
     )
-    # The window the aggregation settled on, so the recent slice matches the
-    # totals it reported rather than a second, differently-sized guess.
     window = comparison_window(frequency, len(grouped[0].periods)) if grouped else 1
 
     return [
@@ -161,7 +130,6 @@ def _aggregate_leaves(
 
 
 async def _stored_total(session: AsyncSession, run_id: uuid.UUID) -> tuple[list[date], list[float]]:
-    """The run's own forecast, read back from the points already stored for it."""
     result = await session.execute(
         select(ForecastPoint.period, ForecastPoint.forecast)
         .where(
@@ -176,13 +144,6 @@ async def _stored_total(session: AsyncSession, run_id: uuid.UUID) -> tuple[list[
 
 
 async def forecast_series(run_id: uuid.UUID) -> RunStatus:
-    """
-    Forecasts every series in a grouped run.
-
-    Returns RUNNING when the work has been handed to a chord — the run is then
-    finished by `finalise`, on whichever worker runs the callback. Returns
-    COMPLETED when the leaves were fitted here.
-    """
     from app.services import forecast_service
 
     plan = await plan_for(run_id)
@@ -211,10 +172,6 @@ async def forecast_series(run_id: uuid.UUID) -> RunStatus:
 
 
 async def _fit_here(run_id: uuid.UUID, plan: GroupedPlan) -> list[LeafFit]:
-    """
-    Fits every leaf without a broker, spreading chunks over the process pool
-    so a single-node deployment still uses more than one core.
-    """
     chunks = _chunks(plan.leaves)
     done = 0
     fits: list[LeafFit] = []
@@ -247,10 +204,6 @@ def fit_chunk(
     max_folds: int | None,
     confidence_level: float,
 ) -> list[dict[str, Any]]:
-    """
-    Fits a chunk of leaves. Runs in a pool worker or a Celery task, so it takes
-    and returns plain data and never raises for a single bad series.
-    """
     return [
         fit_leaf(
             str(payload["label"]),
@@ -266,7 +219,6 @@ def fit_chunk(
 
 
 def _payload(leaf: SegmentInput) -> dict[str, Any]:
-    """Only the history crosses the wire, because only the history is fitted."""
     return {
         "label": leaf.label,
         "periods": [period.isoformat() for period in leaf.periods],
@@ -279,14 +231,6 @@ def _chunks(leaves: list[SegmentInput]) -> list[list[SegmentInput]]:
 
 
 def dispatch(run_id: uuid.UUID, plan: GroupedPlan) -> None:
-    """
-    Hands the leaf fits to the workers as a chord: a group of chunk tasks, and
-    a callback that assembles what they return.
-
-    A chord rather than waiting on a group, because blocking inside a task for
-    other tasks to finish deadlocks as soon as the pool is busy with the very
-    work being waited on.
-    """
     from celery import chord
 
     from app.core.logging import request_id
@@ -312,7 +256,6 @@ def dispatch(run_id: uuid.UUID, plan: GroupedPlan) -> None:
 
 
 def cancellation_task_ids(run_id: uuid.UUID, max_series: int) -> list[str]:
-    """Every deterministic child id a bounded grouped run can create."""
     chunk_count = (max(1, max_series) + FAN_OUT_CHUNK - 1) // FAN_OUT_CHUNK
     return [
         *(_series_task_id(run_id, index) for index in range(chunk_count)),
@@ -329,7 +272,6 @@ def _series_finalise_task_id(run_id: uuid.UUID) -> str:
 
 
 def _chunk_job(run_id: uuid.UUID, plan: GroupedPlan, chunk: list[SegmentInput]) -> dict[str, Any]:
-    """One task's worth of work, as JSON the broker can carry."""
     return {
         "run_id": str(run_id),
         "frequency": plan.frequency.value,
@@ -342,12 +284,6 @@ def _chunk_job(run_id: uuid.UUID, plan: GroupedPlan, chunk: list[SegmentInput]) 
 
 
 def run_chunk_job(job: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    A chunk task's whole body: fit the leaves, then say how far the run has got.
-
-    The count lives in Redis because a chunk knows only its own leaves, and the
-    bar has to move for the minutes a large panel takes.
-    """
     run_id = uuid.UUID(str(job["run_id"]))
     leaves = list(job["leaves"])
 
@@ -368,22 +304,11 @@ def run_chunk_job(job: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def blocked_chunk(job: dict[str, Any], reason: str) -> list[dict[str, Any]]:
-    """
-    Stands in for a chunk that could not be fitted at all.
-
-    Every series in it is returned blocked so the tree still knows they exist:
-    they are apportioned from their parent, the levels still add up, and each
-    row carries the reason rather than quietly going missing.
-    """
     rows = [
         LeafFit(label=str(leaf["label"]), blocked_reason=reason).to_dict()
         for leaf in job.get("leaves", [])
     ]
 
-    # Reporting progress is a courtesy; returning the rows is the job. This is
-    # the last-resort path — a timeout or an unhandled error — and a malformed
-    # job is exactly the sort of thing that lands here, so a missing run id
-    # must not throw a second time and take the whole chunk with it.
     raw_run_id = job.get("run_id")
     if raw_run_id is not None:
         try:
@@ -406,12 +331,6 @@ async def finalise(
     *,
     plan: GroupedPlan | None = None,
 ) -> RunStatus:
-    """
-    Assembles the tree from the fits, stores it, and completes the run.
-
-    Called inline on a single node, and by the chord callback otherwise; the
-    plan is rebuilt when it was not carried across.
-    """
     from app.services import forecast_service
 
     resolved = plan or await plan_for(run_id)
@@ -430,7 +349,6 @@ async def finalise(
         np.asarray(resolved.total_path, dtype=float),
     )
 
-    # Every leaf shares one calendar, which is what lets the levels be summed.
     history_periods = resolved.leaves[0].periods if resolved.leaves else []
 
     async with session_scope() as session:
@@ -456,7 +374,6 @@ async def persist(
     periods: list[date],
     history_periods: list[date],
 ) -> None:
-    """Writes the tree and one forecast curve per node, parents before children."""
     await session.execute(delete(ForecastSeries).where(ForecastSeries.run_id == run.id))
 
     by_level: dict[int, list[SeriesResult]] = {}
@@ -464,8 +381,6 @@ async def persist(
         by_level.setdefault(result.level, []).append(result)
 
     rows: dict[str, ForecastSeries] = {}
-    # A level at a time: children need their parent's id, but siblings do not
-    # need each other's, so one flush per level rather than one per series.
     for level in sorted(by_level):
         for result in by_level[level]:
             parent = rows.get(result.parent_label) if result.parent_label else None
@@ -492,9 +407,6 @@ async def persist(
             rows[result.label] = row
         await session.flush()
 
-    # The root is reconciled to the run's own forecast by construction, so a
-    # curve for it would be a second copy of the top line — one that exports
-    # and charts would then have to know to ignore.
     below_root = [result for result in results if result.level > 0]
 
     session.add_all(
@@ -505,8 +417,6 @@ async def persist(
                 period=period,
                 kind=PointKind.FORECAST,
                 forecast=finite(point),
-                # Empty where the series was apportioned rather than fitted, so
-                # a chart draws no band instead of inventing one.
                 lower_bound=finite(low),
                 upper_bound=finite(high),
             )
@@ -515,8 +425,6 @@ async def persist(
         ]
     )
 
-    # Its own past, so a chart scoped to one series has something to hang the
-    # horizon on rather than three points floating in space.
     session.add_all(
         [
             ForecastPoint(
@@ -535,9 +443,6 @@ async def persist(
     await session.flush()
 
 
-# How the triage list can be ordered. Value at risk is the default because it
-# is the only one that answers "what should I look at first": a big series
-# forecast badly costs more than a small one forecast worse.
 SORTS: dict[str, Any] = {
     "value_at_risk": (func.abs(ForecastSeries.forecast_total) * ForecastSeries.wmape).desc(),
     "wmape": ForecastSeries.wmape.desc(),
@@ -559,13 +464,6 @@ async def list_series(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ForecastSeries], int]:
-    """
-    A page of a run's series, and how many there are in total.
-
-    A series with no measured error has no value at risk to rank on, so those
-    sort last however the list is ordered: an unknown is not evidence of a
-    problem, and burying the measured ones behind them would defeat the point.
-    """
     where = [ForecastSeries.run_id == run_id]
     if level is not None:
         where.append(ForecastSeries.level == level)
@@ -581,8 +479,6 @@ async def list_series(
         select(ForecastSeries)
         .where(*where)
         .order_by(
-            # NULLS LAST is not portable across SQLite and Postgres, so the
-            # nullness is ordered explicitly first.
             ForecastSeries.wmape.is_(None).asc() if sort != "label" else null(),
             ordering,
             ForecastSeries.label.asc(),
@@ -598,7 +494,6 @@ def _banded(
     periods: list[date],
     result: SeriesResult,
 ) -> list[tuple[date, float, float | None, float | None]]:
-    """Pairs each forecast period with its bounds, or with none where there are none."""
     banded = len(result.lower) == len(result.forecast) == len(result.upper)
     return [
         (

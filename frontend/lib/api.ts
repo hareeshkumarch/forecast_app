@@ -152,13 +152,6 @@ export const createConnector = (payload: {
     body: JSON.stringify(payload),
   });
 
-/**
- * Corrects a saved connector.
- *
- * Credentials are optional and omitting them keeps the stored ones — the
- * browser is never told what they are, so a form that always sent them would
- * overwrite a working password with the empty string.
- */
 export const updateConnector = (
   id: string,
   payload: {
@@ -327,15 +320,8 @@ export const getForecastSeries = (
   } = {},
 ) => request<SeriesResponse>(`/api/forecasts/${id}/series${buildQuery(params)}`);
 
-/** The score already computed, or the reason there is none yet. Never recomputes. */
 export const getScorecard = (id: string) => request<Scorecard>(`/api/forecasts/${id}/score`);
 
-/**
- * Grades the forecast against actuals and stores the result.
- *
- * Omitting the dataset uses the newest one that covers the horizon and holds
- * the run's columns, which is what a caller wants in every ordinary case.
- */
 export const scoreForecast = (id: string, datasetId?: string) =>
   request<Scorecard>(`/api/forecasts/${id}/score`, {
     method: "POST",
@@ -347,7 +333,6 @@ export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/
 export const getSummary = (filters: DashboardFilters) =>
   request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`);
 
-/** The forecast split by one column this run actually has. */
 export const getBreakdown = (filters: DashboardFilters, column: string) =>
   request<BreakdownResponse>(
     `/api/dashboard/breakdown${buildQuery({ ...filterParams(filters), column })}`,
@@ -359,25 +344,17 @@ export const getDrivers = (filters: DashboardFilters) =>
 export const getInsights = (filters: DashboardFilters) =>
   request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`);
 
-/**
- * Re-says the stored insights in the configured model's words.
- *
- * A phrasing pass over a finished run — no model is refitted and no figure can
- * change, so this is what applies a key added after the fact.
- */
 export const rewriteInsights = (runId: string | null, llm: LlmRunFields) =>
   request<InsightRewriteResponse>("/api/insights/rewrite", {
     method: "POST",
     body: JSON.stringify({ run_id: runId, ...llm }),
   });
 
-/** Puts the platform's own wording back. */
 export const plainInsights = (filters: DashboardFilters) =>
   request<InsightRewriteResponse>(`/api/insights/plain${buildQuery(filterParams(filters))}`, {
     method: "POST",
   });
 
-/** One real request to the provider, so a key can be checked before a run. */
 export const checkLlm = (llm: LlmRunFields) =>
   request<LlmCheckResponse>("/api/insights/check", {
     method: "POST",

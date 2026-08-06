@@ -1,13 +1,11 @@
 "use client";
 
-
 import { AlertTriangle, Loader2, type LucideIcon } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { createContext, forwardRef, useContext, useId } from "react";
 
 import { errorMessage, errorTitle, isRetryable } from "@/lib/errors";
 import { cn } from "@/lib/utils";
-
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
@@ -30,14 +28,9 @@ const BUTTON_SIZES: Record<ButtonSize, string> = {
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  /** The action is running and its result is not here yet. */
+
   loading?: boolean;
-  /**
-   * While `loading`, turn the button's own icon rather than replacing it with
-   * a spinner. For controls that re-run something already on screen: swapping
-   * the glyph reads as the thing having gone away, when in fact it is still
-   * there and about to be updated in place.
-   */
+
   spin?: boolean;
   icon?: LucideIcon;
 }
@@ -61,8 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return (
     <button
       ref={ref}
-      // A spinning refresh stays clickable-looking but must not queue a second
-      // request; a replacing spinner disables the action outright.
+
       disabled={disabled || (loading && !turning)}
       aria-busy={loading || undefined}
       className={cn(
@@ -83,7 +75,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     </button>
   );
 });
-
 
 export const ICON_BUTTON = cn(
   "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-input fine:h-8 fine:w-8",
@@ -109,16 +100,10 @@ export const IconButton = forwardRef<
   );
 });
 
-
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={cn("card shadow-card", className)}>{children}</div>;
 }
 
-
-/**
- * Shared chrome for every Radix dropdown/popover surface, so menus in the
- * header, the panels and the rails cannot drift apart.
- */
 export const MENU_CONTENT =
   "z-50 min-w-[180px] max-w-[calc(100vw-16px)] rounded-card border border-border bg-surface p-1 shadow-popover";
 
@@ -149,7 +134,6 @@ export function PanelHeader({
     </div>
   );
 }
-
 
 type BadgeTone = "neutral" | "positive" | "negative" | "warning" | "accent";
 
@@ -184,7 +168,6 @@ export function Badge({
   );
 }
 
-
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, id, ...rest }, ref) {
     const field = useContext(FieldContext);
@@ -207,11 +190,6 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   },
 );
 
-/**
- * Lets a control inside a Field pick up the label association without the
- * caller repeating the label text. The Field renders a real <label htmlFor>,
- * so this works for the button-based Select as well as native inputs.
- */
 export interface FieldBinding {
   controlId: string;
   describedBy: string | undefined;
@@ -272,11 +250,9 @@ export function Field({
   );
 }
 
-
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("skeleton", className)} aria-hidden />;
 }
-
 
 export function EmptyState({
   icon: Icon,

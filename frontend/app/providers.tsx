@@ -7,11 +7,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ApiError } from "@/lib/api";
 import { usePrefsStore } from "@/stores/prefs-store";
 
-/**
- * Applies stored preferences after hydration and follows the OS setting while
- * the theme is left on "system". The pre-paint script in the layout has
- * already set the attributes, so this only keeps them in sync.
- */
 function PreferencesBridge() {
   const hydrate = usePrefsStore((state) => state.hydrate);
   const syncSystemTheme = usePrefsStore((state) => state.syncSystemTheme);
@@ -49,8 +44,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <PreferencesBridge />
-      {/* App-wide, so anything can carry a tooltip — including the parts of the
-          sidebar that the mobile drawer renders outside the sidebar itself. */}
+
       <Tooltip.Provider delayDuration={250} skipDelayDuration={80}>
         {children}
       </Tooltip.Provider>

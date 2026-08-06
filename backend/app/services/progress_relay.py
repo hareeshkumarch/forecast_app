@@ -21,10 +21,6 @@ _publisher: Any | None = None
 _publisher_retry_at = 0.0
 _PUBLISHER_COOLDOWN_SECONDS = 5.0
 
-# Pub/sub is deliberately ephemeral, but a browser can reconnect after a
-# deploy or a network change. Keep the latest frame beside the channel so a
-# fresh API process can restore the exact stage instead of falling back to the
-# old database checkpoint.
 _LATEST_TTL = 86_400
 
 _PUBLISH_LATEST = """
@@ -70,10 +66,6 @@ def _decode(raw: str | bytes) -> ProgressEvent | None:
 
 
 def _client() -> Any:
-    """
-    One client for the process. redis-py pools connections behind it, so a run
-    that emits six frames reuses one socket instead of dialing six times.
-    """
     global _publisher
     if _publisher is None:
         import redis
@@ -102,7 +94,6 @@ def _publisher_recovered() -> None:
 
 
 def publish_from_worker(event: ProgressEvent) -> None:
-    """Called from the Celery worker, which has no event loop of its own."""
     if not settings.progress_channel_url:
         return
     if not _publisher_available() and event.status not in (RunStatus.COMPLETED, RunStatus.FAILED):
@@ -120,14 +111,10 @@ def publish_from_worker(event: ProgressEvent) -> None:
         )
         _publisher_recovered()
     except Exception:
-        # Progress is advisory: the run itself must not fail because the
-        # stream is unavailable. A dropped frame costs nothing, because the
-        # client polls the run whenever the stream misbehaves.
         _publisher_failed()
         logger.warning("Could not publish progress for run %s", event.run_id, exc_info=True)
 
 
-#: A run's series counter outlives the run only long enough to be read.
 _COUNTER_TTL = 3_600
 
 
@@ -140,7 +127,6 @@ def _latest_key(run_id: uuid.UUID) -> str:
 
 
 async def latest_from_store(run_id: uuid.UUID) -> ProgressEvent | None:
-    """Returns the replayable progress snapshot without blocking the API loop."""
     if not settings.progress_channel_url or not _publisher_available():
         return None
     try:
@@ -158,7 +144,6 @@ def _aware(value: datetime) -> datetime:
 
 
 async def forget_progress(run_id: uuid.UUID) -> None:
-    """Drops all transient state after a stored run is explicitly removed."""
     progress_bus.forget(run_id)
     if not settings.progress_channel_url:
         return
@@ -175,14 +160,6 @@ async def forget_progress(run_id: uuid.UUID) -> None:
 
 
 def count_series(run_id: uuid.UUID, done: int) -> int | None:
-    """
-    How many of a grouped run's series are finished, counted where every worker
-    can see it. A chunk task knows only its own leaves, so the running total
-    has to live outside the process.
-
-    Returns None when there is nowhere to count, in which case the caller
-    reports no number rather than a wrong one.
-    """
     if not settings.progress_channel_url or not _publisher_available():
         return None
 
@@ -199,7 +176,6 @@ def count_series(run_id: uuid.UUID, done: int) -> int | None:
 
 
 def forget_series_count(run_id: uuid.UUID) -> None:
-    """Clears the counter so a re-run starts from zero rather than doubling up."""
     if not settings.progress_channel_url:
         return
     try:
@@ -211,13 +187,6 @@ def forget_series_count(run_id: uuid.UUID) -> None:
 
 
 class ProgressRelay:
-    """
-    Bridges Redis pub/sub into the in-process bus, so an SSE stream served by
-    any API instance sees progress published by any worker. Runs for the life
-    of the application; without a Redis URL it is a no-op and the in-process
-    bus serves single-node deployments unchanged.
-    """
-
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
 

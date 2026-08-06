@@ -6,19 +6,6 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-/**
- * Refresh, with the one thing that makes refreshing a decision rather than a
- * guess: how old what you are looking at already is.
- *
- * A bare "Refresh" button asks the reader to wonder whether they need it. The
- * age answers that before they click, and it keeps counting while they watch —
- * which is also what tells them the screen is live rather than stuck.
- *
- * While it fetches, the glyph turns and everything else holds still. The
- * screen already has the previous answer on it; replacing the age with
- * "Checking…" reflows the whole header row, and swapping the icon for a
- * spinner says the content went away when it did not.
- */
 export function RefreshButton({
   updatedAt,
   isFetching,
@@ -26,11 +13,10 @@ export function RefreshButton({
   label = "Refresh",
   className,
 }: {
-  /** Epoch milliseconds the data was last known good, or 0 if never. */
   updatedAt: number;
   isFetching: boolean;
   onRefresh: () => void;
-  /** What gets refreshed, if "Refresh" alone would be ambiguous on the page. */
+
   label?: string;
   className?: string;
 }) {
@@ -40,9 +26,7 @@ export function RefreshButton({
     <div className={cn("flex items-center gap-2", className)}>
       <span
         aria-live="polite"
-        // Fixed width: the wording steps between "just now" and "12 minutes
-        // ago" on its own timer, and without a floor for it the button beside
-        // it walks across the header every time it does.
+
         className="hidden min-w-[112px] text-right text-caption text-text-muted sm:inline tabular-nums"
       >
         {age}
@@ -54,7 +38,6 @@ export function RefreshButton({
   );
 }
 
-/** Re-renders on its own so the age never sits at "just now" for five minutes. */
 function useAge(updatedAt: number): string {
   const [, tick] = useState(0);
 
@@ -74,6 +57,4 @@ function useAge(updatedAt: number): string {
   return "Updated over a day ago";
 }
 
-//: A minute is the smallest step the wording above can show, so ticking faster
-//: would re-render for nothing.
 const TICK_MS = 30_000;

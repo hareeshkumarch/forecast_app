@@ -6,7 +6,6 @@ import type { ForecastProgressEvent } from "@/types/api";
 
 const RUN_ID = "11111111-2222-3333-4444-555555555555";
 
-/** Every EventSource the hook opens, so a test can drive it. */
 const opened: FakeEventSource[] = [];
 
 class FakeEventSource {
@@ -47,8 +46,7 @@ class FakeEventSource {
 }
 
 const getForecastRun = vi.fn();
-// The hook recovers progress over HTTP when the stream cannot be held open,
-// so the mock has to offer that call as well as the run itself.
+
 const getForecastProgress = vi.fn();
 
 vi.mock("@/lib/api", () => ({
@@ -61,8 +59,7 @@ beforeEach(() => {
   opened.length = 0;
   getForecastRun.mockReset();
   getForecastProgress.mockReset();
-  // Recovery runs on mount in every test. Unless a test says otherwise it has
-  // nothing to recover, and a rejection is how the hook is told so.
+
   getForecastProgress.mockRejectedValue(new Error("nothing to recover"));
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -113,7 +110,7 @@ describe("following a forecast", () => {
     opened[0]!.fail();
 
     expect(result.current.isReconnecting).toBe(true);
-    // The last known stage survives the drop rather than resetting to nothing.
+
     expect(result.current.stage).toBe("backtesting");
 
     await act(async () => {
@@ -143,7 +140,6 @@ describe("following a forecast", () => {
     const onComplete = vi.fn();
     renderHook(() => useForecastProgress(RUN_ID, onComplete));
 
-    // Exhaust the reconnection budget.
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const source = opened[opened.length - 1]!;
       source.fail();

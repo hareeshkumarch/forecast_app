@@ -223,10 +223,6 @@ export function SettingsPanel({ className }: { className?: string }) {
             </Field>
           ) : null}
 
-          {/*
-            * One real request, so nobody finds out their key is wrong by
-            * waiting out a forecast and getting the plain wording back.
-            */}
           <div className="flex flex-wrap items-center gap-2 rounded-card border border-border bg-surface-muted px-3 py-2.5">
             <ProviderLogo provider={config.provider} className="h-4 w-4" />
             <span className="min-w-0 flex-1 text-caption text-text-secondary">

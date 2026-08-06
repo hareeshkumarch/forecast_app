@@ -1,13 +1,3 @@
-"""Give a series the window its prior total can be compared with.
-
-`forecast_series.prior_total` held the window of actuals before last, with
-nothing recording the last one — so the only available comparison was against
-`forecast_total`, which covers the horizon rather than a full window. Every
-series read as though it had collapsed by about two thirds.
-
-Revision ID: 0008
-Revises: 0007
-"""
 
 from __future__ import annotations
 

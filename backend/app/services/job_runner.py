@@ -61,7 +61,6 @@ class ProgressBus:
             ):
                 logger.debug("Ignored an out-of-order progress frame for run %s", event.run_id)
                 return
-        # Reinsert so dictionary order is an inexpensive LRU clock.
         self._latest.pop(event.run_id, None)
         self._latest[event.run_id] = event
         self._trim_latest()
@@ -78,9 +77,6 @@ class ProgressBus:
     def latest(self, run_id: uuid.UUID) -> ProgressEvent | None:
         return self._latest.get(run_id)
 
-    # An AsyncGenerator, not merely an AsyncIterator: the SSE route closes the
-    # subscription when the client disconnects, and only a generator has
-    # `aclose` to close it with.
     async def subscribe(self, run_id: uuid.UUID) -> AsyncGenerator[ProgressEvent, None]:
         queue: asyncio.Queue[ProgressEvent] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
         self._subscribers.setdefault(run_id, set()).add(queue)
@@ -110,7 +106,6 @@ class ProgressBus:
         self._subscribers.pop(run_id, None)
 
     def _trim_latest(self) -> None:
-        """Bounds terminal snapshots without evicting active subscriptions."""
         if len(self._latest) <= _LATEST_MAXSIZE:
             return
         terminal = (RunStatus.COMPLETED, RunStatus.FAILED)
@@ -125,11 +120,6 @@ progress_bus = ProgressBus()
 
 
 def publish_progress(event: ProgressEvent) -> None:
-    """
-    The single way progress leaves the code that produces it. In-process
-    subscribers always see it; with Redis configured it is also fanned out so a
-    stream served by another process — or another API instance — sees it too.
-    """
     progress_bus.publish(event)
 
     if settings.distributed:
@@ -140,9 +130,6 @@ def publish_progress(event: ProgressEvent) -> None:
             if task_id:
                 current_task.update_state(state="PROGRESS", meta=event.to_dict())
         except Exception:
-            # The application stream and durable snapshot remain authoritative;
-            # Celery's own result metadata is useful for operators, not a reason
-            # to fail a forecast.
             logger.debug("Could not update Celery progress metadata", exc_info=True)
 
     if settings.progress_channel_url:
@@ -152,11 +139,6 @@ def publish_progress(event: ProgressEvent) -> None:
 
 
 def _in_daemonic_process() -> bool:
-    """
-    A Celery prefork worker is daemonic and cannot spawn children, so a nested
-    pool is impossible there — and pointless, because the worker process is
-    already the isolation boundary the pool exists to provide.
-    """
     return bool(multiprocessing.current_process().daemon)
 
 
@@ -193,8 +175,6 @@ class ExecutorRegistry:
 
     async def run(self, func: Any, *args: Any) -> Any:
         if self.inline:
-            # Already inside a worker dedicated to this one run: fit here and
-            # let the worker's own concurrency provide the parallelism.
             return func(*args)
 
         loop = asyncio.get_running_loop()

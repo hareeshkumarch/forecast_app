@@ -7,20 +7,15 @@ import { forwardRef, useContext, type ComponentType } from "react";
 import { FieldContext } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-/**
- * Anything that draws itself into the space an icon gets. Lucide glyphs
- * satisfy this, and so do the brand marks, which carry their own colour and
- * so must not be a `LucideIcon` the caller can tint.
- */
 export type SelectIcon = ComponentType<{ className?: string }>;
 
 export interface SelectOption<T extends string = string> {
   value: T;
   label: string;
-  /** Second line inside the menu — the reason to pick this one. */
+
   hint?: string;
   icon?: SelectIcon;
-  /** Leave the icon its own colours instead of matching the label. */
+
   iconKeepsColour?: boolean;
   disabled?: boolean;
 }
@@ -98,10 +93,10 @@ export interface SelectProps<T extends string = string> {
   options: Items<T>;
   placeholder?: string;
   disabled?: boolean;
-  /** Accessible name when the control has no visible <Field> label. */
+
   label?: string;
   className?: string;
-  /** Widen the menu beyond the trigger when the labels need it. */
+
   menuClassName?: string;
   id?: string;
 }

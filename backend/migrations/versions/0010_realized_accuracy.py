@@ -1,14 +1,3 @@
-"""Record how a forecast actually did, not just how it backtested.
-
-Every accuracy figure stored until now comes from folds held out of the
-history the model was fitted on. It is the model's expected error, and it is
-not the same number as the error the forecast turned out to have. These
-columns hold the second one, filled in once the periods a run covered have
-been lived through and a later dataset can say what happened.
-
-Revision ID: 0010
-Revises: 0009
-"""
 
 from __future__ import annotations
 
@@ -44,8 +33,6 @@ def upgrade() -> None:
     for name, kind in RUN_COLUMNS:
         op.add_column("forecast_runs", sa.Column(name, kind))
 
-    # The dataset that supplied the actuals may be deleted later; losing the
-    # provenance is survivable, losing the score with it is not.
     op.create_foreign_key(
         "fk_forecast_runs_scored_dataset",
         "forecast_runs",

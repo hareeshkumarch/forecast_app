@@ -92,8 +92,6 @@ describe("llmRunFields", () => {
 });
 
 describe("defaultModelFor", () => {
-  // Named model ids move as providers ship new ones, so this pins the rule —
-  // the first of the provider's list — rather than today's answer to it.
   it("picks the first model of a known provider and empties an unknown one", () => {
     for (const [provider, models] of Object.entries(PROVIDER_MODELS)) {
       expect(defaultModelFor(provider)).toBe(models[0] ?? "");

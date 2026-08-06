@@ -161,9 +161,6 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     columns: Mapped[list[DatasetColumn]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetColumn.position"
     )
-    # A run points at two datasets: the one it was fitted on and, once scored,
-    # the one that supplied the actuals. Only the first owns the run, so both
-    # sides have to name the column they mean.
     runs: Mapped[list[ForecastRun]] = relationship(
         back_populates="dataset",
         cascade="all, delete-orphan",
@@ -221,14 +218,9 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     region_column: Mapped[str | None] = mapped_column(String(200))
     category_column: Mapped[str | None] = mapped_column(String(200))
 
-    # The forecast grain, in order, outermost first. Empty means one
-    # aggregate series, which is what every run before grouped runs did.
     group_by: Mapped[list] = mapped_column(JSONType, default=list)
     series_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    #: Columns of the customer's own data the winning model read, each with the
-    #: lag at which it leads. Empty means the forecast came from the target's
-    #: own history, which is the ordinary case.
     leading_columns: Mapped[list] = mapped_column(JSONType, default=list)
 
     frequency: Mapped[ForecastFrequency] = mapped_column(_enum(ForecastFrequency, "run_frequency"))
@@ -242,9 +234,6 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         _enum(OutlierTreatment, "outlier_treatment"), default=OutlierTreatment.NONE
     )
 
-    # Per-run tuning choices, stored so a worker in another process — or the
-    # same one after a restart — fits the run the caller actually asked for.
-    # Any LLM key is encrypted before it lands here.
     options: Mapped[dict] = mapped_column(JSONType, default=dict)
     task_id: Mapped[str | None] = mapped_column(String(64), index=True)
 
@@ -263,27 +252,15 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[str | None] = mapped_column(Text)
 
-    # How the forecast actually did, once the periods it covered had been
-    # lived through. Every other accuracy number on this row is a backtest
-    # number — measured inside the history the model was fitted on — and says
-    # what the model would have done rather than what it did.
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scored_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("datasets.id", ondelete="SET NULL")
     )
-    # Only whole periods count, so this reaches the horizon in steps.
     scored_periods: Mapped[int] = mapped_column(Integer, default=0)
-    # How far the actuals reached when the score was taken. Stored rather than
-    # re-read, because the source keeps growing and the question is what was
-    # known at the time.
     scored_through: Mapped[date | None] = mapped_column(Date)
     realized_wmape: Mapped[float | None] = mapped_column(Float)
     realized_mae: Mapped[float | None] = mapped_column(Float)
-    # Signed, as a percentage of actual: whether it ran high or low, which is
-    # a different fault from being far out and needs a different fix.
     realized_bias: Mapped[float | None] = mapped_column(Float)
-    # The share of actuals that landed inside the interval. An 80% interval
-    # that catches 40% of them is not an 80% interval.
     realized_coverage: Mapped[float | None] = mapped_column(Float)
 
     dataset: Mapped[Dataset] = relationship(back_populates="runs", foreign_keys=[dataset_id])
@@ -338,12 +315,7 @@ class ModelCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rmse: Mapped[float | None] = mapped_column(Float)
     smape: Mapped[float | None] = mapped_column(Float)
     wmape: Mapped[float | None] = mapped_column(Float)
-    #: Error against the seasonal-naive forecast. 1.0 is "no better than
-    #: repeating last season", and it survives the near-zero actuals that
-    #: make wMAPE meaningless.
     mase: Mapped[float | None] = mapped_column(Float)
-    #: What this candidate's prediction interval would have cost — width plus
-    #: a penalty for the actuals it missed. Null below two folds.
     winkler: Mapped[float | None] = mapped_column(Float)
     score: Mapped[float | None] = mapped_column(Float)
 
@@ -376,13 +348,6 @@ class ForecastMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """
-    One forecastable series in a grouped run, and its place in the tree.
-
-    A run with no grouping has none of these: its single series lives on the
-    run itself, and its points carry a NULL series_id.
-    """
-
     __tablename__ = "forecast_series"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -391,10 +356,8 @@ class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("forecast_series.id", ondelete="CASCADE")
     )
-    # 0 is the run total; each grouping column adds a level.
     level: Mapped[int] = mapped_column(Integer, default=0)
 
-    # {"sku": "A-1", "store": "North"} — the grouping columns that identify it.
     key: Mapped[dict] = mapped_column(JSONType, default=dict)
     label: Mapped[str] = mapped_column(String(400), nullable=False)
 
@@ -411,14 +374,10 @@ class ForecastSeries(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     folds: Mapped[int] = mapped_column(Integer, default=0)
 
     forecast_total: Mapped[float] = mapped_column(Float, default=0.0)
-    # The last full window of actuals and the one before it — same span, so the
-    # change between them is a trend. The forecast total covers only the
-    # horizon and cannot be compared with either.
     current_total: Mapped[float] = mapped_column(Float, default=0.0)
     prior_total: Mapped[float | None] = mapped_column(Float)
     share: Mapped[float | None] = mapped_column(Float)
 
-    # Filled once the periods this series forecast have been lived through.
     scored_periods: Mapped[int] = mapped_column(Integer, default=0)
     realized_wmape: Mapped[float | None] = mapped_column(Float)
     realized_actual_total: Mapped[float | None] = mapped_column(Float)
@@ -443,8 +402,6 @@ class ForecastPoint(UUIDPrimaryKeyMixin, Base):
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("forecast_runs.id", ondelete="CASCADE"), nullable=False
     )
-    # NULL is the run's own top line, which is what every point was before
-    # grouped runs and what the dashboard still reads.
     series_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("forecast_series.id", ondelete="CASCADE")
     )
@@ -462,8 +419,6 @@ class ForecastPoint(UUIDPrimaryKeyMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="points")
 
     __table_args__ = (
-        # series_id is part of the key: without it a grouped run could store
-        # only its first series, every later one colliding on the same period.
         UniqueConstraint(
             "run_id",
             "series_id",
@@ -554,8 +509,6 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # What the generators computed, kept apart from what is displayed so the
-    # rewriter always works from the platform's own words and can be undone.
     source_title: Mapped[str] = mapped_column(Text, nullable=False)
     source_explanation: Mapped[str] = mapped_column(Text, nullable=False)
     source_action: Mapped[str] = mapped_column(Text, nullable=False)
@@ -575,8 +528,6 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class LlmUsageEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One provider request, without credentials or prompt contents."""
-
     __tablename__ = "llm_usage_events"
 
     run_id: Mapped[uuid.UUID | None] = mapped_column(

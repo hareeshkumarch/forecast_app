@@ -41,7 +41,6 @@ interface Command {
   run: () => void;
 }
 
-/** Matches on the label, the group and any extra keywords, in order typed. */
 function matches(command: Command, query: string): boolean {
   if (!query) return true;
   const haystack = `${command.label} ${command.group} ${command.keywords ?? ""}`.toLowerCase();

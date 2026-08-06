@@ -1,15 +1,3 @@
-"""
-The pictures the report needs.
-
-A table of forty numbers does not show that a forecast turns, or that one
-series carries a quarter of the risk. Both are drawn rather than described,
-on the same palette as the screen they came from.
-
-Drawn onto the PDF canvas directly rather than through ReportLab's chart
-toolkit: what is wanted here is a line, a shaded band and a rule, and the
-toolkit's axis machinery costs more to bend into that shape than to skip.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -20,20 +8,11 @@ from reportlab.platypus import Flowable
 
 from app.reporting.palette import ACCENT, BAND_FILL, FAINT, GRID, INK, MUTED, POSITIVE
 
-#: Gridlines and ticks. Enough to read a value off, few enough to stay quiet.
 GRID_LINES = 4
-#: A band drawn thinner than this is invisible anyway, and a zero-height fill
-#: renders as a hairline artifact, so it is skipped.
 MIN_BAND_HEIGHT = 0.4
 
 
 def _nice_ceiling(value: float) -> float:
-    """
-    A round number at or above `value`, so the axis reads 40K rather than 38.7K.
-
-    Derived from the magnitude of the number itself, which is what keeps it
-    sensible for revenue in millions and for a conversion rate alike.
-    """
     if value <= 0:
         return 1.0
 
@@ -55,14 +34,6 @@ def _compact(value: float, currency: bool) -> str:
 
 
 class ForecastChart(Flowable):
-    """
-    History, horizon and the confidence band, with the boundary marked.
-
-    A plain class rather than a dataclass: `Flowable.__init__` zeroes `width`
-    and `height`, so a dataclass that set them first had them wiped and the
-    chart collapsed to a smear across the title.
-    """
-
     def __init__(
         self,
         history: list[tuple[date, float]],
@@ -82,9 +53,6 @@ class ForecastChart(Flowable):
         self.width = width
         self.height = height
         self.currency = currency
-        #: What actually happened over the horizon, once it has been lived
-        #: through and scored. One entry per forecast period, None where that
-        #: period has not settled — a partly-graded horizon is the normal case.
         self.realized = realized or []
 
     def wrap(self, *_args: Any) -> tuple[float, float]:
@@ -115,7 +83,6 @@ class ForecastChart(Flowable):
         def y(value: float) -> float:
             return pad_bottom + (value - floor) / span * plot_height
 
-        # ---- gridlines and their labels
         canvas.setFont("Helvetica", 6.5)
         for line in range(GRID_LINES + 1):
             value = floor + span * line / GRID_LINES
@@ -126,12 +93,9 @@ class ForecastChart(Flowable):
             canvas.setFillColor(FAINT)
             canvas.drawRightString(pad_left - 2 * mm, at - 1.6, _compact(value, self.currency))
 
-        # ---- the band, behind everything it belongs to
         split = len(self.history)
         if self.lower and self.upper and len(self.lower) == len(self.forecast):
             path = canvas.beginPath()
-            # Anchored on the last actual so the band grows out of the history
-            # rather than appearing from nothing at the boundary.
             anchor = split - 1 if split else 0
             path.moveTo(x(anchor), y(values[anchor]))
             for index, value in enumerate(self.upper):
@@ -145,7 +109,6 @@ class ForecastChart(Flowable):
                 canvas.setFillColor(BAND_FILL)
                 canvas.drawPath(path, stroke=0, fill=1)
 
-        # ---- the boundary between what happened and what is expected
         if split and split < count:
             canvas.setStrokeColor(MUTED)
             canvas.setLineWidth(0.5)
@@ -157,7 +120,6 @@ class ForecastChart(Flowable):
             canvas.setFillColor(MUTED)
             canvas.drawString(x(split - 1) + 1.5 * mm, pad_bottom + plot_height - 3, "Forecast")
 
-        # ---- the actuals, then the horizon
         canvas.setLineWidth(1.1)
         canvas.setStrokeColor(INK)
         self._polyline(canvas, x, y, values[:split], 0)
@@ -167,11 +129,6 @@ class ForecastChart(Flowable):
         self._polyline(canvas, x, y, values[max(split - 1, 0) :], max(split - 1, 0))
         canvas.setDash()
 
-        # ---- what actually happened, where the horizon has been lived through
-        #
-        # Drawn last and solid, so the eye reads it against the dashed forecast
-        # rather than the other way round. The gap between the two lines is the
-        # whole point of the picture.
         graded = [
             (split + index, value)
             for index, value in enumerate(self.realized)
@@ -190,13 +147,9 @@ class ForecastChart(Flowable):
             for index, value in graded:
                 canvas.circle(x(index), y(value), 1.5, stroke=0, fill=1)
 
-            # Keyed at the top of the plot rather than beside the line: at the
-            # right-hand edge the label had nowhere to go that the line it named
-            # was not already occupying.
             canvas.setFont("Helvetica", 6.5)
             canvas.drawRightString(self.width, pad_bottom + plot_height + 1.5 * mm, "Actual")
 
-        # ---- the ends of the calendar
         canvas.setFont("Helvetica", 6.5)
         canvas.setFillColor(FAINT)
         if self.history:
@@ -216,8 +169,6 @@ class ForecastChart(Flowable):
 
 
 class RiskChart(Flowable):
-    """Value at risk per series, longest bar first."""
-
     def __init__(
         self,
         rows: list[tuple[str, float]],
@@ -262,14 +213,6 @@ class RiskChart(Flowable):
 
 
 class ScoreChart(Flowable):
-    """
-    What was forecast against what happened, a period at a time.
-
-    Paired bars rather than two lines: over a handful of settled periods the
-    question is not the shape of the curve but the size of each gap, and bars
-    put those gaps side by side where they can be compared directly.
-    """
-
     def __init__(
         self,
         rows: list[tuple[date, float, float]],
@@ -317,9 +260,6 @@ class ScoreChart(Flowable):
 
         slot = plot_width / len(self.rows)
         bar = min(slot * 0.32, 9 * mm)
-        # Zero, or the bottom of the axis where everything is above it. A
-        # measure that can go negative — a net change, a margin — grows its
-        # bars downward from here rather than collapsing onto it.
         base = y(max(floor, 0.0))
 
         for index, (period, forecast, actual) in enumerate(self.rows):
@@ -344,7 +284,6 @@ class ScoreChart(Flowable):
             canvas.setFillColor(FAINT)
             canvas.drawCentredString(centre, 3.5 * mm, period.isoformat())
 
-        # ---- which bar is which, next to the bars themselves
         canvas.setFont("Helvetica", 6.5)
         for offset, label, colour in ((0.0, "Forecast", ACCENT), (18 * mm, "Actual", POSITIVE)):
             canvas.setFillColor(colour)
@@ -354,5 +293,4 @@ class ScoreChart(Flowable):
 
 
 def _clip(text: str, limit: int) -> str:
-    """Truncation, so a long key never runs into the bar it labels."""
     return text if len(text) <= limit else f"{text[: limit - 1]}…"

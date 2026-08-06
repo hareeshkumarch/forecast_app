@@ -1,6 +1,5 @@
 "use client";
 
-
 import { FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -54,7 +53,6 @@ export function UploadDatasetModal() {
   function handleFile(file: File | undefined) {
     if (!file) return;
 
-    
     if (file.size > MAX_MB * 1024 * 1024) {
       setLocalError(
         `${file.name} is ${formatBytes(file.size)}, over the ${MAX_MB} MB limit. Filter or aggregate the data first.`,
@@ -255,7 +253,6 @@ export function UploadDatasetModal() {
             </Field>
           </div>
 
-          
           {(profile?.preview_rows.length ?? 0) > 0 ? (
             <div>
               <p className="mb-1.5 text-caption font-medium text-text-secondary">Preview</p>
@@ -353,8 +350,6 @@ function ColumnSelect({
   options: string[];
   fallback: string[];
 }) {
-  
-  
   const choices = options.length > 0 ? options : fallback;
 
   return (

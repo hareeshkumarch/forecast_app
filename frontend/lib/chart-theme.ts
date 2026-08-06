@@ -1,11 +1,5 @@
 import { formatCompact } from "@/lib/format";
 
-/**
- * Charts paint on a canvas, so they cannot inherit CSS variables the way the
- * DOM does. Colours are read from the document at build-option time instead,
- * which keeps them correct in either theme; the literals below are the light
- * palette and serve as the server-render fallback.
- */
 const FALLBACK = {
   canvas: "#f6f8fb",
   surface: "#ffffff",
@@ -95,7 +89,6 @@ export function axisLine(colors: ChartPalette = chartColors()) {
   return { show: true, lineStyle: { color: colors.border, width: 1 } };
 }
 
-/** Axis ticks share the card formatter, so a chart and its KPI never disagree. */
 export function axisValueFormatter(currency = true) {
   return (value: number): string => formatCompact(value, currency);
 }

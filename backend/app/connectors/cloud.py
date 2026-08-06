@@ -133,12 +133,6 @@ class RedshiftAdapter(PostgresAdapter):
 
 
 class SupabaseAdapter(PostgresAdapter):
-    """
-    Supabase is Postgres, so the SQL path is inherited wholesale. What differs
-    is how you reach it: the host is derived from the project reference, TLS is
-    mandatory, and the transaction pooler wants a project-qualified username.
-    """
-
     type = ConnectorType.SUPABASE
     display_name = "Supabase"
     default_port = 5432
@@ -191,8 +185,6 @@ class SupabaseAdapter(PostgresAdapter):
         if configured:
             return configured
 
-        # The transaction pooler multiplexes projects, so it needs the role
-        # qualified by the project reference; a direct connection does not.
         ref = self._project_ref()
         if self._port() == self.POOLER_PORT and ref:
             return f"postgres.{ref}"
@@ -208,6 +200,5 @@ class SupabaseAdapter(PostgresAdapter):
             user=self._resolved_username(),
             password=self._value("password"),
             connect_timeout=8,
-            # Supabase terminates plaintext connections; never negotiate down.
             sslmode="require",
         )

@@ -21,9 +21,6 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
-    # Model fitting is long and CPU-bound: hand a worker one run at a time and
-    # only acknowledge it once it finishes, so a killed worker requeues rather
-    # than dropping the run.
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,

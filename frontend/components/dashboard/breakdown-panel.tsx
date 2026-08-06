@@ -25,14 +25,8 @@ import { cn } from "@/lib/utils";
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { BreakdownRef, BreakdownRow } from "@/types/api";
 
-/**
- * Past this many slices a doughnut is a colour wheel nobody can read, so the
- * panel draws bars instead. Chosen from what the eye can do, not from the data
- * — every dataset gets the same treatment at the same size.
- */
 const READABLE_SLICES = 7;
 
-/** Rows drawn in the panel before the rest are left to the enlarged view. */
 const PANEL_ROWS = 8;
 
 export function BreakdownPanel({ breakdown }: { breakdown: BreakdownRef }) {
@@ -73,10 +67,6 @@ export function BreakdownPanel({ breakdown }: { breakdown: BreakdownRef }) {
   );
 }
 
-/**
- * The shape follows the data: a handful of values reads best as a doughnut,
- * a long tail as ranked bars. Both are the same numbers.
- */
 function BreakdownChart({
   rows,
   currency,
@@ -96,13 +86,11 @@ function BreakdownChart({
   return <EChart option={option} className="chart-box" ariaLabel={ariaLabel} />;
 }
 
-//: The legend's two lines: the name, then the figure with its share.
 const LEGEND_TEXT = (colors: ChartPalette) => ({
   n: { fontSize: 11, lineHeight: 15, color: colors.textSecondary },
   v: { fontSize: 11, lineHeight: 15, fontWeight: 600, color: colors.textPrimary },
   s: { fontSize: 10, lineHeight: 15, color: colors.textMuted },
 });
-
 
 function buildOption(rows: BreakdownRow[], currency: boolean): ChartOption {
   const colors = chartColors();
@@ -115,18 +103,14 @@ function buildOption(rows: BreakdownRow[], currency: boolean): ChartOption {
       tooltip: { ...tooltipStyle(colors), trigger: "item" },
       legend: {
         orient: "vertical",
-        // Beside the doughnut rather than pinned to the far edge. Pinned right
-        // on a 600px card left a hand's width of nothing between the two, and
-        // the gap was the first thing the eye landed on.
+
         left: "56%",
         top: "middle",
         textStyle: { ...axisLabel(colors), fontSize: 11, rich: LEGEND_TEXT(colors) },
         itemWidth: 8,
         itemHeight: 8,
         itemGap: 9,
-        // The number as well as the name: a legend that only repeats the
-        // colours is width spent on nothing, and the figure is what the reader
-        // came for. Reading it should not require hovering.
+
         formatter: (name: string) => {
           const row = byLabel.get(name);
           if (!row) return name;
@@ -151,8 +135,6 @@ function buildOption(rows: BreakdownRow[], currency: boolean): ChartOption {
     };
   }
 
-  // Ranked bars, drawn top-down: echarts stacks a category axis upward, so the
-  // rows are reversed to put the largest at the top where it is looked for.
   const ordered = [...rows].reverse();
   return {
     grid: { left: 4, right: 16, top: 8, bottom: 4, containLabel: true },
@@ -180,10 +162,6 @@ function buildOption(rows: BreakdownRow[], currency: boolean): ChartOption {
   };
 }
 
-/**
- * The enlarged view: the whole split, searchable, with the numbers beside the
- * picture. A panel has room for the shape; this has room for the detail.
- */
 function Enlarged({
   rows,
   currency,
@@ -204,8 +182,7 @@ function Enlarged({
 
     return matched.sort((a, b) => {
       if (sort === "label") return a.label.localeCompare(b.label);
-      // A missing number sorts last whatever the column: an unknown is not a
-      // small value, and putting it at the top buries what is known.
+
       const pick = (row: BreakdownRow) =>
         sort === "change" ? row.change : sort === "accuracy" ? row.accuracy : row.forecast;
       const [left, right] = [pick(a), pick(b)];

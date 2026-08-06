@@ -48,9 +48,6 @@ router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
 SSE_KEEPALIVE_SECONDS = 15.0
 
-#: How many of a scorecard's series come back by default, and at most. The
-#: scorecard itself is the headline; the list under it is a triage queue, and
-#: a queue nobody reaches the end of is the same as a shorter one.
 SCORE_SERIES_LIMIT = 25
 MAX_SCORE_SERIES = series_service.MAX_PAGE
 
@@ -258,10 +255,6 @@ async def score(
 def _scorecard(
     card: scoring_service.Scorecard, target_column: str, limit: int
 ) -> ScorecardResponse:
-    """
-    Worst first, and bounded: a 500-series run would otherwise put its whole
-    tree in a response nobody reads past the top of.
-    """
     ranked = sorted(
         card.series,
         key=lambda row: (row.wmape is None, -(row.wmape or 0.0), row.label),
@@ -349,13 +342,7 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         if terminal:
             return
 
-        # Seed the in-process monotonic guard with a snapshot restored from
-        # Redis. Without this, the first late frame after an API restart could
-        # move a recovered progress bar backwards.
         progress_bus.publish(initial)
-        # No `.__aiter__()`: an async generator is already its own iterator,
-        # and asking for the iterator erases the generator type that `aclose`
-        # below depends on.
         subscription = progress_bus.subscribe(run_id)
         next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
             subscription.__anext__()
@@ -366,9 +353,6 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
             while next_event is not None:
                 ready, _ = await asyncio.wait((next_event,), timeout=SSE_KEEPALIVE_SECONDS)
                 if not ready:
-                    # Do not cancel __anext__ on a heartbeat timeout. Cancelling
-                    # it closes the async generator and was the reason healthy
-                    # streams disconnected every 15 seconds.
                     yield b": keep-alive\n\n"
                     continue
 
@@ -429,9 +413,6 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         event for event in candidates if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
     ]
     if terminal:
-        # Completion and failure are authoritative even if two hosts differ by
-        # a few milliseconds. A clock-skewed running frame must never keep a
-        # browser waiting after the worker has settled.
         return max(terminal, key=lambda event: _aware(event.updated_at))
     return max(candidates, key=lambda event: (event.progress, _aware(event.updated_at)))
 

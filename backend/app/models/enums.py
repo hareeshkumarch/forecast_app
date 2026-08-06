@@ -33,8 +33,6 @@ class DatasetStatus(StrEnum):
 
 
 class SeriesStatus(StrEnum):
-    """How a series in a grouped run came by its numbers."""
-
     FORECAST = "forecast"
     ESTIMATED = "estimated"
     POOLED = "pooled"
@@ -139,13 +137,6 @@ class InsightSeverity(StrEnum):
 
 
 class ExportFormat(StrEnum):
-    """
-    What a finished run can be handed over as.
-
-    CSV for anything that will be worked on further, PDF for anything that
-    will be read or circulated as-is.
-    """
-
     CSV = "csv"
     PDF = "pdf"
 

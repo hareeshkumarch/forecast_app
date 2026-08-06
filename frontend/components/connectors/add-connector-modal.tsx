@@ -1,6 +1,5 @@
 "use client";
 
-
 import { CheckCircle2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -21,17 +20,6 @@ import type { ConnectorFormField, ConnectorType } from "@/types/api";
 
 type FormValues = Record<string, string | boolean>;
 
-/**
- * The one connector form, for adding and for correcting.
- *
- * Editing was the missing half: the route to update a saved connector had
- * been there all along with nothing calling it, so a wrong host or a rotated
- * password meant living with a broken source or making a second one with a
- * slightly different name.
- *
- * The type cannot change once saved — a Postgres connector is not a Snowflake
- * one with different fields — so the picker is only shown when adding.
- */
 export function AddConnectorModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
@@ -56,14 +44,10 @@ export function AddConnectorModal() {
     [types, selectedType],
   );
 
-  
   useEffect(() => {
     if (!open || selectedType !== null) return;
 
     if (existing) {
-      // Everything but the secrets, which the API deliberately never returns.
-      // A blank secret field means "keep the stored one" rather than "clear
-      // it", which is what the PATCH does with an absent key.
       setSelectedType(existing.type);
       setName(existing.name);
       setValues(
@@ -83,7 +67,6 @@ export function AddConnectorModal() {
       setName(first.display_name);
     }
   }, [open, types, selectedType, existing]);
-
 
   useEffect(() => {
     if (!open) {
@@ -131,8 +114,7 @@ export function AddConnectorModal() {
   function missingRequired(): string[] {
     return (activeType?.fields ?? [])
       .filter((field) => field.required && !String(values[field.key] ?? "").trim())
-      // A secret already saved counts as filled: the form cannot show it, so
-      // demanding it again would mean retyping the password to rename a host.
+
       .filter((field) => !(editing && field.secret))
       .map((field) => field.label);
   }
@@ -141,8 +123,7 @@ export function AddConnectorModal() {
     if (!selectedType) return;
     setFormError(null);
     const { config, credentials } = splitValues();
-    // Testing a saved connector by id lets the server fill in the secrets it
-    // holds, so an untouched password is still tested rather than sent blank.
+
     testMutation.mutate(
       editing && existing
         ? { connector_id: existing.id, type: selectedType, config, credentials }
@@ -227,9 +208,7 @@ export function AddConnectorModal() {
         </div>
       ) : (
         <div className="space-y-4">
-          
-          {/* Only when adding: a saved connector's type is fixed, because its
-              fields, its driver and its stored credentials all follow from it. */}
+
           <div hidden={editing}>
             <span className="mb-1.5 block text-caption font-medium text-text-secondary">
               Connector type
@@ -343,7 +322,7 @@ function FormFieldInput({
   field: ConnectorFormField;
   value: string | boolean | undefined;
   onChange: (next: string | boolean) => void;
-  /** Editing, so an empty secret keeps what is stored rather than clearing it. */
+
   keepsStoredSecret?: boolean;
 }) {
   const secretIsOptional = keepsStoredSecret && field.secret;

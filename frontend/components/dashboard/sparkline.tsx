@@ -1,6 +1,5 @@
 "use client";
 
-
 import { useId } from "react";
 
 import { cn } from "@/lib/utils";
@@ -42,7 +41,6 @@ export function Sparkline({
   const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
   const area = `${line} L${width} ${height} L0 ${height} Z`;
 
-  // SVG inherits the theme through currentColor, so no palette lookup is needed.
   const tone =
     direction === "up"
       ? "text-positive"

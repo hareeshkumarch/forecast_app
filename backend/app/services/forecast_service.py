@@ -85,7 +85,6 @@ class RunOverrides:
         return all(getattr(self, f.name) is None for f in fields(self))
 
     def to_stored(self) -> dict[str, object]:
-        """Serialise for the run row, encrypting anything that is a secret."""
         stored: dict[str, object] = {}
         secrets: dict[str, str] = {}
 
@@ -140,8 +139,6 @@ class RunOverrides:
         }
 
 
-#: The four groups the Reports screen offers, in its language rather than the
-#: model's: "in progress" is one thing to a planner and two states here.
 RUN_STATES: dict[str, tuple[RunStatus, ...]] = {
     "completed": (RunStatus.COMPLETED,),
     "active": (RunStatus.PENDING, RunStatus.RUNNING),
@@ -160,18 +157,12 @@ MAX_RUN_PAGE = 200
 
 @dataclass(slots=True)
 class RunPage:
-    """A page of runs, how many there are, and how they divide by state."""
-
     rows: list[ForecastRun]
     total: int
-    #: Every state's count under the same search, so the screen's counters stay
-    #: true whichever one is being filtered on — and so they are counts of what
-    #: exists rather than of what happened to be fetched.
     counts: dict[str, int]
 
 
 def _run_search(term: str) -> Any:
-    """Everything about a run someone might type: its name, what it forecasts, how."""
     like = f"%{term.strip().lower()}%"
     return or_(
         func.lower(ForecastRun.name).like(like),
@@ -193,15 +184,6 @@ async def list_runs(
     limit: int = 50,
     offset: int = 0,
 ) -> RunPage:
-    """
-    A page of runs, filtered and ordered by the database rather than the browser.
-
-    This used to return the newest fifty with no total and no way to ask for
-    the fifty-first, which a screen listing forty-seven of them could not tell
-    apart from "you have forty-seven". Searching happened in the browser over
-    that truncated list, so a search for an older run reported that no such run
-    existed.
-    """
     narrowing = [_run_search(search)] if search and search.strip() else []
 
     grouped = await session.execute(
@@ -246,7 +228,6 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
 
 
 async def get_run_state(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
-    """Loads the run row without report relationships for status-only paths."""
     run = await session.get(ForecastRun, run_id)
     if run is None:
         raise NotFoundError(f"No forecast run with id {run_id}.")
@@ -391,13 +372,6 @@ async def create_run(
 def _validated_grain(
     group_by: list[str] | None, available: set[str], time_column: str, target_column: str
 ) -> list[str]:
-    """
-    The columns a run forecasts at, checked before it is queued.
-
-    Order matters — it is the order the tree nests in — so duplicates are
-    rejected rather than quietly dropped. Grouping by the time or target column
-    would ask for one series per period or per value, which is never meant.
-    """
     if not group_by:
         return []
 
@@ -428,11 +402,6 @@ _background_tasks: dict[uuid.UUID, asyncio.Task[RunStatus]] = {}
 
 
 async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:
-    """
-    Hands the run to a Celery worker when a broker is configured, and otherwise
-    fits it in this process. The single-node path keeps the platform runnable
-    with nothing but Postgres.
-    """
     if not settings.distributed:
         task = asyncio.create_task(execute_run(run.id))
         _background_tasks[run.id] = task
@@ -493,12 +462,8 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
                 signal="SIGTERM",
             )
         except Exception:
-            # The atomic status guard still prevents a disconnected worker
-            # from publishing or completing this run after cancellation.
             logger.warning("Could not deliver revoke for run %s", run_id, exc_info=True)
     elif task := _background_tasks.get(run_id):
-        # Cancelling only the row allowed the in-process task to finish later
-        # and overwrite `cancelled` with `completed`.
         task.cancel()
 
     run.status = RunStatus.FAILED
@@ -521,7 +486,6 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
 
 
 async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
-    """Permanently removes one settled run and its generated artifacts."""
     run = await get_run_state(session, run_id)
     if run.status not in (RunStatus.COMPLETED, RunStatus.FAILED):
         raise ValidationError("A forecast must finish or be cancelled before it can be cleared.")
@@ -530,15 +494,9 @@ async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
     export_paths = [Path(path) for path in exported if path]
     task_id = run.task_id
 
-    # Bulk deletion avoids materialising a large run's full series/point tree
-    # just to remove it, and also works in SQLite where FK cascades may not be
-    # enabled by the host process.
     await _clear_results(session, run_id)
     await session.execute(delete(ExportJob).where(ExportJob.run_id == run_id))
     await session.execute(delete(ForecastRun).where(ForecastRun.id == run_id))
-    # Commit the database removal before touching Redis or files. If the
-    # transaction fails, the run and every export remain intact rather than
-    # leaving a stored report whose file was already removed.
     await session.commit()
 
     from app.services.progress_relay import forget_progress
@@ -557,7 +515,6 @@ async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
 
 
 async def _remove_export_file(path: Path) -> None:
-    """Deletes only generated files inside the configured export directory."""
     root = settings.exports_dir.resolve()
     resolved = path.resolve()
     if resolved != root and root not in resolved.parents:
@@ -570,12 +527,6 @@ async def _remove_export_file(path: Path) -> None:
 
 
 async def execute_run(run_id: uuid.UUID) -> RunStatus:
-    """
-    Fits the run and returns where it got to; never raises.
-
-    A grouped run can come back RUNNING rather than COMPLETED: its top line is
-    done and its series have been handed to the workers, which finish it.
-    """
     try:
         return await _execute(run_id)
     except Exception as exc:
@@ -614,8 +565,6 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
     except InsufficientDataError as exc:
         raise ForecastError(str(exc)) from exc
 
-    # A grouped run is only part-way here: the top line is the number its
-    # series still have to be fitted and reconciled to.
     if not await checkpoint_progress(
         run_id,
         0.58 if grouped else 0.90,
@@ -660,7 +609,6 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
 
 
 async def checkpoint_progress(run_id: uuid.UUID, progress: float, stage: str, message: str) -> bool:
-    """Persists a coarse checkpoint so polling survives a Redis outage."""
     now = utcnow()
     values: dict[str, object] = {
         "status": RunStatus.RUNNING,
@@ -691,8 +639,6 @@ async def checkpoint_progress(run_id: uuid.UUID, progress: float, stage: str, me
 def _run_forecast_with_progress(
     payload: ForecastInput, run_id: uuid.UUID, grouped: bool
 ) -> ForecastOutput:
-    """Runs inside Celery and publishes candidate-level progress to Redis."""
-
     def report(stage: str, done: int, total: int, message: str) -> None:
         if stage == "backtesting":
             start, end = (0.30, 0.52) if grouped else (0.30, 0.76)
@@ -709,7 +655,6 @@ def _run_forecast_with_progress(
 
 
 async def complete_run(run_id: uuid.UUID) -> bool:
-    """Atomically marks an active run finished; cancellation always wins."""
     now = utcnow()
     async with session_scope() as session:
         result = await session.execute(
@@ -747,14 +692,6 @@ async def complete_run(run_id: uuid.UUID) -> bool:
 
 
 def _driver_candidates(run: ForecastRun, dataset: Dataset) -> list[str]:
-    """
-    The dataset's other numeric columns — the ones the profiler called measures
-    and that this run is not already using for something else.
-
-    The profiler has been labelling these since the first upload and nothing
-    read them, so a price column, a promotion flag or a traffic count sitting
-    beside the target was ignored however much it explained.
-    """
     spoken_for = {
         run.time_column,
         run.target_column,
@@ -843,10 +780,6 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
     if not column:
         return []
 
-    # The window is derived from the history the aggregation actually finds —
-    # a year wherever there are two of them — rather than fixed per frequency,
-    # which made "versus the period before" mean a quarter on daily data and a
-    # year on monthly.
     totals = queries.aggregate_segments(
         parquet_path,
         run.time_column,
@@ -907,9 +840,6 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
 
     previous = await _previous_metrics(session, run)
     for name, raw in output.metrics.items():
-        # No row rather than a NaN one. The column cannot hold null, every
-        # reader already asks for a metric by name and copes when it is not
-        # there, and "we could not measure this" is exactly what absence says.
         value = finite(raw)
         if value is None:
             continue
@@ -1014,9 +944,6 @@ async def _persist_insights(
     )
     insights = generate_insights(context)
 
-    # The computed wording, before the rewriter is allowed near it. Captured
-    # here rather than after so a later rewrite always works from the
-    # platform's own words, however many times it is asked for.
     computed = [(item.title, item.explanation, item.suggested_action) for item in insights]
 
     usage: list[LlmUsageRecord] = []
@@ -1094,8 +1021,6 @@ def _metric_unit(name: str) -> str:
         return "percent"
     if name in ("backtest_folds", "seasonal_period"):
         return "count"
-    # 1.0 is "no better than repeating last season", so it is a ratio and
-    # showing it with a percent sign would say something quite different.
     if name == "mase":
         return "ratio"
     return "absolute"
@@ -1140,8 +1065,6 @@ async def mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
     except Exception:
         logger.exception("Could not record failure for run %s", run_id)
 
-    # A cancelled, completed or explicitly cleared run is authoritative. Do
-    # not resurrect a stale terminal frame after that transition won the race.
     if not recorded:
         return
 
@@ -1165,11 +1088,6 @@ async def points_for_run(
     end: date | None = None,
     series_id: uuid.UUID | None = None,
 ) -> list[ForecastPoint]:
-    """
-    The run's own top line by default. A grouped run also stores a curve per
-    series, so pass series_id to scope to one of them; without it those rows
-    would be summed into the headline.
-    """
     statement = select(ForecastPoint).where(
         ForecastPoint.run_id == run_id,
         ForecastPoint.series_id == series_id

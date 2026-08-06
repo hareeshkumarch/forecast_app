@@ -11,10 +11,6 @@ const TONES: Record<ToastTone, { icon: typeof Info; ring: string; text: string }
   info: { icon: Info, ring: "border-border", text: "text-text-secondary" },
 };
 
-/**
- * Bottom-left on desktop, full width above the fold on phones. Polite rather
- * than assertive: these confirm what just happened, they do not interrupt.
- */
 export function Toaster() {
   const toasts = useToastStore((state) => state.toasts);
   const dismiss = useToastStore((state) => state.dismiss);

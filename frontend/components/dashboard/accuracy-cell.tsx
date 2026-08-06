@@ -4,14 +4,6 @@ import { formatPercent, humanizeModel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ModelKind } from "@/types/api";
 
-/**
- * A segment's accuracy, marked according to where the number came from.
- *
- * A measured figure is the segment's own backtest. An estimated one is the top
- * line's accuracy standing in, because the segment had too little history to
- * validate a model of its own — worth showing, but not worth showing as though
- * it were the same kind of number.
- */
 export function AccuracyCell({
   value,
   measured,
@@ -22,17 +14,10 @@ export function AccuracyCell({
   value: number | null;
   measured: boolean;
   model: ModelKind | null;
-  /** Error against the seasonal-naive benchmark, where there is one. */
+
   mase?: number | null;
   className?: string;
 }) {
-  /*
-   * Accuracy is "100 minus the error", which stops being a scale once the
-   * error passes 100% — so the platform refuses to report one, and a series
-   * with a stretch of near-zero demand showed a dash and nothing else. Those
-   * are exactly the series a planner most needs a read on. Against the
-   * seasonal-naive benchmark there is still something true to say.
-   */
   if (value === null) {
     if (mase == null) {
       return <span className={cn("text-text-muted", className)}>—</span>;

@@ -42,20 +42,6 @@ def periods_per_year(frequency: ForecastFrequency) -> int:
 
 
 def comparison_window(frequency: ForecastFrequency, n_observations: int) -> int:
-    """
-    How many periods each side of a "versus the period before" comparison covers.
-
-    A year wherever the history holds two of them: that is what the comparison
-    is understood to mean, and a whole number of years is what cancels the
-    seasonality out of it. Where the history is shorter the window is the
-    largest that still leaves something to compare against, so a six-month
-    daily series is compared three months against three rather than reporting
-    nothing at all.
-
-    Fixing this per frequency instead — 90 days, 26 weeks, 12 months — quietly
-    made one column mean "versus last quarter" on one dataset and "versus last
-    year" on the next.
-    """
     year = periods_per_year(frequency)
     if n_observations >= 2 * year:
         return year
@@ -97,13 +83,6 @@ def future_periods(last_period: date, horizon: int, frequency: ForecastFrequency
 
 
 def period_start(day: date, frequency: ForecastFrequency) -> date:
-    """
-    The period a date falls in, named by its first day.
-
-    Matches DuckDB's `date_trunc` for every frequency, weeks included — those
-    start on Monday on both sides. `tests/test_frequency.py` holds the two
-    against each other so they cannot drift apart.
-    """
     if frequency is ForecastFrequency.DAILY:
         return day
     if frequency is ForecastFrequency.WEEKLY:
@@ -114,31 +93,10 @@ def period_start(day: date, frequency: ForecastFrequency) -> date:
 
 
 def period_end(period: date, frequency: ForecastFrequency) -> date:
-    """
-    The last calendar day a period covers, given its first.
-
-    Periods arrive truncated to their own start, so the end is one step on and
-    a day back — which is what makes March end on the 31st and February on the
-    28th or 29th without a table of month lengths.
-    """
     return add_periods(period_start(period, frequency), 1, frequency) - timedelta(days=1)
 
 
 def period_is_settled(period: date, covered_through: date, frequency: ForecastFrequency) -> bool:
-    """
-    Whether a source that reaches `covered_through` has lived a period through.
-
-    This is what stands between a real miss and a manufactured one: a month's
-    forecast measured against eleven days of actuals reports a collapse that
-    never happened, and nothing downstream can tell the two apart.
-
-    Two ways to be sure, and both are needed. A period is finished if the data
-    reaches its last day — the answer for transaction-level dates. It is also
-    finished if the source carries anything in a *later* period, because nobody
-    records February and then goes back to add more January. Without the second
-    test, data already aggregated to the period and stamped on its first day —
-    which is how most monthly extracts arrive — would never settle at all.
-    """
     if period_end(period, frequency) <= covered_through:
         return True
     return period_start(period, frequency) < period_start(covered_through, frequency)

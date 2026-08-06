@@ -1,6 +1,5 @@
 "use client";
 
-
 import { Activity } from "lucide-react";
 
 import { Card, EmptyState, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";

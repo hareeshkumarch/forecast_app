@@ -1,6 +1,5 @@
 "use client";
 
-
 import { ChevronRight, Plus, Upload } from "lucide-react";
 
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
@@ -21,9 +20,6 @@ export function Workspace() {
   const live = useDashboardRefresh();
   const openModal = useUiStore((state) => state.openModal);
 
-  // Only once the summary has actually answered — a slow first load must not
-  // flash the guide at someone who has fifty runs, and must not shimmer a
-  // whole dashboard at someone who is about to be shown the guide instead.
   const firstRun = isSuccess && !summary.has_data;
   const breakdowns = summary?.breakdowns ?? [];
 
@@ -40,7 +36,7 @@ export function Workspace() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {/* Only once there is something on screen worth being stale. */}
+
           {isSuccess && summary.has_data ? (
             <RefreshButton
               updatedAt={live.updatedAt}
@@ -84,29 +80,12 @@ export function Workspace() {
         </div>
       </div>
 
-      {/*
-       * Before the first run the five analytical panels have nothing to say,
-       * and stacking five "no data yet" cards under the guide buries the one
-       * thing the screen is for. The guide gets the screen until there is a
-       * forecast to show.
-       */}
       {isPending ? (
         <div className="mt-4 space-y-3" aria-busy data-workspace="loading">
           <Skeleton className="h-[92px] w-full rounded-card" />
           <Skeleton className="h-[220px] w-full rounded-card" />
         </div>
       ) : isError ? (
-        /*
-         * A question the summary could not answer is not the same as one it
-         * has not answered yet, and treating them alike left this screen
-         * shimmering for ever with the API down.
-         *
-         * It also looped: every panel below asks for the same summary, so the
-         * moment the query gave up and the panels mounted, one of them
-         * refetched on mount, the query went back to pending, the panels
-         * unmounted, and the whole dashboard oscillated a few times a second
-         * against a backend that was not there.
-         */
         <div className="mt-4" data-workspace="error">
           <Card>
             <ErrorState
@@ -129,12 +108,6 @@ export function Workspace() {
 
           <ModelHealthStrip />
 
-          {/*
-            * The panels come from the data, not from a fixture. A dataset with
-            * no dimensions gets the forecast and its drivers and no empty
-            * cards asking about regions it has never had; one with three gets
-            * three splits, each titled with the customer's own column name.
-            */}
           <div className="grid-charts mt-3">
             <ForecastVsActual />
             {breakdowns[0] ? (
@@ -144,25 +117,12 @@ export function Workspace() {
             )}
           </div>
 
-          {/*
-            * Everything below the first row shares one two-column flow rather
-            * than each getting a row of its own. Two breakdowns used to leave
-            * two half-empty rows — the second split alone on the left, the
-            * driver table alone on the left below it — with a column of white
-            * space running down the right of both. An odd one out spans the
-            * full width instead of leaving a hole, which the driver table is
-            * glad of anyway.
-            */}
           {breakdowns.length > 0 ? (
             <div className="grid-panels mt-3">
               {breakdowns.slice(1).map((breakdown) => (
                 <BreakdownPanel key={breakdown.column} breakdown={breakdown} />
               ))}
-              {/*
-                * This row holds `breakdowns.length` panels in total: every
-                * split after the first, plus the driver table. The table is
-                * the odd one out when that total is odd.
-                */}
+
               <DriverTable className={breakdowns.length % 2 === 1 ? "panel-span" : undefined} />
             </div>
           ) : null}

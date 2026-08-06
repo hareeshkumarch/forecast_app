@@ -1,6 +1,5 @@
 "use client";
 
-
 import * as Dialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { X } from "lucide-react";
@@ -12,23 +11,14 @@ import { RAIL_MEDIA, useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
-/**
- * Serves either rail as an off-canvas sheet on viewports too narrow to show
- * it inline. Widening the window past the rail's own breakpoint dismisses the
- * sheet, so the content is never on screen twice.
- */
 export function RailDrawer() {
   const rail = useUiStore((state) => state.mobileRail);
   const closeRail = useUiStore((state) => state.closeRail);
 
-  // Both breakpoints are watched with constant queries: a query that changed
-  // with the open rail would still hold the previous rail's answer on the
-  // render that opens the sheet, and close it again immediately.
   const navigationInline = useMediaQuery(RAIL_MEDIA.navigation);
   const insightsInline = useMediaQuery(RAIL_MEDIA.insights);
   const isInline = rail === "insights" ? insightsInline : navigationInline;
 
-  // Once the rail fits inline, the sheet would show the same content twice.
   useEffect(() => {
     if (rail && isInline) closeRail();
   }, [rail, isInline, closeRail]);

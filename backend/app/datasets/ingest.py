@@ -135,34 +135,16 @@ def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
 
 
 def _currency_symbols() -> str:
-    """
-    Every character Unicode calls a currency symbol, escaped for a regex class.
-
-    Derived rather than listed: a hand-written set of $, €, £ silently fails
-    the first customer whose exports are in ₹ or ₦, and there is no reason to
-    make them find that out.
-    """
     symbols = (chr(code) for code in range(0xFFFF) if unicodedata.category(chr(code)) == "Sc")
     return "".join(re.escape(symbol) for symbol in symbols)
 
 
-#: Decoration a spreadsheet wraps a number in: thousands separators, spaces
-#: (including the non-breaking kind Excel emits), a percent sign, a currency
-#: symbol. Nothing else — stripping letters as well turned "SKU-0093" into the
-#: number -93 and "W1" into 1, destroying the identifier and hiding the column
-#: from the grain it should have been offered as.
 NUMERIC_DECORATION_PATTERN = rf"[\s,_%{_currency_symbols()}]"
 NUMERIC_COERCION_RATIO = 0.9
 NUMERIC_SAMPLE_ROWS = 500
 
 
 def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
-    """
-    Spreadsheet exports carry measures as text: "$1,200", "1 350", "(450)",
-    "12.5%". Left as strings they are never offered as a forecast target, so a
-    column that is overwhelmingly numeric once the decoration is stripped is
-    converted here, before anything downstream sees it.
-    """
     converted: list[pl.Expr] = []
 
     for name, dtype in zip(frame.columns, frame.dtypes, strict=True):
@@ -175,7 +157,6 @@ def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
 
         sample = column.head(NUMERIC_SAMPLE_ROWS)
         text = sample.str.strip_chars()
-        # Accounting negatives: (450) means -450.
         text = text.str.replace_all(r"^\((.*)\)$", "-${1}")
         stripped = text.str.replace_all(NUMERIC_DECORATION_PATTERN, "")
 
@@ -184,7 +165,6 @@ def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
         if usable == 0 or usable < NUMERIC_COERCION_RATIO * sample.len():
             continue
 
-        # A bare year column is numeric but is a label, not a measure.
         if stripped.str.len_chars().max() == 4 and parsed.min() is not None:
             low, high = float(parsed.min()), float(parsed.max())  # type: ignore[arg-type]
             if 1800 <= low <= 2200 and 1800 <= high <= 2200:

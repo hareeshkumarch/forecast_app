@@ -51,13 +51,6 @@ const SORT_OPTIONS: { value: RunSort; label: string }[] = [
   { value: "series", label: "Most lines" },
 ];
 
-/**
- * What was cut, in the two different senses the run may have used.
- *
- * Splitting a total for the charts and forecasting each line in its own right
- * are different pieces of work, and a run that did the second reads exactly
- * like a run that did neither unless it says so.
- */
 function describeBreakdown(run: ForecastRun): string {
   if (run.group_by.length > 0) {
     const lines = run.series_count.toLocaleString();
@@ -132,8 +125,7 @@ function RunCard({
           </dd>
         </div>
         <div className="col-span-2">
-          {/* Without this a run that forecast 500 series reads exactly like one
-              that forecast a single total. */}
+
           <dt className="text-caption text-text-muted">Broken down by</dt>
           <dd className="mt-0.5 truncate text-meta font-medium text-text-primary">
             {describeBreakdown(run)}
@@ -206,8 +198,6 @@ export function ReportsWorkspace() {
   const [sort, setSort] = useState<RunSort>("newest");
   const [page, setPage] = useState(0);
 
-  // Debounced, because every keystroke is now a request rather than a filter
-  // over an array that was already in the browser.
   const search = useDebounced(query, 250);
 
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt, isPlaceholderData } =
@@ -219,8 +209,6 @@ export function ReportsWorkspace() {
       offset: page * PAGE_SIZE,
     });
 
-  // Any change to what is being asked for starts at the first page, or the
-  // offset outruns a shorter result and the screen comes back empty.
   function change<T>(set: (value: T) => void) {
     return (value: T) => {
       set(value);
@@ -282,11 +270,6 @@ export function ReportsWorkspace() {
         </div>
       </div>
 
-      {/*
-        * The counters are the filter. They already named the four groups
-        * anyone would want to see on their own, so making them buttons costs
-        * no extra chrome and saves a row of it.
-        */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {counts.map((count) => {
           const selected = state === count.key;
@@ -389,7 +372,6 @@ export function ReportsWorkspace() {
             ))}
           </section>
 
-          {/* Only once there is more than one page of them. */}
           {total > PAGE_SIZE ? (
             <div className="mt-3 flex items-center justify-between gap-3">
               <p className="text-caption text-text-muted num">{showing}</p>

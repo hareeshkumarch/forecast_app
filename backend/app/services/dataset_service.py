@@ -36,8 +36,6 @@ from app.schemas.dataset import ColumnSuggestion, DatasetColumnRead, DatasetProf
 logger = get_logger(__name__)
 
 
-#: Both directions of every sortable column, because the table's headers
-#: toggle and a one-way sort would leave half of those toggles doing nothing.
 DATASET_SORTS: dict[str, Any] = {
     "newest": Dataset.created_at.desc(),
     "oldest": Dataset.created_at.asc(),
@@ -54,13 +52,8 @@ MAX_DATASET_PAGE = 200
 
 @dataclass(slots=True)
 class DatasetPage:
-    """A page of uploads, and the figures the screen reports above them."""
-
     rows: list[Dataset]
     total: int
-    #: Over everything held, not over the page. The Data screen reports how
-    #: many files there are and how much disk they take, and a page's worth of
-    #: that is not an answer to either question.
     ready: int
     row_count: int
     file_size_bytes: int
@@ -74,7 +67,6 @@ async def list_datasets(
     limit: int = 50,
     offset: int = 0,
 ) -> DatasetPage:
-    """A page of uploads, filtered and ordered by the database."""
     where = []
     if search and search.strip():
         like = f"%{search.strip().lower()}%"
@@ -379,18 +371,6 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
 
 
 async def delete_dataset(session: AsyncSession, dataset_id: uuid.UUID) -> None:
-    """
-    Removes a dataset, and the files it was the only reason to keep.
-
-    The row went and the bytes stayed, so every delete left an orphaned upload
-    and its parquet behind for ever — invisible, because the only thing that
-    knew their names was the row that had just gone. The screen offering the
-    delete reports how much disk the uploads take up, which that made a lie.
-
-    The files go after the row, and a file that will not go is logged rather
-    than raised: the dataset is already gone as far as the customer asked, and
-    failing the request would leave them staring at a row that is not there.
-    """
     dataset = await get_dataset(session, dataset_id)
     files = [dataset.parquet_path, dataset.raw_path]
 

@@ -1,26 +1,3 @@
-"""
-What the forecast turned out to be worth.
-
-Every accuracy figure the platform reported before this one came from a
-backtest: folds held out of the history the model was fitted on. That is the
-model's expected error and it is a genuinely useful number, but it is not the
-error the forecast turned out to have. The two come apart exactly when it
-matters — a regime change, a promotion, a lost customer — because a backtest
-can only ever be surprised by the past.
-
-This scores a finished run against actuals that arrived after it ran, which is
-the only number a planner can hold a forecast to.
-
-Two rules keep the answer honest:
-
-* **Whole periods only.** A month's forecast measured against eleven days of
-  actuals reports a collapse that never happened, and nothing downstream can
-  tell that apart from a real one.
-* **Say what could not be scored.** A pooled tail, a series that appeared after
-  the run, a period still in progress — each is reported as itself rather than
-  quietly folded in as a miss.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -46,16 +23,8 @@ from app.models.enums import ForecastFrequency, MeasureAggregation, PointKind, R
 
 logger = get_logger(__name__)
 
-#: Aggregations under which a combination that recorded nothing in a period
-#: genuinely measured zero. Under the others — a mean, a closing balance — an
-#: absent row means the value is unknown, and scoring it as zero would invent
-#: a miss out of missing data.
 ZERO_IS_AN_OBSERVATION = frozenset({MeasureAggregation.SUM})
 
-#: When a candidate file's account of the run's history counts as a different
-#: series. Not a tuned threshold: 1.0 is the point at which the two series
-#: differ by more than the whole of the smaller one, so they agree with nothing
-#: better than they agree with each other.
 DISAGREES_ENTIRELY = 1.0
 
 NO_FORECAST = "This series stored no forecast for a period that has finished."
@@ -65,8 +34,6 @@ NOT_RECORDED = "The source recorded nothing here, and this run does not sum."
 
 @dataclass(slots=True)
 class SeriesScore:
-    """One series' realized error, or the reason it has none."""
-
     series_id: uuid.UUID
     label: str
     level: int
@@ -79,41 +46,27 @@ class SeriesScore:
 
 @dataclass(slots=True)
 class Scorecard:
-    """How a run's forecast compares with what actually happened."""
-
     run_id: uuid.UUID
     scored_at: datetime | None = None
     source_dataset_id: uuid.UUID | None = None
     source_dataset_name: str | None = None
 
-    #: The periods the run forecast, how many the source can settle, and how
-    #: many are still being lived through. The last are real forecasts that
-    #: nobody can grade yet, not failures.
     horizon: int = 0
     scored_periods: int = 0
     pending_periods: int = 0
-    #: The last date the source carries — what decides which periods are done.
     covered_through: date | None = None
 
     forecast_total: float = 0.0
     actual_total: float = 0.0
     wmape: float | None = None
     mae: float | None = None
-    #: Signed, as a share of actual: whether the forecast ran high or low.
-    #: A different fault from being far out, and it needs a different fix.
     bias: float | None = None
-    #: The share of actuals that landed inside the interval. An 80% interval
-    #: that catches 40% of them is not an 80% interval.
     coverage: float | None = None
     confidence_level: float | None = None
 
-    #: Combinations the source recorded that the run never forecast. They land
-    #: in the top line's actual but in no leaf's, which is the reason to count
-    #: them rather than let the levels quietly disagree.
     unforecast_keys: int = 0
 
     series: list[SeriesScore] = field(default_factory=list)
-    #: Set when nothing could be scored, in the caller's language.
     blocked_reason: str | None = None
 
     @property
@@ -122,49 +75,16 @@ class Scorecard:
 
     @property
     def accuracy_percent(self) -> float | None:
-        """The realized counterpart of the accuracy every run already reports."""
         return None if self.wmape is None else _finite(accuracy_from_wmape(self.wmape))
-
-
-# ------------------------------------------------------------- finding actuals
 
 
 @dataclass(slots=True)
 class SourceChoice:
-    """Which file will settle a run's horizon, and what was turned away."""
-
     dataset: Dataset | None = None
-    #: Files that cover the horizon and hold the run's columns, but describe a
-    #: different series over the history the run was fitted on. Counted rather
-    #: than dropped silently: "nothing covers this yet" and "three files cover
-    #: it and none of them is your data" call for different actions.
     contradicting: int = 0
 
 
 async def choose_source(session: AsyncSession, run: ForecastRun) -> SourceChoice:
-    """
-    The newest dataset that can say what happened over this run's horizon.
-
-    Two tests, and the second is the one that keeps the answer honest.
-
-    A dataset **qualifies** when it holds the columns the run was built on and
-    its calendar reaches into the forecast. That much is derived from the run
-    rather than configured — anything narrower would be a guess about how a
-    particular customer names their files.
-
-    But `date` and `sales` are what half the world calls its columns, so
-    qualifying is not the same as being the same data. A qualifying file is
-    also **checked against the run's own history**: aggregate it exactly as the
-    run aggregated, over the periods they share, and see whether it tells the
-    same story. A refreshed file does, near enough — a restatement moves a few
-    percent. Last quarter's EMEA numbers set against a freshly uploaded APAC
-    file do not, and grading against one would report a wildly wrong accuracy
-    with total confidence.
-
-    A file that shares no history with the run cannot be checked either way —
-    a file holding only the new periods is a perfectly ordinary thing to
-    upload — so it is kept as a fallback rather than trusted first.
-    """
     if run.forecast_start is None:
         return SourceChoice()
 
@@ -173,14 +93,9 @@ async def choose_source(session: AsyncSession, run: ForecastRun) -> SourceChoice
     result = await session.execute(
         select(Dataset)
         .where(Dataset.parquet_path.is_not(None))
-        # The id breaks ties: several datasets uploaded in the same clock tick
-        # are equally new, and without a second key the same run could pick a
-        # different source each time it was scored.
         .order_by(Dataset.created_at.desc(), Dataset.id.desc())
     )
 
-    # Whittled down before any file is opened. Reaching past the forecast is
-    # the one test the profile can settle on its own.
     candidates = [
         dataset
         for dataset in result.scalars()
@@ -217,18 +132,6 @@ def _weigh_candidates(
     frequency: ForecastFrequency,
     aggregation: MeasureAggregation,
 ) -> tuple[int | None, int | None, int]:
-    """
-    Read the candidate files in turn and say which one holds this run's data.
-
-    Gives back the first file that agrees with the run's history, the first
-    that shares no history to be judged on, and how many contradict it — as
-    positions in `paths`, so the ORM objects stay on the thread that owns them.
-
-    One connection for the whole batch. Opening an in-memory database costs
-    several times what a query this small costs to run, and there is a
-    candidate file for every upload a customer has ever made, so the naive
-    version spent nine tenths of its time opening and closing databases.
-    """
     chosen: int | None = None
     unproven: int | None = None
     contradicting = 0
@@ -239,7 +142,7 @@ def _weigh_candidates(
                 continue
             try:
                 columns = set(queries.column_names(path, connection=connection))
-            except Exception as exc:  # a file that cannot be read cannot score
+            except Exception as exc:
                 logger.warning("Could not read the columns of %s: %s", path, exc)
                 continue
             if not needed.issubset(columns):
@@ -255,8 +158,6 @@ def _weigh_candidates(
                 connection=connection,
             )
             if disagreement is None:
-                # Nothing shared to judge it on. Newest first, so the first one
-                # here is the one to fall back to.
                 unproven = index if unproven is None else unproven
             elif disagreement < DISAGREES_ENTIRELY:
                 chosen = index
@@ -268,12 +169,10 @@ def _weigh_candidates(
 
 
 async def candidate_source(session: AsyncSession, run: ForecastRun) -> Dataset | None:
-    """The dataset `choose_source` settled on, for callers that only want it."""
     return (await choose_source(session, run)).dataset
 
 
 async def _run_history(session: AsyncSession, run_id: uuid.UUID) -> dict[date, float]:
-    """The run's own top line over the history it was fitted on."""
     result = await session.execute(
         select(ForecastPoint).where(
             ForecastPoint.run_id == run_id,
@@ -296,14 +195,6 @@ def _disagreement_with_history(
     aggregation: MeasureAggregation,
     connection: duckdb.DuckDBPyConnection,
 ) -> float | None:
-    """
-    How far a file's account of the run's history is from the run's own.
-
-    Scaled by the smaller of the two totals, which is what makes it symmetric:
-    a file ten times the size and a file a tenth of it are equally not this
-    data, and dividing by the run's history alone would wave the small one
-    through. `None` means they share no period, so there is nothing to judge.
-    """
     if not history:
         return None
 
@@ -327,12 +218,8 @@ def _disagreement_with_history(
     theirs = sum(abs(observed.totals[period]) for period in shared)
 
     if ours == 0.0 and theirs == 0.0:
-        # Both say nothing happened. They agree, but about nothing — there is
-        # no evidence here either way.
         return None
     if min(ours, theirs) == 0.0:
-        # One of them records zero across every period they share while the
-        # other records something. That is not a small disagreement.
         return math.inf
 
     gap = sum(abs(history[period] - observed.totals[period]) for period in shared)
@@ -345,12 +232,9 @@ async def _columns_of(dataset: Dataset) -> set[str]:
         return set()
     try:
         return set(await asyncio.to_thread(queries.column_names, path))
-    except Exception as exc:  # a file that cannot be read simply cannot score
+    except Exception as exc:
         logger.warning("Could not read the columns of dataset %s: %s", dataset.id, exc)
         return set()
-
-
-# --------------------------------------------------------------------- scoring
 
 
 async def score_run(
@@ -359,13 +243,6 @@ async def score_run(
     *,
     dataset_id: uuid.UUID | None = None,
 ) -> Scorecard:
-    """
-    Compares a finished run with actuals and stores the result.
-
-    Re-scoring is expected rather than exceptional: a horizon settles a period
-    at a time, so the same run is worth scoring again every time more data
-    lands. Each run overwrites the last.
-    """
     from app.services import dataset_service, forecast_service
 
     run = await forecast_service.get_run(session, run_id)
@@ -386,7 +263,6 @@ async def score_run(
         return card
 
     if dataset_id is not None:
-        # Named explicitly, so it is the caller's judgement rather than ours.
         source: Dataset | None = await dataset_service.get_dataset(session, dataset_id)
         choice = SourceChoice(dataset=source)
     else:
@@ -467,7 +343,6 @@ def _score_top_line(
     totals: dict[date, float],
     settled: set[date],
 ) -> None:
-    """The run's own line: the number on the dashboard, graded."""
     rows = [point for point in top_line if point.period in settled]
     if not rows:
         return
@@ -505,7 +380,6 @@ async def _score_series(
     settled: set[date],
     group_by: list[str],
 ) -> None:
-    """Every series in the tree, each against the actuals its own key selects."""
     result = await session.execute(
         select(ForecastSeries)
         .where(ForecastSeries.run_id == run.id)
@@ -520,10 +394,6 @@ async def _score_series(
         if point.series_id is not None and point.period in settled:
             by_series.setdefault(point.series_id, []).append(point)
 
-    # A leaf's actual is the combination it names; a parent's is every
-    # combination beneath it, which is that key one level shorter. Indexing
-    # every prefix once turns each series' lookup into a dictionary hit rather
-    # than a scan over the whole panel.
     prefixed: dict[tuple[str, ...], dict[date, float]] = {}
     for key, series in observed.by_key.items():
         for depth in range(len(key) + 1):
@@ -531,8 +401,6 @@ async def _score_series(
             for period, value in series.items():
                 bucket[period] = bucket.get(period, 0.0) + value
 
-    # A pooled tail stands for many combinations at once, so with one present
-    # there is no telling an unforecast combination from a pooled one.
     pooled = any(queries.POOLED_KEY in _key_of(row, group_by) for row in rows)
     if not pooled:
         forecast_keys = {_key_of(row, group_by) for row in rows if row.level == len(group_by)}
@@ -548,10 +416,6 @@ async def _score_series(
             forecast_total=row.forecast_total,
         )
 
-        # The root *is* the run's own line — it stores no curve of its own,
-        # because a second copy of the top line is what `persist` avoids
-        # writing. Taking the figures already computed for that line is both
-        # cheaper than redoing them and the only way the two cannot disagree.
         if row.level == 0:
             score.actual_total = card.actual_total
             score.wmape = card.wmape
@@ -583,7 +447,6 @@ async def _score_series(
 
 
 def _remember(row: ForecastSeries, score: SeriesScore) -> None:
-    """Writes a score onto the series it belongs to, ungraded included."""
     row.scored_periods = score.scored_periods
     row.realized_wmape = finite(score.wmape)
     row.realized_actual_total = finite(score.actual_total)
@@ -596,7 +459,6 @@ def _unscorable(
     prefixed: dict[tuple[str, ...], dict[date, float]],
     absent_is_zero: bool,
 ) -> str | None:
-    """Why this series cannot be graded, or None when it can."""
     if not scoped:
         return NO_FORECAST
 
@@ -604,9 +466,6 @@ def _unscorable(
     if queries.POOLED_KEY in key:
         return POOLED
 
-    # Under a sum, nothing recorded is a real zero — the shop sold none. Under
-    # a mean or a closing balance it is simply unknown, and calling it zero
-    # would manufacture a miss.
     if key not in prefixed and not absent_is_zero:
         return NOT_RECORDED
 
@@ -614,16 +473,12 @@ def _unscorable(
 
 
 def _key_of(row: ForecastSeries, group_by: list[str]) -> tuple[str, ...]:
-    """A series' key as the prefix tuple the observed keys are indexed by."""
     key = row.key or {}
     return tuple(str(key.get(column, queries.MISSING_KEY)) for column in group_by[: row.level])
 
 
 def _by_period(point: ForecastPoint) -> date:
     return point.period
-
-
-# --------------------------------------------------------------------- storage
 
 
 async def _forecast_points(session: AsyncSession, run_id: uuid.UUID) -> list[ForecastPoint]:
@@ -649,13 +504,6 @@ async def _store(session: AsyncSession, run: ForecastRun, card: Scorecard) -> No
 
 
 async def stored_scorecard(session: AsyncSession, run_id: uuid.UUID) -> Scorecard:
-    """
-    The last score computed for a run, without recomputing it.
-
-    A run that has never been scored comes back with the reason and, where one
-    exists, the dataset that would settle it — so the caller can offer the
-    action rather than only report its absence.
-    """
     from app.services import forecast_service
 
     run = await forecast_service.get_run(session, run_id)
@@ -700,7 +548,6 @@ async def stored_scorecard(session: AsyncSession, run_id: uuid.UUID) -> Scorecar
 
 
 def _nothing_to_score_against(choice: SourceChoice, from_period: date | None) -> str:
-    """Why there is no source, in terms of what the reader can do about it."""
     if choice.contradicting:
         one = choice.contradicting == 1
         return (
@@ -717,12 +564,6 @@ def _nothing_to_score_against(choice: SourceChoice, from_period: date | None) ->
 
 
 async def _stored_series(session: AsyncSession, run_id: uuid.UUID) -> list[SeriesScore]:
-    """
-    The per-series scores as they were written, so reading a scorecard back
-    gives what computing it gave. The reason a series went ungraded is not
-    stored — only that it did — because the row itself says why: an
-    apportioned series has no error to compare against.
-    """
     result = await session.execute(
         select(ForecastSeries)
         .where(ForecastSeries.run_id == run_id)
@@ -746,5 +587,4 @@ async def _stored_series(session: AsyncSession, run_id: uuid.UUID) -> list[Serie
 
 
 def _finite(value: float) -> float | None:
-    """None rather than nan: a metric with no denominator has no value."""
     return float(value) if np.isfinite(value) else None

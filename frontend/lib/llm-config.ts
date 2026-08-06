@@ -1,9 +1,3 @@
-/**
- * Optional per-browser LLM credentials for the insight rewriter. The backend
- * has its own server-side configuration; anything set here is sent with the
- * request that needs it and overrides the server's for that request only.
- */
-
 import type { LlmRunFields } from "@/types/api";
 
 export interface LlmConfig {
@@ -25,13 +19,6 @@ export const PROVIDERS: { value: string; label: string; hint: string }[] = [
   { value: "custom", label: "Ollama or self-hosted", hint: "Anything with an OpenAI-shaped API" },
 ];
 
-/**
- * Models worth offering per provider, cheapest-capable first.
- *
- * Rewriting eight short paragraphs is a small job, so the default is the small
- * fast model rather than the flagship — the flagship is there for anyone who
- * wants it, but nobody should pay frontier rates by accident.
- */
 export const PROVIDER_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
   anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5"],
@@ -42,7 +29,6 @@ export const PROVIDER_MODELS: Record<string, string[]> = {
   custom: [],
 };
 
-/** Providers that talk to an endpoint the user has to name themselves. */
 export const PROVIDERS_NEEDING_BASE_URL = new Set(["custom", "openrouter"]);
 
 const STORAGE_KEY = "forecast_hub_llm_config";
@@ -88,8 +74,6 @@ export function saveLlmConfig(config: LlmConfig): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   } catch {
-    // A browser with storage disabled still gets a working dashboard; the
-    // config just does not survive the reload.
   }
 }
 
@@ -98,11 +82,9 @@ export function clearLlmConfig(): void {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    /* see saveLlmConfig */
   }
 }
 
-/** Shapes the stored config into the fields a request expects. */
 export function llmRunFields(config: LlmConfig): LlmRunFields {
   const apiKey = config.apiKey.trim();
   if (!apiKey) {

@@ -11,13 +11,13 @@ export interface ForecastProgress {
   stage: string;
   message: string | null;
   error: string | null;
-  /** The stream is open and delivering frames. */
+
   isStreaming: boolean;
-  /** The stream dropped and a bounded reconnect attempt is in progress. */
+
   isReconnecting: boolean;
-  /** Live streaming is unavailable, so the recoverable status endpoint is in use. */
+
   isPolling: boolean;
-  /** Client time of the newest accepted status frame. */
+
   lastUpdatedAt: number | null;
 }
 
@@ -33,7 +33,6 @@ const IDLE: ForecastProgress = {
   lastUpdatedAt: null,
 };
 
-/** After this many failed attempts, stop reconnecting and poll instead. */
 const MAX_STREAM_ATTEMPTS = 3;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_CEILING_MS = 8_000;
@@ -45,23 +44,12 @@ function isTerminal(status: ForecastProgressEvent["status"]): boolean {
   return status === "completed" || status === "failed";
 }
 
-/**
- * Follows one run to its end.
- *
- * A fit can take minutes and now runs on a separate worker, so the stream
- * outliving a wifi blip, a redeploy or a proxy that buys its own idle timeout
- * matters: a dropped connection reconnects with backoff, and if the stream
- * cannot be re-established at all the run is polled instead. Either way the
- * caller still hears about completion exactly once.
- */
 export function useForecastProgress(
   runId: string | null,
   onComplete?: (event: ForecastProgressEvent) => void,
 ): ForecastProgress {
   const [state, setState] = useState<ForecastProgress>(IDLE);
 
-  // Held in a ref so a re-render never leaves the stream calling a stale
-  // closure, and so changing the callback does not reopen the connection.
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -108,8 +96,7 @@ export function useForecastProgress(
       if (signature === newestSignature) return false;
       const parsed = event.updated_at ? Date.parse(event.updated_at) : Number.NaN;
       const frameTime = Number.isNaN(parsed) ? Date.now() : parsed;
-      // Terminal state is authoritative. Hosts can differ slightly in clock
-      // time, and that skew must not leave the UI polling a run that finished.
+
       if (frameTime < newestFrame && !isTerminal(event.status)) return false;
       newestFrame = frameTime;
       newestSignature = signature;
@@ -146,7 +133,6 @@ export function useForecastProgress(
         try {
           apply(await getForecastProgress(id), "polling");
         } catch {
-          // The API is unreachable too; keep trying on the interval.
         } finally {
           pollInFlight = false;
         }
@@ -171,16 +157,12 @@ export function useForecastProgress(
       source.onmessage = (message) => {
         if (done || source !== openedSource) return;
         try {
-          // A connection is only proven healthy after it delivers a complete
-          // frame. Resetting on `open` caused endless one-second reconnects
-          // when a proxy accepted the request and immediately closed it.
           const event = JSON.parse(message.data) as ForecastProgressEvent;
           if (apply(event, "streaming")) {
             attempts = 0;
             currentTransport = "streaming";
           }
         } catch {
-          // A partial frame is not worth tearing the stream down for.
         }
       };
 
@@ -203,9 +185,6 @@ export function useForecastProgress(
       };
     }
 
-    // Reconcile immediately as well as opening the stream. This recovers a
-    // terminal event missed while the tab was sleeping and gives the first
-    // paint a durable Celery snapshot after an API restart.
     void Promise.resolve(getForecastProgress(id))
       .then((event) => {
         if (event && newestFrame === 0) apply(event, currentTransport);

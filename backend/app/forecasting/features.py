@@ -13,9 +13,6 @@ from app.models.enums import ForecastFrequency
 
 FloatArray = npt.NDArray[np.float64]
 
-#: Prefix on every column that comes from another column of the customer's
-#: data rather than from the target's own past. Named so a model can hold the
-#: two apart and be asked whether it is better off without them.
 DRIVER_PREFIX = "driver_"
 
 
@@ -28,13 +25,10 @@ class FeatureSpec:
     use_seasonal: bool = True
     seasonal_period: int = 12
     names: list[str] = field(default_factory=list)
-    #: Columns of the customer's own data that lead the target, if any cleared
-    #: the screen. Empty is the ordinary case and changes nothing.
     drivers: DriverPanel = field(default_factory=DriverPanel)
 
 
 def driver_mask(names: list[str]) -> npt.NDArray[np.bool_]:
-    """Which columns of a design matrix came from a driver."""
     return np.array([name.startswith(DRIVER_PREFIX) for name in names], dtype=bool)
 
 

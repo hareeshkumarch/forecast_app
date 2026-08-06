@@ -54,14 +54,10 @@ export function TopHeader({ section }: { section: AppSection }) {
   const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
   const isDesktop = useMediaQuery(RAIL_MEDIA.navigation);
 
-  // Run, scenario, range and export all act on a forecast. Before the first
-  // one they are controls that cannot do anything, and offering them is what
-  // makes a new workspace feel broken rather than empty.
   const isDashboard = section === "dashboard" && (summary?.has_data ?? false);
   const insightCount = insights?.items.length ?? 0;
   const ThemeIcon = theme === "system" ? Monitor : resolvedTheme === "dark" ? Moon : Sun;
 
-  // Below `lg` the sidebar is a sheet, so the same control opens it there.
   const toggleNavigation = isDesktop ? toggleSidebar : () => openRail("navigation");
   const navigationLabel = !isDesktop
     ? "Open navigation"
@@ -116,14 +112,7 @@ export function TopHeader({ section }: { section: AppSection }) {
       <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
         {isDashboard ? (
           <>
-            {/*
-              * The three pickers need about 600px between them, and at `md`
-              * (768px) there is nowhere near that once the logo, the status
-              * chip, Export and four icon buttons have taken their share — the
-              * row ran to 1056px and everything past the viewport was clipped
-              * away with no scroll to reach it. They wait for `xl`; below that
-              * the compact menu holds all three, which is what it is for.
-              */}
+
             <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <RunControl />
               <ScenarioControl />

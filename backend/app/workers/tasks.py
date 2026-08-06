@@ -25,11 +25,6 @@ RETRY_BACKOFF_SECONDS = 30
     retry_jitter=True,
 )
 def run_forecast_task(self: Task, run_id: str, correlation_id: str | None = None) -> dict[str, Any]:
-    """
-    Fits and persists one forecast run. Retries only transient infrastructure
-    faults — a dataset that cannot be forecast is a permanent failure and is
-    recorded on the run rather than retried.
-    """
     from app.services import forecast_service
 
     token = request_id.set(correlation_id or self.request.id or "-")
@@ -59,18 +54,6 @@ def run_forecast_task(self: Task, run_id: str, correlation_id: str | None = None
 def fit_series_task(
     self: Task, job: dict[str, Any], correlation_id: str | None = None
 ) -> list[dict[str, Any]]:
-    """
-    Fits one chunk of a grouped run's series.
-
-    A chunk is pure work: it takes histories and returns fits, touching no
-    database, so any worker can take any chunk and there is nothing transient
-    to retry.
-
-    It cannot fail. A chord runs its callback only when every header task
-    succeeded, so a chunk that raised would strand the run in `running`
-    forever. Whatever goes wrong comes back as a blocked fit per series
-    instead: those series are apportioned from their parent and say why.
-    """
     from app.services import series_service
 
     token = request_id.set(correlation_id or self.request.id or "-")
@@ -93,12 +76,6 @@ def finalise_series_task(
     run_id: str,
     correlation_id: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Closes a grouped run once every chunk is in.
-
-    Celery hands a chord's callback the header's results in order, so this is
-    where the tree is assembled, stored and the run marked complete.
-    """
     from app.forecasting.engine import LeafFit
     from app.services import forecast_service, series_service
 

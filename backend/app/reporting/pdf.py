@@ -1,12 +1,3 @@
-"""
-The forecast as something you can hand to someone.
-
-A CSV is for work that continues; this is for work that is being reported.
-It carries the horizon, how the forecast was arrived at, how accurate the
-method has been, and the breakdowns — in that order, because that is the
-order the questions get asked in.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -37,18 +28,11 @@ from app.models.entities import ForecastRun
 from app.reporting.charts import ForecastChart, RiskChart, ScoreChart
 from app.reporting.palette import ACCENT, BAND, FAINT, INK, MUTED, RULE
 
-#: Matches `exporter.TOP_LINE` — a point that belongs to the run, not a series.
 TOP_LINE = "Total"
 
-#: Bars in the risk chart. Past this the picture stops being scannable and the
-#: table underneath is the better way to read the tail.
 RISK_BARS = 12
 CHART_HEIGHT = 52 * mm
 
-#: The share of realized error that has to point one way before the report
-#: calls it a lean. A half is where the misses stop cancelling each other out —
-#: expressed against the run's own error rather than as a fixed percentage, so
-#: it means the same thing for a volatile series and a steady one.
 DIRECTIONAL_SHARE = 0.5
 
 MARGIN = 16 * mm
@@ -82,14 +66,10 @@ def _styles() -> dict[str, ParagraphStyle]:
     }
 
 
-#: Beyond this a cell is wrapped rather than drawn as a single line. ReportLab
-#: only reflows Paragraphs — a plain string is drawn at full width whatever the
-#: column is, so a long model rationale ran off both edges of the page.
 WRAP_OVER = 24
 
 
 def _number(value: Any, digits: int = 0) -> str:
-    """Numbers are read down a column, so they align and never show as None."""
     if value is None:
         return "—"
     try:
@@ -117,13 +97,6 @@ def _signed(value: Any) -> str:
 
 
 def _leading(run: ForecastRun) -> str:
-    """
-    The customer's own columns the forecast read, beside the target's history.
-
-    Named in the report because a planner asked to trust a number wants to know
-    what went into it, and "we also read your web sessions from six months
-    earlier" is a far better answer than a model name.
-    """
     columns = run.leading_columns or []
     if not columns:
         return "the target's own history only"
@@ -183,7 +156,6 @@ def _table(
 
 
 def _chrome(canvas: Any, document: Any, run_name: str) -> None:
-    """A rule and a page number on every page, so loose sheets stay identifiable."""
     canvas.saveState()
     width, _height = A4
 
@@ -222,13 +194,11 @@ def build(
         )
     )
 
-    # The shape of the thing, before any of the numbers describing it.
     chart = _forecast_chart(rows, run, width, currency)
     if chart is not None:
         story.append(chart)
         story.append(Spacer(1, 4))
 
-    # ---- how it was made
     story.append(Paragraph("HOW THIS FORECAST WAS MADE", style["section"]))
     grain = ", ".join(run.group_by) if run.group_by else "one total series"
     story.append(
@@ -264,14 +234,8 @@ def build(
             )
         )
 
-    # ---- how it actually did, where the horizon has been lived through
-    #
-    # Before the backtest section deliberately: when both exist this is the
-    # number that answers the question, and a backtest figure read first tends
-    # to be the one that gets remembered.
     story.extend(_scorecard_section(run, rows, width, currency, style))
 
-    # ---- how well it has done
     metrics = sheets.get("metrics") or []
     if metrics:
         story.append(Paragraph("MEASURED ACCURACY", style["section"]))
@@ -304,11 +268,6 @@ def build(
             )
         )
 
-    # ---- the horizon itself
-    #
-    # The run's own line only. A grouped run also stores a curve per series, and
-    # mixing them in gives a column of identical dates with no way to tell which
-    # series each row belongs to — the series get their own section below.
     horizon = [
         row
         for row in rows
@@ -346,12 +305,6 @@ def build(
                 )
             )
 
-    # ---- the breakdowns
-    #
-    # Headed by the column the customer actually chose. A planner who split by
-    # store and SKU was being handed a table marked "BY REGION" with their
-    # store names under it, which is the report telling them it was written for
-    # somebody else's business.
     for title, key, columns in (
         (
             f"BY {(run.region_column or 'region').upper()}",
@@ -400,7 +353,6 @@ def build(
             )
         )
 
-    # ---- what needs a human, if the run had a grain
     series = sheets.get("series") or []
     if series:
         shown = series[:max_rows]
@@ -501,12 +453,6 @@ def _scorecard_section(
     currency: bool,
     style: dict[str, ParagraphStyle],
 ) -> list[Any]:
-    """
-    How the forecast actually did, where the horizon has been lived through.
-
-    Absent entirely until the run has been scored — an empty section headed
-    "how it did" reads as a failure rather than as a horizon still running.
-    """
     if run.scored_at is None or not run.scored_periods:
         return []
 
@@ -575,7 +521,6 @@ def _scorecard_section(
 
 
 def _graded_periods(rows: list[dict[str, Any]]) -> list[tuple[date, float, float]]:
-    """The run's own forecast periods that carry an actual, in calendar order."""
     graded = [
         (
             date.fromisoformat(str(row["period"])),
@@ -592,18 +537,8 @@ def _graded_periods(rows: list[dict[str, Any]]) -> list[tuple[date, float, float
 
 
 def _verdict(run: ForecastRun) -> str:
-    """
-    The one sentence a reader takes away, in the language of the fault.
-
-    Bias and interval coverage are different failures needing different fixes,
-    and neither is visible in the accuracy figure that sits above them.
-    """
     parts: list[str] = []
 
-    # Bias and wMAPE are both percentages of actual, so their ratio is exactly
-    # the share of the error that points one way. Past a half the misses have
-    # stopped cancelling, and the fix is a different one from "be more
-    # accurate" — which is the only reason to say it out loud.
     bias, error = run.realized_bias, run.realized_wmape
     if bias is not None and error and abs(bias) >= error * DIRECTIONAL_SHARE:
         direction = "high" if bias > 0 else "low"
@@ -626,10 +561,6 @@ def _verdict(run: ForecastRun) -> str:
 def _forecast_chart(
     rows: list[dict[str, Any]], run: ForecastRun, width: float, currency: bool
 ) -> ForecastChart | None:
-    """
-    The run's own history and horizon. Returns None where there is nothing to
-    draw — a run with no history yet would otherwise render an empty frame.
-    """
     top_line = [row for row in rows if row.get("series", TOP_LINE) == TOP_LINE]
 
     history = [
@@ -637,11 +568,6 @@ def _forecast_chart(
         for row in top_line
         if row.get("kind") == "actual" and row.get("actual") is not None
     ]
-    # Only the recent past. Three years of history behind a three-month horizon
-    # squeezes the forecast into a sliver at the right-hand edge, and the
-    # forecast is what the picture is for. Two comparison windows is what the
-    # engine itself uses to judge seasonality — long enough to show the pattern
-    # being extrapolated, derived from the frequency rather than picked.
     context = 2 * comparison_window(run.frequency, len(history))
     history = history[-context:] if len(history) > context else history
 
@@ -658,8 +584,6 @@ def _forecast_chart(
     upper = [float(row["upper_bound"]) for row in ahead if row.get("upper_bound") is not None]
     complete = len(lower) == len(upper) == len(horizon)
 
-    # What happened over the horizon, once it has been scored. Aligned with the
-    # forecast period by period, with a hole where a period has not settled.
     realized = [
         None if row.get("actual") is None else float(row["actual"])
         for row in sorted(ahead, key=lambda row: str(row.get("period", "")))

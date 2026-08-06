@@ -11,25 +11,16 @@ from app.models.enums import ForecastFrequency
 
 FloatArray = npt.NDArray[np.float64]
 
-#: A driver is only worth carrying if there are rows to identify it with. One
-#: column per twenty observations keeps a 40-point monthly series to two and a
-#: 100-point one to four, which is about where added columns stop paying for
-#: the rows they cost.
 OBSERVATIONS_PER_DRIVER = 20
 MAX_DRIVERS = 4
 
-#: Enough of the series has to survive the lag to fit anything at all.
 MIN_ROWS_AFTER_LAG = 12
 
 
 @dataclass(slots=True)
 class DriverLink:
-    """One column of the customer's data, and the lag at which it leads."""
-
     name: str
     lag: int
-    #: Rank correlation with the target's period-on-period change. Signed, so
-    #: the direction can be reported; ranked on magnitude.
     strength: float
 
     @property
@@ -39,19 +30,7 @@ class DriverLink:
 
 @dataclass(slots=True)
 class DriverPanel:
-    """
-    Candidate leading indicators, already on the target's own calendar.
-
-    Only lags the forecast can actually know are offered. A driver at lag L is
-    knowable for the first L steps ahead, because step h needs its value L
-    periods before — so restricting L to at least the horizon means every step
-    of the forecast reads a value that has already happened. Anything shorter
-    would need the driver's own future, which is a forecast of a forecast and
-    is not what this is for.
-    """
-
     links: list[DriverLink] = field(default_factory=list)
-    #: One column per link, aligned to the calendar it was built against.
     series: dict[str, FloatArray] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
@@ -62,15 +41,6 @@ class DriverPanel:
         return [link.name for link in self.links]
 
     def columns(self, length: int) -> dict[str, FloatArray]:
-        """
-        The lagged columns for a calendar of `length` periods.
-
-        A row `length` beyond the panel is the caller building a future row.
-        Only `raw[:length - lag]` is ever copied, so the furthest value any row
-        can reach is `lag` periods before it — which is what makes this safe
-        during a backtest, where the panel spans the whole series but the model
-        is only allowed to have seen the part before the cut.
-        """
         out: dict[str, FloatArray] = {}
 
         for link in self.links:
@@ -87,9 +57,6 @@ class DriverPanel:
         return out
 
 
-#: What one step of each frequency is called, singular and plural. Saying "6
-#: periods earlier" to a planner looking at months is the kind of phrasing that
-#: makes a product feel like somebody's internal tool.
 PERIOD_WORDS: dict[ForecastFrequency, tuple[str, str]] = {
     ForecastFrequency.DAILY: ("day", "days"),
     ForecastFrequency.WEEKLY: ("week", "weeks"),
@@ -99,10 +66,6 @@ PERIOD_WORDS: dict[ForecastFrequency, tuple[str, str]] = {
 
 
 def describe(links: list[DriverLink], frequency: ForecastFrequency, target: str) -> str:
-    """
-    The leading columns in a sentence, for the reader who wants to know what
-    the forecast looked at besides the target's own past.
-    """
     if not links:
         return ""
 
@@ -121,7 +84,6 @@ def describe(links: list[DriverLink], frequency: ForecastFrequency, target: str)
 
 
 def _spearman(left: FloatArray, right: FloatArray) -> float:
-    """Rank correlation, which does not care that a driver is on another scale."""
     usable = np.isfinite(left) & np.isfinite(right)
     if int(usable.sum()) < MIN_ROWS_AFTER_LAG:
         return 0.0
@@ -142,27 +104,12 @@ def _spearman(left: FloatArray, right: FloatArray) -> float:
 
 
 def significant_at(n_pairs: int) -> float:
-    """
-    The correlation a driver has to clear before it is worth a column.
-
-    Derived rather than picked: this is the two-sided 5% critical value for a
-    rank correlation on `n_pairs` points, so the bar tightens as the series
-    gets shorter instead of letting noise through on the series least able to
-    afford it.
-    """
     if n_pairs < MIN_ROWS_AFTER_LAG:
         return 1.0
     return min(1.0, 1.96 / math.sqrt(n_pairs - 1))
 
 
 def admissible_lags(horizon: int, n_observations: int, frequency: ForecastFrequency) -> list[int]:
-    """
-    Lags the forecast can read without knowing the driver's future.
-
-    The floor is the horizon. The ceiling is one seasonal cycle beyond it,
-    because a relationship further back than "this time last year, plus the
-    horizon" is not one this much history can tell from coincidence.
-    """
     period = seasonal_period(frequency)
     ceiling = horizon + max(period, 1)
     return [
@@ -181,18 +128,6 @@ def build_panel(
     horizon: int,
     frequency: ForecastFrequency,
 ) -> DriverPanel:
-    """
-    Picks which of the customer's other numeric columns lead the target.
-
-    Screening, not deciding: a column that gets through here has only earned a
-    place in the design matrix. Whether the model is better off using it is
-    settled out of sample by the tuner, which is the only test that means
-    anything.
-
-    Correlation is measured on period-on-period change rather than on level,
-    because two columns that both grow with the business correlate at 0.99
-    whether or not either tells you anything about the other.
-    """
     n = int(target.size)
     allowance = budget(n)
     if allowance == 0 or not candidates:

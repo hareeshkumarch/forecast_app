@@ -42,7 +42,6 @@ function writePrefs(prefs: StoredPrefs): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
-    // A browser with storage disabled still themes correctly for this session.
   }
 }
 
@@ -55,10 +54,6 @@ export function resolveTheme(choice: ThemeChoice): ResolvedTheme {
   return choice === "system" ? systemTheme() : choice;
 }
 
-/**
- * The document element carries the theme and density, so CSS variables — and
- * anything reading them, including the charts — update in one place.
- */
 export function applyPrefs(theme: ThemeChoice, density: Density): ResolvedTheme {
   const resolved = resolveTheme(theme);
   if (typeof document !== "undefined") {
@@ -73,7 +68,7 @@ interface PrefsState {
   density: Density;
   sidebarCollapsed: boolean;
   resolvedTheme: ResolvedTheme;
-  /** Bumped on every applied change, so chart options can be recomputed. */
+
   revision: number;
 
   setTheme: (theme: ThemeChoice) => void;
@@ -114,8 +109,7 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
     const { theme, density, sidebarCollapsed } = get();
     const next = !sidebarCollapsed;
     writePrefs({ theme, density, sidebarCollapsed: next });
-    // The rails and panels are sized by container queries, so the workspace
-    // reflows on its own once the sidebar changes width.
+
     set((state) => ({ sidebarCollapsed: next, revision: state.revision + 1 }));
   },
 
@@ -133,7 +127,6 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
   },
 }));
 
-/** Chart builders depend on this so a theme change repaints them. */
 export function useThemeRevision(): number {
   return usePrefsStore((state) => state.revision);
 }

@@ -1,8 +1,3 @@
-"""Persist per-run options and the queued task id.
-
-Revision ID: 0004
-Revises: 0003
-"""
 
 from __future__ import annotations
 

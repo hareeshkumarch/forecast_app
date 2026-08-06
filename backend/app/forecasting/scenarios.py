@@ -13,13 +13,8 @@ FloatArray = npt.NDArray[np.float64]
 SCENARIO_CONFIDENCE = 0.95
 MIN_EMPIRICAL_RESIDUALS = 8
 
-# With no validation fold to learn from, the series' own step-to-step movement
-# is the only honest estimate of how wrong the next point could be. Damped,
-# because a short history over-reads its own noise.
 FALLBACK_VOLATILITY_WEIGHT = 0.75
 
-# A band this small relative to the level cannot survive float64 addition, so
-# reporting it would claim a precision the numbers cannot carry.
 MIN_RELATIVE_SIGMA = 1e-9
 
 
@@ -55,7 +50,6 @@ def _volatility_sigma(history: FloatArray, horizon: int) -> FloatArray:
         if scale <= 0.0:
             scale = float(np.mean(steps))
     if scale <= 0.0 and finite.size:
-        # A flat history still moves; assume it could move by a tenth of level.
         scale = float(np.max(np.abs(finite))) * 0.1
 
     return scale * FALLBACK_VOLATILITY_WEIGHT * np.sqrt(np.arange(1, horizon + 1))
@@ -166,10 +160,6 @@ def build_intervals(
     worst = point_forecast + scenario_low
     best = point_forecast + scenario_high
 
-    # At extreme magnitudes an offset can be smaller than the gap between two
-    # representable floats, which silently collapses the band to nothing. Only
-    # widen a band that the model asked for; a genuinely flat series keeps its
-    # zero-width interval.
     if method != "no_residuals":
         level = float(np.max(np.abs(point_forecast))) if point_forecast.size else 0.0
         floor = level * MIN_RELATIVE_SIGMA

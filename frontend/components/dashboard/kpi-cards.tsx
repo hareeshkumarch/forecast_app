@@ -1,6 +1,5 @@
 "use client";
 
-
 import {
   Activity,
   ArrowDownRight,
@@ -19,7 +18,6 @@ import { useSummary } from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { KpiCard as KpiCardModel } from "@/types/api";
-
 
 const KPI_ICONS: Record<string, LucideIcon> = {
   total_forecast: Wallet,
@@ -117,7 +115,6 @@ function KpiTile({ kpi }: { kpi: KpiCardModel }) {
         {kpi.display_value}
       </p>
 
-      
       <div className="mt-1.5 space-y-0.5">
         {kpi.delta_display && kpi.direction !== "flat" ? (
           <span

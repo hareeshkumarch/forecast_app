@@ -1,5 +1,3 @@
-
-
 import { create } from "zustand";
 
 import type { ForecastView, Insight } from "@/types/api";
@@ -15,29 +13,19 @@ export type ModalKind =
   | "all-insights"
   | "settings";
 
-/**
- * Below `lg` the two rails are not on screen — they open as off-canvas
- * drawers instead. One at a time, so the overlay never stacks.
- */
 export type MobileRail = "navigation" | "insights" | null;
 
 interface UiState {
-
   view: ForecastView;
   rangeStart: string | null;
   rangeEnd: string | null;
   runId: string | null;
 
-
   modal: ModalKind;
-  /**
-   * What the open modal is about — a connector to import from, a dataset to
-   * forecast. One field because only one modal is ever open.
-   */
+
   modalTargetId: string | null;
   insightDrawer: Insight | null;
   mobileRail: MobileRail;
-
 
   activeRunId: string | null;
 
@@ -63,8 +51,6 @@ export const useUiStore = create<UiState>((set) => ({
   rangeEnd: null,
   runId: null,
 
-
-
   modal: "none",
   modalTargetId: null,
   insightDrawer: null,
@@ -74,8 +60,6 @@ export const useUiStore = create<UiState>((set) => ({
   setView: (view) => set({ view }),
   setRange: (rangeStart, rangeEnd) => set({ rangeStart, rangeEnd }),
   setRunId: (runId) => set({ runId }),
-
-
 
   openModal: (modal, modalTargetId = null) =>
     set({ modal, modalTargetId, mobileRail: null }),
@@ -89,7 +73,6 @@ export const useUiStore = create<UiState>((set) => ({
 
   setActiveRun: (activeRunId) => set({ activeRunId }),
 }));
-
 
 export function useDashboardFilters() {
   const view = useUiStore((state) => state.view);

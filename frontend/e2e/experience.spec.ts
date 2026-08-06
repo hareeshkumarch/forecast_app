@@ -1,18 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/**
- * Covers the shell-level interactions that do not depend on API data: theming,
- * density, the command palette and its shortcuts.
- */
-
 async function load(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  // The workspace resolves into exactly one of four states, and three of them
-  // are settled: the panels, the first-run guide, or an error the summary
-  // could not get past. Waiting for the panels alone made every test here
-  // depend on a reachable API, which this job deliberately does not run.
   await expect(page.locator('[data-workspace]:not([data-workspace="loading"])')).toBeVisible({
     timeout: 15_000,
   });
@@ -33,12 +24,8 @@ test("the theme is applied before paint and survives a reload", async ({ page })
   });
   await page.reload();
 
-  // Read before any hydration effect could have run.
   expect(await theme(page)).toBe("dark");
 
-  // Asserted as "dark", not as a hex: the point is that the dark tokens are
-  // live before paint, and pinning the literal only breaks the test whenever
-  // the palette is retuned.
   const canvas = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim(),
   );
@@ -46,7 +33,6 @@ test("the theme is applied before paint and survives a reload", async ({ page })
   expect(luminance(canvas)).toBeLessThan(0.2);
 });
 
-/** Rough perceived brightness, 0 (black) to 1 (white). */
 function luminance(hex: string): number {
   const channel = (at: number) => parseInt(hex.slice(at, at + 2), 16) / 255;
   return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
@@ -106,9 +92,6 @@ test("compact density tightens the panel grid", async ({ page }) => {
       getComputedStyle(document.documentElement).getPropertyValue("--density-panel-gap").trim(),
     );
 
-  // Driven through storage and a reload rather than by setting the attribute
-  // directly, so the assertion cannot race the hydration effect re-applying
-  // the stored preference.
   async function useDensity(value: "compact" | "comfortable") {
     await page.evaluate((density) => {
       localStorage.setItem(
@@ -130,7 +113,6 @@ test("compact density tightens the panel grid", async ({ page }) => {
 test("first run offers a guided path rather than empty panels", async ({ page }) => {
   await load(page);
 
-  // With no completed run the workspace leads with the three-step panel.
   const guide = page.getByRole("heading", { name: "Get your first forecast" });
   if (await guide.count()) {
     await expect(guide).toBeVisible();

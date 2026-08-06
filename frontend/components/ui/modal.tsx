@@ -6,17 +6,13 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * Widths are ceilings, not fixed sizes: every dialog shrinks to the viewport
- * with a gutter, so nothing overflows on a phone.
- */
 export type ModalSize = "sm" | "md" | "lg" | "xl";
 
 const SIZES: Record<ModalSize, string> = {
   sm: "sm:max-w-[480px]",
   md: "sm:max-w-[600px]",
   lg: "sm:max-w-[680px]",
-  // A chart and its table side by side need more than a form does.
+
   xl: "sm:max-w-[900px]",
 };
 
@@ -48,9 +44,7 @@ export function Modal({
             "rounded-card border border-border bg-surface shadow-popover focus:outline-none",
             SIZES[size],
           )}
-          // Radix warns when a dialog renders no <Dialog.Description>. Clearing
-          // the attribute silences it — but only when there is nothing to point
-          // at, otherwise it would undo Radix's own association.
+
           {...(description ? {} : { "aria-describedby": undefined })}
         >
           <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5 sm:py-3.5">

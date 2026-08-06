@@ -18,10 +18,6 @@ interface Step {
   run: () => void;
 }
 
-/**
- * Shown until there is a completed run. A fresh install otherwise lands on a
- * grid of empty panels with no indication of what to do first.
- */
 export function GettingStarted() {
   const openModal = useUiStore((state) => state.openModal);
   const router = useRouter();
@@ -29,8 +25,6 @@ export function GettingStarted() {
   const { data: datasets } = useDatasets({ limit: PICKER_LIMIT });
   const { data: runs } = useForecastRuns({ limit: 1 });
 
-  // Whether anything exists is a question about the workspace, so it comes
-  // from the totals rather than from whatever page happened to be fetched.
   const hasDataset = (datasets?.total ?? 0) > 0;
   const hasConfiguredDataset = (datasets?.rows ?? []).some(
     (dataset) => dataset.time_column && dataset.target_column,

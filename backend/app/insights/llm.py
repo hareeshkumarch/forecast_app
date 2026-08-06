@@ -13,9 +13,6 @@ from app.insights.generators import GeneratedInsight
 
 logger = get_logger(__name__)
 
-#: Rewrites are one small independent request each, so they run together. The
-#: ceiling is about the provider's rate limit, not this machine — eight is
-#: comfortably under every free tier and turns a minute of waiting into seconds.
 MAX_CONCURRENT_REWRITES = 8
 
 
@@ -257,9 +254,6 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
             "Content-Type": "application/json",
         }
         if provider == "openrouter":
-            # OpenRouter attributes usage to the referring app. Taken from the
-            # origin this deployment actually serves rather than written in, so
-            # a hosted instance stops reporting itself as somebody's laptop.
             origins = settings.cors_origins
             headers["HTTP-Referer"] = origins[0] if origins else "http://localhost:3000"
             headers["X-Title"] = settings.app_name
@@ -320,10 +314,6 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
 def _apply_rewrite(
     insight: GeneratedInsight, config: dict[str, object] | None
 ) -> LlmUsageRecord | None:
-    """
-    Asks the provider to re-say one insight, and takes the answer only if it
-    says exactly the same thing. Mutates `insight` on success.
-    """
     source = f"{insight.title}\n{insight.explanation}\n{insight.suggested_action}"
     result = _call_llm_api(source, config=config)
     if result is None:
@@ -376,9 +366,6 @@ def rewrite_insights(
     if not llm_enabled(llm_config) or not insights:
         return insights
 
-    # One request per insight, and they do not depend on each other. Run in
-    # order-preserving parallel: eight sequential ten-second timeouts is over a
-    # minute of a run spent waiting on wording.
     workers = min(MAX_CONCURRENT_REWRITES, len(insights))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="llm-rewrite") as pool:
         records = list(pool.map(lambda item: _apply_rewrite(item, llm_config), insights))
@@ -397,8 +384,6 @@ def llm_enabled(llm_config: dict[str, object] | None = None) -> bool:
 
 @dataclass(slots=True)
 class LlmProbe:
-    """The answer to "is this key going to work", before a run spends on it."""
-
     ok: bool
     provider: str
     model: str
@@ -418,7 +403,6 @@ PROBE_MESSAGES = {
 
 
 def probe(llm_config: dict[str, object] | None = None) -> LlmProbe:
-    """Sends one real rewrite request so a key can be checked without a run."""
     provider = resolve_provider(llm_config)
     model = resolve_model(llm_config)
 

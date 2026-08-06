@@ -1,6 +1,5 @@
 "use client";
 
-
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { LineChart, MoreHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -31,22 +30,12 @@ import { useThemeRevision } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastPointsResponse, ForecastView } from "@/types/api";
 
-
 const VIEW_FIELD: Record<ForecastView, "forecast" | "best_case" | "worst_case"> = {
   base: "forecast",
   best: "best_case",
   worst: "worst_case",
 };
 
-
-/**
- * How much history sits behind the horizon.
- *
- * The panel shows a working window — three horizons back, at least eighteen
- * periods — because a three-year run behind a three-month forecast squeezes
- * the forecast into a sliver at the edge. The enlarged view can ask for all
- * of it, which is what `history` overrides.
- */
 function displayWindow(
   points: ForecastPointsResponse["points"],
   boundary: number,
@@ -71,7 +60,6 @@ function buildOption(
 ): ChartOption {
   const { confidence_level: confidence } = data;
 
-  // A daily run stamped with month labels repeats "Mar 2026" thirty times.
   const period =
     labelGranularity(data.frequency) === "day" ? formatDayMonth : formatMonth;
 
@@ -85,7 +73,6 @@ function buildOption(
   const field = VIEW_FIELD[view];
   const boundary = boundaryIndex ?? points.length;
 
-  
   const lastActualIndex = boundary - 1;
   const lastActual = lastActualIndex >= 0 ? points[lastActualIndex]?.actual ?? null : null;
 
@@ -95,7 +82,6 @@ function buildOption(
     return point[field] ?? point.forecast;
   });
 
-  
   const bandBase = points.map((point, index) => {
     if (index === lastActualIndex) return lastActual;
     return index < boundary ? null : point.lower_bound;
@@ -112,8 +98,7 @@ function buildOption(
   return {
     backgroundColor: "transparent",
     animation: false,
-    
-    
+
     grid: { left: 8, right: 14, top: 42, bottom: points.length > 40 ? 26 : 4, containLabel: true },
     dataZoom: [
       { type: "inside", throttle: 50, zoomOnMouseWheel: "shift", moveOnMouseWheel: false },
@@ -194,7 +179,7 @@ function buildOption(
       boundaryGap: false,
       axisLine: axisLine(colors),
       axisTick: { show: false },
-      
+
       axisLabel: { ...axisLabel(colors), margin: 10, hideOverlap: true },
       splitLine: { show: false },
     },
@@ -212,8 +197,7 @@ function buildOption(
         type: "line",
         data: options.band === false ? [] : bandBase,
         lineStyle: { opacity: 0 },
-        
-        
+
         itemStyle: { color: colors.sand },
         stack: "confidence",
         symbol: "none",
@@ -221,7 +205,6 @@ function buildOption(
         z: 1,
       },
       {
-        
         name: "confidence-span",
         type: "line",
         data: options.band === false ? [] : bandSpan,
@@ -255,8 +238,7 @@ function buildOption(
                   formatter: "Forecast",
                   fontSize: 10,
                   color: colors.textMuted,
-                  
-                  
+
                   rotate: 0,
                   distance: [0, 6],
                   align: "center",
@@ -282,13 +264,6 @@ function buildOption(
   };
 }
 
-/**
- * The run's history and horizon, or one series' if given a `seriesId`.
- *
- * The same panel either way: a series that gets its own chart should look and
- * behave like the top line's, because it is the same question asked of a
- * smaller slice.
- */
 export function ForecastVsActual({
   seriesId,
   title = "Forecast vs Actual",
@@ -323,8 +298,7 @@ export function ForecastVsActual({
       isEmpty={Boolean(empty)}
       empty={{
         icon: LineChart,
-        // Without a run there is no window to widen, and saying so sends a new
-        // user hunting through a date filter for data that was never there.
+
         title: runId ? "Nothing in this window" : "No forecast yet",
         message: !runId
           ? "Run a forecast and its history and horizon will be plotted here."
@@ -392,17 +366,12 @@ export function ForecastVsActual({
   );
 }
 
-/** How much history the enlarged chart puts behind the horizon. */
 const WINDOWS = [
   { key: "working", label: "Recent" },
   { key: "year", label: "Last year" },
   { key: "all", label: "Everything" },
 ] as const;
 
-/**
- * The enlarged chart: the same picture with room for the whole history, the
- * band on or off, and the numbers underneath it.
- */
 function Enlarged({ data, view }: { data: ForecastPointsResponse; view: ForecastView }) {
   const [window, setWindow] = useState<(typeof WINDOWS)[number]["key"]>("working");
   const [band, setBand] = useState(true);

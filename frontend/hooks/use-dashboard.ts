@@ -1,6 +1,5 @@
 "use client";
 
-
 import {
   keepPreviousData,
   useIsFetching,
@@ -34,7 +33,6 @@ export interface SeriesQuery {
   limit: number;
   offset: number;
 }
-
 
 function filterKey(filters: DashboardFilters) {
   return {
@@ -71,7 +69,6 @@ export const queryKeys = {
   llmUsage: (days: number) => ["usage", "llm", days] as const,
 };
 
-
 export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health,
@@ -80,51 +77,32 @@ export function useHealth() {
   });
 }
 
-
 export function useSummary() {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.summary(filters),
     queryFn: async () => {
       const summary = await api.getSummary(filters);
-      // The server formatted the cards; everything the client formats after
-      // this — chart ticks, table cells, tooltips — has to agree with them.
+
       setCurrencySymbol(summary.currency_symbol);
       return summary;
     },
   });
 }
 
-//: What "the dashboard" is, for the purposes of refreshing it.
 const LIVE_PREFIXES = new Set(["dashboard", "forecasts"]);
 
-/**
- * The state a refresh control needs: how old the screen is, whether anything
- * is in flight, and how to ask for new numbers.
- *
- * Every panel owns its own query, so one button has to reach across all of
- * them — refreshing the summary alone would leave the chart and the splits
- * showing older figures beside a newer headline. Each panel keeps what it is
- * already drawing until its replacement arrives, so the screen updates in
- * place rather than emptying and refilling.
- */
 export function useDashboardRefresh() {
   const refresh = useRefreshDashboard();
   const inFlight = useIsFetching({
     predicate: (query) => LIVE_PREFIXES.has(String(query.queryKey[0])),
   });
-  // The summary is the headline every other panel is read against, so its age
-  // is the one worth reporting. Sharing a key with the panels means this adds
-  // an observer, not a request.
+
   const { dataUpdatedAt } = useSummary();
 
   return { isFetching: inFlight > 0, updatedAt: dataUpdatedAt, refresh };
 }
 
-/**
- * One split of the forecast. Disabled until a column is known, because the
- * available splits come from the summary and are not knowable up front.
- */
 export function useBreakdown(column: string | null) {
   const filters = useDashboardFilters();
   return useQuery({
@@ -151,13 +129,6 @@ export function useInsights() {
   });
 }
 
-/**
- * Re-says the insights on screen in the configured model's words.
- *
- * The alternative was re-running the whole forecast, which refits every
- * candidate model for what is only a phrasing change — so a key added after a
- * run used to be worth nothing until the next one.
- */
 export function useRewriteInsights() {
   const client = useQueryClient();
   const filters = useDashboardFilters();
@@ -180,7 +151,6 @@ export function useRewriteInsights() {
   });
 }
 
-/** Puts the platform's own wording back, without touching a provider. */
 export function usePlainInsights() {
   const client = useQueryClient();
   const filters = useDashboardFilters();
@@ -198,7 +168,6 @@ export function usePlainInsights() {
   });
 }
 
-/** One real request to the provider, so a key can be checked before a run. */
 export function useCheckLlm() {
   return useMutation({
     mutationFn: (config: LlmConfig) => api.checkLlm(llmRunFields(config)),
@@ -206,36 +175,15 @@ export function useCheckLlm() {
   });
 }
 
-
-/** A run that has not settled yet; the list has to keep moving while it works. */
 const ACTIVE_RUN_POLL_MS = 2_000;
 
-/**
- * How much a dropdown asks for.
- *
- * A picker wants the recent ones and nothing else — scrolling five hundred
- * runs to find last Tuesday's is not a thing anyone does, and the screens that
- * are *about* the whole list drive their own paging. The point of naming it is
- * that a picker's convenience limit can never again become the ceiling on what
- * the workspace is allowed to contain.
- */
 export const PICKER_LIMIT = 50;
 
-/**
- * A page of runs, filtered and ordered by the server.
- *
- * The pickers ask for a handful and ignore the rest; Reports drives every
- * parameter. Doing the narrowing here rather than in the component is the
- * whole point — the list used to be capped at fifty with no way to ask for the
- * fifty-first, so searching in the browser searched a truncated list and
- * reported that older runs did not exist.
- */
 export function useForecastRuns(query: RunQuery = {}) {
   return useQuery({
     queryKey: queryKeys.runs(query),
     queryFn: () => api.listForecastRuns(query),
-    // Runs now finish on a worker, so nothing tells this list they moved.
-    // Poll only while something is actually in flight, then go quiet again.
+
     refetchInterval: (result) => {
       const counts = result.state.data?.counts;
       return counts && counts.active > 0 ? ACTIVE_RUN_POLL_MS : false;
@@ -250,13 +198,10 @@ export function useLlmUsage(days = 30) {
     queryKey: queryKeys.llmUsage(days),
     queryFn: () => api.getLlmUsage(days),
     refetchInterval: 30_000,
-    // Changing the window is a new query key. Without this the whole page
-    // drops to skeletons to answer "the same question over 7 days instead of
-    // 30", which reads as the screen breaking rather than narrowing.
+
     placeholderData: keepPreviousData,
   });
 }
-
 
 export function useForecastPoints(runId: string | null | undefined, seriesId?: string | null) {
   const filters = useDashboardFilters();
@@ -269,19 +214,11 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
         ...(seriesId ? { series_id: seriesId } : {}),
       }),
     enabled: Boolean(runId),
-    // Picking a different series, or narrowing the dates, keeps the current
-    // chart drawn until the new one arrives rather than flashing a skeleton
-    // over a picture that was already correct a moment ago.
+
     placeholderData: keepPreviousData,
   });
 }
 
-/**
- * A page of a grouped run's series.
- *
- * The previous page stays on screen while the next one loads — paging a triage
- * list that blanks between pages loses your place every time you move.
- */
 export function useForecastSeries(runId: string | null | undefined, query: SeriesQuery) {
   return useQuery({
     queryKey: queryKeys.runSeries(runId ?? "none", query),
@@ -299,7 +236,6 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
   });
 }
 
-/** The score already stored for a run, or the reason there is none yet. */
 export function useScorecard(runId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.runScore(runId ?? "none"),
@@ -308,13 +244,6 @@ export function useScorecard(runId: string | null | undefined) {
   });
 }
 
-/**
- * Grades a run against actuals.
- *
- * Everything the score touches is invalidated on success — the run row carries
- * the realized figures, the series rows carry their own, and the points now
- * have actuals on them.
- */
 export function useScoreForecast(runId: string) {
   const client = useQueryClient();
 
@@ -344,7 +273,6 @@ export function useForecastMetrics(runId: string | null | undefined) {
   });
 }
 
-
 export function useDatasets(query: DatasetQuery = {}) {
   return useQuery({
     queryKey: queryKeys.datasets(query),
@@ -368,7 +296,6 @@ export function useDataset(id: string | null | undefined) {
     enabled: Boolean(id),
   });
 }
-
 
 export function useDatasetQuality(
   id: string | null,
@@ -398,7 +325,6 @@ export function useDatasetQuality(
   });
 }
 
-
 export function useConnectors() {
   return useQuery({ queryKey: queryKeys.connectors, queryFn: api.listConnectors });
 }
@@ -407,7 +333,7 @@ export function useConnectorTypes() {
   return useQuery({
     queryKey: queryKeys.connectorTypes,
     queryFn: api.listConnectorTypes,
-    
+
     staleTime: Infinity,
   });
 }
@@ -421,12 +347,10 @@ export function useConnectorSchemas(id: string | null) {
   });
 }
 
-
 export function useTestConnector() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.testConnector,
-
 
     onSettled: (_data, _error, variables) => {
       if (variables.connector_id) {
@@ -461,10 +385,6 @@ export function useUpdateConnector() {
   });
 }
 
-/**
- * Datasets already imported through a connector survive it, so only the
- * connector list needs to hear about this.
- */
 export function useDeleteConnector() {
   const client = useQueryClient();
   return useMutation({
@@ -530,11 +450,6 @@ export function useConfigureDataset() {
   });
 }
 
-/**
- * Removing a file takes its forecasts with it, so the run list, the dashboard
- * and every per-run query have to be told — otherwise the screen keeps
- * offering results built on data that is no longer there.
- */
 export function useDeleteDataset() {
   const client = useQueryClient();
 
@@ -551,7 +466,6 @@ export function useDeleteDataset() {
   });
 }
 
-
 export function useStartForecast() {
   const client = useQueryClient();
   return useMutation({
@@ -563,7 +477,6 @@ export function useStartForecast() {
     onError: (error: unknown) => toast.error("Could not start the forecast", errorMessage(error)),
   });
 }
-
 
 export function useDeleteForecastRun() {
   const client = useQueryClient();
@@ -580,7 +493,6 @@ export function useDeleteForecastRun() {
   });
 }
 
-
 export function useCancelForecastRun() {
   const client = useQueryClient();
 
@@ -594,7 +506,6 @@ export function useCancelForecastRun() {
   });
 }
 
-
 export function useRefreshDashboard() {
   const client = useQueryClient();
   return () => {
@@ -605,8 +516,6 @@ export function useRefreshDashboard() {
 }
 
 export function downloadExport(runId: string, format: ExportFormat): void {
-  
-  
   window.location.href = api.exportUrl(runId, format);
 }
 

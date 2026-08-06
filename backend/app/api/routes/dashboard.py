@@ -65,11 +65,6 @@ async def insights(session: SessionDep, query: DashboardQueryDep) -> InsightResp
 async def rewrite_insights(
     session: SessionDep, payload: InsightRewriteRequest
 ) -> InsightRewriteResponse:
-    """
-    A phrasing pass over insights that already exist, so a key added after a
-    run takes effect without refitting a single model. Every figure is checked
-    against the computed wording and the rewrite is discarded if any differs.
-    """
     run = await forecast_service.resolve_run(session, payload.run_id)
     if run is None:
         raise NotFoundError("There is no completed forecast to write insights for yet.")

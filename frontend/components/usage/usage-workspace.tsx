@@ -12,8 +12,6 @@ import { axisLabel, axisLine, chartColors, splitLine, tooltipStyle } from "@/lib
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { LlmUsageResponse } from "@/types/api";
 
-//: Shortest first, so the screen can pick the first one that reaches back to
-//: the earliest request there is.
 const WINDOWS = [
   { value: "7", label: "Last 7 days", days: 7 },
   { value: "30", label: "Last 30 days", days: 30 },
@@ -127,14 +125,6 @@ export function UsageWorkspace() {
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
     useLlmUsage(days ?? WINDOWS[0]!.days);
 
-  /*
-   * The window opens on the smallest one that reaches back to the first
-   * request ever made.
-   *
-   * Fixed at thirty days it drew twenty-nine flat zeroes and a spike for
-   * anyone who had started that week — accurate, and useless as a picture.
-   * Chosen once, from the data; changing it by hand sticks.
-   */
   useEffect(() => {
     if (days !== null || !data) return;
     const first = data.first_event_at ? new Date(data.first_event_at).getTime() : null;

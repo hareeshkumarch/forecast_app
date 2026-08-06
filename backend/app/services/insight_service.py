@@ -15,9 +15,6 @@ from app.insights.llm import LlmProbe, LlmUsageRecord
 from app.models.entities import Insight, LlmUsageEvent
 from app.models.enums import InsightSeverity, InsightType
 
-#: How a discarded rewrite is explained to the person who asked for one. The
-#: reader does not know what "number_validation" means, and the reason matters:
-#: a rejected key is theirs to fix, a model that invented a figure is ours.
 REFUSAL_REASONS = {
     "no_key": "no API key was configured",
     "401": "the provider rejected the API key",
@@ -32,8 +29,6 @@ REFUSAL_REASONS = {
 
 @dataclass(slots=True)
 class RewriteOutcome:
-    """What one pass of the rewriter did, in terms a reader can act on."""
-
     considered: int
     rewritten: int
     provider: str
@@ -56,11 +51,6 @@ class RewriteOutcome:
 
 
 def _as_generated(row: Insight) -> GeneratedInsight:
-    """
-    The stored insight as the rewriter expects it, seeded from the computed
-    wording rather than what is on screen — rewriting a rewrite feeds the model
-    its own output, and the drift compounds every time.
-    """
     return GeneratedInsight(
         type=InsightType(row.type),
         severity=InsightSeverity(row.severity),
@@ -94,14 +84,6 @@ def _reasons(records: list[LlmUsageRecord]) -> dict[str, int]:
 async def rewrite(
     session: AsyncSession, run_id: uuid.UUID, llm_config: dict[str, object] | None
 ) -> RewriteOutcome:
-    """
-    Re-says this run's insights in the configured model's words.
-
-    The numbers are not recomputed and cannot change: every rewrite is checked
-    figure-for-figure against the computed wording and discarded if it differs.
-    That is what makes this safe to run against a finished forecast — it is a
-    phrasing pass, not a second opinion.
-    """
     provider = llm_api.resolve_provider(llm_config)
     model = llm_api.resolve_model(llm_config)
 
@@ -112,12 +94,8 @@ async def rewrite(
     drafts = [_as_generated(row) for row in rows]
     usage: list[LlmUsageRecord] = []
 
-    # Blocking HTTP behind a thread: this runs on the request path, and the
-    # rewriter holds the event loop for as long as the provider takes.
     await asyncio.to_thread(llm_api.rewrite_insights, drafts, llm_config, usage)
 
-    # Each generator contributes at most one insight, so the type identifies
-    # the row a usage record belongs to even though the record list is sparse.
     applied = {record.insight_type for record in usage if record.applied}
     rewritten = 0
 
@@ -142,7 +120,6 @@ async def rewrite(
 
 
 async def reset(session: AsyncSession, run_id: uuid.UUID) -> int:
-    """Puts the platform's own wording back. Always available, never fails."""
     rows = await _stored(session, run_id)
     for row in rows:
         row.title = row.source_title
@@ -155,12 +132,10 @@ async def reset(session: AsyncSession, run_id: uuid.UUID) -> int:
 
 
 async def check(llm_config: dict[str, object] | None) -> LlmProbe:
-    """One real request, so a key can be checked before a run depends on it."""
     return await asyncio.to_thread(llm_api.probe, llm_config)
 
 
 def record_usage(session: AsyncSession, run_id: uuid.UUID, usage: list[LlmUsageRecord]) -> None:
-    """One row per provider request, without credentials or prompt contents."""
     now = utcnow()
     for record in usage:
         session.add(
