@@ -168,10 +168,6 @@ def _weigh_candidates(
     return chosen, unproven, contradicting
 
 
-async def candidate_source(session: AsyncSession, run: ForecastRun) -> Dataset | None:
-    return (await choose_source(session, run)).dataset
-
-
 async def _run_history(session: AsyncSession, run_id: uuid.UUID) -> dict[date, float]:
     result = await session.execute(
         select(ForecastPoint).where(

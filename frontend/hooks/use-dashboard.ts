@@ -43,7 +43,7 @@ function filterKey(filters: DashboardFilters) {
   };
 }
 
-export const queryKeys = {
+const queryKeys = {
   health: ["health"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,

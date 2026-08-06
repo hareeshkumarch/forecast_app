@@ -45,7 +45,7 @@ function writePrefs(prefs: StoredPrefs): void {
   }
 }
 
-export function systemTheme(): ResolvedTheme {
+function systemTheme(): ResolvedTheme {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -381,11 +380,6 @@ async def delete_dataset(session: AsyncSession, dataset_id: uuid.UUID) -> None:
         await remove_file(path)
 
 
-async def count_datasets(session: AsyncSession) -> int:
-    result = await session.execute(select(func.count()).select_from(Dataset))
-    return int(result.scalar_one())
-
-
 def dimension_columns(dataset: Dataset) -> list[str]:
     return [c.name for c in dataset.columns if c.role is ColumnRole.DIMENSION]
 
@@ -407,10 +401,6 @@ def guess_segment_columns(dataset: Dataset) -> tuple[str | None, str | None]:
         category = remaining.pop(0)
 
     return region, category
-
-
-def date_bounds(dataset: Dataset) -> tuple[date | None, date | None]:
-    return dataset.date_range_start, dataset.date_range_end
 
 
 async def assess_quality(

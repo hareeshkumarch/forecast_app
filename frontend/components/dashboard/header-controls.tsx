@@ -33,7 +33,7 @@ const DEFAULT_VIEW: ViewOption = {
   description: "Most likely outcome",
 };
 
-export const VIEWS: ViewOption[] = [
+const VIEWS: ViewOption[] = [
   DEFAULT_VIEW,
   { value: "best", label: "Best Case", description: "Upper 95% scenario" },
   { value: "worst", label: "Worst Case", description: "Lower 95% scenario" },
@@ -52,7 +52,7 @@ const TRIGGER = cn(
   "transition-colors duration-fast hover:border-border-strong hover:bg-surface-muted",
 );
 
-export function useActiveRun(): ForecastRun | null {
+function useActiveRun(): ForecastRun | null {
   const { data: summary } = useSummary();
   const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
   return runs?.rows.find((run) => run.id === summary?.run_id) ?? null;
@@ -182,7 +182,7 @@ export function RangeControl({ className }: { className?: string }) {
   );
 }
 
-export function RangeFields() {
+function RangeFields() {
   const rangeStart = useUiStore((state) => state.rangeStart);
   const rangeEnd = useUiStore((state) => state.rangeEnd);
   const setRange = useUiStore((state) => state.setRange);

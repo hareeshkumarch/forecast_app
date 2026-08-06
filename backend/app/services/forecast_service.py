@@ -1101,7 +1101,3 @@ async def points_for_run(
 
     result = await session.execute(statement.order_by(ForecastPoint.period, ForecastPoint.kind))
     return list(result.scalars().all())
-
-
-async def dataset_for_run(session: AsyncSession, run: ForecastRun) -> Dataset:
-    return await dataset_service.get_dataset(session, run.dataset_id)

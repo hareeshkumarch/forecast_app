@@ -63,7 +63,7 @@ export function categoricalPalette(colors: ChartPalette = chartColors()): string
   return [colors.navy, colors.accent, colors.teal, colors.sand, colors.textSecondary];
 }
 
-export const FONT_FAMILY =
+const FONT_FAMILY =
   'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export function tooltipStyle(colors: ChartPalette = chartColors()) {

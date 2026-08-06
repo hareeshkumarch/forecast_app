@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
-export const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
+const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
   { href: "/", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
   { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
   { href: "/datasets", label: "Data", description: "Files you have uploaded", icon: FileSpreadsheet },

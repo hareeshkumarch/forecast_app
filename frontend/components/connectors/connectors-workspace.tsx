@@ -125,7 +125,7 @@ export function ConnectorsWorkspace() {
   );
 }
 
-export function ConnectorActions({
+function ConnectorActions({
   connector,
   onImport,
 }: {

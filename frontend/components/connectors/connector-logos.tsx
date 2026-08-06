@@ -4,7 +4,7 @@ interface LogoProps {
 
 const BASE = "h-4 w-4 shrink-0";
 
-export function BigQueryLogo({ className = BASE }: LogoProps) {
+function BigQueryLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <circle cx="10.6" cy="10.6" r="7.4" fill="none" stroke="#4285F4" strokeWidth="2.2" />
@@ -24,7 +24,7 @@ export function BigQueryLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function SnowflakeLogo({ className = BASE }: LogoProps) {
+function SnowflakeLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <g stroke="#29B5E8" strokeWidth="1.7" strokeLinecap="round">
@@ -42,7 +42,7 @@ export function SnowflakeLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function RedshiftLogo({ className = BASE }: LogoProps) {
+function RedshiftLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path d="M12 2 4 4.4v15.2L12 22V2Z" fill="#205B99" />
@@ -52,7 +52,7 @@ export function RedshiftLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function SqlServerLogo({ className = BASE }: LogoProps) {
+function SqlServerLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -69,7 +69,7 @@ export function SqlServerLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function MySqlLogo({ className = BASE }: LogoProps) {
+function MySqlLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -85,7 +85,7 @@ export function MySqlLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function PostgresLogo({ className = BASE }: LogoProps) {
+function PostgresLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -105,7 +105,7 @@ export function PostgresLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function GoogleSheetsLogo({ className = BASE }: LogoProps) {
+function GoogleSheetsLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path d="M14.4 2H6.6A1.6 1.6 0 0 0 5 3.6v16.8A1.6 1.6 0 0 0 6.6 22h10.8a1.6 1.6 0 0 0 1.6-1.6V6.6L14.4 2Z" fill="#0F9D58" />
@@ -118,7 +118,7 @@ export function GoogleSheetsLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function ExcelLogo({ className = BASE }: LogoProps) {
+function ExcelLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path d="M14.4 2H6.6A1.6 1.6 0 0 0 5 3.6v16.8A1.6 1.6 0 0 0 6.6 22h10.8a1.6 1.6 0 0 0 1.6-1.6V6.6L14.4 2Z" fill="#217346" />
@@ -128,7 +128,7 @@ export function ExcelLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function RestApiLogo({ className = BASE }: LogoProps) {
+function RestApiLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" fill="#527f79" />
@@ -144,7 +144,7 @@ export function RestApiLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function SalesforceLogo({ className = BASE }: LogoProps) {
+function SalesforceLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path
@@ -155,7 +155,7 @@ export function SalesforceLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function CsvLogo({ className = BASE }: LogoProps) {
+function CsvLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <path d="M14.4 2H6.6A1.6 1.6 0 0 0 5 3.6v16.8A1.6 1.6 0 0 0 6.6 22h10.8a1.6 1.6 0 0 0 1.6-1.6V6.6L14.4 2Z" fill="#687080" />
@@ -165,7 +165,7 @@ export function CsvLogo({ className = BASE }: LogoProps) {
   );
 }
 
-export function SupabaseLogo({ className = BASE }: LogoProps) {
+function SupabaseLogo({ className = BASE }: LogoProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden focusable="false">
       <defs>
