@@ -12,6 +12,7 @@ ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 # Next.js inlines NEXT_PUBLIC_* at build time, so it must be present here.
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DOCKER_BUILD=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
