@@ -40,7 +40,7 @@ function tableKey(table: SchemaTable): string {
  */
 export function ConnectorImportModal() {
   const modal = useUiStore((state) => state.modal);
-  const connectorId = useUiStore((state) => state.modalConnectorId);
+  const connectorId = useUiStore((state) => state.modalTargetId);
   const closeModal = useUiStore((state) => state.closeModal);
   const openModal = useUiStore((state) => state.openModal);
   const open = modal === "connector-import";

@@ -85,7 +85,7 @@ export function ModelDetailModal() {
 
           <section>
             <h3 className="eyebrow">Candidates</h3>
-            <div className="scroll-thin mt-2 overflow-x-auto rounded-card border border-border">
+            <div className="scroll-thin relative mt-2 overflow-x-auto rounded-card border border-border">
               <table className="w-full min-w-[520px] border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-surface-muted">

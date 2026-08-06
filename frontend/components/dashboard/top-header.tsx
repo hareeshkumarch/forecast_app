@@ -36,6 +36,7 @@ const DOCS_URL = `${API_BASE_URL}/docs`;
 const SECTION_LABEL: Record<AppSection, string> = {
   dashboard: "Dashboard",
   series: "Series",
+  datasets: "Data",
   reports: "Reports",
   connectors: "Connectors",
   usage: "LLM Usage",

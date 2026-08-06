@@ -35,6 +35,10 @@ export function Scorecard({ run }: { run: ForecastRun }) {
 
   const card = data;
   const graded = Boolean(card?.scored);
+  // Something to check it against: either it has been graded already, or the
+  // backend found a file whose calendar reaches into this forecast. Without
+  // one the button was a dead end that reported "nothing to score yet".
+  const checkable = graded || Boolean(card?.source_dataset_id);
 
   return (
     <section className="mt-4 border-t border-border pt-3" aria-label="Forecast versus actual">
@@ -53,10 +57,15 @@ export function Scorecard({ run }: { run: ForecastRun }) {
 
         <Button
           size="sm"
-          variant={graded ? "ghost" : "secondary"}
+          variant={graded ? "ghost" : checkable ? "primary" : "secondary"}
           icon={Gauge}
           loading={score.isPending}
-          disabled={isLoading}
+          disabled={isLoading || !checkable}
+          title={
+            checkable
+              ? undefined
+              : "Upload data covering the periods this forecast made, and this will grade it"
+          }
           onClick={() => score.mutate(undefined)}
         >
           {graded ? "Check again" : "Check against real results"}
@@ -74,6 +83,80 @@ export function Scorecard({ run }: { run: ForecastRun }) {
         <Graded card={card} run={run} />
       )}
     </section>
+  );
+}
+
+/**
+ * The same thing in one line, for the dashboard.
+ *
+ * Grading a forecast against what actually happened is the most useful thing
+ * this product knows about itself, and it lived at the bottom of a run card on
+ * a screen nobody opens daily — forty-seven runs, none of them ever checked.
+ * This puts it beside the forecast it is about.
+ *
+ * It says nothing at all when there is nothing to say: a run with no newer
+ * data behind it is not a to-do, and a line reading "not checked" on every
+ * dashboard for ever would train people to ignore the one that matters.
+ */
+export function ScoreLine({ runId }: { runId: string }) {
+  const { data: card } = useScorecard(runId);
+  const score = useScoreForecast(runId);
+
+  if (!card) return null;
+
+  const periods = `${card.scored_periods} of ${card.horizon} period${card.horizon === 1 ? "" : "s"}`;
+
+  if (card.scored) {
+    /*
+     * An accuracy of nothing is not an accuracy of zero. When every actual in
+     * the horizon came back at zero there is no scale to be wrong against, and
+     * the dash a table would print reads as "it was — accurate" in a sentence.
+     */
+    if (card.accuracy === null) {
+      return (
+        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
+          <Target className="h-3 w-3 shrink-0 text-warning" aria-hidden />
+          <span>
+            Checked over {periods}, but{" "}
+            <span className="font-medium text-text-secondary">
+              {card.source_dataset_name ?? "the data"}
+            </span>{" "}
+            recorded nothing in them, so there is no accuracy to report.
+          </span>
+        </p>
+      );
+    }
+
+    return (
+      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
+        <Target className="h-3 w-3 shrink-0 text-positive" aria-hidden />
+        <span>
+          Against what actually happened it was{" "}
+          <span className="font-medium text-text-secondary num">{formatPercent(card.accuracy)}</span>{" "}
+          accurate over {periods}.
+        </span>
+      </p>
+    );
+  }
+
+  if (!card.source_dataset_id) return null;
+
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
+      <Target className="h-3 w-3 shrink-0 text-accent" aria-hidden />
+      <span>
+        <span className="font-medium text-text-secondary">{card.source_dataset_name}</span> now
+        covers the periods this forecast made.
+      </span>
+      <button
+        type="button"
+        disabled={score.isPending}
+        onClick={() => score.mutate(undefined)}
+        className="font-medium text-accent underline-offset-2 hover:underline disabled:opacity-60"
+      >
+        {score.isPending ? "Checking…" : "See how it turned out"}
+      </button>
+    </p>
   );
 }
 

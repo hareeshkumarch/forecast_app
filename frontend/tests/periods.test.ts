@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatDateRange } from "@/lib/format";
-import { addPeriods, labelGranularity, periodWindowEnd } from "@/lib/periods";
+import { addPeriods, labelGranularity, periodWindowEnd, periodWord } from "@/lib/periods";
 
 describe("addPeriods", () => {
   it("steps in the unit the run was fitted at", () => {
@@ -29,6 +29,21 @@ describe("periodWindowEnd", () => {
 
   it("never runs backwards from a zero or negative count", () => {
     expect(periodWindowEnd("2026-01-01", 0, "monthly")).toBe("2026-01-01");
+  });
+});
+
+describe("periodWord", () => {
+  it("names the step in the reader's own unit", () => {
+    expect(periodWord("daily", 6)).toBe("days");
+    expect(periodWord("weekly", 6)).toBe("weeks");
+    expect(periodWord("monthly", 6)).toBe("months");
+    expect(periodWord("quarterly", 6)).toBe("quarters");
+  });
+
+  it("takes the singular for one, and falls back to months", () => {
+    expect(periodWord("weekly", 1)).toBe("week");
+    expect(periodWord(null, 3)).toBe("months");
+    expect(periodWord(undefined, 1)).toBe("month");
   });
 });
 

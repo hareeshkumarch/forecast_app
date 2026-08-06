@@ -475,6 +475,28 @@ export function useConfigureDataset() {
   });
 }
 
+/**
+ * Removing a file takes its forecasts with it, so the run list, the dashboard
+ * and every per-run query have to be told — otherwise the screen keeps
+ * offering results built on data that is no longer there.
+ */
+export function useDeleteDataset() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.deleteDataset,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.datasets });
+      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: ["forecasts"] });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("File removed", "The upload and anything forecast from it were deleted.");
+    },
+    onError: (error: unknown) => toast.error("Could not remove the file", errorMessage(error)),
+  });
+}
+
+
 export function useStartForecast() {
   const client = useQueryClient();
   return useMutation({

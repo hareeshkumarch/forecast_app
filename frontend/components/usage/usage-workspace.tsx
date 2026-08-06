@@ -197,7 +197,7 @@ export function UsageWorkspace() {
               <div className="mt-3 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
                 <Card className="overflow-hidden">
                   <SectionTitle title="Provider and model" subtitle="Volume, reliability, latency, and priced cost" />
-                  <div className="scroll-thin overflow-x-auto">
+                  <div className="scroll-thin relative overflow-x-auto">
                     <table className="w-full min-w-[560px] border-collapse">
                       <thead><tr className="border-b border-border bg-surface-muted">
                         <th className="table-header px-3 py-2 text-left">Model</th>

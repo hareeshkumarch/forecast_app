@@ -12,7 +12,7 @@ import {
   Sigma,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DataQualityPanel } from "@/components/dashboard/data-quality-panel";
 import { Modal } from "@/components/ui/modal";
@@ -96,6 +96,7 @@ export function ForecastModal() {
   const activeRunId = useUiStore((state) => state.activeRunId);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const setRunId = useUiStore((state) => state.setRunId);
+  const targetDatasetId = useUiStore((state) => state.modalTargetId);
   const open = modal === "configure-forecast";
 
   const { data: datasets } = useDatasets();
@@ -110,8 +111,9 @@ export function ForecastModal() {
   const [confidence, setConfidence] = useState(80);
   const [regionColumn, setRegionColumn] = useState(NONE);
   const [categoryColumn, setCategoryColumn] = useState(NONE);
-  const [grainOne, setGrainOne] = useState(NONE);
-  const [grainTwo, setGrainTwo] = useState(NONE);
+  // The splits are charts by default; ticking this also forecasts each
+  // combination in its own right, which is what fills the Series workspace.
+  const [forecastEach, setForecastEach] = useState(false);
   const [weightColumn, setWeightColumn] = useState(NONE);
   const [aggregation, setAggregation] = useState<MeasureAggregation>("sum");
   const [gapFill, setGapFill] = useState<GapFill>("auto");
@@ -168,12 +170,42 @@ export function ForecastModal() {
     }
   });
 
+  /*
+   * Which file the dialog opens on, decided once per opening.
+   *
+   * Pressing Forecast on a row of the Data screen names that file, and it
+   * would be perverse to then open on a different one. Opened from anywhere
+   * else the picker keeps whatever the last visit left in it, falling back to
+   * the newest upload the first time.
+   *
+   * Once per opening matters: the target id stays set for as long as the
+   * dialog is up, so re-applying it would snap the picker back every time
+   * someone changed it by hand.
+   */
+  const seeded = useRef(false);
+
   useEffect(() => {
-    if (open && datasets && datasets.length > 0 && !datasetId) {
-      const first = datasets[0];
-      if (first) setDatasetId(first.id);
+    if (!open) {
+      seeded.current = false;
+      return;
     }
-  }, [open, datasets, datasetId]);
+    if (seeded.current) return;
+
+    if (targetDatasetId) {
+      setDatasetId(targetDatasetId);
+      seeded.current = true;
+      return;
+    }
+    if (datasetId) {
+      seeded.current = true;
+      return;
+    }
+    const first = datasets?.[0];
+    if (first) {
+      setDatasetId(first.id);
+      seeded.current = true;
+    }
+  }, [open, targetDatasetId, datasets, datasetId]);
 
   useEffect(() => {
     if (!dataset) return;
@@ -282,13 +314,16 @@ export function ForecastModal() {
 
   // Order matters — it is the order the tree nests in — so a second column
   // without a first would silently become the first.
-  const grain = [grainOne, grainTwo].filter((column) => column !== NONE);
+  const splits = [regionColumn, categoryColumn].filter((column) => column !== NONE);
+  const grain = forecastEach ? splits : [];
 
   // Distinct counts are already profiled, so the number of series a grain
   // implies can be shown before the run rather than discovered during it.
   const maxSeries = profile?.max_series;
   const effectiveSeriesLimit = Math.min(seriesLimit, maxSeries ?? seriesLimit);
-  const grainSize = grain.reduce((product, column) => {
+  // Counted from the splits rather than the grain, so the label can say how
+  // many series ticking the box would produce before it is ticked.
+  const grainSize = splits.reduce((product, column) => {
     const distinct = dimensions.find((c) => c.name === column)?.distinct_count ?? 0;
     return distinct > 0 ? product * distinct : product;
   }, 1);
@@ -386,25 +421,42 @@ export function ForecastModal() {
             </div>
           </Section>
 
-          <Section title="Charts on the dashboard" note="Optional">
+          {/*
+            * One section, because there were two and they overlapped.
+            *
+            * "Charts on the dashboard" chose the columns the splits are drawn
+            * from; "Forecast grain" chose the columns forecast separately —
+            * and it sat underneath, so in forty-seven runs nobody ever reached
+            * it and the Series workspace had never once had anything to show.
+            * They are the same two columns in almost every case. Pick them
+            * here, then say whether each combination gets its own model.
+            */}
+          <Section
+            title="Break it down"
+            note={splits.length === 0 ? "Optional" : splits.join(" · ")}
+          >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {/*
-                * Named for what the control does, not for the shape of one
-                * customer's data: a planner splitting by store and SKU was
-                * being asked for a "Region" and a "Category" they do not have.
-                */}
               <Field label="Split by" hint="Region, store, channel — one slice per value">
                 <DimensionSelect
                   value={regionColumn}
-                  onChange={setRegionColumn}
+                  onChange={(next) => {
+                    setRegionColumn(next);
+                    if (next === NONE || next === categoryColumn) setCategoryColumn(NONE);
+                  }}
                   options={dimensions.map((column) => column.name)}
                 />
               </Field>
-              <Field label="And by" hint="A second chart: product, SKU, team">
+              <Field
+                label="And by"
+                hint={regionColumn === NONE ? "Pick the first one" : "A second split: product, SKU, team"}
+              >
                 <DimensionSelect
                   value={categoryColumn}
                   onChange={setCategoryColumn}
-                  options={dimensions.map((column) => column.name)}
+                  disabled={regionColumn === NONE}
+                  options={dimensions
+                    .map((column) => column.name)
+                    .filter((name) => name !== regionColumn)}
                 />
               </Field>
               <Field label="Weight by" hint="Make bigger periods count for more">
@@ -415,55 +467,44 @@ export function ForecastModal() {
                 />
               </Field>
             </div>
-          </Section>
 
-          <Section
-            title="Forecast grain"
-            note={grain.length === 0 ? "Optional" : `${grain.join(" · ")}`}
-          >
-            <p className="mb-2.5 text-caption text-text-muted">
-              Left alone, the whole dataset is summed into one series and forecast once. Give it a
-              grain and every combination is forecast in its own right, then reconciled so the
-              levels still add up.
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Forecast each" hint="Every value gets its own model">
-                <DimensionSelect
-                  value={grainOne}
-                  onChange={(next) => {
-                    setGrainOne(next);
-                    if (next === NONE || next === grainTwo) setGrainTwo(NONE);
-                  }}
-                  options={dimensions.map((column) => column.name)}
+            {splits.length > 0 ? (
+              <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-surface-muted p-3">
+                <input
+                  type="checkbox"
+                  checked={forecastEach}
+                  onChange={(event) => setForecastEach(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
                 />
-              </Field>
-              <Field
-                label="Within each"
-                hint={grainOne === NONE ? "Pick an outer level first" : "Nested inside it"}
-              >
-                <DimensionSelect
-                  value={grainTwo}
-                  onChange={setGrainTwo}
-                  disabled={grainOne === NONE}
-                  options={dimensions
-                    .map((column) => column.name)
-                    .filter((name) => name !== grainOne)}
-                />
-              </Field>
-            </div>
-            {grain.length > 0 ? (
-              <p className="mt-2 text-caption text-text-muted">
-                {grainSize > effectiveSeriesLimit ? (
-                  <>
-                    About {grainSize.toLocaleString()} combinations, limited to{" "}
-                    {effectiveSeriesLimit.toLocaleString()} output series. The largest groups are
-                    kept and the tail is pooled into “Others”, so the total stays whole. Change the
-                    limit in Advanced settings.
-                  </>
-                ) : (
-                  <>About {grainSize.toLocaleString()} series, each with its own model.</>
-                )}
-              </p>
+                <span className="min-w-0">
+                  <span className="block text-meta font-medium text-text-primary">
+                    Forecast each one separately
+                  </span>
+                  <span className="mt-0.5 block text-caption text-text-muted">
+                    {forecastEach ? (
+                      grainSize > effectiveSeriesLimit ? (
+                        <>
+                          About {grainSize.toLocaleString()} combinations of{" "}
+                          {splits.join(" and ")}, limited to{" "}
+                          {effectiveSeriesLimit.toLocaleString()}. The largest are kept and the
+                          tail is pooled into “Others”, so the total stays whole.
+                        </>
+                      ) : (
+                        <>
+                          About {grainSize.toLocaleString()} combinations of{" "}
+                          {splits.join(" and ")}, each with its own model, reconciled so the levels
+                          still add up. They appear under Series.
+                        </>
+                      )
+                    ) : (
+                      <>
+                        Off, the splits are charts only and one model covers the total. On, every
+                        combination is forecast in its own right and gets a line under Series.
+                      </>
+                    )}
+                  </span>
+                </span>
+              </label>
             ) : null}
           </Section>
 

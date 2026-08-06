@@ -5,6 +5,7 @@ import type { ComponentType } from "react";
 import { AddConnectorModal } from "@/components/connectors/add-connector-modal";
 import { ConnectorImportModal } from "@/components/connectors/connector-import-modal";
 import { ConnectorsWorkspace } from "@/components/connectors/connectors-workspace";
+import { DatasetsWorkspace } from "@/components/datasets/datasets-workspace";
 import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import { ForecastModal } from "@/components/dashboard/forecast-modal";
@@ -26,6 +27,7 @@ import { UsageWorkspace } from "@/components/usage/usage-workspace";
 const WORKSPACES: Record<AppSection, ComponentType> = {
   dashboard: Workspace,
   series: SeriesWorkspace,
+  datasets: DatasetsWorkspace,
   reports: ReportsWorkspace,
   connectors: ConnectorsWorkspace,
   usage: UsageWorkspace,

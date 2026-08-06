@@ -2,6 +2,7 @@
 
 import { ArrowRight, BrainCircuit, CheckCircle2, Link2 } from "lucide-react";
 
+import { ScoreLine } from "@/components/reports/scorecard";
 import { Badge, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useForecastMetrics, useSummary } from "@/hooks/use-dashboard";
 import { formatCompact, humanizeModel } from "@/lib/format";
@@ -68,6 +69,12 @@ export function ModelHealthStrip() {
             ))}
           </p>
         ) : null}
+
+        {/*
+          * And how it actually did, once the periods it forecast had been
+          * lived through — the backtest above is only what it would have done.
+          */}
+        <ScoreLine runId={runId} />
       </div>
       <dl className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <div title="How far off this method was when tested on periods it had not seen">

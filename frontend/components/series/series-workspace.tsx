@@ -280,7 +280,7 @@ function SeriesTable({
           />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table
                 className={cn(
                   "w-full border-collapse text-meta sm:min-w-[720px]",

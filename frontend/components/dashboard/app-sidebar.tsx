@@ -5,6 +5,7 @@ import {
   Activity,
   Database,
   FileBarChart2,
+  FileSpreadsheet,
   LayoutDashboard,
   Layers,
   Settings,
@@ -21,6 +22,7 @@ import { useUiStore } from "@/stores/ui-store";
 export const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
   { href: "/", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
   { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
+  { href: "/datasets", label: "Data", description: "Files you have uploaded", icon: FileSpreadsheet },
   { href: "/reports", label: "Reports", description: "Runs and exports", icon: FileBarChart2 },
   { href: "/connectors", label: "Connectors", description: "Data sources", icon: Database },
   { href: "/usage", label: "LLM Usage", description: "Tokens and cost", icon: Activity },
@@ -30,6 +32,7 @@ export const APP_NAV: { href: string; label: string; description: string; icon: 
 export type AppSection =
   | "dashboard"
   | "series"
+  | "datasets"
   | "reports"
   | "connectors"
   | "usage"

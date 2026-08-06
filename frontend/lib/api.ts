@@ -205,6 +205,9 @@ export async function uploadDataset(file: File, name?: string): Promise<DatasetU
   });
 }
 
+export const deleteDataset = (id: string) =>
+  request<void>(`/api/datasets/${id}`, { method: "DELETE" });
+
 export const configureDataset = (
   id: string,
   payload: {

@@ -90,6 +90,11 @@ export function SortableHeader<K extends string>({
           // header height once there is a pointer. Sixteen pixels of sort
           // control is a coin toss to hit on a touchscreen.
           "inline-flex min-h-11 w-full items-center gap-1 sm:min-h-0",
+          // Restated because the browser's own stylesheet sets
+          // text-transform: none on form controls, which beats the uppercase
+          // inherited from .table-header — a sortable column would otherwise
+          // sit in a row of capitals in sentence case.
+          "uppercase",
           "transition-colors duration-fast hover:text-text-secondary",
           align === "right" ? "justify-end" : "justify-start",
           active && "text-text-secondary",

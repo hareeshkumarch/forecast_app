@@ -72,11 +72,19 @@ const PERIOD_WORDS: Record<ForecastFrequency, [string, string]> = {
   quarterly: ["quarter", "quarters"],
 };
 
+/** "months", or "month" for one — the reader's unit rather than "periods". */
+export function periodWord(
+  frequency: ForecastFrequency | null | undefined,
+  count: number,
+): string {
+  const [singular, plural] = PERIOD_WORDS[frequency ?? "monthly"] ?? ["period", "periods"];
+  return count === 1 ? singular : plural;
+}
+
 /** "6 months earlier", for a lead of six periods on a monthly run. */
 export function periodsAgo(
   periods: number,
   frequency: ForecastFrequency | null | undefined,
 ): string {
-  const [singular, plural] = PERIOD_WORDS[frequency ?? "monthly"] ?? ["period", "periods"];
-  return `${periods} ${periods === 1 ? singular : plural} earlier`;
+  return `${periods} ${periodWord(frequency, periods)} earlier`;
 }

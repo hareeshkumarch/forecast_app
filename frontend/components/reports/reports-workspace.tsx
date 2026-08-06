@@ -1,13 +1,25 @@
 "use client";
 
-import { Activity, Download, Eye, FileBarChart2, FileText, Plus, Trash2 } from "lucide-react";
+import { Activity, Download, Eye, FileBarChart2, FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Scorecard } from "@/components/reports/scorecard";
 import { RefreshButton } from "@/components/ui/refresh-button";
-import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Input,
+  Skeleton,
+} from "@/components/ui/primitives";
+import { Select } from "@/components/ui/select";
 import { downloadExport, useDeleteForecastRun, useForecastRuns } from "@/hooks/use-dashboard";
-import { formatRelativeTime, humanizeModel } from "@/lib/format";
+import { formatDateRange, formatRelativeTime, humanizeKey, humanizeModel } from "@/lib/format";
+import { labelGranularity, periodWord } from "@/lib/periods";
+import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastRun, MeasureAggregation, RunStatus } from "@/types/api";
 
@@ -26,6 +38,63 @@ const AGGREGATION_LABEL: Record<MeasureAggregation, string> = {
   min: "Lowest value",
   max: "Highest value",
 };
+
+type StatusFilter = "all" | "completed" | "active" | "failed";
+type SortKey = "newest" | "oldest" | "name" | "lines";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "name", label: "Name A–Z" },
+  { value: "lines", label: "Most lines" },
+];
+
+function inFilter(run: ForecastRun, filter: StatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "active") return run.status === "pending" || run.status === "running";
+  return run.status === filter;
+}
+
+/**
+ * Everything about a run someone might type into the box: what they called it,
+ * what it forecasts, how it was cut and which method won.
+ */
+function haystack(run: ForecastRun): string {
+  return [
+    run.name,
+    run.target_column,
+    run.status,
+    run.frequency,
+    humanizeModel(run.selected_model),
+    ...run.group_by,
+    run.region_column,
+    run.category_column,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+/**
+ * What was cut, in the two different senses the run may have used.
+ *
+ * Splitting a total for the charts and forecasting each line in its own right
+ * are different pieces of work, and a run that did the second reads exactly
+ * like a run that did neither unless it says so.
+ */
+function describeBreakdown(run: ForecastRun): string {
+  if (run.group_by.length > 0) {
+    const lines = run.series_count.toLocaleString();
+    return `${run.group_by.join(" and ")} — ${lines} forecast separately`;
+  }
+
+  const splits = [run.region_column, run.category_column].filter(Boolean) as string[];
+  if (splits.length > 0) {
+    return `${splits.join(" and ")} — charted as a split of one total`;
+  }
+
+  return "Nothing — one overall total";
+}
 
 function RunCard({
   run,
@@ -48,10 +117,11 @@ function RunCard({
         <div className="min-w-0">
           <h2 className="truncate text-subhead font-semibold text-text-primary">{run.name}</h2>
           <p className="mt-0.5 text-caption text-text-muted">
-            {formatRelativeTime(run.created_at)} · {run.frequency} · {run.horizon} periods
+            {formatRelativeTime(run.created_at)} · {humanizeKey(run.frequency)} ·{" "}
+            {run.horizon} {periodWord(run.frequency, run.horizon)} ahead
           </p>
         </div>
-        <Badge tone={STATUS_TONE[run.status]}>{run.status}</Badge>
+        <Badge tone={STATUS_TONE[run.status]}>{humanizeKey(run.status)}</Badge>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -70,7 +140,13 @@ function RunCard({
         <div>
           <dt className="text-caption text-text-muted">Covers</dt>
           <dd className="mt-0.5 text-meta font-medium text-text-primary">
-            {run.forecast_start && run.forecast_end ? `${run.forecast_start} – ${run.forecast_end}` : "Pending"}
+            {run.forecast_start && run.forecast_end
+              ? formatDateRange(
+                  run.forecast_start,
+                  run.forecast_end,
+                  labelGranularity(run.frequency),
+                )
+              : "Pending"}
           </dd>
         </div>
         <div>
@@ -84,9 +160,7 @@ function RunCard({
               that forecast a single total. */}
           <dt className="text-caption text-text-muted">Broken down by</dt>
           <dd className="mt-0.5 truncate text-meta font-medium text-text-primary">
-            {run.group_by.length > 0
-              ? `${run.group_by.join(" and ")} — ${run.series_count.toLocaleString()} lines`
-              : "Nothing — one overall total"}
+            {describeBreakdown(run)}
           </dd>
         </div>
       </dl>
@@ -152,10 +226,42 @@ export function ReportsWorkspace() {
   const setRunId = useUiStore((state) => state.setRunId);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const clearRun = useDeleteForecastRun();
-  const runs = data ?? [];
-  const completed = runs.filter((run) => run.status === "completed").length;
-  const active = runs.filter((run) => run.status === "pending" || run.status === "running").length;
-  const failed = runs.filter((run) => run.status === "failed").length;
+
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortKey>("newest");
+
+  const runs = useMemo(() => data ?? [], [data]);
+
+  const counts: { key: StatusFilter; label: string; value: number }[] = [
+    { key: "all", label: "All runs", value: runs.length },
+    { key: "completed", label: "Completed", value: runs.filter((run) => inFilter(run, "completed")).length },
+    { key: "active", label: "In progress", value: runs.filter((run) => inFilter(run, "active")).length },
+    { key: "failed", label: "Failed", value: runs.filter((run) => inFilter(run, "failed")).length },
+  ];
+
+  // Forty-seven cards is a scroll, not a list. Narrow first, then order.
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matching = runs.filter(
+      (run) => inFilter(run, status) && (!needle || haystack(run).includes(needle)),
+    );
+
+    const ordered = [...matching];
+    ordered.sort((left, right) => {
+      switch (sort) {
+        case "oldest":
+          return left.created_at.localeCompare(right.created_at);
+        case "name":
+          return left.name.localeCompare(right.name);
+        case "lines":
+          return right.series_count - left.series_count;
+        default:
+          return right.created_at.localeCompare(left.created_at);
+      }
+    });
+    return ordered;
+  }, [runs, status, query, sort]);
 
   function handleClear(run: ForecastRun) {
     const confirmed = window.confirm(
@@ -200,13 +306,55 @@ export function ReportsWorkspace() {
         </div>
       </div>
 
+      {/*
+        * The counters are the filter. They already named the four groups
+        * anyone would want to see on their own, so making them buttons costs
+        * no extra chrome and saves a row of it.
+        */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[["All runs", runs.length], ["Completed", completed], ["In progress", active], ["Failed", failed]].map(([label, value]) => (
-          <Card key={String(label)} className="p-3.5">
-            <p className="text-caption text-text-muted">{label}</p>
-            <p className="mt-1 text-kpi font-semibold text-text-primary num">{value}</p>
-          </Card>
-        ))}
+        {counts.map((count) => {
+          const selected = status === count.key;
+          return (
+            <button
+              key={count.key}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setStatus(count.key)}
+              className={cn(
+                "rounded-card border bg-surface p-3.5 text-left transition-colors duration-fast",
+                selected
+                  ? "border-accent ring-1 ring-accent"
+                  : "border-border hover:border-border-strong",
+              )}
+            >
+              <p className="text-caption text-text-muted">{count.label}</p>
+              <p className="mt-1 text-kpi font-semibold text-text-primary num">{count.value}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
+            aria-hidden
+          />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search runs by name, column or method"
+            aria-label="Search runs"
+            className="pl-8"
+          />
+        </div>
+        <Select
+          value={sort}
+          onChange={setSort}
+          options={SORT_OPTIONS}
+          label="Order runs"
+          className="w-[168px]"
+        />
       </div>
 
       {isLoading ? (
@@ -224,9 +372,31 @@ export function ReportsWorkspace() {
             action={<Button variant="primary" onClick={() => openModal("configure-forecast")}>Create a forecast</Button>}
           />
         </Card>
+      ) : shown.length === 0 ? (
+        <Card className="mt-3">
+          <EmptyState
+            icon={Search}
+            title="Nothing matches that"
+            message={
+              query.trim()
+                ? `No run mentions "${query.trim()}"${status === "all" ? "" : " in this group"}.`
+                : "No run is in this group yet."
+            }
+            action={
+              <Button
+                onClick={() => {
+                  setQuery("");
+                  setStatus("all");
+                }}
+              >
+                Show every run
+              </Button>
+            }
+          />
+        </Card>
       ) : (
-        <section className="mt-4 space-y-3" aria-label="Forecast reports">
-          {runs.map((run) => (
+        <section className="mt-3 space-y-3" aria-label="Forecast reports">
+          {shown.map((run) => (
             <RunCard
               key={run.id}
               run={run}

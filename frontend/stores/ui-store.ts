@@ -29,7 +29,11 @@ interface UiState {
 
 
   modal: ModalKind;
-  modalConnectorId: string | null;
+  /**
+   * What the open modal is about — a connector to import from, a dataset to
+   * forecast. One field because only one modal is ever open.
+   */
+  modalTargetId: string | null;
   insightDrawer: Insight | null;
   mobileRail: MobileRail;
 
@@ -40,7 +44,7 @@ interface UiState {
   setRange: (start: string | null, end: string | null) => void;
   setRunId: (runId: string | null) => void;
 
-  openModal: (modal: ModalKind, connectorId?: string | null) => void;
+  openModal: (modal: ModalKind, targetId?: string | null) => void;
   closeModal: () => void;
 
   openInsight: (insight: Insight) => void;
@@ -61,7 +65,7 @@ export const useUiStore = create<UiState>((set) => ({
 
 
   modal: "none",
-  modalConnectorId: null,
+  modalTargetId: null,
   insightDrawer: null,
   mobileRail: null,
   activeRunId: null,
@@ -72,9 +76,9 @@ export const useUiStore = create<UiState>((set) => ({
 
 
 
-  openModal: (modal, modalConnectorId = null) =>
-    set({ modal, modalConnectorId, mobileRail: null }),
-  closeModal: () => set({ modal: "none", modalConnectorId: null }),
+  openModal: (modal, modalTargetId = null) =>
+    set({ modal, modalTargetId, mobileRail: null }),
+  closeModal: () => set({ modal: "none", modalTargetId: null }),
 
   openInsight: (insightDrawer) => set({ insightDrawer, mobileRail: null }),
   closeInsight: () => set({ insightDrawer: null }),
