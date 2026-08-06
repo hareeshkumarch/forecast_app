@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from app.core.logging import get_logger
+from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
@@ -24,6 +25,7 @@ from app.forecasting.hierarchy import (
 )
 from app.forecasting.metrics import accuracy_from_wmape
 from app.forecasting.models import (
+    EnsembleForecaster,
     Forecaster,
     build_candidate,
     build_candidates,
@@ -284,6 +286,7 @@ def run_forecast(
                 plan,
                 frequency,
                 weights,
+                payload.confidence_level,
             )
         )
         if progress_callback is not None:
@@ -293,6 +296,18 @@ def run_forecast(
                 candidate_total,
                 f"Backtested {candidate_index} of {candidate_total} candidate models.",
             )
+
+    # The combination is built from the folds the candidates have just run, so
+    # it competes on exactly the history they were judged on without anything
+    # being refitted. It stands down when it cannot beat its own best member.
+    combined = combination.blend(
+        results,
+        frequency=frequency,
+        confidence_level=payload.confidence_level,
+        weights=weights,
+    )
+    if combined is not None:
+        results.append(combined.result)
 
     for kind, reason in unavailable_models().items():
         results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
@@ -316,9 +331,15 @@ def run_forecast(
             1,
             f"Fitting {winner_kind.value.replace('_', ' ')} on the full history...",
         )
-    final_model = _make_factory(winner_kind, frequency, payload.model_options, panel)(
-        values, periods
-    )
+    if winner_kind is ModelKind.ENSEMBLE and combined is not None:
+        # Only the blend knows who is in it and what say each of them has.
+        final_model = EnsembleForecaster(
+            frequency, profile, members=combined.members, weights=combined.weights
+        )
+    else:
+        final_model = _make_factory(winner_kind, frequency, payload.model_options, panel)(
+            values, periods
+        )
 
     try:
         final_model.fit(values, periods)
@@ -364,6 +385,9 @@ def run_forecast(
         "rmse": winner_result.rmse,
         "smape": winner_result.smape,
         "wmape": winner_result.wmape,
+        # Against the free forecast, so a series whose wMAPE has to give up
+        # still reports something rather than a dash and nothing else.
+        "mase": winner_result.mase,
         "accuracy": accuracy_from_wmape(winner_result.wmape),
         "forecast_total": float(np.sum(point_forecast)),
         "best_case_total": float(np.sum(bands.best_case)),
@@ -476,6 +500,8 @@ def _candidate_row(scored: ScoredCandidate) -> CandidateRow:
         "rmse": _finite(result.rmse),
         "smape": _finite(result.smape),
         "wmape": _finite(result.wmape),
+        "mase": _finite(result.mase),
+        "winkler": _finite(result.winkler),
         "score": _finite(scored.score),
         "folds": result.n_folds,
         "fit_seconds": round(result.fit_seconds, 4),
@@ -562,6 +588,9 @@ class LeafFit:
     upper: list[float] | None = None
     model: ModelKind | None = None
     wmape: float | None = None
+    #: Error against the seasonal-naive benchmark. Carried alongside wMAPE
+    #: because an intermittent leaf routinely has no usable wMAPE at all.
+    mase: float | None = None
     folds: int = 0
     blocked_reason: str | None = None
 
@@ -589,6 +618,7 @@ class LeafFit:
             "upper": self.upper,
             "model": self.model.value if self.model else None,
             "wmape": self.wmape,
+            "mase": self.mase,
             "folds": self.folds,
             "blocked_reason": self.blocked_reason,
         }
@@ -597,6 +627,7 @@ class LeafFit:
     def from_dict(cls, payload: dict[str, Any]) -> LeafFit:
         model = payload.get("model")
         wmape = payload.get("wmape")
+        mase_value = payload.get("mase")
 
         def path(key: str) -> list[float] | None:
             value = payload.get(key)
@@ -609,6 +640,7 @@ class LeafFit:
             upper=path("upper"),
             model=ModelKind(model) if model else None,
             wmape=float(wmape) if wmape is not None else None,
+            mase=float(mase_value) if mase_value is not None else None,
             folds=int(payload.get("folds") or 0),
             blocked_reason=payload.get("blocked_reason"),
         )
@@ -721,6 +753,7 @@ def _fit_leaf(
         upper=[float(v) for v in bands.upper],
         model=kind,
         wmape=float(winning.wmape) if np.isfinite(winning.wmape) else None,
+        mase=float(winning.mase) if np.isfinite(winning.mase) else None,
         folds=winning.n_folds,
     )
 
@@ -736,6 +769,8 @@ class SeriesResult:
     forecast: list[float]
     model: ModelKind | None
     wmape: float | None
+    #: The scale-free counterpart, for series where wMAPE cannot be computed.
+    mase: float | None
     accuracy: float | None
     accuracy_measured: bool
     folds: int
@@ -849,6 +884,7 @@ def assemble_grouped(
                 upper=_rescale_band(fit.upper, fit.forecast, path) if fit and fit.banded else [],
                 model=fit.model if fit else None,
                 wmape=fit.wmape if fit else None,
+                mase=fit.mase if fit else None,
                 accuracy=fit.accuracy if fit else None,
                 accuracy_measured=fit is not None,
                 folds=fit.folds if fit else 0,

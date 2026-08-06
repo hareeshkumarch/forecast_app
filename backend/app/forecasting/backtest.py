@@ -10,13 +10,19 @@ import numpy.typing as npt
 
 from app.core.logging import get_logger
 from app.forecasting.frequency import future_periods as make_future_periods
-from app.forecasting.metrics import evaluate
+from app.forecasting.frequency import seasonal_period
+from app.forecasting.metrics import evaluate, mase, winkler
 from app.forecasting.models import Forecaster
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
 
 logger = get_logger(__name__)
+
+#: z for a two-sided interval, for the levels a run can be started at. Kept
+#: here rather than reaching for scipy, which this module otherwise does not
+#: need for one lookup.
+NORMAL_QUANTILE = {0.5: 0.6745, 0.8: 1.2816, 0.9: 1.6449, 0.95: 1.9600, 0.99: 2.5758}
 
 MIN_FOLDS = 1
 MAX_FOLDS_CEILING = 12
@@ -40,6 +46,12 @@ class BacktestResult:
     rmse: float = float("nan")
     smape: float = float("nan")
     wmape: float = float("nan")
+    #: Error against the naive forecast a person would have made for free.
+    #: The one that still reports a number where wMAPE has to give up.
+    mase: float = float("nan")
+    #: What this model's intervals would cost, in the units of the series.
+    #: Point error cannot tell an honest band from a confident one.
+    winkler: float = float("nan")
     fit_seconds: float = 0.0
     params: dict[str, object] = field(default_factory=dict)
     failed: bool = False
@@ -178,6 +190,7 @@ def run_backtest(
     plan: BacktestPlan,
     frequency: ForecastFrequency,
     weights: FloatArray | None = None,
+    confidence_level: float = 0.8,
 ) -> BacktestResult:
     result = BacktestResult(model=model_kind)
 
@@ -268,4 +281,57 @@ def run_backtest(
     result.rmse = scores["rmse"]
     result.smape = scores["smape"]
     result.wmape = scores["wmape"]
+    result.mase = mase(
+        np.array(all_true),
+        np.array(all_pred),
+        y[: plan.cut_points[0]] if plan.cut_points else y,
+        seasonal_period(frequency),
+    )
+    result.winkler = interval_cost(result, confidence_level)
     return result
+
+
+def interval_cost(result: BacktestResult, confidence_level: float) -> float:
+    """
+    What this model's intervals would have cost over the folds it was tested on.
+
+    Each fold is scored against a band built from the *other* folds' residuals,
+    so no fold helps size the interval it is then judged by. That leave-one-out
+    step is the whole point: sizing a band from the errors it is about to be
+    scored on always looks well calibrated.
+
+    Needs two folds to say anything, and reports nothing rather than a
+    flattering number when there is only one.
+    """
+    if len(result.folds) < 2:
+        return float("nan")
+
+    z = float(NORMAL_QUANTILE.get(round(confidence_level, 2), 1.2816))
+    costs: list[float] = []
+
+    for held_out in result.folds:
+        residuals = [
+            true - pred
+            for fold in result.folds
+            if fold is not held_out
+            for true, pred in zip(fold.y_true, fold.y_pred, strict=True)
+        ]
+        if len(residuals) < 2:
+            continue
+
+        sigma = float(np.std(np.asarray(residuals, dtype=float)))
+        if not np.isfinite(sigma) or sigma <= 0.0:
+            continue
+
+        predicted = np.asarray(held_out.y_pred, dtype=float)
+        costs.append(
+            winkler(
+                np.asarray(held_out.y_true, dtype=float),
+                predicted - z * sigma,
+                predicted + z * sigma,
+                confidence_level,
+            )
+        )
+
+    finite = [cost for cost in costs if np.isfinite(cost)]
+    return float(np.mean(finite)) if finite else float("nan")

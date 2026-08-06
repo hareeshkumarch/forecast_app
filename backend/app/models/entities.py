@@ -338,6 +338,13 @@ class ModelCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rmse: Mapped[float | None] = mapped_column(Float)
     smape: Mapped[float | None] = mapped_column(Float)
     wmape: Mapped[float | None] = mapped_column(Float)
+    #: Error against the seasonal-naive forecast. 1.0 is "no better than
+    #: repeating last season", and it survives the near-zero actuals that
+    #: make wMAPE meaningless.
+    mase: Mapped[float | None] = mapped_column(Float)
+    #: What this candidate's prediction interval would have cost — width plus
+    #: a penalty for the actuals it missed. Null below two folds.
+    winkler: Mapped[float | None] = mapped_column(Float)
     score: Mapped[float | None] = mapped_column(Float)
 
     folds: Mapped[int] = mapped_column(Integer, default=0)

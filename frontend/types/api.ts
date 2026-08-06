@@ -307,6 +307,10 @@ export interface ModelCandidate {
   rmse: number | null;
   smape: number | null;
   wmape: number | null;
+  /** Error against the seasonal-naive benchmark; below 1 beats the free forecast. */
+  mase: number | null;
+  /** What this candidate's uncertainty range costs, in the units of the series. */
+  winkler: number | null;
   score: number | null;
   folds: number;
   fit_seconds: number | null;
@@ -376,6 +380,8 @@ export interface SeriesRow {
   blocked_reason: string | null;
   model: ModelKind | null;
   wmape: number | null;
+  /** Error against the seasonal-naive benchmark; the number to read where wMAPE is absent. */
+  mase: number | null;
   accuracy: number | null;
   /** False when this series was apportioned rather than fitted in its own right. */
   accuracy_measured: boolean;

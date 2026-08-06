@@ -8,9 +8,19 @@ from app.forecasting.backtest import BacktestResult
 from app.models.enums import ModelKind
 
 SCORING_RULE = (
-    "score = 0.50*norm(wMAPE) + 0.30*norm(sMAPE) + 0.20*norm(RMSE) + complexity_penalty; "
+    "score = 0.50*norm(wMAPE) + 0.30*norm(sMAPE) + 0.20*norm(RMSE) "
+    "+ 0.15*norm(Winkler) + complexity_penalty; "
     "metrics min-max normalised across candidates, lower is better"
 )
+
+#: What an honest interval is worth, relative to the point error.
+#:
+#: Added alongside the point-error weights rather than taken out of them, so
+#: the ranking on accuracy is unchanged and this only separates candidates that
+#: were already close. A model whose bands are narrower than its errors deserve
+#: is not more accurate than one that admits the same uncertainty out loud —
+#: it just looks better on the chart, which is the failure this catches.
+INTERVAL_WEIGHT = 0.15
 
 METRIC_WEIGHTS: dict[str, float] = {
     "wmape": 0.50,
@@ -125,6 +135,7 @@ def select_model(
 
     rule_str = (
         " + ".join(f"{w:.2f}*norm({m.upper()})" for m, w in weights.items())
+        + f" + {INTERVAL_WEIGHT:.2f}*norm(WINKLER) where measurable"
         + " + complexity_penalty; metrics min-max normalised across candidates, lower is better"
     )
 
@@ -150,9 +161,18 @@ def select_model(
 
     normalised = {metric: _normalise([getattr(r, metric) for r in usable]) for metric in weights}
 
+    # Only where enough candidates priced an interval to compare them. One
+    # fold cannot support a leave-one-out band, so on short histories this term
+    # is absent rather than guessed, and the ranking falls back to point error.
+    interval_costs = [getattr(result, "winkler", float("nan")) for result in usable]
+    comparable = sum(1 for cost in interval_costs if math.isfinite(cost))
+    interval = _normalise(interval_costs) if comparable >= 2 else None
+
     scored: list[ScoredCandidate] = []
     for index, result in enumerate(usable):
         composite = sum(weight * normalised[metric][index] for metric, weight in weights.items())
+        if interval is not None:
+            composite += INTERVAL_WEIGHT * interval[index]
         composite += penalties.get(result.model, 0.0) * penalty_scale(n_observations, result.model)
         scored.append(ScoredCandidate(result=result, score=composite, rank=0))
 

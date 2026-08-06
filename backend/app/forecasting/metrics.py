@@ -64,6 +64,84 @@ def wmape(y_true: FloatArray, y_pred: FloatArray, weights: FloatArray | None = N
     return float(np.sum(w * np.abs(t - p)) / denominator * 100.0)
 
 
+def mase(
+    y_true: FloatArray,
+    y_pred: FloatArray,
+    insample: FloatArray,
+    seasonal_period: int = 1,
+) -> float:
+    """
+    Error against the naive forecast a person would have made for free.
+
+    The metric that still means something where wMAPE gives up. wMAPE divides
+    by the size of the actuals, so a month of no sales sends it past 100% and
+    `accuracy_from_wmape` correctly refuses to report an accuracy — leaving
+    intermittent series with a dash and nothing else. MASE divides by how well
+    a seasonal-naive forecast did on the *training* history instead, a
+    denominator that does not collapse.
+
+    1.0 means "no better than repeating last season". Below 1.0 the model is
+    earning its place; above it, it is not.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size == 0:
+        return float("nan")
+
+    history = np.asarray(insample, dtype=float).ravel()
+    history = history[np.isfinite(history)]
+    lag = max(1, int(seasonal_period))
+    if history.size <= lag:
+        lag = 1
+    if history.size <= lag:
+        return float("nan")
+
+    scale = float(np.mean(np.abs(history[lag:] - history[:-lag])))
+    if not np.isfinite(scale) or scale == 0.0:
+        # A perfectly flat history: the naive forecast was exactly right, so
+        # there is no scale to be wrong against.
+        return float("nan")
+
+    return float(np.mean(np.abs(t - p)) / scale)
+
+
+def winkler(
+    y_true: FloatArray,
+    lower: FloatArray,
+    upper: FloatArray,
+    confidence_level: float,
+) -> float:
+    """
+    What an interval costs: its width, plus a penalty for what it missed.
+
+    Point error alone cannot tell an honest interval from a confident one, so
+    a model that quotes a narrow band it does not keep scores identically to
+    one that admits what it does not know. This is the standard answer: the
+    band pays for its own width, and pays `2/(1-confidence)` times the
+    distance to any actual that fell outside it — so under-covering is
+    expensive in proportion to how bold the claim was.
+
+    Lower is better, and it is in the units of the series.
+    """
+    t = np.asarray(y_true, dtype=float).ravel()
+    lo = np.asarray(lower, dtype=float).ravel()
+    hi = np.asarray(upper, dtype=float).ravel()
+    if t.shape != lo.shape or t.shape != hi.shape:
+        raise ValueError("bounds must match the length of y_true")
+
+    mask = np.isfinite(t) & np.isfinite(lo) & np.isfinite(hi)
+    if not np.any(mask):
+        return float("nan")
+
+    t, lo, hi = t[mask], lo[mask], hi[mask]
+    alpha = max(1e-6, 1.0 - float(confidence_level))
+    penalty = 2.0 / alpha
+
+    width = hi - lo
+    below = np.where(t < lo, penalty * (lo - t), 0.0)
+    above = np.where(t > hi, penalty * (t - hi), 0.0)
+    return float(np.mean(width + below + above))
+
+
 def accuracy_from_wmape(value: float) -> float:
     """
     Accuracy as the complement of the error, where that still means something.

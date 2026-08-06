@@ -93,6 +93,18 @@ export function ModelDetailModal() {
                     <th className="table-header px-3 py-1.5 text-right font-medium">wMAPE</th>
                     <th className="table-header px-3 py-1.5 text-right font-medium">sMAPE</th>
                     <th className="table-header px-3 py-1.5 text-right font-medium">RMSE</th>
+                    <th
+                      className="table-header px-3 py-1.5 text-right font-medium"
+                      title="Against simply repeating last season. Below 1.00 is better than free."
+                    >
+                      vs naive
+                    </th>
+                    <th
+                      className="table-header px-3 py-1.5 text-right font-medium"
+                      title="What this method's uncertainty range costs: its width, plus a penalty for the actuals that fell outside it"
+                    >
+                      Range cost
+                    </th>
                     <th className="table-header px-3 py-1.5 text-right font-medium">Score</th>
                     <th className="table-header px-3 py-1.5 text-right font-medium">Folds</th>
                   </tr>
@@ -106,7 +118,8 @@ export function ModelDetailModal() {
             </div>
             <p className="mt-1.5 text-caption text-text-muted">
               Lower is better for every column. The winner is the lowest weighted score across
-              backtest folds.
+              backtest folds — accuracy first, with a method that quotes a range it cannot keep
+              paying for it, and a simpler method preferred when two are close.
             </p>
           </section>
         </div>
@@ -140,7 +153,9 @@ function CandidateRow({ candidate }: { candidate: ModelCandidate }) {
           <span className="mt-0.5 block pl-5 text-caption text-text-muted">
             {candidate.failure_reason}
           </span>
-        ) : null}
+        ) : (
+          <TuningNote params={candidate.params} />
+        )}
       </td>
       <td className="px-3 py-2 text-right text-meta text-text-secondary num">
         {candidate.wmape === null ? "—" : `${candidate.wmape.toFixed(1)}%`}
@@ -149,12 +164,64 @@ function CandidateRow({ candidate }: { candidate: ModelCandidate }) {
         {candidate.smape === null ? "—" : `${candidate.smape.toFixed(1)}%`}
       </td>
       <td className="px-3 py-2 text-right text-meta text-text-secondary num">
-    {candidate.rmse === null ? "—" : formatCompact(candidate.rmse)}
+        {candidate.rmse === null ? "—" : formatCompact(candidate.rmse)}
+      </td>
+      <td
+        className={cn(
+          "px-3 py-2 text-right text-meta num",
+          // Beating the free forecast is the bar. Below it, the method earned
+          // its place; above, it did not, and that is worth seeing at a glance.
+          candidate.mase == null
+            ? "text-text-muted"
+            : candidate.mase < 1
+              ? "text-positive"
+              : "text-warning",
+        )}
+      >
+        {candidate.mase == null ? "—" : candidate.mase.toFixed(2)}
+      </td>
+      <td className="px-3 py-2 text-right text-meta text-text-secondary num">
+        {candidate.winkler == null ? "—" : formatCompact(candidate.winkler)}
       </td>
       <td className="px-3 py-2 text-right text-meta font-medium text-text-primary num">
         {formatScore(candidate.score)}
       </td>
       <td className="px-3 py-2 text-right text-meta text-text-muted num">{candidate.folds}</td>
     </tr>
+  );
+}
+
+/**
+ * What the platform tried before settling on this method's settings.
+ *
+ * The search has always happened and always been recorded — it arrives on
+ * every candidate — and nothing had ever shown it. "We tried twenty-four
+ * settings on history it had not seen" is the sentence that turns a number
+ * into something a planner will act on.
+ */
+function TuningNote({ params }: { params: Record<string, unknown> }) {
+  const method = typeof params.tuning_method === "string" ? params.tuning_method : null;
+  const evaluations =
+    typeof params.tuning_evaluations === "number" ? params.tuning_evaluations : 0;
+  const folds = typeof params.tuning_folds === "number" ? params.tuning_folds : 0;
+
+  if (!method) return null;
+
+  if (method.startsWith("defaults")) {
+    return (
+      <span className="mt-0.5 block pl-5 text-caption text-text-muted">
+        Not enough history to try alternative settings, so the standard ones were used.
+      </span>
+    );
+  }
+
+  const members = Array.isArray(params.members) ? (params.members as string[]) : null;
+
+  return (
+    <span className="mt-0.5 block pl-5 text-caption text-text-muted">
+      Tried {evaluations} setting{evaluations === 1 ? "" : "s"}
+      {folds > 0 ? ` over ${folds} stretch${folds === 1 ? "" : "es"} of held-out history` : ""}
+      {members ? `, combining ${members.map(humanizeModel).join(", ")}` : ""}.
+    </span>
   );
 }

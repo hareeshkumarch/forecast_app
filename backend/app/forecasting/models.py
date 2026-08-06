@@ -11,7 +11,15 @@ import numpy.typing as npt
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
-from app.forecasting.tuning import MIN_VALIDATION_ROWS, SearchSpace, as_float, as_int, tune
+from app.forecasting.tuning import (
+    MIN_VALIDATION_ROWS,
+    SearchSpace,
+    as_float,
+    as_int,
+    tune,
+    tuning_error,
+    validation_splits,
+)
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
@@ -384,21 +392,95 @@ class ProphetForecaster:
         )
 
         frame = pd.DataFrame({"ds": pd.to_datetime(periods), "y": np.asarray(y, dtype=np.float64)})
+        mode = "multiplicative" if multiplicative else "additive"
+
+        priors, search = self._priors(frame, mode, flags)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = Prophet(
-                seasonality_mode="multiplicative" if multiplicative else "additive",
-                changepoint_prior_scale=0.05,
-                interval_width=0.8,
-                **flags,
-            )
+            model = Prophet(seasonality_mode=mode, interval_width=0.8, **priors, **flags)
             model.fit(frame)
 
         self._fitted = model
         self._config = {
-            "seasonality_mode": "multiplicative" if multiplicative else "additive",
+            "seasonality_mode": mode,
+            **{key: float(value) for key, value in priors.items()},
             **{key: bool(value) for key, value in flags.items()},
+            **search,
+        }
+
+    #: How hard the trend is allowed to bend, and how much the seasonal shape
+    #: may move. Prophet's own defaults sit at 0.05 and 10.0 and are tuned for
+    #: long web-traffic series; on a couple of years of monthly business data
+    #: 0.05 is often too rigid to follow a real regime change and too loose on
+    #: a noisy one. The grid brackets the default rather than replacing it.
+    CHANGEPOINT_PRIORS = (0.01, 0.05, 0.25)
+    SEASONALITY_PRIORS = (1.0, 10.0)
+
+    def _priors(
+        self, frame: object, mode: str, flags: dict[str, bool]
+    ) -> tuple[dict[str, float], dict[str, object]]:
+        """
+        The two priors that decide what this model is, chosen on held-out data.
+
+        Frozen at the library defaults these were the one thing about Prophet
+        nobody had ever looked at, while selection charged it the second-highest
+        complexity penalty against the largest parameter budget in the roster —
+        billing it for flexibility it was never allowed to use.
+
+        Prophet fits are slow, so this is a six-point grid over one held-out
+        block rather than the full cross-validated search the booster gets, and
+        it stands down entirely on a history too short to spare the block.
+        """
+        import pandas as pd
+        from prophet import Prophet
+
+        default = {"changepoint_prior_scale": 0.05, "seasonality_prior_scale": 10.0}
+        rows = len(frame)  # type: ignore[arg-type]
+        splits = validation_splits(rows, min(12, max(1, rows // 5)))
+        if not splits:
+            return default, {"tuning_method": "defaults_short_history", "tuning_evaluations": 0}
+
+        start, end = splits[-1]
+        train = frame.iloc[:start]  # type: ignore[attr-defined]
+        holdout = frame.iloc[start:end]  # type: ignore[attr-defined]
+        actual = np.asarray(holdout["y"].to_numpy(), dtype=np.float64)
+
+        best, best_score, evaluated = default, float("inf"), 0
+        for changepoint in self.CHANGEPOINT_PRIORS:
+            for seasonality in self.SEASONALITY_PRIORS:
+                candidate = {
+                    "changepoint_prior_scale": changepoint,
+                    "seasonality_prior_scale": seasonality,
+                }
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        trial = Prophet(
+                            seasonality_mode=mode, interval_width=0.8, **candidate, **flags
+                        )
+                        trial.fit(train)
+                        predicted = trial.predict(pd.DataFrame({"ds": holdout["ds"]}))
+                except Exception:
+                    continue
+
+                yhat = np.asarray(predicted["yhat"].to_numpy(), dtype=np.float64)
+                if yhat.size != actual.size or not np.all(np.isfinite(yhat)):
+                    continue
+
+                evaluated += 1
+                score = tuning_error(actual, yhat)
+                if score < best_score:
+                    best, best_score = candidate, score
+
+        if evaluated == 0:
+            return default, {"tuning_method": "defaults_all_failed", "tuning_evaluations": 0}
+
+        return best, {
+            "tuning_method": "grid",
+            "tuning_evaluations": evaluated,
+            "tuning_folds": 1,
+            "tuning_score": round(best_score, 6),
         }
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
@@ -893,6 +975,16 @@ class GradientBoostingForecaster:
 
 @dataclass
 class EnsembleForecaster:
+    """
+    Several models fitted together and combined into one path.
+
+    The members and their weights are decided by `combination.blend` from the
+    backtest, not here — this is only the vehicle that refits them on the full
+    history once that decision has been made. The defaults are the roster it
+    used to carry, kept so a caller that names no members still gets something
+    sensible rather than an error.
+    """
+
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     members: tuple[ModelKind, ...] = (
@@ -900,6 +992,9 @@ class EnsembleForecaster:
         ModelKind.ETS,
         ModelKind.SARIMAX,
     )
+    #: How much say each member has. Absent, they share it equally through a
+    #: median, which is what this did before the weights existed.
+    weights: dict[ModelKind, float] | None = None
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
     _fitted: list[Forecaster] = field(default_factory=list, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -928,22 +1023,39 @@ class EnsembleForecaster:
             )
 
         self._fitted = fitted
-        self._config = {"members": joined, "combiner": "median", "skipped": skipped}
+        self._config = {
+            "members": joined,
+            "combiner": "weighted_mean" if self.weights else "median",
+            "skipped": skipped,
+        }
+        if self.weights:
+            self._config["weights"] = {
+                kind.value: round(weight, 4) for kind, weight in self.weights.items()
+            }
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if not self._fitted:
             raise RuntimeError("fit() must be called before predict().")
 
-        stacked = []
+        stacked: list[FloatArray] = []
+        share: list[float] = []
+
         for model in self._fitted:
             prediction = np.asarray(
                 model.predict(horizon, future_periods), dtype=np.float64
             ).ravel()
             if prediction.size == horizon and np.all(np.isfinite(prediction)):
                 stacked.append(prediction)
+                share.append((self.weights or {}).get(model.kind, 0.0))
 
         if not stacked:
             raise RuntimeError("No ensemble member produced a usable forecast.")
+
+        # A member that failed to refit takes its weight out of the pool with
+        # it, so the survivors keep their proportions rather than the whole
+        # combination quietly shifting toward whoever is left.
+        if self.weights and sum(share) > 0.0:
+            return np.average(np.vstack(stacked), axis=0, weights=share)
 
         return np.median(np.vstack(stacked), axis=0)
 
@@ -994,14 +1106,13 @@ def build_candidates(
             learning_rate=as_float(gbm_lr, 0.06) if gbm_lr is not None else None,
             drivers=panel,
         ),
-        EnsembleForecaster(frequency, profile),
     ]
 
     if ProphetForecaster.available():
-        candidates.insert(-1, ProphetForecaster(frequency, profile))
+        candidates.append(ProphetForecaster(frequency, profile))
 
     if profile is None or profile.intermittent:
-        candidates.insert(-1, CrostonForecaster(frequency, profile))
+        candidates.append(CrostonForecaster(frequency, profile))
 
     return candidates
 

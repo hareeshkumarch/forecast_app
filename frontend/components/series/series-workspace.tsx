@@ -462,6 +462,7 @@ function SeriesRowCells({
           value={row.accuracy}
           measured={row.accuracy_measured}
           model={row.model}
+          mase={row.mase}
           className="justify-end"
         />
       </td>

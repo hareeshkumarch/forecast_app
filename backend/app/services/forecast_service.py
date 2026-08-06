@@ -894,6 +894,8 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
                 rmse=finite(candidate["rmse"]),
                 smape=finite(candidate["smape"]),
                 wmape=finite(candidate["wmape"]),
+                mase=finite(candidate.get("mase")),
+                winkler=finite(candidate.get("winkler")),
                 score=finite(candidate["score"]),
                 folds=int(candidate["folds"]),
                 fit_seconds=finite(candidate["fit_seconds"]),
@@ -1092,6 +1094,10 @@ def _metric_unit(name: str) -> str:
         return "percent"
     if name in ("backtest_folds", "seasonal_period"):
         return "count"
+    # 1.0 is "no better than repeating last season", so it is a ratio and
+    # showing it with a percent sign would say something quite different.
+    if name == "mase":
+        return "ratio"
     return "absolute"
 
 

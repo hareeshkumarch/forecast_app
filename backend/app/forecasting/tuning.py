@@ -114,6 +114,26 @@ def cache_key(name: str, matrix: FloatArray, target: FloatArray, space: SearchSp
     return digest.hexdigest()
 
 
+def tuning_error(actual: FloatArray, predicted: FloatArray) -> float:
+    """
+    The loss a search is judged on, chosen to match the one selection uses.
+
+    Selection ranks candidates mostly on wMAPE, so tuning on absolute error
+    was optimising for a different thing than the model would be graded by —
+    on a series with a strong level, a parameter set that wins on MAE can be
+    the one that loses on wMAPE. Scale-free means the number is also
+    comparable between folds of very different size, which a mean absolute
+    error is not.
+
+    Falls back to absolute error where the denominator collapses, which is
+    exactly the intermittent case wMAPE cannot describe.
+    """
+    denominator = float(np.sum(np.abs(actual)))
+    if denominator <= 0.0:
+        return float(np.mean(np.abs(actual - predicted)))
+    return float(np.sum(np.abs(actual - predicted)) / denominator * 100.0)
+
+
 def tune(
     name: str,
     matrix: FloatArray,
@@ -170,7 +190,7 @@ def tune(
             if predictions.size != actual.size or not np.all(np.isfinite(predictions)):
                 errors = []
                 break
-            errors.append(float(np.mean(np.abs(actual - predictions))))
+            errors.append(tuning_error(actual, predictions))
 
         if not errors:
             continue

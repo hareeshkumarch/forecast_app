@@ -479,6 +479,7 @@ async def persist(
                 blocked_reason=result.blocked_reason,
                 model=result.model,
                 wmape=finite(result.wmape),
+                mase=finite(result.mase),
                 accuracy=finite(result.accuracy),
                 accuracy_measured=result.accuracy_measured,
                 folds=result.folds,

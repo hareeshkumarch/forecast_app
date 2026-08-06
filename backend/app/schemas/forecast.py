@@ -145,6 +145,8 @@ class ModelCandidateRead(ORMModel):
     rmse: float | None
     smape: float | None
     wmape: float | None
+    mase: float | None = None
+    winkler: float | None = None
     score: float | None
     folds: NonNegativeInt
     fit_seconds: NonNegativeFloat | None
@@ -191,6 +193,9 @@ class SeriesRow(ORMModel):
     blocked_reason: str | None
     model: ModelKind | None
     wmape: float | None
+    #: Error against the seasonal-naive benchmark: 1.0 is "no better than
+    #: repeating last season". The number to read where wMAPE is absent.
+    mase: float | None = None
     accuracy: float | None
     accuracy_measured: bool
     folds: NonNegativeInt
