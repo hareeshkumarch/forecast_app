@@ -10,7 +10,6 @@ import pytest
 _STORAGE = Path(tempfile.mkdtemp(prefix="fp-tests-"))
 os.environ["STORAGE_ROOT"] = str(_STORAGE)
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{(_STORAGE / 'test.db').as_posix()}"
-os.environ["RUN_SEED_ON_STARTUP"] = "false"
 os.environ["FORECAST_WORKERS"] = "1"
 os.environ["CREDENTIAL_SECRET_KEY"] = "test-key-not-a-real-secret"
 

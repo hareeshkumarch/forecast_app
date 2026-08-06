@@ -26,16 +26,19 @@ dist/
 .eslintcache
 npm-debug.log*
 
-# Storage / Database runtime files
-storage/dev.db*
+# Storage / Database runtime files.
+# Unanchored, because the app writes these under backend/storage while the
+# tooling that made these rules ran from the repository root — a leading path
+# would quietly let a customer's uploaded CSV into a commit.
+**/storage/dev.db*
 # Scratch database from a local run of the end-to-end job.
 .e2e-storage/
-storage/uploads/*
-!storage/uploads/.gitkeep
-storage/parquet/*
-!storage/parquet/.gitkeep
-storage/exports/*
-!storage/exports/.gitkeep
+**/storage/uploads/*
+!**/storage/uploads/.gitkeep
+**/storage/parquet/*
+!**/storage/parquet/.gitkeep
+**/storage/exports/*
+!**/storage/exports/.gitkeep
 
 # IDEs & System
 .vscode/

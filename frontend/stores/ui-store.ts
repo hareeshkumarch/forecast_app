@@ -26,7 +26,6 @@ interface UiState {
   rangeStart: string | null;
   rangeEnd: string | null;
   runId: string | null;
-  selectedConnectorId: string | null;
 
 
   modal: ModalKind;
@@ -40,7 +39,6 @@ interface UiState {
   setView: (view: ForecastView) => void;
   setRange: (start: string | null, end: string | null) => void;
   setRunId: (runId: string | null) => void;
-  selectConnector: (id: string | null) => void;
 
   openModal: (modal: ModalKind, connectorId?: string | null) => void;
   closeModal: () => void;
@@ -61,7 +59,6 @@ export const useUiStore = create<UiState>((set) => ({
   runId: null,
 
 
-  selectedConnectorId: null,
 
   modal: "none",
   modalConnectorId: null,
@@ -72,7 +69,6 @@ export const useUiStore = create<UiState>((set) => ({
   setView: (view) => set({ view }),
   setRange: (rangeStart, rangeEnd) => set({ rangeStart, rangeEnd }),
   setRunId: (runId) => set({ runId }),
-  selectConnector: (selectedConnectorId) => set({ selectedConnectorId }),
 
 
 
