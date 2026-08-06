@@ -4,7 +4,7 @@ import { ArrowRight, Check, Database, PlayCircle, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button, Card } from "@/components/ui/primitives";
-import { useDatasets, useForecastRuns } from "@/hooks/use-dashboard";
+import { PICKER_LIMIT, useDatasets, useForecastRuns } from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -26,14 +26,16 @@ export function GettingStarted() {
   const openModal = useUiStore((state) => state.openModal);
   const router = useRouter();
 
-  const { data: datasets } = useDatasets();
-  const { data: runs } = useForecastRuns();
+  const { data: datasets } = useDatasets({ limit: PICKER_LIMIT });
+  const { data: runs } = useForecastRuns({ limit: 1 });
 
-  const hasDataset = (datasets?.length ?? 0) > 0;
-  const hasConfiguredDataset = (datasets ?? []).some(
+  // Whether anything exists is a question about the workspace, so it comes
+  // from the totals rather than from whatever page happened to be fetched.
+  const hasDataset = (datasets?.total ?? 0) > 0;
+  const hasConfiguredDataset = (datasets?.rows ?? []).some(
     (dataset) => dataset.time_column && dataset.target_column,
   );
-  const hasRun = (runs ?? []).some((run) => run.status === "completed");
+  const hasRun = (runs?.counts.completed ?? 0) > 0;
 
   const steps: Step[] = [
     {

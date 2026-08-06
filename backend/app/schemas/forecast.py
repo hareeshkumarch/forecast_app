@@ -380,6 +380,30 @@ class ForecastRunRead(ORMModel):
         return _accuracy(self.realized_wmape)
 
 
+class RunStateCounts(BaseModel):
+    """How the runs matching a search divide by state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    all: NonNegativeInt
+    completed: NonNegativeInt
+    active: NonNegativeInt
+    failed: NonNegativeInt
+
+
+class ForecastRunPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total: NonNegativeInt
+    limit: NonNegativeInt
+    offset: NonNegativeInt
+    sort: str
+    #: Counts of what exists, not of what was fetched — the screen puts these
+    #: at the top as the truth about the workspace.
+    counts: RunStateCounts
+    rows: list[ForecastRunRead]
+
+
 class ForecastRunDetail(ForecastRunRead):
     candidates: list[ModelCandidateRead] = Field(default_factory=list)
     metrics: list[ForecastMetricRead] = Field(default_factory=list)

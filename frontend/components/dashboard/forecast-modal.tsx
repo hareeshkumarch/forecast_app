@@ -24,6 +24,7 @@ import {
   useDatasetProfile,
   useDatasetQuality,
   useDatasets,
+  PICKER_LIMIT,
   useCancelForecastRun,
   useRefreshDashboard,
   useStartForecast,
@@ -99,7 +100,7 @@ export function ForecastModal() {
   const targetDatasetId = useUiStore((state) => state.modalTargetId);
   const open = modal === "configure-forecast";
 
-  const { data: datasets } = useDatasets();
+  const { data: datasets } = useDatasets({ limit: PICKER_LIMIT });
   const startMutation = useStartForecast();
   const cancelMutation = useCancelForecastRun();
   const refreshDashboard = useRefreshDashboard();
@@ -200,7 +201,7 @@ export function ForecastModal() {
       seeded.current = true;
       return;
     }
-    const first = datasets?.[0];
+    const first = datasets?.rows[0];
     if (first) {
       setDatasetId(first.id);
       seeded.current = true;
@@ -381,7 +382,7 @@ export function ForecastModal() {
               value={datasetId}
               onChange={setDatasetId}
               placeholder="Select a dataset…"
-              options={(datasets ?? []).map((item) => ({
+              options={(datasets?.rows ?? []).map((item) => ({
                 value: item.id,
                 label: item.name,
                 hint: `${item.row_count.toLocaleString()} rows · ${item.column_count} columns`,

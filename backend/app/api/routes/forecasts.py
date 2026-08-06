@@ -26,9 +26,11 @@ from app.schemas.forecast import (
     ForecastPointsResponse,
     ForecastProgressEvent,
     ForecastRunDetail,
+    ForecastRunPage,
     ForecastRunRead,
     ForecastRunRequest,
     ModelCandidateRead,
+    RunStateCounts,
     ScorecardResponse,
     ScoreRequest,
     SeriesResponse,
@@ -53,10 +55,31 @@ SCORE_SERIES_LIMIT = 25
 MAX_SCORE_SERIES = series_service.MAX_PAGE
 
 
-@router.get("", response_model=list[ForecastRunRead], summary="List forecast runs")
-async def list_runs(session: SessionDep) -> list[ForecastRunRead]:
-    runs = await forecast_service.list_runs(session)
-    return [ForecastRunRead.model_validate(run) for run in runs]
+@router.get("", response_model=ForecastRunPage, summary="List forecast runs")
+async def list_runs(
+    session: SessionDep,
+    search: str | None = Query(default=None, max_length=200),
+    state: str | None = Query(
+        default=None, description=f"One of: {', '.join(forecast_service.RUN_STATES)}."
+    ),
+    sort: str = Query(
+        default=forecast_service.DEFAULT_RUN_SORT,
+        description=f"One of: {', '.join(forecast_service.RUN_SORTS)}.",
+    ),
+    limit: int = Query(default=50, ge=1, le=forecast_service.MAX_RUN_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> ForecastRunPage:
+    page = await forecast_service.list_runs(
+        session, search=search, state=state, sort=sort, limit=limit, offset=offset
+    )
+    return ForecastRunPage(
+        total=page.total,
+        limit=limit,
+        offset=offset,
+        sort=sort if sort in forecast_service.RUN_SORTS else forecast_service.DEFAULT_RUN_SORT,
+        counts=RunStateCounts(**page.counts),
+        rows=[ForecastRunRead.model_validate(run) for run in page.rows],
+    )
 
 
 @router.post(

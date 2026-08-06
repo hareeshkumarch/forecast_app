@@ -5,8 +5,9 @@ import uuid
 from dataclasses import dataclass, fields
 from datetime import date
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -139,11 +140,97 @@ class RunOverrides:
         }
 
 
-async def list_runs(session: AsyncSession, *, limit: int = 50) -> list[ForecastRun]:
-    result = await session.execute(
-        select(ForecastRun).order_by(ForecastRun.created_at.desc()).limit(limit)
+#: The four groups the Reports screen offers, in its language rather than the
+#: model's: "in progress" is one thing to a planner and two states here.
+RUN_STATES: dict[str, tuple[RunStatus, ...]] = {
+    "completed": (RunStatus.COMPLETED,),
+    "active": (RunStatus.PENDING, RunStatus.RUNNING),
+    "failed": (RunStatus.FAILED,),
+}
+
+RUN_SORTS: dict[str, Any] = {
+    "newest": ForecastRun.created_at.desc(),
+    "oldest": ForecastRun.created_at.asc(),
+    "name": ForecastRun.name.asc(),
+    "series": ForecastRun.series_count.desc(),
+}
+DEFAULT_RUN_SORT = "newest"
+MAX_RUN_PAGE = 200
+
+
+@dataclass(slots=True)
+class RunPage:
+    """A page of runs, how many there are, and how they divide by state."""
+
+    rows: list[ForecastRun]
+    total: int
+    #: Every state's count under the same search, so the screen's counters stay
+    #: true whichever one is being filtered on — and so they are counts of what
+    #: exists rather than of what happened to be fetched.
+    counts: dict[str, int]
+
+
+def _run_search(term: str) -> Any:
+    """Everything about a run someone might type: its name, what it forecasts, how."""
+    like = f"%{term.strip().lower()}%"
+    return or_(
+        func.lower(ForecastRun.name).like(like),
+        func.lower(ForecastRun.target_column).like(like),
+        func.lower(func.coalesce(ForecastRun.selected_model, "")).like(like),
+        func.lower(func.coalesce(ForecastRun.region_column, "")).like(like),
+        func.lower(func.coalesce(ForecastRun.category_column, "")).like(like),
+        func.lower(cast(ForecastRun.frequency, String)).like(like),
+        func.lower(cast(ForecastRun.group_by, String)).like(like),
     )
-    return list(result.scalars().all())
+
+
+async def list_runs(
+    session: AsyncSession,
+    *,
+    search: str | None = None,
+    state: str | None = None,
+    sort: str = DEFAULT_RUN_SORT,
+    limit: int = 50,
+    offset: int = 0,
+) -> RunPage:
+    """
+    A page of runs, filtered and ordered by the database rather than the browser.
+
+    This used to return the newest fifty with no total and no way to ask for
+    the fifty-first, which a screen listing forty-seven of them could not tell
+    apart from "you have forty-seven". Searching happened in the browser over
+    that truncated list, so a search for an older run reported that no such run
+    existed.
+    """
+    narrowing = [_run_search(search)] if search and search.strip() else []
+
+    grouped = await session.execute(
+        select(ForecastRun.status, func.count()).where(*narrowing).group_by(ForecastRun.status)
+    )
+    by_status = {status: int(count) for status, count in grouped}
+    counts = {
+        "all": sum(by_status.values()),
+        **{
+            name: sum(by_status.get(status, 0) for status in states)
+            for name, states in RUN_STATES.items()
+        },
+    }
+
+    where = list(narrowing)
+    if state in RUN_STATES:
+        where.append(ForecastRun.status.in_(RUN_STATES[state]))
+
+    total = counts["all"] if state not in RUN_STATES else counts[state]
+
+    result = await session.execute(
+        select(ForecastRun)
+        .where(*where)
+        .order_by(RUN_SORTS.get(sort, RUN_SORTS[DEFAULT_RUN_SORT]), ForecastRun.id.desc())
+        .limit(max(1, min(limit, MAX_RUN_PAGE)))
+        .offset(max(0, offset))
+    )
+
+    return RunPage(rows=list(result.scalars().all()), total=total, counts=counts)
 
 
 async def get_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:

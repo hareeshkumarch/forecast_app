@@ -60,6 +60,22 @@ class DatasetRead(ORMModel):
     updated_at: datetime
 
 
+class DatasetPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total: NonNegativeInt
+    limit: NonNegativeInt
+    offset: NonNegativeInt
+    sort: str
+    #: Over everything held rather than over the page: the screen reports how
+    #: many files there are, how many rows they hold and what they cost in
+    #: disk, and none of those is a question about the fifty on screen.
+    ready: NonNegativeInt
+    row_count: NonNegativeInt
+    file_size_bytes: NonNegativeInt
+    rows: list[DatasetRead]
+
+
 class DatasetDetail(DatasetRead):
     columns: list[DatasetColumnRead] = Field(default_factory=list)
 

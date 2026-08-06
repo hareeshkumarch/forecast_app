@@ -171,6 +171,28 @@ export interface Dataset {
   updated_at: string;
 }
 
+export type DatasetSort =
+  | "newest"
+  | "oldest"
+  | "name"
+  | "name_desc"
+  | "rows"
+  | "rows_asc"
+  | "size"
+  | "size_asc";
+
+export interface DatasetPage {
+  total: number;
+  limit: number;
+  offset: number;
+  sort: DatasetSort;
+  /** Over everything held, not over the page. */
+  ready: number;
+  row_count: number;
+  file_size_bytes: number;
+  rows: Dataset[];
+}
+
 export interface DatasetDetail extends Dataset {
   columns: DatasetColumn[];
 }
@@ -206,6 +228,27 @@ export interface DatasetUploadResponse {
   profile: DatasetProfile;
 }
 
+
+export type RunState = "completed" | "active" | "failed";
+
+export type RunSort = "newest" | "oldest" | "name" | "series";
+
+export interface RunStateCounts {
+  all: number;
+  completed: number;
+  active: number;
+  failed: number;
+}
+
+export interface ForecastRunPage {
+  total: number;
+  limit: number;
+  offset: number;
+  sort: RunSort;
+  /** Counts of what exists, not of what was fetched. */
+  counts: RunStateCounts;
+  rows: ForecastRun[];
+}
 
 export interface ForecastRun {
   id: string;
@@ -671,6 +714,8 @@ export interface LlmUsageResponse {
   timeseries: LlmUsagePoint[];
   by_model: LlmUsageBreakdown[];
   recent: LlmUsageEvent[];
+  /** When the very first request was made, whenever that was. */
+  first_event_at: string | null;
 }
 
 

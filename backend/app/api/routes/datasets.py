@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import SessionDep
 from app.core.config import settings
@@ -12,6 +12,7 @@ from app.schemas.dataset import (
     DataQualityResponse,
     DatasetConfigureRequest,
     DatasetDetail,
+    DatasetPage,
     DatasetProfile,
     DatasetRead,
     DatasetUploadResponse,
@@ -21,10 +22,32 @@ from app.services import dataset_service
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
-@router.get("", response_model=list[DatasetRead], summary="List datasets")
-async def list_datasets(session: SessionDep) -> list[DatasetRead]:
-    datasets = await dataset_service.list_datasets(session)
-    return [DatasetRead.model_validate(d) for d in datasets]
+@router.get("", response_model=DatasetPage, summary="List datasets")
+async def list_datasets(
+    session: SessionDep,
+    search: str | None = Query(default=None, max_length=200),
+    sort: str = Query(
+        default=dataset_service.DEFAULT_DATASET_SORT,
+        description=f"One of: {', '.join(dataset_service.DATASET_SORTS)}.",
+    ),
+    limit: int = Query(default=50, ge=1, le=dataset_service.MAX_DATASET_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> DatasetPage:
+    page = await dataset_service.list_datasets(
+        session, search=search, sort=sort, limit=limit, offset=offset
+    )
+    return DatasetPage(
+        total=page.total,
+        limit=limit,
+        offset=offset,
+        sort=sort
+        if sort in dataset_service.DATASET_SORTS
+        else dataset_service.DEFAULT_DATASET_SORT,
+        ready=page.ready,
+        row_count=page.row_count,
+        file_size_bytes=page.file_size_bytes,
+        rows=[DatasetRead.model_validate(d) for d in page.rows],
+    )
 
 
 @router.post(

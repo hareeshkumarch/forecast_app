@@ -2,7 +2,7 @@
 
 import { Activity, Download, Eye, FileBarChart2, FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { Scorecard } from "@/components/reports/scorecard";
 import { RefreshButton } from "@/components/ui/refresh-button";
@@ -17,11 +17,12 @@ import {
 } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
 import { downloadExport, useDeleteForecastRun, useForecastRuns } from "@/hooks/use-dashboard";
+import { useDebounced } from "@/hooks/use-debounced";
 import { formatDateRange, formatRelativeTime, humanizeKey, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWord } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
-import type { ForecastRun, MeasureAggregation, RunStatus } from "@/types/api";
+import type { ForecastRun, MeasureAggregation, RunSort, RunState, RunStatus } from "@/types/api";
 
 const STATUS_TONE: Record<RunStatus, "neutral" | "positive" | "negative" | "warning"> = {
   pending: "neutral",
@@ -39,41 +40,16 @@ const AGGREGATION_LABEL: Record<MeasureAggregation, string> = {
   max: "Highest value",
 };
 
-type StatusFilter = "all" | "completed" | "active" | "failed";
-type SortKey = "newest" | "oldest" | "name" | "lines";
+type StateFilter = RunState | "all";
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+const PAGE_SIZE = 20;
+
+const SORT_OPTIONS: { value: RunSort; label: string }[] = [
   { value: "newest", label: "Newest first" },
   { value: "oldest", label: "Oldest first" },
   { value: "name", label: "Name A–Z" },
-  { value: "lines", label: "Most lines" },
+  { value: "series", label: "Most lines" },
 ];
-
-function inFilter(run: ForecastRun, filter: StatusFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "active") return run.status === "pending" || run.status === "running";
-  return run.status === filter;
-}
-
-/**
- * Everything about a run someone might type into the box: what they called it,
- * what it forecasts, how it was cut and which method won.
- */
-function haystack(run: ForecastRun): string {
-  return [
-    run.name,
-    run.target_column,
-    run.status,
-    run.frequency,
-    humanizeModel(run.selected_model),
-    ...run.group_by,
-    run.region_column,
-    run.category_column,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
 
 /**
  * What was cut, in the two different senses the run may have used.
@@ -218,8 +194,6 @@ function RunCard({
 
 export function ReportsWorkspace() {
   const router = useRouter();
-  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
-    useForecastRuns();
   const openModal = useUiStore((state) => state.openModal);
   const selectedRunId = useUiStore((state) => state.runId);
   const activeRunId = useUiStore((state) => state.activeRunId);
@@ -227,41 +201,43 @@ export function ReportsWorkspace() {
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const clearRun = useDeleteForecastRun();
 
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [state, setState] = useState<StateFilter>("all");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("newest");
+  const [sort, setSort] = useState<RunSort>("newest");
+  const [page, setPage] = useState(0);
 
-  const runs = useMemo(() => data ?? [], [data]);
+  // Debounced, because every keystroke is now a request rather than a filter
+  // over an array that was already in the browser.
+  const search = useDebounced(query, 250);
 
-  const counts: { key: StatusFilter; label: string; value: number }[] = [
-    { key: "all", label: "All runs", value: runs.length },
-    { key: "completed", label: "Completed", value: runs.filter((run) => inFilter(run, "completed")).length },
-    { key: "active", label: "In progress", value: runs.filter((run) => inFilter(run, "active")).length },
-    { key: "failed", label: "Failed", value: runs.filter((run) => inFilter(run, "failed")).length },
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt, isPlaceholderData } =
+    useForecastRuns({
+      search: search.trim() || undefined,
+      state: state === "all" ? undefined : state,
+      sort,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    });
+
+  // Any change to what is being asked for starts at the first page, or the
+  // offset outruns a shorter result and the screen comes back empty.
+  function change<T>(set: (value: T) => void) {
+    return (value: T) => {
+      set(value);
+      setPage(0);
+    };
+  }
+
+  const shown = data?.rows ?? [];
+  const counts: { key: StateFilter; label: string; value: number }[] = [
+    { key: "all", label: "All runs", value: data?.counts.all ?? 0 },
+    { key: "completed", label: "Completed", value: data?.counts.completed ?? 0 },
+    { key: "active", label: "In progress", value: data?.counts.active ?? 0 },
+    { key: "failed", label: "Failed", value: data?.counts.failed ?? 0 },
   ];
 
-  // Forty-seven cards is a scroll, not a list. Narrow first, then order.
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const matching = runs.filter(
-      (run) => inFilter(run, status) && (!needle || haystack(run).includes(needle)),
-    );
-
-    const ordered = [...matching];
-    ordered.sort((left, right) => {
-      switch (sort) {
-        case "oldest":
-          return left.created_at.localeCompare(right.created_at);
-        case "name":
-          return left.name.localeCompare(right.name);
-        case "lines":
-          return right.series_count - left.series_count;
-        default:
-          return right.created_at.localeCompare(left.created_at);
-      }
-    });
-    return ordered;
-  }, [runs, status, query, sort]);
+  const total = data?.total ?? 0;
+  const showing = data ? `${data.offset + 1}–${data.offset + shown.length} of ${total}` : "";
 
   function handleClear(run: ForecastRun) {
     const confirmed = window.confirm(
@@ -313,13 +289,13 @@ export function ReportsWorkspace() {
         */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {counts.map((count) => {
-          const selected = status === count.key;
+          const selected = state === count.key;
           return (
             <button
               key={count.key}
               type="button"
               aria-pressed={selected}
-              onClick={() => setStatus(count.key)}
+              onClick={() => change(setState)(count.key)}
               className={cn(
                 "rounded-card border bg-surface p-3.5 text-left transition-colors duration-fast",
                 selected
@@ -342,7 +318,7 @@ export function ReportsWorkspace() {
           />
           <Input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => change(setQuery)(event.target.value)}
             placeholder="Search runs by name, column or method"
             aria-label="Search runs"
             className="pl-8"
@@ -350,7 +326,7 @@ export function ReportsWorkspace() {
         </div>
         <Select
           value={sort}
-          onChange={setSort}
+          onChange={change(setSort)}
           options={SORT_OPTIONS}
           label="Order runs"
           className="w-[168px]"
@@ -363,7 +339,7 @@ export function ReportsWorkspace() {
         </div>
       ) : isError ? (
         <Card className="mt-4"><ErrorState error={error} onRetry={() => void refetch()} /></Card>
-      ) : runs.length === 0 ? (
+      ) : data?.counts.all === 0 ? (
         <Card className="mt-4">
           <EmptyState
             icon={FileBarChart2}
@@ -379,14 +355,15 @@ export function ReportsWorkspace() {
             title="Nothing matches that"
             message={
               query.trim()
-                ? `No run mentions "${query.trim()}"${status === "all" ? "" : " in this group"}.`
+                ? `No run mentions "${query.trim()}"${state === "all" ? "" : " in this group"}.`
                 : "No run is in this group yet."
             }
             action={
               <Button
                 onClick={() => {
                   setQuery("");
-                  setStatus("all");
+                  setState("all");
+                  setPage(0);
                 }}
               >
                 Show every run
@@ -395,18 +372,48 @@ export function ReportsWorkspace() {
           />
         </Card>
       ) : (
-        <section className="mt-3 space-y-3" aria-label="Forecast reports">
-          {shown.map((run) => (
-            <RunCard
-              key={run.id}
-              run={run}
-              clearing={clearRun.isPending && clearRun.variables === run.id}
-              clearDisabled={clearRun.isPending}
-              onOpen={handleOpen}
-              onClear={handleClear}
-            />
-          ))}
-        </section>
+        <>
+          <section
+            className={cn("mt-3 space-y-3", isPlaceholderData && "opacity-60 transition-opacity")}
+            aria-label="Forecast reports"
+          >
+            {shown.map((run) => (
+              <RunCard
+                key={run.id}
+                run={run}
+                clearing={clearRun.isPending && clearRun.variables === run.id}
+                clearDisabled={clearRun.isPending}
+                onOpen={handleOpen}
+                onClear={handleClear}
+              />
+            ))}
+          </section>
+
+          {/* Only once there is more than one page of them. */}
+          {total > PAGE_SIZE ? (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-caption text-text-muted num">{showing}</p>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page === 0}
+                  onClick={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={(page + 1) * PAGE_SIZE >= total}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </main>
   );

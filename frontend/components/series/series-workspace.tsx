@@ -23,8 +23,10 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
+import { useDebounced } from "@/hooks/use-debounced";
 import {
   useForecastRuns,
+  PICKER_LIMIT,
   useForecastSeries,
   type SeriesQuery,
 } from "@/hooks/use-dashboard";
@@ -73,12 +75,13 @@ const LEVELS = [
  */
 export function SeriesWorkspace() {
   const filters = useDashboardFilters();
-  const { data: runs, isPending, isError, error, refetch } = useForecastRuns();
+  const { data: runs, isPending, isError, error, refetch } = useForecastRuns({ limit: PICKER_LIMIT });
 
   const run = useMemo(() => {
-    if (!runs?.length) return null;
-    if (filters.runId) return runs.find((r) => r.id === filters.runId) ?? null;
-    return runs.find((r) => r.status === "completed") ?? null;
+    const rows = runs?.rows ?? [];
+    if (rows.length === 0) return null;
+    if (filters.runId) return rows.find((r) => r.id === filters.runId) ?? null;
+    return rows.find((r) => r.status === "completed") ?? null;
   }, [runs, filters.runId]);
 
   return (
@@ -161,6 +164,8 @@ function SeriesTable({
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
   const [scope, setScope] = useState("all");
   const [search, setSearch] = useState("");
+  // One request per pause in the typing, not one per letter.
+  const settled = useDebounced(search, 250);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<SeriesRow | null>(null);
 
@@ -170,7 +175,7 @@ function SeriesTable({
     offset: page * PAGE_SIZE,
     // The grain is the deepest level, which is however many columns it has.
     ...(scope === "leaf" ? { level: leafLevel } : {}),
-    ...(search.trim() ? { search: search.trim() } : {}),
+    ...(settled.trim() ? { search: settled.trim() } : {}),
   };
 
   const { data, isLoading, isError, error, refetch, isPlaceholderData } =

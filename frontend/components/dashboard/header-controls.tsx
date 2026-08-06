@@ -7,7 +7,13 @@ import { Calendar, ChevronDown, Download, History, SlidersHorizontal } from "luc
 
 import { Field, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
-import { downloadExport, useForecastRuns, useHealth, useSummary } from "@/hooks/use-dashboard";
+import {
+  downloadExport,
+  PICKER_LIMIT,
+  useForecastRuns,
+  useHealth,
+  useSummary,
+} from "@/hooks/use-dashboard";
 import { formatDateRange, formatRelativeTime, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWindowEnd } from "@/lib/periods";
 import { cn } from "@/lib/utils";
@@ -57,8 +63,8 @@ const TRIGGER = cn(
  */
 export function useActiveRun(): ForecastRun | null {
   const { data: summary } = useSummary();
-  const { data: runs } = useForecastRuns();
-  return runs?.find((run) => run.id === summary?.run_id) ?? null;
+  const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
+  return runs?.rows.find((run) => run.id === summary?.run_id) ?? null;
 }
 
 function runLabel(run: ForecastRun): string {
@@ -71,12 +77,12 @@ function runLabel(run: ForecastRun): string {
 
 
 export function RunControl({ className }: { className?: string }) {
-  const { data: runs } = useForecastRuns();
+  const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
   const { data: summary } = useSummary();
   const pinnedRunId = useUiStore((state) => state.runId);
   const setRunId = useUiStore((state) => state.setRunId);
 
-  const completed = (runs ?? []).filter((run) => run.status === "completed");
+  const completed = (runs?.rows ?? []).filter((run) => run.status === "completed");
   const label = pinnedRunId
     ? completed.find((run) => run.id === pinnedRunId)?.name ?? "Selected run"
     : summary?.run_name ?? "Latest run";
@@ -265,9 +271,9 @@ export function CompactFilters() {
   const setView = useUiStore((state) => state.setView);
   const pinnedRunId = useUiStore((state) => state.runId);
   const setRunId = useUiStore((state) => state.setRunId);
-  const { data: runs } = useForecastRuns();
+  const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
 
-  const completed = (runs ?? []).filter((run) => run.status === "completed");
+  const completed = (runs?.rows ?? []).filter((run) => run.status === "completed");
 
   return (
     <Popover.Root>

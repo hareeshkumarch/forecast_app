@@ -1,7 +1,7 @@
 "use client";
 
 import { Database, FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   Badge,
@@ -13,15 +13,32 @@ import {
   Skeleton,
 } from "@/components/ui/primitives";
 import { RefreshButton } from "@/components/ui/refresh-button";
-import { SortableHeader, useSortedRows } from "@/components/ui/sortable-header";
+import { SortableHeader, type SortState } from "@/components/ui/sortable-header";
 import { useDatasets, useDeleteDataset } from "@/hooks/use-dashboard";
+import { useDebounced } from "@/hooks/use-debounced";
 import { formatBytes, formatDateRange, formatRelativeTime, humanizeKey } from "@/lib/format";
 import { labelGranularity } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
-import type { Dataset } from "@/types/api";
+import type { Dataset, DatasetSort } from "@/types/api";
 
-type DatasetSortKey = "name" | "row_count" | "created_at" | "file_size_bytes";
+type SortColumn = "name" | "row_count" | "file_size_bytes" | "created_at";
+
+const PAGE_SIZE = 25;
+
+/**
+ * The column a header sorts on, and what the server calls each direction.
+ *
+ * The table used to sort whatever the browser happened to be holding, which
+ * meant "largest file" was the largest of the first page rather than the
+ * largest there is.
+ */
+const SORT_KEY: Record<SortColumn, { asc: DatasetSort; desc: DatasetSort }> = {
+  name: { asc: "name", desc: "name_desc" },
+  row_count: { asc: "rows_asc", desc: "rows" },
+  file_size_bytes: { asc: "size_asc", desc: "size" },
+  created_at: { asc: "oldest", desc: "newest" },
+};
 
 const STATUS_TONE: Record<Dataset["status"], "positive" | "warning" | "negative" | "neutral"> = {
   ready: "positive",
@@ -39,32 +56,53 @@ const STATUS_TONE: Record<Dataset["status"], "positive" | "warning" | "negative"
  * the endpoint to do so has been there all along.
  */
 export function DatasetsWorkspace() {
-  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDatasets();
   const remove = useDeleteDataset();
   const openModal = useUiStore((state) => state.openModal);
+
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortState<SortColumn>>({
+    key: "created_at",
+    direction: "desc",
+  });
+  const [page, setPage] = useState(0);
+  const search = useDebounced(query, 250);
 
-  const datasets = useMemo(() => data ?? [], [data]);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+    dataUpdatedAt,
+    isPlaceholderData,
+  } = useDatasets({
+    search: search.trim() || undefined,
+    sort: SORT_KEY[sort.key][sort.direction],
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  });
 
-  const matching = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return datasets;
-    return datasets.filter((dataset) =>
-      [dataset.name, dataset.original_filename, dataset.target_column, dataset.time_column]
-        .filter(Boolean)
-        .some((field) => String(field).toLowerCase().includes(needle)),
+  // Any change to what is being asked for starts at the first page.
+  function change<T>(set: (value: T) => void) {
+    return (value: T) => {
+      set(value);
+      setPage(0);
+    };
+  }
+
+  function toggle(key: SortColumn) {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "desc" },
     );
-  }, [datasets, query]);
+    setPage(0);
+  }
 
-  const { sorted, sort, toggle } = useSortedRows<Dataset, DatasetSortKey>(
-    matching,
-    { key: "created_at", direction: "desc" },
-    (row, key) => row[key],
-  );
-
-  const ready = datasets.filter((dataset) => dataset.status === "ready").length;
-  const rows = datasets.reduce((total, dataset) => total + dataset.row_count, 0);
-  const bytes = datasets.reduce((total, dataset) => total + dataset.file_size_bytes, 0);
+  const sorted = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const showing = data ? `${data.offset + 1}–${data.offset + sorted.length} of ${total}` : "";
 
   function handleRemove(dataset: Dataset) {
     const confirmed = window.confirm(
@@ -97,12 +135,14 @@ export function DatasetsWorkspace() {
         </div>
       </div>
 
+      {/* Counted over everything held, not over the page on screen — these
+          answer "how much data do we have", which a page cannot. */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ["Files", datasets.length.toLocaleString()],
-          ["Ready to forecast", ready.toLocaleString()],
-          ["Rows held", rows.toLocaleString()],
-          ["On disk", formatBytes(bytes)],
+          ["Files", total.toLocaleString()],
+          ["Ready to forecast", (data?.ready ?? 0).toLocaleString()],
+          ["Rows held", (data?.row_count ?? 0).toLocaleString()],
+          ["On disk", formatBytes(data?.file_size_bytes ?? 0)],
         ].map(([label, value]) => (
           <Card key={label} className="p-3.5">
             <p className="text-caption text-text-muted">{label}</p>
@@ -121,7 +161,7 @@ export function DatasetsWorkspace() {
         <Card className="mt-4">
           <ErrorState error={error} onRetry={() => void refetch()} />
         </Card>
-      ) : datasets.length === 0 ? (
+      ) : total === 0 && !search.trim() ? (
         <Card className="mt-4">
           <EmptyState
             icon={Database}
@@ -144,7 +184,7 @@ export function DatasetsWorkspace() {
               />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => change(setQuery)(event.target.value)}
                 placeholder="Search by name, file or column"
                 aria-label="Search data"
                 className="pl-8"
@@ -153,7 +193,12 @@ export function DatasetsWorkspace() {
           </div>
 
           <div className="scroll-thin relative overflow-x-auto">
-            <table className="w-full border-collapse text-meta">
+            <table
+              className={cn(
+                "w-full border-collapse text-meta",
+                isPlaceholderData && "opacity-60 transition-opacity",
+              )}
+            >
               <thead>
                 <tr className="border-b border-border">
                   <SortableHeader label="Name" sortKey="name" sort={sort} onToggle={toggle} />
@@ -293,6 +338,28 @@ export function DatasetsWorkspace() {
               title="Nothing matches that"
               message={`No file mentions "${query.trim()}".`}
             />
+          ) : total > PAGE_SIZE ? (
+            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
+              <p className="text-caption text-text-muted num">{showing}</p>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page === 0}
+                  onClick={() => setPage((current) => Math.max(0, current - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={(page + 1) * PAGE_SIZE >= total}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           ) : null}
         </Card>
       )}

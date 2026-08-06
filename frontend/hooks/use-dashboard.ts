@@ -16,6 +16,7 @@ import { setCurrencySymbol } from "@/lib/format";
 import { llmRunFields, loadLlmConfig, type LlmConfig } from "@/lib/llm-config";
 import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
+import type { DatasetQuery, RunQuery } from "@/lib/api";
 import type {
   DashboardFilters,
   ExportFormat,
@@ -49,11 +50,13 @@ export const queryKeys = {
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
-  datasets: ["datasets"] as const,
+  datasets: (query: DatasetQuery = {}) => ["datasets", "list", query] as const,
+  allDatasets: ["datasets"] as const,
   dataset: (id: string) => ["datasets", id] as const,
   datasetProfile: (id: string) => ["datasets", id, "profile"] as const,
   datasetQuality: (id: string, key: string) => ["datasets", id, "quality", key] as const,
-  runs: ["forecasts"] as const,
+  runs: (query: RunQuery = {}) => ["forecasts", "list", query] as const,
+  allRuns: ["forecasts"] as const,
   run: (id: string) => ["forecasts", id] as const,
   runMetrics: (id: string) => ["forecasts", id, "metrics"] as const,
   runPoints: (id: string, start?: string | null, end?: string | null, seriesId?: string | null) =>
@@ -207,19 +210,38 @@ export function useCheckLlm() {
 /** A run that has not settled yet; the list has to keep moving while it works. */
 const ACTIVE_RUN_POLL_MS = 2_000;
 
-export function useForecastRuns() {
+/**
+ * How much a dropdown asks for.
+ *
+ * A picker wants the recent ones and nothing else — scrolling five hundred
+ * runs to find last Tuesday's is not a thing anyone does, and the screens that
+ * are *about* the whole list drive their own paging. The point of naming it is
+ * that a picker's convenience limit can never again become the ceiling on what
+ * the workspace is allowed to contain.
+ */
+export const PICKER_LIMIT = 50;
+
+/**
+ * A page of runs, filtered and ordered by the server.
+ *
+ * The pickers ask for a handful and ignore the rest; Reports drives every
+ * parameter. Doing the narrowing here rather than in the component is the
+ * whole point — the list used to be capped at fifty with no way to ask for the
+ * fifty-first, so searching in the browser searched a truncated list and
+ * reported that older runs did not exist.
+ */
+export function useForecastRuns(query: RunQuery = {}) {
   return useQuery({
-    queryKey: queryKeys.runs,
-    queryFn: api.listForecastRuns,
+    queryKey: queryKeys.runs(query),
+    queryFn: () => api.listForecastRuns(query),
     // Runs now finish on a worker, so nothing tells this list they moved.
     // Poll only while something is actually in flight, then go quiet again.
-    refetchInterval: (query) => {
-      const runs = query.state.data;
-      if (!runs) return false;
-      const working = runs.some((run) => run.status === "pending" || run.status === "running");
-      return working ? ACTIVE_RUN_POLL_MS : false;
+    refetchInterval: (result) => {
+      const counts = result.state.data?.counts;
+      return counts && counts.active > 0 ? ACTIVE_RUN_POLL_MS : false;
     },
     refetchOnWindowFocus: "always",
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -323,8 +345,12 @@ export function useForecastMetrics(runId: string | null | undefined) {
 }
 
 
-export function useDatasets() {
-  return useQuery({ queryKey: queryKeys.datasets, queryFn: api.listDatasets });
+export function useDatasets(query: DatasetQuery = {}) {
+  return useQuery({
+    queryKey: queryKeys.datasets(query),
+    queryFn: () => api.listDatasets(query),
+    placeholderData: keepPreviousData,
+  });
 }
 
 export function useDatasetProfile(id: string | null | undefined) {
@@ -461,7 +487,7 @@ export function useImportFromConnector() {
         `Imported ${dataset.name}`,
         `${dataset.row_count.toLocaleString()} rows are ready to forecast.`,
       );
-      void client.invalidateQueries({ queryKey: queryKeys.datasets });
+      void client.invalidateQueries({ queryKey: queryKeys.allDatasets });
       void client.invalidateQueries({ queryKey: queryKeys.connectors });
     },
     onError: (error: unknown) => toast.error("Import failed", errorMessage(error)),
@@ -477,7 +503,7 @@ export function useUploadDataset() {
         "Dataset profiled",
         `${response.profile.row_count.toLocaleString()} rows, ${response.profile.column_count} columns.`,
       );
-      void client.invalidateQueries({ queryKey: queryKeys.datasets });
+      void client.invalidateQueries({ queryKey: queryKeys.allDatasets });
     },
     onError: (error: unknown) => toast.error("Upload failed", errorMessage(error)),
   });
@@ -498,7 +524,7 @@ export function useConfigureDataset() {
       name?: string;
     }) => api.configureDataset(id, payload),
     onSuccess: (dataset) => {
-      void client.invalidateQueries({ queryKey: queryKeys.datasets });
+      void client.invalidateQueries({ queryKey: queryKeys.allDatasets });
       void client.invalidateQueries({ queryKey: queryKeys.dataset(dataset.id) });
     },
   });
@@ -515,8 +541,8 @@ export function useDeleteDataset() {
   return useMutation({
     mutationFn: api.deleteDataset,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.datasets });
-      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: queryKeys.allDatasets });
+      void client.invalidateQueries({ queryKey: queryKeys.allRuns });
       void client.invalidateQueries({ queryKey: ["forecasts"] });
       void client.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success("File removed", "The upload and anything forecast from it were deleted.");
@@ -532,7 +558,7 @@ export function useStartForecast() {
     mutationFn: api.startForecast,
     onSuccess: (run) => {
       toast.info("Forecast started", `${run.name} is fitting and backtesting candidates.`);
-      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: queryKeys.allRuns });
     },
     onError: (error: unknown) => toast.error("Could not start the forecast", errorMessage(error)),
   });
@@ -545,7 +571,7 @@ export function useDeleteForecastRun() {
   return useMutation({
     mutationFn: api.deleteForecastRun,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: queryKeys.allRuns });
       void client.invalidateQueries({ queryKey: ["dashboard"] });
       void client.invalidateQueries({ queryKey: ["forecasts"] });
       toast.success("Forecast run cleared", "Its stored results and generated exports were removed.");
@@ -561,7 +587,7 @@ export function useCancelForecastRun() {
   return useMutation({
     mutationFn: api.cancelForecastRun,
     onSuccess: (run) => {
-      void client.invalidateQueries({ queryKey: queryKeys.runs });
+      void client.invalidateQueries({ queryKey: queryKeys.allRuns });
       void client.invalidateQueries({ queryKey: queryKeys.run(run.id) });
     },
     onError: (error: unknown) => toast.error("Could not cancel the forecast", errorMessage(error)),
@@ -573,7 +599,7 @@ export function useRefreshDashboard() {
   const client = useQueryClient();
   return () => {
     void client.invalidateQueries({ queryKey: ["dashboard"] });
-    void client.invalidateQueries({ queryKey: queryKeys.runs });
+    void client.invalidateQueries({ queryKey: queryKeys.allRuns });
     void client.invalidateQueries({ queryKey: ["forecasts"] });
   };
 }

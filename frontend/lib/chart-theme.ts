@@ -72,10 +72,6 @@ export function categoricalPalette(colors: ChartPalette = chartColors()): string
 export const FONT_FAMILY =
   'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
-export function baseTextStyle(colors: ChartPalette = chartColors()) {
-  return { fontFamily: FONT_FAMILY, fontSize: 11, color: colors.textSecondary };
-}
-
 export function tooltipStyle(colors: ChartPalette = chartColors()) {
   return {
     backgroundColor: colors.surface,

@@ -11,7 +11,9 @@ import type {
   DataQualityResponse,
   Dataset,
   DatasetDetail,
+  DatasetPage,
   DatasetProfile,
+  DatasetSort,
   DatasetUploadResponse,
   DriverResponse,
   ExportFormat,
@@ -20,6 +22,7 @@ import type {
   ForecastPointsResponse,
   ForecastProgressEvent,
   ForecastRun,
+  ForecastRunPage,
   GapFill,
   HealthResponse,
   InsightResponse,
@@ -29,6 +32,8 @@ import type {
   LlmUsageResponse,
   MeasureAggregation,
   OutlierTreatment,
+  RunSort,
+  RunState,
   Scorecard,
   SeriesResponse,
   SeriesSort,
@@ -199,7 +204,15 @@ export const importFromConnector = (
     body: JSON.stringify(payload),
   });
 
-export const listDatasets = () => request<Dataset[]>("/api/datasets");
+export interface DatasetQuery {
+  search?: string;
+  sort?: DatasetSort;
+  limit?: number;
+  offset?: number;
+}
+
+export const listDatasets = (query: DatasetQuery = {}) =>
+  request<DatasetPage>(`/api/datasets${buildQuery({ ...query })}`);
 
 export const getDataset = (id: string) => request<DatasetDetail>(`/api/datasets/${id}`);
 
@@ -246,7 +259,16 @@ export const configureDataset = (
     body: JSON.stringify(payload),
   });
 
-export const listForecastRuns = () => request<ForecastRun[]>("/api/forecasts");
+export interface RunQuery {
+  search?: string;
+  state?: RunState;
+  sort?: RunSort;
+  limit?: number;
+  offset?: number;
+}
+
+export const listForecastRuns = (query: RunQuery = {}) =>
+  request<ForecastRunPage>(`/api/forecasts${buildQuery({ ...query })}`);
 
 export const getForecastRun = (id: string) => request<ForecastRun>(`/api/forecasts/${id}`);
 

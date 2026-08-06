@@ -79,3 +79,6 @@ class LlmUsageResponse(BaseModel):
     timeseries: list[LlmUsagePoint]
     by_model: list[LlmUsageBreakdown]
     recent: list[LlmUsageEventRead]
+    #: When the very first request was made, whenever that was. Lets the screen
+    #: open on a window that contains something instead of a month of zeroes.
+    first_event_at: datetime | None = None

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import polars as pl
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,9 +36,83 @@ from app.schemas.dataset import ColumnSuggestion, DatasetColumnRead, DatasetProf
 logger = get_logger(__name__)
 
 
-async def list_datasets(session: AsyncSession, *, limit: int = 100) -> list[Dataset]:
-    result = await session.execute(select(Dataset).order_by(Dataset.created_at.desc()).limit(limit))
-    return list(result.scalars().all())
+#: Both directions of every sortable column, because the table's headers
+#: toggle and a one-way sort would leave half of those toggles doing nothing.
+DATASET_SORTS: dict[str, Any] = {
+    "newest": Dataset.created_at.desc(),
+    "oldest": Dataset.created_at.asc(),
+    "name": Dataset.name.asc(),
+    "name_desc": Dataset.name.desc(),
+    "rows": Dataset.row_count.desc(),
+    "rows_asc": Dataset.row_count.asc(),
+    "size": Dataset.file_size_bytes.desc(),
+    "size_asc": Dataset.file_size_bytes.asc(),
+}
+DEFAULT_DATASET_SORT = "newest"
+MAX_DATASET_PAGE = 200
+
+
+@dataclass(slots=True)
+class DatasetPage:
+    """A page of uploads, and the figures the screen reports above them."""
+
+    rows: list[Dataset]
+    total: int
+    #: Over everything held, not over the page. The Data screen reports how
+    #: many files there are and how much disk they take, and a page's worth of
+    #: that is not an answer to either question.
+    ready: int
+    row_count: int
+    file_size_bytes: int
+
+
+async def list_datasets(
+    session: AsyncSession,
+    *,
+    search: str | None = None,
+    sort: str = DEFAULT_DATASET_SORT,
+    limit: int = 50,
+    offset: int = 0,
+) -> DatasetPage:
+    """A page of uploads, filtered and ordered by the database."""
+    where = []
+    if search and search.strip():
+        like = f"%{search.strip().lower()}%"
+        where.append(
+            or_(
+                func.lower(Dataset.name).like(like),
+                func.lower(func.coalesce(Dataset.original_filename, "")).like(like),
+                func.lower(func.coalesce(Dataset.target_column, "")).like(like),
+                func.lower(func.coalesce(Dataset.time_column, "")).like(like),
+            )
+        )
+
+    totals = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(Dataset.status == DatasetStatus.READY),
+                func.coalesce(func.sum(Dataset.row_count), 0),
+                func.coalesce(func.sum(Dataset.file_size_bytes), 0),
+            ).where(*where)
+        )
+    ).one()
+
+    result = await session.execute(
+        select(Dataset)
+        .where(*where)
+        .order_by(DATASET_SORTS.get(sort, DATASET_SORTS[DEFAULT_DATASET_SORT]), Dataset.id.desc())
+        .limit(max(1, min(limit, MAX_DATASET_PAGE)))
+        .offset(max(0, offset))
+    )
+
+    return DatasetPage(
+        rows=list(result.scalars().all()),
+        total=int(totals[0]),
+        ready=int(totals[1]),
+        row_count=int(totals[2]),
+        file_size_bytes=int(totals[3]),
+    )
 
 
 async def get_dataset(session: AsyncSession, dataset_id: uuid.UUID) -> Dataset:

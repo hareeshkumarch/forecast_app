@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, Clock3, Coins, Cpu, Send, TriangleAlert } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
 import { Badge, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
@@ -12,10 +12,12 @@ import { axisLabel, axisLine, chartColors, splitLine, tooltipStyle } from "@/lib
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { LlmUsageResponse } from "@/types/api";
 
+//: Shortest first, so the screen can pick the first one that reaches back to
+//: the earliest request there is.
 const WINDOWS = [
-  { value: "7", label: "Last 7 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
+  { value: "7", label: "Last 7 days", days: 7 },
+  { value: "30", label: "Last 30 days", days: 30 },
+  { value: "90", label: "Last 90 days", days: 90 },
 ];
 
 function compact(value: number): string {
@@ -121,9 +123,28 @@ function SectionTitle({ title, subtitle, actions }: { title: string; subtitle: s
 }
 
 export function UsageWorkspace() {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<number | null>(null);
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
-    useLlmUsage(days);
+    useLlmUsage(days ?? WINDOWS[0]!.days);
+
+  /*
+   * The window opens on the smallest one that reaches back to the first
+   * request ever made.
+   *
+   * Fixed at thirty days it drew twenty-nine flat zeroes and a spike for
+   * anyone who had started that week — accurate, and useless as a picture.
+   * Chosen once, from the data; changing it by hand sticks.
+   */
+  useEffect(() => {
+    if (days !== null || !data) return;
+    const first = data.first_event_at ? new Date(data.first_event_at).getTime() : null;
+    if (first === null || Number.isNaN(first)) {
+      setDays(WINDOWS[0]!.days);
+      return;
+    }
+    const elapsed = Math.ceil((Date.now() - first) / 86_400_000) + 1;
+    setDays(WINDOWS.find((window) => window.days >= elapsed)?.days ?? WINDOWS.at(-1)!.days);
+  }, [data, days]);
   const revision = useThemeRevision();
   const option = useMemo(() => {
     void revision;
@@ -144,7 +165,7 @@ export function UsageWorkspace() {
         <div className="flex items-center gap-2">
           <Select
             label="Usage window"
-            value={String(days)}
+            value={String(days ?? WINDOWS[0]!.days)}
             onChange={(next) => setDays(Number(next))}
             options={WINDOWS}
             className="w-[152px]"

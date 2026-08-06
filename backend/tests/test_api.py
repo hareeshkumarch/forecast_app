@@ -17,7 +17,7 @@ from app.database.seed import seed_connectors
 from app.database.session import session_scope
 from app.insights.llm import LlmCallResult, LlmUsageRecord
 from app.models.enums import ModelKind
-from app.services import dataset_service
+from app.services import dataset_service, forecast_service
 
 
 async def _seed_and_run(client: AsyncClient) -> dict:
@@ -122,6 +122,99 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
     supabase = next(item for item in types if item["type"] == "supabase")
     assert supabase["supports_import"] is True
     assert {field["key"] for field in supabase["fields"]} >= {"project_ref", "password"}
+
+
+async def test_a_run_past_the_first_page_is_still_reachable(client: AsyncClient) -> None:
+    """
+    The list used to stop at fifty with no way to ask for the fifty-first.
+
+    Nothing said so: a workspace of forty-seven runs and a workspace of five
+    hundred looked identical, and the screen's own counter reported the cap as
+    though it were the truth.
+    """
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = upload.json()["dataset"]["id"]
+
+    async with session_scope() as session:
+        for index in range(7):
+            await forecast_service.create_run(
+                session,
+                dataset_id=uuid.UUID(dataset_id),
+                name=f"Run {index:02d}",
+                horizon=2,
+                max_folds=1,
+            )
+        await session.commit()
+
+    first = (await client.get("/api/forecasts", params={"limit": 3})).json()
+    assert len(first["rows"]) == 3
+    assert first["total"] == 7, "the total counts what exists, not what was sent"
+    assert first["counts"]["all"] == 7
+
+    second = (await client.get("/api/forecasts", params={"limit": 3, "offset": 3})).json()
+    assert len(second["rows"]) == 3
+    assert {row["id"] for row in second["rows"]}.isdisjoint({row["id"] for row in first["rows"]})
+
+    last = (await client.get("/api/forecasts", params={"limit": 3, "offset": 6})).json()
+    assert len(last["rows"]) == 1
+
+    seen = {row["name"] for page in (first, second, last) for row in page["rows"]}
+    assert seen == {f"Run {index:02d}" for index in range(7)}
+
+
+async def test_searching_runs_reaches_past_the_page_in_the_browser(client: AsyncClient) -> None:
+    """Searching a truncated list reported that older runs did not exist."""
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = upload.json()["dataset"]["id"]
+
+    async with session_scope() as session:
+        await forecast_service.create_run(
+            session, dataset_id=uuid.UUID(dataset_id), name="Needle", horizon=2, max_folds=1
+        )
+        for index in range(5):
+            await forecast_service.create_run(
+                session,
+                dataset_id=uuid.UUID(dataset_id),
+                name=f"Haystack {index}",
+                horizon=2,
+                max_folds=1,
+            )
+        await session.commit()
+
+    # Oldest first, so "Needle" sits outside a one-row page.
+    page = (await client.get("/api/forecasts", params={"limit": 1})).json()
+    assert page["rows"][0]["name"] != "Needle"
+
+    found = (await client.get("/api/forecasts", params={"limit": 1, "search": "needle"})).json()
+    assert found["total"] == 1
+    assert found["rows"][0]["name"] == "Needle"
+
+    # And the counters describe the search rather than the whole workspace.
+    assert found["counts"]["all"] == 1
+
+
+async def test_the_data_screen_s_totals_are_over_everything_held(client: AsyncClient) -> None:
+    for index in range(4):
+        await client.post(
+            "/api/datasets/upload",
+            files={"file": (f"file-{index}.csv", generate_csv_bytes(), "text/csv")},
+        )
+
+    page = (await client.get("/api/datasets", params={"limit": 2})).json()
+
+    assert len(page["rows"]) == 2, "a page"
+    assert page["total"] == 4, "of four"
+    assert page["ready"] == 4
+    # The figures the screen reports above the table answer "how much data do
+    # we hold", which the two rows on screen cannot.
+    assert page["row_count"] == sum(row["row_count"] for row in page["rows"]) * 2
+    assert page["file_size_bytes"] > sum(row["file_size_bytes"] for row in page["rows"])
 
 
 async def test_deleting_a_dataset_reclaims_the_files_it_owned(client: AsyncClient) -> None:

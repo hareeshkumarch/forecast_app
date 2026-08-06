@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.base import utcnow
@@ -33,6 +33,11 @@ def _average(values: list[float]) -> float | None:
 async def summary(session: AsyncSession, *, days: int = 30) -> LlmUsageResponse:
     now = utcnow()
     start = now - timedelta(days=days - 1)
+
+    # When the first request was ever made, so the screen can pick a window
+    # that shows activity rather than a month of flat zero with a spike at the
+    # end. Outside the window on purpose: it is a fact about the workspace.
+    first_event_at = await session.scalar(select(func.min(LlmUsageEvent.created_at)))
     result = await session.execute(
         select(LlmUsageEvent)
         .where(LlmUsageEvent.created_at >= start)
@@ -108,6 +113,7 @@ async def summary(session: AsyncSession, *, days: int = 30) -> LlmUsageResponse:
         generated_at=now,
         totals=totals,
         timeseries=timeseries,
+        first_event_at=first_event_at,
         by_model=by_model,
         recent=[LlmUsageEventRead.model_validate(event) for event in events[:50]],
     )
