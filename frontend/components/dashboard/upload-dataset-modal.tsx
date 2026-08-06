@@ -40,6 +40,7 @@ export function UploadDatasetModal() {
   const [frequency, setFrequency] = useState<ForecastFrequency>("monthly");
   const [horizon, setHorizon] = useState(6);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"mapping" | "profiling" | "preview">("mapping");
 
   useEffect(() => {
     if (!open) {
@@ -207,59 +208,179 @@ export function UploadDatasetModal() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field
-              label="Time column"
-              required
-              hint={
-                profile?.time_column_suggestions[0]
-                  ? `Detected: ${profile.time_column_suggestions[0].reason}`
-                  : undefined
-              }
+          {/* View Tab Switcher */}
+          <div className="flex items-center border-b border-border text-caption font-medium">
+            <button
+              type="button"
+              onClick={() => setActiveTab("mapping")}
+              className={cn(
+                "px-3 py-1.5 border-b-2 transition-colors",
+                activeTab === "mapping"
+                  ? "border-accent text-accent font-semibold"
+                  : "border-transparent text-text-muted hover:text-text-primary"
+              )}
             >
-              <ColumnSelect
-                value={timeColumn}
-                onChange={setTimeColumn}
-                options={(profile?.columns ?? [])
-                  .filter((column) => column.is_date_candidate || column.kind === "date")
-                  .map((column) => column.name)}
-                fallback={(profile?.columns ?? []).map((column) => column.name)}
-              />
-            </Field>
-
-            <Field label="Forecast target" required>
-              <ColumnSelect
-                value={targetColumn}
-                onChange={setTargetColumn}
-                options={(profile?.columns ?? [])
-                  .filter((column) => column.is_target_candidate)
-                  .map((column) => column.name)}
-                fallback={(profile?.columns ?? [])
-                  .filter((column) => column.kind === "numeric")
-                  .map((column) => column.name)}
-              />
-            </Field>
-
-            <Field label="Frequency" required>
-              <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
-            </Field>
-
-            <Field label="Horizon (periods)" required>
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={horizon}
-                onChange={(event) => setHorizon(Number(event.target.value) || 1)}
-              />
-            </Field>
+              Column Mapping & Frequency
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("profiling")}
+              className={cn(
+                "px-3 py-1.5 border-b-2 transition-colors flex items-center gap-1.5",
+                activeTab === "profiling"
+                  ? "border-accent text-accent font-semibold"
+                  : "border-transparent text-text-muted hover:text-text-primary"
+              )}
+            >
+              Detailed Column Profiling
+              <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-micro font-normal">
+                {profile?.columns.length ?? 0}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("preview")}
+              className={cn(
+                "px-3 py-1.5 border-b-2 transition-colors",
+                activeTab === "preview"
+                  ? "border-accent text-accent font-semibold"
+                  : "border-transparent text-text-muted hover:text-text-primary"
+              )}
+            >
+              Data Preview
+            </button>
           </div>
 
-          
-          {(profile?.preview_rows.length ?? 0) > 0 ? (
+          {activeTab === "mapping" && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="Time column"
+                required
+                hint={
+                  profile?.time_column_suggestions[0]
+                    ? `Detected: ${profile.time_column_suggestions[0].reason}`
+                    : undefined
+                }
+              >
+                <ColumnSelect
+                  value={timeColumn}
+                  onChange={setTimeColumn}
+                  options={(profile?.columns ?? [])
+                    .filter((column) => column.is_date_candidate || column.kind === "date")
+                    .map((column) => column.name)}
+                  fallback={(profile?.columns ?? []).map((column) => column.name)}
+                />
+              </Field>
+
+              <Field label="Forecast target" required>
+                <ColumnSelect
+                  value={targetColumn}
+                  onChange={setTargetColumn}
+                  options={(profile?.columns ?? [])
+                    .filter((column) => column.is_target_candidate)
+                    .map((column) => column.name)}
+                  fallback={(profile?.columns ?? [])
+                    .filter((column) => column.kind === "numeric")
+                    .map((column) => column.name)}
+                />
+              </Field>
+
+              <Field label="Frequency" required>
+                <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
+              </Field>
+
+              <Field label="Horizon (periods)" required>
+                <Input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={horizon}
+                  onChange={(event) => setHorizon(Number(event.target.value) || 1)}
+                />
+              </Field>
+            </div>
+          )}
+
+          {activeTab === "profiling" && (
             <div>
-              <p className="mb-1.5 text-caption font-medium text-text-secondary">Preview</p>
-              <div className="scroll-thin max-h-[152px] overflow-auto rounded-card border border-border">
+              <p className="mb-1.5 text-caption font-medium text-text-secondary">
+                Column Profile Breakdown
+              </p>
+              <div className="scroll-thin max-h-[220px] overflow-auto rounded-card border border-border">
+                <table className="w-full border-collapse text-left text-caption">
+                  <thead className="sticky top-0 bg-surface-muted text-text-muted font-medium border-b border-border">
+                    <tr>
+                      <th className="px-2.5 py-1.5">Column Name</th>
+                      <th className="px-2.5 py-1.5">Kind & Role</th>
+                      <th className="px-2.5 py-1.5">Nulls / Missing</th>
+                      <th className="px-2.5 py-1.5">Distinct</th>
+                      <th className="px-2.5 py-1.5">Min – Max Range</th>
+                      <th className="px-2.5 py-1.5">Detection Reason</th>
+                      <th className="px-2.5 py-1.5">Sample Values</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(profile?.columns ?? []).map((col) => {
+                      const totalRows = profile?.row_count ?? 1;
+                      const nullPct = ((col.null_count / Math.max(totalRows, 1)) * 100).toFixed(1);
+                      return (
+                        <tr key={col.name} className="border-t border-border hover:bg-surface-muted/50">
+                          <td className="px-2.5 py-1.5 font-medium text-text-primary whitespace-nowrap">
+                            {col.name}
+                            {col.name === timeColumn && (
+                              <span className="ml-1.5 rounded bg-accent-soft text-accent px-1 text-micro font-semibold">
+                                Time
+                              </span>
+                            )}
+                            {col.name === targetColumn && (
+                              <span className="ml-1.5 rounded bg-positive-soft text-positive px-1 text-micro font-semibold">
+                                Target
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap">
+                            <span className="capitalize text-text-secondary font-mono text-micro bg-surface-muted border border-border px-1.5 py-0.5 rounded">
+                              {col.kind} · {col.role}
+                            </span>
+                          </td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap text-text-muted">
+                            {col.null_count > 0 ? (
+                              <span className="text-warning font-medium">
+                                {col.null_count} ({nullPct}%)
+                              </span>
+                            ) : (
+                              "0 (0%)"
+                            )}
+                          </td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap font-mono text-micro text-text-secondary">
+                            {formatInteger(col.distinct_count)}
+                          </td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap font-mono text-micro text-text-muted truncate max-w-[140px]">
+                            {col.min_value && col.max_value
+                              ? `${col.min_value} … ${col.max_value}`
+                              : col.min_value ?? col.max_value ?? "—"}
+                          </td>
+                          <td className="px-2.5 py-1.5 text-text-muted max-w-[160px] truncate" title={col.reason}>
+                            {col.reason || "Standard measure"}
+                          </td>
+                          <td className="px-2.5 py-1.5 font-mono text-micro text-text-muted truncate max-w-[150px]" title={col.sample_values?.join(", ")}>
+                            {col.sample_values && col.sample_values.length > 0
+                              ? col.sample_values.slice(0, 3).join(", ")
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "preview" && (profile?.preview_rows.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-1.5 text-caption font-medium text-text-secondary">First 6 Rows Preview</p>
+              <div className="scroll-thin max-h-[220px] overflow-auto rounded-card border border-border">
                 <table className="w-full border-collapse">
                   <thead className="sticky top-0 bg-surface-muted">
                     <tr>
@@ -290,7 +411,7 @@ export function UploadDatasetModal() {
                 </table>
               </div>
             </div>
-          ) : null}
+          )}
 
           <InlineError message={failure ?? undefined} />
         </div>

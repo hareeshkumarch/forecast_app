@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Annotated, Self
+from typing import Annotated
+from typing_extensions import Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
@@ -68,6 +69,12 @@ class ForecastRunRequest(StrictModel):
     metric_weights: dict[str, float] | None = None
     sarimax_order: ArimaOrder | None = None
     gbm_max_depth: TreeDepth | None = None
+    candidate_models: list[ModelKind] | None = None
+    prophet_changepoint_prior_scale: float | None = Field(default=None, ge=0.001, le=1.0)
+    prophet_interval_width: float | None = Field(default=None, ge=0.5, le=0.99)
+    outlier_mad_threshold: float | None = Field(default=None, ge=1.0, le=20.0)
+    complexity_penalty_scale: float | None = Field(default=None, ge=0.0, le=10.0)
+    driver_columns: list[Identifier] | None = None
     llm_provider: Identifier | None = None
     llm_api_key: str | None = Field(default=None, max_length=512, repr=False)
     llm_model: Identifier | None = None

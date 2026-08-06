@@ -5,7 +5,12 @@ import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import select
@@ -87,6 +92,12 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         metric_weights=payload.metric_weights,
         sarimax_order=payload.sarimax_order,
         gbm_max_depth=payload.gbm_max_depth,
+        candidate_models=[m.value for m in payload.candidate_models] if payload.candidate_models else None,
+        prophet_changepoint_prior_scale=payload.prophet_changepoint_prior_scale,
+        prophet_interval_width=payload.prophet_interval_width,
+        outlier_mad_threshold=payload.outlier_mad_threshold,
+        complexity_penalty_scale=payload.complexity_penalty_scale,
+        driver_columns=payload.driver_columns,
         llm_provider=payload.llm_provider,
         llm_api_key=payload.llm_api_key,
         llm_model=payload.llm_model,

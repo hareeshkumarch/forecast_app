@@ -28,6 +28,7 @@ import type {
   LlmRunFields,
   LlmUsageResponse,
   MeasureAggregation,
+  ModelKind,
   OutlierTreatment,
   Scorecard,
   SeriesResponse,
@@ -253,6 +254,12 @@ export const startForecast = (payload: {
   metric_weights?: Record<string, number> | null;
   sarimax_order?: number[] | null;
   gbm_max_depth?: number | null;
+  candidate_models?: ModelKind[] | null;
+  prophet_changepoint_prior_scale?: number | null;
+  prophet_interval_width?: number | null;
+  outlier_mad_threshold?: number | null;
+  complexity_penalty_scale?: number | null;
+  driver_columns?: string[] | null;
 } & Partial<LlmRunFields>) =>
   request<ForecastRun>("/api/forecasts/run", {
     method: "POST",

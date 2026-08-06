@@ -26,7 +26,12 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 from pathlib import Path
 
 import numpy as np

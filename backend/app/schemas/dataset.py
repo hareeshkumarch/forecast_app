@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Annotated, Self
+from typing import Annotated
+from typing_extensions import Self
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 

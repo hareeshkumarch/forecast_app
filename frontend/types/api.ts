@@ -147,6 +147,7 @@ export interface DatasetColumn {
   sample_values: unknown[];
   is_date_candidate: boolean;
   is_target_candidate: boolean;
+  reason?: string;
 }
 
 export interface Dataset {

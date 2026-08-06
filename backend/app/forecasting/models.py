@@ -340,6 +340,8 @@ class AutoEtsForecaster:
 class ProphetForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    changepoint_prior_scale: float = 0.05
+    interval_width: float = 0.8
     kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -389,8 +391,8 @@ class ProphetForecaster:
             warnings.simplefilter("ignore")
             model = Prophet(
                 seasonality_mode="multiplicative" if multiplicative else "additive",
-                changepoint_prior_scale=0.05,
-                interval_width=0.8,
+                changepoint_prior_scale=self.changepoint_prior_scale,
+                interval_width=self.interval_width,
                 **flags,
             )
             model.fit(frame)
@@ -398,6 +400,8 @@ class ProphetForecaster:
         self._fitted = model
         self._config = {
             "seasonality_mode": "multiplicative" if multiplicative else "additive",
+            "changepoint_prior_scale": self.changepoint_prior_scale,
+            "interval_width": self.interval_width,
             **{key: bool(value) for key, value in flags.items()},
         }
 
@@ -973,6 +977,9 @@ def build_candidates(
     sarimax_order = opts.get("sarimax_order")
     gbm_depth = opts.get("gbm_max_depth")
     gbm_lr = opts.get("gbm_learning_rate")
+    prophet_cps = opts.get("prophet_changepoint_prior_scale")
+    prophet_iw = opts.get("prophet_interval_width")
+    allowed_models = opts.get("candidate_models")
 
     order_tuple = (
         tuple(sarimax_order)
@@ -998,10 +1005,24 @@ def build_candidates(
     ]
 
     if ProphetForecaster.available():
-        candidates.insert(-1, ProphetForecaster(frequency, profile))
+        candidates.insert(
+            -1,
+            ProphetForecaster(
+                frequency,
+                profile,
+                changepoint_prior_scale=as_float(prophet_cps, 0.05) if prophet_cps is not None else 0.05,
+                interval_width=as_float(prophet_iw, 0.8) if prophet_iw is not None else 0.8,
+            ),
+        )
 
     if profile is None or profile.intermittent:
         candidates.insert(-1, CrostonForecaster(frequency, profile))
+
+    if isinstance(allowed_models, list) and allowed_models:
+        allowed_set = {str(m).lower() for m in allowed_models}
+        filtered = [c for c in candidates if c.kind.value.lower() in allowed_set]
+        if filtered:
+            return filtered
 
     return candidates
 

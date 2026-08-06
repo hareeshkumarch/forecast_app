@@ -297,10 +297,12 @@ def run_forecast(
     for kind, reason in unavailable_models().items():
         results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
 
+    cps = payload.model_options.get("complexity_penalty_scale") if payload.model_options else None
     selection = select_model(
         results,
         metric_weights=payload.metric_weights or metric_weights_for(profile.intermittent),
         n_observations=int(values.size),
+        complexity_penalty_scale=float(cps) if cps is not None else None,
     )
     if selection.winner is None:
         raise InsufficientDataError(
