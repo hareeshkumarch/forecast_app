@@ -33,6 +33,7 @@ engine = create_async_engine(
     **_pool_options,
 )
 
+
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

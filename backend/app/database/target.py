@@ -161,7 +161,9 @@ def connect_args(target: DatabaseTarget) -> dict[str, object]:
     if target.pooled:
         # pgbouncer in transaction mode reuses server connections between
         # statements, so a prepared statement cached by one client is not
-        # there for the next.
+        # there for the next.  Disable both layers of caching asyncpg has.
         args["statement_cache_size"] = 0
         args["prepared_statement_cache_size"] = 0
+        args["prepared_statement_name_func"] = lambda: ""
     return args
+
