@@ -121,6 +121,16 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+      # The suite runs on SQLite, which stores anything. Postgres does not: a
+      # NaN metric or an -Infinity in a JSON column fails the insert outright,
+      # and an all-zero series produces both. These are the tests that write
+      # such a run, so they run once more here against the real engine.
+      - name: Store an unmeasurable run against Postgres
+        working-directory: backend
+        env:
+          RUN_AGAINST_POSTGRES: "1"
+        run: pytest -q --no-header -k "zeros or too_short or leading_column"
+
   worker:
     name: Backend · Celery round trip
     runs-on: ubuntu-latest

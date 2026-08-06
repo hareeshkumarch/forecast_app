@@ -30,6 +30,7 @@ from reportlab.platypus import (
 
 from app.database.base import utcnow
 from app.datasets.profiler import is_currency_like
+from app.forecasting.drivers import PERIOD_WORDS
 from app.forecasting.frequency import comparison_window
 from app.forecasting.metrics import accuracy_from_wmape, intervals_held
 from app.models.entities import ForecastRun
@@ -113,6 +114,28 @@ def _signed(value: Any) -> str:
         return f"{float(value):+.1f}%"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _leading(run: ForecastRun) -> str:
+    """
+    The customer's own columns the forecast read, beside the target's history.
+
+    Named in the report because a planner asked to trust a number wants to know
+    what went into it, and "we also read your web sessions from six months
+    earlier" is a far better answer than a model name.
+    """
+    columns = run.leading_columns or []
+    if not columns:
+        return "the target's own history only"
+
+    singular, plural = PERIOD_WORDS.get(run.frequency, ("period", "periods"))
+    parts = []
+    for column in columns:
+        lag = int(column.get("lag", 0))
+        parts.append(
+            f"{column.get('name', '?')} from {lag} {singular if lag == 1 else plural} earlier"
+        )
+    return "; ".join(parts)
 
 
 def _when(value: date | None) -> str:
@@ -218,6 +241,7 @@ def build(
                 ],
                 ["Why", run.selection_rationale or "—"],
                 ["Measure", unit],
+                ["Also read", _leading(run)],
                 ["Forecast grain", grain],
                 ["Series forecast", _number(run.series_count or 1)],
                 ["History", f"{_when(run.history_start)} to {_when(run.history_end)}"],
@@ -323,10 +347,19 @@ def build(
             )
 
     # ---- the breakdowns
+    #
+    # Headed by the column the customer actually chose. A planner who split by
+    # store and SKU was being handed a table marked "BY REGION" with their
+    # store names under it, which is the report telling them it was written for
+    # somebody else's business.
     for title, key, columns in (
-        ("BY REGION", "regions", ("region", "forecast", "change_vs_last_year_pct", "accuracy_pct")),
         (
-            "BY CATEGORY",
+            f"BY {(run.region_column or 'region').upper()}",
+            "regions",
+            ("region", "forecast", "change_vs_last_year_pct", "accuracy_pct"),
+        ),
+        (
+            f"BY {(run.category_column or 'category').upper()}",
             "categories",
             ("category", "forecast", "share_pct", "change_vs_last_year_pct"),
         ),
@@ -339,7 +372,10 @@ def build(
                 [
                     Paragraph(title, style["section"]),
                     _table(
-                        [_humanise(c) for c in columns],
+                        [
+                            title.removeprefix("BY ").title() if index == 0 else _humanise(c)
+                            for index, c in enumerate(columns)
+                        ],
                         [
                             [
                                 str(row.get(columns[0], "")),

@@ -226,6 +226,11 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     group_by: Mapped[list] = mapped_column(JSONType, default=list)
     series_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    #: Columns of the customer's own data the winning model read, each with the
+    #: lag at which it leads. Empty means the forecast came from the target's
+    #: own history, which is the ordinary case.
+    leading_columns: Mapped[list] = mapped_column(JSONType, default=list)
+
     frequency: Mapped[ForecastFrequency] = mapped_column(_enum(ForecastFrequency, "run_frequency"))
     horizon: Mapped[int] = mapped_column(Integer, nullable=False)
     confidence_level: Mapped[float] = mapped_column(Float, default=0.8)

@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
+from app.core.numbers import finite
 from app.datasets import queries
 from app.forecasting.frequency import period_end, period_is_settled
 from app.forecasting.metrics import accuracy_from_wmape, mae, wmape
@@ -396,8 +397,8 @@ async def _score_series(
 def _remember(row: ForecastSeries, score: SeriesScore) -> None:
     """Writes a score onto the series it belongs to, ungraded included."""
     row.scored_periods = score.scored_periods
-    row.realized_wmape = score.wmape
-    row.realized_actual_total = score.actual_total
+    row.realized_wmape = finite(score.wmape)
+    row.realized_actual_total = finite(score.actual_total)
 
 
 def _unscorable(
@@ -451,10 +452,10 @@ async def _store(session: AsyncSession, run: ForecastRun, card: Scorecard) -> No
     run.scored_dataset_id = card.source_dataset_id
     run.scored_periods = card.scored_periods
     run.scored_through = card.covered_through
-    run.realized_wmape = card.wmape
-    run.realized_mae = card.mae
-    run.realized_bias = card.bias
-    run.realized_coverage = card.coverage
+    run.realized_wmape = finite(card.wmape)
+    run.realized_mae = finite(card.mae)
+    run.realized_bias = finite(card.bias)
+    run.realized_coverage = finite(card.coverage)
     card.scored_at = run.scored_at
     await session.flush()
 

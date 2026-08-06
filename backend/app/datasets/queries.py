@@ -81,6 +81,62 @@ def _source(parquet_path: Path) -> str:
     return f"read_parquet('{Path(parquet_path).as_posix()}')"
 
 
+def aggregate_candidate_drivers(
+    parquet_path: Path,
+    time_column: str,
+    columns: list[str],
+    frequency: ForecastFrequency,
+    periods: list[date],
+    *,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+) -> dict[str, list[float]]:
+    """
+    The dataset's other numeric columns, on the target's own calendar.
+
+    Reindexed onto `periods` rather than returned as they fall, so every column
+    lines up position for position with the target and a month the driver
+    happens to be missing does not shift everything after it. Aggregated the
+    same way the target is: a column that is a sum stays a sum.
+    """
+    if not columns or not periods:
+        return {}
+
+    part = DATE_TRUNC_PART[frequency]
+    reducer = AGGREGATIONS[aggregation]
+    time_sql = _quote(time_column)
+    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
+
+    projections = ", ".join(
+        f"{reducer}(TRY_CAST({_quote(name)} AS DOUBLE){order_for_last}) AS c{index}"
+        for index, name in enumerate(columns)
+    )
+
+    sql = f"""
+        SELECT date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period, {projections}
+        FROM {_source(parquet_path)}
+        WHERE TRY_CAST({time_sql} AS DATE) IS NOT NULL
+        GROUP BY period
+        ORDER BY period
+    """
+
+    with connect() as connection:
+        rows = connection.execute(sql).fetchall()
+
+    by_period = {_as_date(row[0]): row[1:] for row in rows}
+
+    out: dict[str, list[float]] = {}
+    for index, name in enumerate(columns):
+        series = [by_period.get(period, (None,) * len(columns))[index] for period in periods]
+        # A column that is mostly absent over the target's window cannot lead
+        # anything; leaving it out beats handing the screen a wall of gaps.
+        present = sum(1 for value in series if value is not None)
+        if present < len(periods) // 2:
+            continue
+        out[name] = [float("nan") if value is None else float(value) for value in series]
+
+    return out
+
+
 def aggregate_series(
     parquet_path: Path,
     time_column: str,

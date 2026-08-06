@@ -12,6 +12,7 @@ import {
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { setCurrencySymbol } from "@/lib/format";
 import { llmRunFields, loadLlmConfig, type LlmConfig } from "@/lib/llm-config";
 import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
@@ -81,7 +82,13 @@ export function useSummary() {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.summary(filters),
-    queryFn: () => api.getSummary(filters),
+    queryFn: async () => {
+      const summary = await api.getSummary(filters);
+      // The server formatted the cards; everything the client formats after
+      // this — chart ticks, table cells, tooltips — has to agree with them.
+      setCurrencySymbol(summary.currency_symbol);
+      return summary;
+    },
   });
 }
 

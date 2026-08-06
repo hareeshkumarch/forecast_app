@@ -80,7 +80,11 @@ def test_wmape_zero_denominator_returns_nan() -> None:
 def test_accuracy_clamps_at_zero() -> None:
     assert accuracy_from_wmape(9.0) == pytest.approx(91.0)
 
-    assert accuracy_from_wmape(250.0) == 0.0
+    # Past 100% the complement is not a scale any more, so there is no number
+    # to show rather than a zero that reads as a measurement.
+    assert math.isnan(accuracy_from_wmape(250.0))
+    assert math.isnan(accuracy_from_wmape(100.0))
+    assert accuracy_from_wmape(99.5) == pytest.approx(0.5)
     assert math.isnan(accuracy_from_wmape(float("nan")))
 
 

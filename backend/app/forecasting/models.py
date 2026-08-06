@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from app.forecasting.diagnostics import SeriesProfile
+from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
 from app.forecasting.tuning import MIN_VALIDATION_ROWS, SearchSpace, as_float, as_int, tune
 from app.models.enums import ForecastFrequency, ModelKind
@@ -541,12 +542,16 @@ class SarimaxForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     order: tuple[int, int, int] | None = None
+    #: Columns of the customer's own data that lead the target, offered as
+    #: regressors. AICc decides whether they stay.
+    drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.SARIMAX, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
     _harmonics: int = field(default=0, init=False)
     _period: int = field(default=1, init=False)
     _train_size: int = field(default=0, init=False)
+    _uses_drivers: bool = field(default=False, init=False)
 
     def _search_space(self, y: FloatArray) -> list[tuple[int, int, int]]:
         if self.order is not None:
@@ -572,11 +577,33 @@ class SarimaxForecaster:
         seasonal_d = self.profile.seasonal_difference_order
         return (1, seasonal_d, 1 if y.size >= 3 * period else 0, period)
 
-    def _exog(self, size: int, offset: int = 0) -> FloatArray | None:
-        if self._harmonics <= 0:
+    def _exog(self, size: int, offset: int = 0, *, with_drivers: bool = True) -> FloatArray | None:
+        """
+        The regressors outside the target's own past: Fourier terms for a
+        season too long for the state space, and the customer's own leading
+        columns when the fit decided they were worth their parameters.
+        """
+        blocks: list[FloatArray] = []
+
+        if self._harmonics > 0:
+            index = np.arange(offset, offset + size, dtype=np.float64)
+            blocks.append(_fourier_terms(index, self._period, self._harmonics))
+
+        if with_drivers and self.drivers:
+            # `columns` shifts by the lag, so asking for `offset + size` rows
+            # and taking the tail gives each row the value from `lag` periods
+            # before it — including the forecast rows, whose lag is at least
+            # the horizon and so reaches back into observed history.
+            lagged = self.drivers.columns(offset + size)
+            names = sorted(lagged)
+            if names:
+                block = np.column_stack([lagged[name][offset : offset + size] for name in names])
+                if np.isfinite(block).all():
+                    blocks.append(block)
+
+        if not blocks:
             return None
-        index = np.arange(offset, offset + size, dtype=np.float64)
-        return _fourier_terms(index, self._period, self._harmonics)
+        return np.column_stack(blocks) if len(blocks) > 1 else blocks[0]
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
         from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -594,39 +621,46 @@ class SarimaxForecaster:
         self._harmonics = (
             min(MAX_FOURIER_HARMONICS, max(1, self._period // 8)) if long_season else 0
         )
-        exog = self._exog(y.size)
+        # With and without the customer's own columns, judged by AICc, which
+        # already charges for every extra parameter. A driver that only fits
+        # noise cannot pay that charge, and the fit without it wins.
+        driver_choices = [True, False] if self.drivers else [False]
 
         best_fit = None
         best_order: tuple[int, int, int] | None = None
+        best_drivers = False
         best_score = float("inf")
         errors: list[str] = []
 
-        for order in self._search_space(y):
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    model = SARIMAX(
-                        y,
-                        exog=exog,
-                        order=order,
-                        seasonal_order=seasonal_order,
-                        enforce_stationarity=False,
-                        enforce_invertibility=False,
-                        trend="n",
-                    )
-                    fitted = model.fit(disp=False, maxiter=200)
+        for with_drivers in driver_choices:
+            exog = self._exog(y.size, with_drivers=with_drivers)
+            for order in self._search_space(y):
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        model = SARIMAX(
+                            y,
+                            exog=exog,
+                            order=order,
+                            seasonal_order=seasonal_order,
+                            enforce_stationarity=False,
+                            enforce_invertibility=False,
+                            trend="n",
+                        )
+                        fitted = model.fit(disp=False, maxiter=200)
 
-                score = float(getattr(fitted, "aicc", np.nan))
-                if not np.isfinite(score):
-                    score = _aicc(float(fitted.llf), int(fitted.params.size), int(y.size))
-                if not np.isfinite(score):
+                    score = float(getattr(fitted, "aicc", np.nan))
+                    if not np.isfinite(score):
+                        score = _aicc(float(fitted.llf), int(fitted.params.size), int(y.size))
+                    if not np.isfinite(score):
+                        continue
+
+                    if score < best_score:
+                        best_fit, best_order, best_score = fitted, order, score
+                        best_drivers = with_drivers
+                except Exception as exc:
+                    errors.append(f"{order}: {type(exc).__name__}")
                     continue
-
-                if score < best_score:
-                    best_fit, best_order, best_score = fitted, order, score
-            except Exception as exc:
-                errors.append(f"{order}: {type(exc).__name__}")
-                continue
 
         if best_fit is None or best_order is None:
             raise ValueError(
@@ -634,17 +668,24 @@ class SarimaxForecaster:
             )
 
         self._fitted = best_fit
+        self._uses_drivers = best_drivers
         self._config = {
             "order": list(best_order),
             "seasonal_order": list(seasonal_order),
             "fourier_harmonics": self._harmonics,
             "aicc": round(best_score, 3),
+            "drivers_offered": len(self.drivers.links),
+            "drivers_used": (
+                [f"{link.name} (lag {link.lag})" for link in self.drivers.links]
+                if best_drivers
+                else []
+            ),
         }
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._fitted is None:
             raise RuntimeError("fit() must be called before predict().")
-        exog = self._exog(horizon, offset=self._train_size)
+        exog = self._exog(horizon, offset=self._train_size, with_drivers=self._uses_drivers)
         return np.asarray(self._fitted.forecast(steps=horizon, exog=exog), dtype=np.float64)
 
     @property
@@ -671,12 +712,16 @@ class GradientBoostingForecaster:
     profile: SeriesProfile | None = None
     max_depth: int | None = None
     learning_rate: float | None = None
+    #: Columns of the customer's own data that lead the target. Offered to the
+    #: tuner, which drops them if the series is better off without.
+    drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.GRADIENT_BOOSTING, init=False)
     _model: FittedModel = field(default=None, init=False)
     _spec: FeatureSpec | None = field(default=None, init=False)
     _history: FloatArray = field(default_factory=lambda: np.array([]), init=False)
     _periods: list[date] = field(default_factory=list, init=False)
     _hyper: dict[str, object] = field(default_factory=dict, init=False)
+    _keep: npt.NDArray[np.bool_] | None = field(default=None, init=False)
 
     def _search_space(self, n_rows: int) -> SearchSpace:
         depths = [2, 3, 4] if n_rows < 120 else [3, 4, 6, 8]
@@ -716,10 +761,12 @@ class GradientBoostingForecaster:
         return overrides
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
-        from app.forecasting.features import build_feature_spec
+        from app.forecasting.features import build_feature_spec, driver_mask
 
-        spec = build_feature_spec(len(y), self.frequency, profile=self.profile)
-        matrix, target, _names, _rows = build_design_matrix(y, periods, spec, self.frequency)
+        spec = build_feature_spec(
+            len(y), self.frequency, profile=self.profile, drivers=self.drivers
+        )
+        matrix, target, names, _rows = build_design_matrix(y, periods, spec, self.frequency)
 
         if matrix.shape[0] < MIN_GBM_ROWS:
             raise ValueError(
@@ -739,26 +786,66 @@ class GradientBoostingForecaster:
                 }
             )
 
+        # Whether to use the drivers at all is tuned like any other choice, on
+        # held-out folds. Screening only said they correlate; this is the part
+        # that says the model actually forecasts better with them, and it is
+        # the only claim worth making. A driver costs rows as well as columns —
+        # the lag eats the front of the series — so it has to beat that too.
+        from_driver = driver_mask(names)
+        offered = bool(from_driver.any())
+        if offered:
+            space = SearchSpace({**space.choices, "drivers": [True, False]})
+
+        def fit_predict(
+            params: dict[str, object],
+            train_x: FloatArray,
+            train_y: FloatArray,
+            valid_x: FloatArray,
+        ) -> FloatArray:
+            keep = self._kept_columns(params, from_driver)
+            estimator = self._estimator(params, len(train_y))
+            estimator.fit(train_x[:, keep], train_y)
+            return estimator.predict(valid_x[:, keep])
+
         horizon = self.profile.seasonal_period if self.profile else 6
         result = tune(
             "gradient_boosting",
             matrix,
             target,
             space,
-            lambda params, train_x, train_y, valid_x: (
-                self._estimator(params, len(train_y)).fit(train_x, train_y).predict(valid_x)
-            ),
+            fit_predict,
             max(1, min(horizon, 12)),
         )
 
+        keep = self._kept_columns(result.params, from_driver)
         model = self._estimator(result.params, n_rows)
-        model.fit(matrix, target)
+        model.fit(matrix[:, keep], target)
+
+        used = [
+            name
+            for name, kept in zip(names, keep, strict=True)
+            if kept and name.startswith("driver_")
+        ]
 
         self._model = model
         self._spec = spec
-        self._hyper = {**result.params, **result.as_dict()}
+        self._keep = keep
+        self._hyper = {
+            **result.params,
+            **result.as_dict(),
+            "drivers_offered": len(self.drivers.links) if offered else 0,
+            "drivers_used": used,
+        }
         self._history = np.asarray(y, dtype=np.float64).copy()
         self._periods = list(periods)
+
+    @staticmethod
+    def _kept_columns(
+        params: dict[str, object], from_driver: npt.NDArray[np.bool_]
+    ) -> npt.NDArray[np.bool_]:
+        if params.get("drivers", True):
+            return np.ones(from_driver.size, dtype=bool)
+        return ~from_driver
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._model is None or self._spec is None:
@@ -768,9 +855,13 @@ class GradientBoostingForecaster:
         periods = list(self._periods)
         predictions: list[float] = []
 
+        keep = self._keep
+
         for step in range(horizon):
             next_period = future_periods[step]
             row = build_future_row(history, periods, next_period, self._spec, self.frequency)
+            if keep is not None:
+                row = row[keep]
             value = float(self._model.predict(row.reshape(1, -1))[0])
             predictions.append(value)
             history = np.append(history, value)
@@ -875,8 +966,10 @@ def build_candidates(
     frequency: ForecastFrequency,
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
+    drivers: DriverPanel | None = None,
 ) -> list[Forecaster]:
     opts = options or {}
+    panel = drivers or DriverPanel()
     sarimax_order = opts.get("sarimax_order")
     gbm_depth = opts.get("gbm_max_depth")
     gbm_lr = opts.get("gbm_learning_rate")
@@ -893,12 +986,13 @@ def build_candidates(
         HoltWintersForecaster(frequency, profile),
         AutoEtsForecaster(frequency, profile),
         ThetaForecaster(frequency, profile),
-        SarimaxForecaster(frequency, profile, order=order_tuple),  # type: ignore[arg-type]
+        SarimaxForecaster(frequency, profile, order=order_tuple, drivers=panel),  # type: ignore[arg-type]
         GradientBoostingForecaster(
             frequency,
             profile,
             max_depth=as_int(gbm_depth, 3) if gbm_depth is not None else None,
             learning_rate=as_float(gbm_lr, 0.06) if gbm_lr is not None else None,
+            drivers=panel,
         ),
         EnsembleForecaster(frequency, profile),
     ]
@@ -927,8 +1021,9 @@ def build_candidate(
     frequency: ForecastFrequency,
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
+    drivers: DriverPanel | None = None,
 ) -> Forecaster:
-    for candidate in build_candidates(frequency, options, profile):
+    for candidate in build_candidates(frequency, options, profile, drivers):
         if candidate.kind == kind:
             return candidate
     raise ValueError(f"Unknown candidate kind: {kind}")

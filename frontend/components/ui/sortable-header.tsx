@@ -86,7 +86,11 @@ export function SortableHeader<K extends string>({
         type="button"
         onClick={() => onToggle(sortKey)}
         className={cn(
-          "inline-flex w-full items-center gap-1 transition-colors duration-fast hover:text-text-secondary",
+          // Tall enough for a fingertip on a phone, back to the compact
+          // header height once there is a pointer. Sixteen pixels of sort
+          // control is a coin toss to hit on a touchscreen.
+          "inline-flex min-h-11 w-full items-center gap-1 sm:min-h-0",
+          "transition-colors duration-fast hover:text-text-secondary",
           align === "right" ? "justify-end" : "justify-start",
           active && "text-text-secondary",
         )}

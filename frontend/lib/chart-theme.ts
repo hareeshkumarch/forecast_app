@@ -1,3 +1,4 @@
+import { formatCompact } from "@/lib/format";
 
 /**
  * Charts paint on a canvas, so they cannot inherit CSS variables the way the
@@ -98,16 +99,9 @@ export function axisLine(colors: ChartPalette = chartColors()) {
   return { show: true, lineStyle: { color: colors.border, width: 1 } };
 }
 
+/** Axis ticks share the card formatter, so a chart and its KPI never disagree. */
 export function axisValueFormatter(currency = true) {
-  const prefix = currency ? "$" : "";
-  return (value: number): string => {
-    const magnitude = Math.abs(value);
-    const sign = value < 0 ? "-" : "";
-    if (magnitude >= 1_000_000_000) return `${sign}${prefix}${(magnitude / 1e9).toFixed(1)}B`;
-    if (magnitude >= 1_000_000) return `${sign}${prefix}${(magnitude / 1e6).toFixed(1)}M`;
-    if (magnitude >= 1_000) return `${sign}${prefix}${(magnitude / 1e3).toFixed(0)}K`;
-    return `${sign}${prefix}${magnitude.toFixed(0)}`;
-  };
+  return (value: number): string => formatCompact(value, currency);
 }
 
 export function tooltipRow(

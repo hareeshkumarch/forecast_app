@@ -6,7 +6,9 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.datasets.profiler import is_currency_like
+from app.core.config import settings
+from app.core.numbers import compact
+from app.datasets.profiler import currency_symbol, is_currency_like
 from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import (
     ForecastDriver,
@@ -37,7 +39,9 @@ VIEW_COLUMN: dict[str, str] = {
 }
 
 
-def format_value(value: float, *, unit: str = "absolute", currency: bool = True) -> str:
+def format_value(
+    value: float, *, unit: str = "absolute", currency: bool = True, symbol: str = "$"
+) -> str:
     if unit == "percent":
         return f"{value:.1f}%"
     if unit == "percentage_points":
@@ -45,17 +49,7 @@ def format_value(value: float, *, unit: str = "absolute", currency: bool = True)
     if unit == "count":
         return f"{value:,.0f}"
 
-    prefix = "$" if currency else ""
-    sign = "-" if value < 0 else ""
-    magnitude = abs(value)
-
-    if magnitude >= 1_000_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000_000:.2f}B"
-    if magnitude >= 1_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000:.2f}M"
-    if magnitude >= 1_000:
-        return f"{sign}{prefix}{magnitude / 1_000:.1f}K"
-    return f"{sign}{prefix}{magnitude:,.0f}"
+    return compact(value, currency=currency, symbol=symbol)
 
 
 async def _metrics(session: AsyncSession, run_id: uuid.UUID) -> dict[str, ForecastMetric]:
@@ -98,6 +92,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
 
     metrics = await _metrics(session, run.id)
     currency = _is_currency(run.target_column)
+    symbol = _symbol_for(run.target_column)
 
     forecast_total = await _scenario_total(session, run.id, query.view, query.start, query.end)
     best_total = await _scenario_total(session, run.id, "best", query.start, query.end)
@@ -116,6 +111,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             label="Total Forecast",
             value=forecast_total,
             currency=currency,
+            symbol=symbol,
             comparison=(
                 previous.previous_value
                 if (previous := metrics.get("forecast_total")) is not None
@@ -129,6 +125,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             label="Actual YTD",
             value=actual_total,
             currency=currency,
+            symbol=symbol,
             comparison=prior_ytd,
             comparison_label=_actual_window_label(run),
             higher_is_better=True,
@@ -140,6 +137,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             label="Best Case",
             value=best_total,
             currency=currency,
+            symbol=symbol,
             comparison=forecast_total,
             comparison_label="vs base case",
             higher_is_better=True,
@@ -149,6 +147,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             label="Worst Case",
             value=worst_total,
             currency=currency,
+            symbol=symbol,
             comparison=forecast_total,
             comparison_label="vs base case",
             higher_is_better=True,
@@ -165,6 +164,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
         range_end=query.end or run.forecast_end,
         kpis=cards,
         has_data=True,
+        currency_symbol=symbol if currency else "",
         breakdowns=[
             BreakdownRef(
                 column=ref.column,
@@ -321,6 +321,7 @@ def _card(
     comparison_label: str,
     higher_is_better: bool,
     unit: str = "absolute",
+    symbol: str = "$",
 ) -> KpiCard:
     import math
 
@@ -355,7 +356,9 @@ def _card(
         label=label,
         value=round(safe_value, 4),
         display_value=(
-            format_value(safe_value, unit=unit, currency=currency) if math.isfinite(value) else "—"
+            format_value(safe_value, unit=unit, currency=currency, symbol=symbol)
+            if math.isfinite(value)
+            else "—"
         ),
         unit=unit,
         comparison_value=comparison,
@@ -397,6 +400,18 @@ async def insights(
 
 def _is_currency(column: str) -> bool:
     return is_currency_like(column)
+
+
+def _symbol_for(column: str) -> str:
+    """
+    What to put in front of this run's numbers.
+
+    The column's own name first — "sales_gbp" and "Chiffre d'affaires (€)" say
+    so outright — and the deployment's setting when it does not. Never a
+    hard-coded dollar: a European customer seeing their revenue in dollars is a
+    specific, visible way of being wrong about their business.
+    """
+    return currency_symbol(column) or settings.currency_symbol
 
 
 async def breakdown(session: AsyncSession, query: DashboardQuery, column: str) -> BreakdownResponse:
