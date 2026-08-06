@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -27,10 +28,65 @@ CURRENCY_NAME_HINTS = (
     "bookings",
 )
 
+#: The symbol for a currency the column names outright. Derived where the data
+#: says so — a column called "Chiffre d'affaires (€)" or "sales_gbp" is not
+#: guesswork — because rendering a European customer's revenue with a dollar
+#: sign is a specific, visible way of being wrong about their business.
+ISO_SYMBOLS: dict[str, str] = {
+    "usd": "$",
+    "eur": "€",
+    "gbp": "£",
+    "jpy": "¥",
+    "cny": "¥",
+    "inr": "₹",
+    "krw": "₩",
+    "rub": "₽",
+    "ngn": "₦",
+    "brl": "R$",
+    "chf": "CHF ",
+    "sek": "kr ",
+    "nok": "kr ",
+    "dkk": "kr ",
+    "pln": "zł ",
+    "try": "₺",
+    "cad": "$",
+    "aud": "$",
+    "nzd": "$",
+    "sgd": "$",
+    "hkd": "$",
+    "mxn": "$",
+    "zar": "R",
+    "ils": "₪",
+    "thb": "฿",
+    "php": "₱",
+    "vnd": "₫",
+}
+
+#: A word boundary either side, so "value_gbp" and "Revenue (EUR)" match while
+#: "brought_forward" does not turn into Brazilian real.
+_ISO_PATTERN = re.compile(rf"(?<![a-z]) ?({'|'.join(ISO_SYMBOLS)})(?![a-z])")
+
 
 def is_currency_like(column: str) -> bool:
     lowered = column.lower()
-    return any(word in lowered for word in CURRENCY_NAME_HINTS)
+    if any(word in lowered for word in CURRENCY_NAME_HINTS):
+        return True
+    return currency_symbol(column) is not None
+
+
+def currency_symbol(column: str) -> str | None:
+    """
+    The currency this column names, if it names one at all.
+
+    None means the column did not say, which is a different answer from "not
+    money" — the caller falls back to whatever the deployment is configured in.
+    """
+    for character in column:
+        if unicodedata.category(character) == "Sc":
+            return character
+
+    match = _ISO_PATTERN.search(column.lower())
+    return ISO_SYMBOLS[match.group(1)] if match else None
 
 
 DATE_NAME_HINTS = (

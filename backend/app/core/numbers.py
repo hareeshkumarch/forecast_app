@@ -87,7 +87,7 @@ def _round(value: float, places: int) -> str:
         return f"{value:.{places}f}"
 
 
-def compact(value: float | int | None, *, currency: bool = False) -> str:
+def compact(value: float | int | None, *, currency: bool = False, symbol: str = "$") -> str:
     """
     A number sized for a card, at any magnitude the data actually arrives at.
 
@@ -100,7 +100,7 @@ def compact(value: float | int | None, *, currency: bool = False) -> str:
     if number is None:
         return "—"
 
-    prefix = "$" if currency else ""
+    prefix = symbol if currency else ""
     sign = "-" if number < 0 else ""
     magnitude = abs(number)
 

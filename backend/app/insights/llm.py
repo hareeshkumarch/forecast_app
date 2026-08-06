@@ -257,8 +257,12 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
             "Content-Type": "application/json",
         }
         if provider == "openrouter":
-            headers["HTTP-Referer"] = "http://localhost:3000"
-            headers["X-Title"] = "Forecasting Platform"
+            # OpenRouter attributes usage to the referring app. Taken from the
+            # origin this deployment actually serves rather than written in, so
+            # a hosted instance stops reporting itself as somebody's laptop.
+            origins = settings.cors_origins
+            headers["HTTP-Referer"] = origins[0] if origins else "http://localhost:3000"
+            headers["X-Title"] = settings.app_name
 
         body = {
             "model": model,

@@ -1,5 +1,20 @@
 
 
+/**
+ * What goes in front of a money figure on this run.
+ *
+ * The server decides it — from the target column's own name where that says
+ * so, from the deployment's setting where it does not — and the client follows,
+ * so a chart tick and the card above it never disagree. Module-level because
+ * one run is on screen at a time and threading a symbol through every
+ * formatCompact call site would be noise at twenty places.
+ */
+let currencySymbol = "$";
+
+export function setCurrencySymbol(symbol: string): void {
+  currencySymbol = symbol || "$";
+}
+
 //: Where each suffix takes over, largest first so the first match wins.
 const SCALES: [number, string, number][] = [
   [1e12, "T", 2],
@@ -25,7 +40,7 @@ const SIGNIFICANT = 3;
 export function formatCompact(value: number | null | undefined, currency = true): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
 
-  const prefix = currency ? "$" : "";
+  const prefix = currency ? currencySymbol : "";
   const sign = value < 0 ? "-" : "";
   const magnitude = Math.abs(value);
 

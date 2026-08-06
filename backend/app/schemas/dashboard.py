@@ -69,6 +69,10 @@ class DashboardSummary(BaseModel):
     range_end: date | None
     kpis: list[KpiCard] = Field(default_factory=list)
     has_data: bool = False
+    #: What to put in front of this run's numbers, so a chart tick and a table
+    #: cell agree with the cards the server already formatted. Empty when the
+    #: target is not money.
+    currency_symbol: str = ""
     #: Which splits this run can offer. Empty for a dataset with no dimensions,
     #: which is a real answer and not a gap to paper over with blank panels.
     breakdowns: list[BreakdownRef] = Field(default_factory=list)

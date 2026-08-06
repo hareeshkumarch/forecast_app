@@ -28,6 +28,12 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 20 * 1024 * 1024
 
+    #: Shown against money columns whose own name does not say which currency
+    #: they are in. A column called "revenue_eur" or "Chiffre d'affaires (€)"
+    #: overrides this; a column called "revenue" cannot, and no amount of
+    #: cleverness will tell us, so it is asked for once here.
+    currency_symbol: str = "$"
+
     forecast_workers: int = 2
 
     # Set a broker to run forecasts on Celery. Left empty the platform stays

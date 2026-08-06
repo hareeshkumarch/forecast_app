@@ -347,10 +347,19 @@ def build(
             )
 
     # ---- the breakdowns
+    #
+    # Headed by the column the customer actually chose. A planner who split by
+    # store and SKU was being handed a table marked "BY REGION" with their
+    # store names under it, which is the report telling them it was written for
+    # somebody else's business.
     for title, key, columns in (
-        ("BY REGION", "regions", ("region", "forecast", "change_vs_last_year_pct", "accuracy_pct")),
         (
-            "BY CATEGORY",
+            f"BY {(run.region_column or 'region').upper()}",
+            "regions",
+            ("region", "forecast", "change_vs_last_year_pct", "accuracy_pct"),
+        ),
+        (
+            f"BY {(run.category_column or 'category').upper()}",
             "categories",
             ("category", "forecast", "share_pct", "change_vs_last_year_pct"),
         ),
@@ -363,7 +372,10 @@ def build(
                 [
                     Paragraph(title, style["section"]),
                     _table(
-                        [_humanise(c) for c in columns],
+                        [
+                            title.removeprefix("BY ").title() if index == 0 else _humanise(c)
+                            for index, c in enumerate(columns)
+                        ],
                         [
                             [
                                 str(row.get(columns[0], "")),

@@ -112,15 +112,23 @@ export function TopHeader({ section }: { section: AppSection }) {
         {SECTION_LABEL[section]}
       </span>
 
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+      <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
         {isDashboard ? (
           <>
-            <div className="hidden items-center gap-2 md:flex">
+            {/*
+              * The three pickers need about 600px between them, and at `md`
+              * (768px) there is nowhere near that once the logo, the status
+              * chip, Export and four icon buttons have taken their share — the
+              * row ran to 1056px and everything past the viewport was clipped
+              * away with no scroll to reach it. They wait for `xl`; below that
+              * the compact menu holds all three, which is what it is for.
+              */}
+            <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <RunControl />
               <ScenarioControl />
               <RangeControl />
             </div>
-            <div className="md:hidden">
+            <div className="xl:hidden">
               <CompactFilters />
             </div>
             <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" aria-hidden />

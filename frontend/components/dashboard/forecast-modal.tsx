@@ -9,6 +9,7 @@ import {
   Loader2,
   Minus,
   Sigma,
+  SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -363,16 +364,21 @@ export function ForecastModal() {
             </div>
           </Section>
 
-          <Section title="Break it down by" note="Optional">
+          <Section title="Charts on the dashboard" note="Optional">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Region" hint="A column like region or country">
+              {/*
+                * Named for what the control does, not for the shape of one
+                * customer's data: a planner splitting by store and SKU was
+                * being asked for a "Region" and a "Category" they do not have.
+                */}
+              <Field label="Split by" hint="Region, store, channel — one slice per value">
                 <DimensionSelect
                   value={regionColumn}
                   onChange={setRegionColumn}
                   options={dimensions.map((column) => column.name)}
                 />
               </Field>
-              <Field label="Category" hint="A column like product or service">
+              <Field label="And by" hint="A second chart: product, SKU, team">
                 <DimensionSelect
                   value={categoryColumn}
                   onChange={setCategoryColumn}
@@ -399,7 +405,7 @@ export function ForecastModal() {
               levels still add up.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Break it down by" hint="The first thing to split on">
+              <Field label="Forecast each" hint="Every value gets its own model">
                 <DimensionSelect
                   value={grainOne}
                   onChange={(next) => {
@@ -410,7 +416,7 @@ export function ForecastModal() {
                 />
               </Field>
               <Field
-                label="Then by"
+                label="Within each"
                 hint={grainOne === NONE ? "Pick an outer level first" : "Nested inside it"}
               >
                 <DimensionSelect
@@ -482,7 +488,7 @@ export function ForecastModal() {
               onClick={() => setShowAdvanced(!showAdvanced)}
               aria-expanded={showAdvanced}
               aria-controls="advanced-model-settings"
-              className="flex items-center gap-1.5 rounded-input text-caption font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary"
+              className="flex min-h-11 items-center gap-1.5 rounded-input text-caption font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary sm:min-h-8"
             >
               <ChevronRight
                 className={cn(
@@ -544,17 +550,24 @@ export function ForecastModal() {
             ) : null}
           </div>
 
-          <p className="text-caption text-text-muted">
-            Insights are reworded by an LLM when one is configured in{" "}
-            <button
-              type="button"
+          {/*
+            * The control sits beside the sentence rather than inside it. A
+            * button buried mid-paragraph is a 16px tap target on a phone, and
+            * it cannot be padded out without pushing the words apart.
+            */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-caption text-text-muted">
+              The numbers are computed here either way. A provider only rewords the explanations.
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={SlidersHorizontal}
               onClick={() => openModal("settings")}
-              className="font-medium text-accent hover:underline"
             >
-              Settings
-            </button>
-            . The numbers are computed either way.
-          </p>
+              Choose a provider
+            </Button>
+          </div>
 
           <InlineError message={error ?? undefined} />
         </div>

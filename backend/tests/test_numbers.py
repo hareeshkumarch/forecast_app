@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.numbers import compact, finite, storable
+from app.datasets.profiler import currency_symbol, is_currency_like
 
 
 @pytest.mark.parametrize(
@@ -103,3 +104,41 @@ def test_a_reader_can_get_the_number_back_out_of_what_they_see() -> None:
         assert (
             abs(recovered - value) <= last_digit / 2 + 1e-9
         ), f"{value} rendered {rendered!r}, which reads back as {recovered}"
+
+
+@pytest.mark.parametrize(
+    ("column", "expected"),
+    [
+        # The column says which currency outright.
+        ("revenue_eur", "€"),
+        ("Chiffre d'affaires (€)", "€"),
+        ("sales_gbp", "£"),
+        ("total_inr", "₹"),
+        ("Umsatz ₹", "₹"),
+        # It says it is money but not which, so the deployment decides.
+        ("revenue", None),
+        ("net_sales", None),
+        # Not money at all.
+        ("units", None),
+        ("brought_forward", None),
+    ],
+)
+def test_a_column_that_names_its_currency_is_taken_at_its_word(
+    column: str, expected: str | None
+) -> None:
+    assert currency_symbol(column) == expected
+
+
+def test_money_is_recognised_by_its_words_or_by_its_symbol() -> None:
+    assert is_currency_like("revenue")
+    assert is_currency_like("Chiffre d'affaires (€)"), "a symbol is enough on its own"
+    assert not is_currency_like("units")
+
+
+def test_the_symbol_is_whatever_the_run_is_in() -> None:
+    """A European customer's revenue rendered in dollars is a specific, visible
+    way of being wrong about their business."""
+    assert compact(1_880_000, currency=True, symbol="€") == "€1.88M"
+    assert compact(1_880_000, currency=True, symbol="₹") == "₹1.88M"
+    assert compact(-11_000, currency=True, symbol="€") == "-€11.0K"
+    assert compact(1_880_000, currency=False, symbol="€") == "1.88M"

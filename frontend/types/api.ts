@@ -479,6 +479,8 @@ export interface DashboardSummary {
   range_end: string | null;
   kpis: KpiCard[];
   has_data: boolean;
+  /** What to put in front of this run's money figures. Empty when it is not money. */
+  currency_symbol: string;
   /**
    * Which splits this run can offer, named after the customer's own columns.
    * Empty for a dataset with no dimensions — a real answer, not a gap.
