@@ -72,6 +72,12 @@ class RunOverrides:
     metric_weights: dict[str, float] | None = None
     sarimax_order: list[int] | None = None
     gbm_max_depth: int | None = None
+    candidate_models: list[str] | None = None
+    prophet_changepoint_prior_scale: float | None = None
+    prophet_interval_width: float | None = None
+    outlier_mad_threshold: float | None = None
+    complexity_penalty_scale: float | None = None
+    driver_columns: list[str] | None = None
     llm_provider: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
@@ -272,6 +278,12 @@ async def create_run(
     metric_weights: dict[str, float] | None = None,
     sarimax_order: list[int] | None = None,
     gbm_max_depth: int | None = None,
+    candidate_models: list[str] | None = None,
+    prophet_changepoint_prior_scale: float | None = None,
+    prophet_interval_width: float | None = None,
+    outlier_mad_threshold: float | None = None,
+    complexity_penalty_scale: float | None = None,
+    driver_columns: list[str] | None = None,
     llm_provider: str | None = None,
     llm_api_key: str | None = None,
     llm_model: str | None = None,
@@ -347,6 +359,12 @@ async def create_run(
         metric_weights=metric_weights,
         sarimax_order=sarimax_order,
         gbm_max_depth=gbm_max_depth,
+        candidate_models=candidate_models,
+        prophet_changepoint_prior_scale=prophet_changepoint_prior_scale,
+        prophet_interval_width=prophet_interval_width,
+        outlier_mad_threshold=outlier_mad_threshold,
+        complexity_penalty_scale=complexity_penalty_scale,
+        driver_columns=driver_columns,
         llm_provider=llm_provider,
         llm_api_key=llm_api_key,
         llm_model=llm_model,
@@ -692,6 +710,7 @@ async def complete_run(run_id: uuid.UUID) -> bool:
 
 
 def _driver_candidates(run: ForecastRun, dataset: Dataset) -> list[str]:
+    overrides = RunOverrides.from_stored(run.options)
     spoken_for = {
         run.time_column,
         run.target_column,
@@ -701,11 +720,17 @@ def _driver_candidates(run: ForecastRun, dataset: Dataset) -> list[str]:
         *(run.group_by or []),
     }
 
-    return [
+    measures = [
         column.name
         for column in dataset.columns
-        if column.role is ColumnRole.MEASURE and column.name not in spoken_for
+        if (column.role is ColumnRole.MEASURE or column.kind.value in ("numeric", "float", "int"))
+        and column.name not in spoken_for
     ]
+
+    if overrides.driver_columns:
+        allowed = set(overrides.driver_columns)
+        return [col for col in measures if col in allowed]
+    return measures
 
 
 def _build_payload(
@@ -735,13 +760,16 @@ def _build_payload(
         series.periods, series.values, series.weights, run.frequency, run.gap_fill
     )
 
+    overrides = RunOverrides.from_stored(run.options)
+
     if run.outlier_treatment is OutlierTreatment.WINSORISE:
-        values = quality.winsorise(values)
+        values = quality.winsorise(
+            values,
+            mad_threshold=overrides.outlier_mad_threshold or 6.0,
+        )
 
     regions = _segments(parquet_path, run, run.region_column)
     categories = _segments(parquet_path, run, run.category_column)
-
-    overrides = RunOverrides.from_stored(run.options)
 
     drivers = queries.aggregate_candidate_drivers(
         parquet_path,
@@ -772,6 +800,11 @@ def _build_payload(
         model_options={
             "sarimax_order": overrides.sarimax_order,
             "gbm_max_depth": overrides.gbm_max_depth,
+            "candidate_models": overrides.candidate_models,
+            "prophet_changepoint_prior_scale": overrides.prophet_changepoint_prior_scale,
+            "prophet_interval_width": overrides.prophet_interval_width,
+            "complexity_penalty_scale": overrides.complexity_penalty_scale,
+            "outlier_mad_threshold": overrides.outlier_mad_threshold,
         },
     )
 

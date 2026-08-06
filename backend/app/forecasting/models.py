@@ -348,6 +348,8 @@ class AutoEtsForecaster:
 class ProphetForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    changepoint_prior_scale: float | None = None
+    interval_width: float = 0.8
     kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -398,12 +400,18 @@ class ProphetForecaster:
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = Prophet(seasonality_mode=mode, interval_width=0.8, **priors, **flags)
+            model = Prophet(
+                seasonality_mode=mode,
+                interval_width=self.interval_width,
+                **priors,
+                **flags,
+            )
             model.fit(frame)
 
         self._fitted = model
         self._config = {
             "seasonality_mode": mode,
+            "interval_width": self.interval_width,
             **{key: float(value) for key, value in priors.items()},
             **{key: bool(value) for key, value in flags.items()},
             **search,
@@ -419,6 +427,13 @@ class ProphetForecaster:
         from prophet import Prophet
 
         default = {"changepoint_prior_scale": 0.05, "seasonality_prior_scale": 10.0}
+
+        if self.changepoint_prior_scale is not None:
+            return (
+                {**default, "changepoint_prior_scale": self.changepoint_prior_scale},
+                {"tuning_method": "set_by_the_run", "tuning_evaluations": 0},
+            )
+
         rows = len(frame)  # type: ignore[arg-type]
         splits = validation_splits(rows, min(12, max(1, rows // 5)))
         if not splits:
@@ -1032,6 +1047,9 @@ def build_candidates(
     sarimax_order = opts.get("sarimax_order")
     gbm_depth = opts.get("gbm_max_depth")
     gbm_lr = opts.get("gbm_learning_rate")
+    prophet_cps = opts.get("prophet_changepoint_prior_scale")
+    prophet_iw = opts.get("prophet_interval_width")
+    allowed_models = opts.get("candidate_models")
 
     order_tuple = (
         tuple(sarimax_order)
@@ -1056,10 +1074,25 @@ def build_candidates(
     ]
 
     if ProphetForecaster.available():
-        candidates.append(ProphetForecaster(frequency, profile))
+        candidates.append(
+            ProphetForecaster(
+                frequency,
+                profile,
+                changepoint_prior_scale=(
+                    as_float(prophet_cps, 0.05) if prophet_cps is not None else None
+                ),
+                interval_width=as_float(prophet_iw, 0.8) if prophet_iw is not None else 0.8,
+            )
+        )
 
     if profile is None or profile.intermittent:
         candidates.append(CrostonForecaster(frequency, profile))
+
+    if isinstance(allowed_models, list) and allowed_models:
+        allowed_set = {str(m).lower() for m in allowed_models}
+        filtered = [c for c in candidates if c.kind.value.lower() in allowed_set]
+        if filtered:
+            return filtered
 
     return candidates
 

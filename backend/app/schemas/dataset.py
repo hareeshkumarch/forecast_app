@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Annotated, Self
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from typing_extensions import Self  # noqa: UP035
 
 from app.datasets.queries import DEFAULT_MAX_SERIES
 from app.models.enums import (

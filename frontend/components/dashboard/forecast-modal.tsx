@@ -39,6 +39,7 @@ import type {
   ForecastFrequency,
   GapFill,
   MeasureAggregation,
+  ModelKind,
   OutlierTreatment,
 } from "@/types/api";
 
@@ -134,6 +135,27 @@ export function ForecastModal() {
   const [seriesLimit, setSeriesLimit] = useState(500);
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
+  const ALL_MODELS: { value: ModelKind; label: string }[] = [
+    { value: "naive", label: "Naive" },
+    { value: "seasonal_naive", label: "Seasonal Naive" },
+    { value: "holt_winters", label: "Holt-Winters" },
+    { value: "ets", label: "Auto-ETS" },
+    { value: "theta", label: "Theta" },
+    { value: "croston", label: "Croston (Intermittent)" },
+    { value: "sarimax", label: "SARIMAX" },
+    { value: "prophet", label: "Prophet" },
+    { value: "gradient_boosting", label: "Gradient Boosting" },
+    { value: "ensemble", label: "Ensemble" },
+  ];
+
+  const [selectedModels, setSelectedModels] = useState<ModelKind[]>(
+    ALL_MODELS.map((m) => m.value)
+  );
+  const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
+  const [prophetCps, setProphetCps] = useState(0.05);
+  const [prophetIw, setProphetIw] = useState(0.8);
+  const [outlierMad, setOutlierMad] = useState(6.0);
+  const [penaltyScale, setPenaltyScale] = useState(1.0);
   const [error, setError] = useState<string | null>(null);
 
   const { data: dataset } = useDataset(datasetId || null);
@@ -258,6 +280,12 @@ export function ForecastModal() {
         max_series: grain.length > 0 ? seriesLimit : undefined,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
+        candidate_models: selectedModels.length < ALL_MODELS.length ? selectedModels : undefined,
+        driver_columns: selectedDrivers.length > 0 ? selectedDrivers : undefined,
+        prophet_changepoint_prior_scale: prophetCps !== 0.05 ? prophetCps : undefined,
+        prophet_interval_width: prophetIw !== 0.8 ? prophetIw : undefined,
+        outlier_mad_threshold: outlierMad !== 6.0 ? outlierMad : undefined,
+        complexity_penalty_scale: penaltyScale !== 1.0 ? penaltyScale : undefined,
 
         ...(llmProvider === PLAIN
           ? llmRunFields({ ...loadLlmConfig(), apiKey: "" })
@@ -512,6 +540,104 @@ export function ForecastModal() {
             ) : null}
           </Section>
 
+          <Section
+            title="Candidate Algorithm Pool"
+            note={`${selectedModels.length} of ${ALL_MODELS.length} selected`}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-caption text-text-muted">
+                Pick candidate algorithms to backtest. Unchecked models will be excluded.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedModels(ALL_MODELS.map((m) => m.value))}
+                  className="text-micro font-medium text-accent hover:underline"
+                >
+                  Select All
+                </button>
+                <span className="text-text-muted text-micro">·</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedModels([])}
+                  className="text-micro font-medium text-text-muted hover:underline"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {ALL_MODELS.map((m) => {
+                const isSelected = selectedModels.includes(m.value);
+                return (
+                  <label
+                    key={m.value}
+                    className={cn(
+                      "flex items-center gap-2 rounded-card border px-2.5 py-1.5 cursor-pointer text-caption transition-colors",
+                      isSelected
+                        ? "border-accent bg-accent-soft text-text-primary"
+                        : "border-border bg-surface text-text-muted hover:border-border-strong"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedModels([...selectedModels, m.value]);
+                        } else {
+                          setSelectedModels(selectedModels.filter((val) => val !== m.value));
+                        }
+                      }}
+                      className="rounded border-border text-accent focus:ring-accent"
+                    />
+                    <span className="truncate font-medium">{m.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </Section>
+
+          {numerics.length > 0 && (
+            <Section title="Leading Driver Regressors" note="Optional exogenous features">
+              <p className="mb-2 text-caption text-text-muted">
+                Select numeric columns to evaluate as leading indicators for SARIMAX and Gradient Boosting models.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {numerics
+                  .filter((col) => col.name !== dataset?.target_column)
+                  .map((col) => {
+                    const isSelected = selectedDrivers.includes(col.name);
+                    return (
+                      <label
+                        key={col.name}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-card border px-2.5 py-1 cursor-pointer text-caption transition-colors",
+                          isSelected
+                            ? "border-accent bg-accent-soft text-text-primary"
+                            : "border-border bg-surface text-text-muted hover:border-border-strong"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDrivers([...selectedDrivers, col.name]);
+                            } else {
+                              setSelectedDrivers(selectedDrivers.filter((n) => n !== col.name));
+                            }
+                          }}
+                          className="rounded border-border text-accent focus:ring-accent"
+                        />
+                        <span>{col.name}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            </Section>
+          )}
+
           <div className="border-t border-border pt-3">
             <button
               type="button"
@@ -527,7 +653,7 @@ export function ForecastModal() {
                 )}
                 aria-hidden
               />
-              Advanced settings
+              Advanced settings & Hyperparameters
             </button>
 
             {showAdvanced ? (
@@ -556,6 +682,50 @@ export function ForecastModal() {
                     max={10}
                     value={gbmDepth}
                     onChange={(e) => setGbmDepth(Number(e.target.value) || 3)}
+                  />
+                </Field>
+
+                <Field label="Prophet prior scale" hint="Changepoint prior scale (0.001 - 1.0)">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0.001}
+                    max={1.0}
+                    value={prophetCps}
+                    onChange={(e) => setProphetCps(Number(e.target.value) || 0.05)}
+                  />
+                </Field>
+
+                <Field label="Prophet interval width" hint="Uncertainty interval (0.50 - 0.99)">
+                  <Input
+                    type="number"
+                    step="0.05"
+                    min={0.5}
+                    max={0.99}
+                    value={prophetIw}
+                    onChange={(e) => setProphetIw(Number(e.target.value) || 0.8)}
+                  />
+                </Field>
+
+                <Field label="Outlier MAD threshold" hint="Multiples of median absolute deviation (1 - 20)">
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min={1}
+                    max={20}
+                    value={outlierMad}
+                    onChange={(e) => setOutlierMad(Number(e.target.value) || 6.0)}
+                  />
+                </Field>
+
+                <Field label="Complexity penalty multiplier" hint="Scale algorithm complexity penalties (0 - 5)">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={5}
+                    value={penaltyScale}
+                    onChange={(e) => setPenaltyScale(Number(e.target.value) || 1.0)}
                   />
                 </Field>
 

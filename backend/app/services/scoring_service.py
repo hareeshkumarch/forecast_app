@@ -4,7 +4,12 @@ import asyncio
 import math
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc  # noqa: UP017
 from pathlib import Path
 
 import duckdb

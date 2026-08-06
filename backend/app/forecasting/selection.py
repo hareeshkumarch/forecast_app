@@ -122,9 +122,11 @@ def select_model(
     metric_weights: dict[str, float] | None = None,
     complexity_penalties: dict[ModelKind, float] | None = None,
     n_observations: int | None = None,
+    complexity_penalty_scale: float | None = None,
 ) -> Selection:
     weights = metric_weights or METRIC_WEIGHTS
     penalties = complexity_penalties or COMPLEXITY_PENALTY
+    penalty_multiplier = complexity_penalty_scale if complexity_penalty_scale is not None else 1.0
 
     rule_str = (
         " + ".join(f"{w:.2f}*norm({m.upper()})" for m, w in weights.items())
@@ -163,7 +165,11 @@ def select_model(
         composite = sum(weight * normalised[metric][index] for metric, weight in weights.items())
         if interval is not None:
             composite += INTERVAL_WEIGHT * interval[index]
-        composite += penalties.get(result.model, 0.0) * penalty_scale(n_observations, result.model)
+        composite += (
+            penalties.get(result.model, 0.0)
+            * penalty_scale(n_observations, result.model)
+            * penalty_multiplier
+        )
         scored.append(ScoredCandidate(result=result, score=composite, rank=0))
 
     scored.sort(key=lambda c: c.score)
