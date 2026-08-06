@@ -93,7 +93,7 @@ export function ModelHealthStrip() {
       <button
         type="button"
         onClick={() => openModal("model-detail")}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-input px-2.5 text-meta font-medium text-accent transition-colors duration-fast hover:bg-accent-soft sm:min-h-8"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-input px-2.5 text-meta font-medium text-accent transition-colors duration-fast hover:bg-accent-soft fine:min-h-8"
       >
         See the detail <ArrowRight className="h-3.5 w-3.5" aria-hidden />
       </button>

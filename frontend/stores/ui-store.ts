@@ -7,6 +7,7 @@ import type { ForecastView, Insight } from "@/types/api";
 export type ModalKind =
   | "none"
   | "add-connector"
+  | "edit-connector"
   | "upload-dataset"
   | "configure-forecast"
   | "connector-import"

@@ -8,21 +8,43 @@ import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/
 import { Modal } from "@/components/ui/modal";
 import { Button, Field, InlineError, Input, Skeleton } from "@/components/ui/primitives";
 import { errorMessage } from "@/lib/errors";
-import { useConnectorTypes, useCreateConnector, useTestConnector } from "@/hooks/use-dashboard";
+import {
+  useConnectors,
+  useConnectorTypes,
+  useCreateConnector,
+  useTestConnector,
+  useUpdateConnector,
+} from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { ConnectorFormField, ConnectorType } from "@/types/api";
 
 type FormValues = Record<string, string | boolean>;
 
+/**
+ * The one connector form, for adding and for correcting.
+ *
+ * Editing was the missing half: the route to update a saved connector had
+ * been there all along with nothing calling it, so a wrong host or a rotated
+ * password meant living with a broken source or making a second one with a
+ * slightly different name.
+ *
+ * The type cannot change once saved — a Postgres connector is not a Snowflake
+ * one with different fields — so the picker is only shown when adding.
+ */
 export function AddConnectorModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
-  const open = modal === "add-connector";
+  const targetId = useUiStore((state) => state.modalTargetId);
+  const editing = modal === "edit-connector";
+  const open = editing || modal === "add-connector";
 
   const { data: types, isLoading } = useConnectorTypes();
+  const { data: connectors } = useConnectors();
+  const existing = editing ? (connectors?.find((item) => item.id === targetId) ?? null) : null;
   const testMutation = useTestConnector();
   const createMutation = useCreateConnector();
+  const updateMutation = useUpdateConnector();
 
   const [selectedType, setSelectedType] = useState<ConnectorType | null>(null);
   const [name, setName] = useState("");
@@ -36,16 +58,33 @@ export function AddConnectorModal() {
 
   
   useEffect(() => {
-    if (open && types && types.length > 0 && selectedType === null) {
-      const first = types[0];
-      if (first) {
-        setSelectedType(first.type);
-        setName(first.display_name);
-      }
-    }
-  }, [open, types, selectedType]);
+    if (!open || selectedType !== null) return;
 
-  
+    if (existing) {
+      // Everything but the secrets, which the API deliberately never returns.
+      // A blank secret field means "keep the stored one" rather than "clear
+      // it", which is what the PATCH does with an absent key.
+      setSelectedType(existing.type);
+      setName(existing.name);
+      setValues(
+        Object.fromEntries(
+          Object.entries(existing.config ?? {}).map(([key, value]) => [
+            key,
+            typeof value === "boolean" ? value : String(value ?? ""),
+          ]),
+        ),
+      );
+      return;
+    }
+
+    const first = types?.[0];
+    if (first) {
+      setSelectedType(first.type);
+      setName(first.display_name);
+    }
+  }, [open, types, selectedType, existing]);
+
+
   useEffect(() => {
     if (!open) {
       setSelectedType(null);
@@ -54,6 +93,7 @@ export function AddConnectorModal() {
       setFormError(null);
       testMutation.reset();
       createMutation.reset();
+      updateMutation.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -91,6 +131,9 @@ export function AddConnectorModal() {
   function missingRequired(): string[] {
     return (activeType?.fields ?? [])
       .filter((field) => field.required && !String(values[field.key] ?? "").trim())
+      // A secret already saved counts as filled: the form cannot show it, so
+      // demanding it again would mean retyping the password to rename a host.
+      .filter((field) => !(editing && field.secret))
       .map((field) => field.label);
   }
 
@@ -98,7 +141,13 @@ export function AddConnectorModal() {
     if (!selectedType) return;
     setFormError(null);
     const { config, credentials } = splitValues();
-    testMutation.mutate({ type: selectedType, config, credentials });
+    // Testing a saved connector by id lets the server fill in the secrets it
+    // holds, so an untouched password is still tested rather than sent blank.
+    testMutation.mutate(
+      editing && existing
+        ? { connector_id: existing.id, type: selectedType, config, credentials }
+        : { type: selectedType, config, credentials },
+    );
   }
 
   function handleSave() {
@@ -116,24 +165,35 @@ export function AddConnectorModal() {
 
     setFormError(null);
     const { config, credentials } = splitValues();
+    const settle = {
+      onSuccess: () => closeModal(),
+      onError: (error: unknown) => setFormError(errorMessage(error)),
+    };
 
-    createMutation.mutate(
-      { name: name.trim(), type: selectedType, config, credentials },
-      {
-        onSuccess: () => closeModal(),
-        onError: (error) => setFormError(errorMessage(error)),
-      },
-    );
+    if (editing && existing) {
+      updateMutation.mutate(
+        { id: existing.id, name: name.trim(), config, credentials },
+        settle,
+      );
+      return;
+    }
+
+    createMutation.mutate({ name: name.trim(), type: selectedType, config, credentials }, settle);
   }
 
   const testResult = testMutation.data;
+  const saving = createMutation.isPending || updateMutation.isPending;
 
   return (
     <Modal
       open={open}
       onClose={closeModal}
-      title="Add Connector"
-      description="Connect a data source. Credentials are encrypted before they are stored and are never returned to the browser."
+      title={editing ? `Edit ${existing?.name ?? "connector"}` : "Add Connector"}
+      description={
+        editing
+          ? "Change the details this source connects with. Leave a password blank to keep the one already stored — it is encrypted and never sent back to the browser."
+          : "Connect a data source. Credentials are encrypted before they are stored and are never returned to the browser."
+      }
       size="lg"
       footer={
         <>
@@ -151,10 +211,10 @@ export function AddConnectorModal() {
           <Button
             variant="primary"
             onClick={handleSave}
-            loading={createMutation.isPending}
+            loading={saving}
             disabled={!selectedType}
           >
-            Save
+            {editing ? "Save changes" : "Save"}
           </Button>
         </>
       }
@@ -168,7 +228,9 @@ export function AddConnectorModal() {
       ) : (
         <div className="space-y-4">
           
-          <div>
+          {/* Only when adding: a saved connector's type is fixed, because its
+              fields, its driver and its stored credentials all follow from it. */}
+          <div hidden={editing}>
             <span className="mb-1.5 block text-caption font-medium text-text-secondary">
               Connector type
             </span>
@@ -215,6 +277,7 @@ export function AddConnectorModal() {
                     key={field.key}
                     field={field}
                     value={values[field.key]}
+                    keepsStoredSecret={editing}
                     onChange={(next) => setValues((prev) => ({ ...prev, [field.key]: next }))}
                   />
                 ))}
@@ -275,11 +338,15 @@ function FormFieldInput({
   field,
   value,
   onChange,
+  keepsStoredSecret = false,
 }: {
   field: ConnectorFormField;
   value: string | boolean | undefined;
   onChange: (next: string | boolean) => void;
+  /** Editing, so an empty secret keeps what is stored rather than clearing it. */
+  keepsStoredSecret?: boolean;
 }) {
+  const secretIsOptional = keepsStoredSecret && field.secret;
   if (field.kind === "checkbox") {
     return (
       <label className="flex items-center gap-2 self-end pb-1">
@@ -311,12 +378,16 @@ function FormFieldInput({
   }
 
   return (
-    <Field label={field.label} required={field.required} hint={field.help_text}>
+    <Field
+      label={field.label}
+      required={field.required && !secretIsOptional}
+      hint={secretIsOptional ? "Leave blank to keep the saved one" : field.help_text}
+    >
       <Input
         type={field.kind === "password" ? "password" : field.kind === "number" ? "number" : "text"}
         value={String(value ?? "")}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={field.placeholder}
+        placeholder={secretIsOptional ? "••••••••" : field.placeholder}
         autoComplete={field.secret ? "new-password" : "off"}
       />
     </Field>

@@ -24,11 +24,13 @@ Two rules keep the answer honest:
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import duckdb
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +42,7 @@ from app.datasets import queries
 from app.forecasting.frequency import period_end, period_is_settled
 from app.forecasting.metrics import accuracy_from_wmape, mae, wmape
 from app.models.entities import Dataset, ForecastPoint, ForecastRun, ForecastSeries
-from app.models.enums import MeasureAggregation, PointKind, RunStatus
+from app.models.enums import ForecastFrequency, MeasureAggregation, PointKind, RunStatus
 
 logger = get_logger(__name__)
 
@@ -49,6 +51,12 @@ logger = get_logger(__name__)
 #: absent row means the value is unknown, and scoring it as zero would invent
 #: a miss out of missing data.
 ZERO_IS_AN_OBSERVATION = frozenset({MeasureAggregation.SUM})
+
+#: When a candidate file's account of the run's history counts as a different
+#: series. Not a tuned threshold: 1.0 is the point at which the two series
+#: differ by more than the whole of the smaller one, so they agree with nothing
+#: better than they agree with each other.
+DISAGREES_ENTIRELY = 1.0
 
 NO_FORECAST = "This series stored no forecast for a period that has finished."
 POOLED = "A pooled tail stands for many combinations and matches none of them."
@@ -121,19 +129,47 @@ class Scorecard:
 # ------------------------------------------------------------- finding actuals
 
 
-async def candidate_source(session: AsyncSession, run: ForecastRun) -> Dataset | None:
-    """
-    The newest dataset that could say what happened over this run's horizon.
+@dataclass(slots=True)
+class SourceChoice:
+    """Which file will settle a run's horizon, and what was turned away."""
 
-    Derived from the run rather than configured: a dataset qualifies when it
-    holds the columns the run was built on and its calendar reaches into the
-    forecast. That is the whole test — anything narrower would be a guess about
-    how a particular customer names their files.
+    dataset: Dataset | None = None
+    #: Files that cover the horizon and hold the run's columns, but describe a
+    #: different series over the history the run was fitted on. Counted rather
+    #: than dropped silently: "nothing covers this yet" and "three files cover
+    #: it and none of them is your data" call for different actions.
+    contradicting: int = 0
+
+
+async def choose_source(session: AsyncSession, run: ForecastRun) -> SourceChoice:
+    """
+    The newest dataset that can say what happened over this run's horizon.
+
+    Two tests, and the second is the one that keeps the answer honest.
+
+    A dataset **qualifies** when it holds the columns the run was built on and
+    its calendar reaches into the forecast. That much is derived from the run
+    rather than configured — anything narrower would be a guess about how a
+    particular customer names their files.
+
+    But `date` and `sales` are what half the world calls its columns, so
+    qualifying is not the same as being the same data. A qualifying file is
+    also **checked against the run's own history**: aggregate it exactly as the
+    run aggregated, over the periods they share, and see whether it tells the
+    same story. A refreshed file does, near enough — a restatement moves a few
+    percent. Last quarter's EMEA numbers set against a freshly uploaded APAC
+    file do not, and grading against one would report a wildly wrong accuracy
+    with total confidence.
+
+    A file that shares no history with the run cannot be checked either way —
+    a file holding only the new periods is a perfectly ordinary thing to
+    upload — so it is kept as a fallback rather than trusted first.
     """
     if run.forecast_start is None:
-        return None
+        return SourceChoice()
 
-    needed = {run.time_column, run.target_column, *(run.group_by or [])}
+    history = await _run_history(session, run.id)
+
     result = await session.execute(
         select(Dataset)
         .where(Dataset.parquet_path.is_not(None))
@@ -143,13 +179,164 @@ async def candidate_source(session: AsyncSession, run: ForecastRun) -> Dataset |
         .order_by(Dataset.created_at.desc(), Dataset.id.desc())
     )
 
-    for dataset in result.scalars():
-        if dataset.date_range_end is None or dataset.date_range_end < run.forecast_start:
-            continue
-        if needed.issubset(await _columns_of(dataset)):
-            return dataset
+    # Whittled down before any file is opened. Reaching past the forecast is
+    # the one test the profile can settle on its own.
+    candidates = [
+        dataset
+        for dataset in result.scalars()
+        if dataset.date_range_end is not None and dataset.date_range_end >= run.forecast_start
+    ]
+    if not candidates:
+        return SourceChoice()
 
-    return None
+    chosen, unproven, contradicting = await asyncio.to_thread(
+        _weigh_candidates,
+        [Path(dataset.parquet_path or "") for dataset in candidates],
+        needed=frozenset({run.time_column, run.target_column, *(run.group_by or [])}),
+        history=history,
+        time_column=run.time_column,
+        target_column=run.target_column,
+        frequency=run.frequency,
+        aggregation=run.aggregation,
+    )
+
+    settled = chosen if chosen is not None else unproven
+    return SourceChoice(
+        dataset=None if settled is None else candidates[settled],
+        contradicting=contradicting,
+    )
+
+
+def _weigh_candidates(
+    paths: list[Path],
+    *,
+    needed: frozenset[str],
+    history: dict[date, float],
+    time_column: str,
+    target_column: str,
+    frequency: ForecastFrequency,
+    aggregation: MeasureAggregation,
+) -> tuple[int | None, int | None, int]:
+    """
+    Read the candidate files in turn and say which one holds this run's data.
+
+    Gives back the first file that agrees with the run's history, the first
+    that shares no history to be judged on, and how many contradict it — as
+    positions in `paths`, so the ORM objects stay on the thread that owns them.
+
+    One connection for the whole batch. Opening an in-memory database costs
+    several times what a query this small costs to run, and there is a
+    candidate file for every upload a customer has ever made, so the naive
+    version spent nine tenths of its time opening and closing databases.
+    """
+    chosen: int | None = None
+    unproven: int | None = None
+    contradicting = 0
+
+    with queries.connect() as connection:
+        for index, path in enumerate(paths):
+            if not path.exists():
+                continue
+            try:
+                columns = set(queries.column_names(path, connection=connection))
+            except Exception as exc:  # a file that cannot be read cannot score
+                logger.warning("Could not read the columns of %s: %s", path, exc)
+                continue
+            if not needed.issubset(columns):
+                continue
+
+            disagreement = _disagreement_with_history(
+                path,
+                history=history,
+                time_column=time_column,
+                target_column=target_column,
+                frequency=frequency,
+                aggregation=aggregation,
+                connection=connection,
+            )
+            if disagreement is None:
+                # Nothing shared to judge it on. Newest first, so the first one
+                # here is the one to fall back to.
+                unproven = index if unproven is None else unproven
+            elif disagreement < DISAGREES_ENTIRELY:
+                chosen = index
+                break
+            else:
+                contradicting += 1
+
+    return chosen, unproven, contradicting
+
+
+async def candidate_source(session: AsyncSession, run: ForecastRun) -> Dataset | None:
+    """The dataset `choose_source` settled on, for callers that only want it."""
+    return (await choose_source(session, run)).dataset
+
+
+async def _run_history(session: AsyncSession, run_id: uuid.UUID) -> dict[date, float]:
+    """The run's own top line over the history it was fitted on."""
+    result = await session.execute(
+        select(ForecastPoint).where(
+            ForecastPoint.run_id == run_id,
+            ForecastPoint.kind == PointKind.ACTUAL,
+            ForecastPoint.series_id.is_(None),
+        )
+    )
+    return {
+        point.period: float(point.actual) for point in result.scalars() if point.actual is not None
+    }
+
+
+def _disagreement_with_history(
+    path: Path,
+    *,
+    history: dict[date, float],
+    time_column: str,
+    target_column: str,
+    frequency: ForecastFrequency,
+    aggregation: MeasureAggregation,
+    connection: duckdb.DuckDBPyConnection,
+) -> float | None:
+    """
+    How far a file's account of the run's history is from the run's own.
+
+    Scaled by the smaller of the two totals, which is what makes it symmetric:
+    a file ten times the size and a file a tenth of it are equally not this
+    data, and dividing by the run's history alone would wave the small one
+    through. `None` means they share no period, so there is nothing to judge.
+    """
+    if not history:
+        return None
+
+    periods = sorted(history)
+    observed = queries.observed_window(
+        path,
+        time_column,
+        target_column,
+        frequency,
+        start=periods[0],
+        end=period_end(periods[-1], frequency),
+        aggregation=aggregation,
+        connection=connection,
+    )
+
+    shared = [period for period in periods if period in observed.totals]
+    if not shared:
+        return None
+
+    ours = sum(abs(history[period]) for period in shared)
+    theirs = sum(abs(observed.totals[period]) for period in shared)
+
+    if ours == 0.0 and theirs == 0.0:
+        # Both say nothing happened. They agree, but about nothing — there is
+        # no evidence here either way.
+        return None
+    if min(ours, theirs) == 0.0:
+        # One of them records zero across every period they share while the
+        # other records something. That is not a small disagreement.
+        return math.inf
+
+    gap = sum(abs(history[period] - observed.totals[period]) for period in shared)
+    return gap / min(ours, theirs)
 
 
 async def _columns_of(dataset: Dataset) -> set[str]:
@@ -198,16 +385,17 @@ async def score_run(
         card.blocked_reason = "This run stored no forecast to score."
         return card
 
-    source = (
-        await dataset_service.get_dataset(session, dataset_id)
-        if dataset_id is not None
-        else await candidate_source(session, run)
-    )
+    if dataset_id is not None:
+        # Named explicitly, so it is the caller's judgement rather than ours.
+        source: Dataset | None = await dataset_service.get_dataset(session, dataset_id)
+        choice = SourceChoice(dataset=source)
+    else:
+        choice = await choose_source(session, run)
+        source = choice.dataset
+
     if source is None:
-        card.blocked_reason = (
-            "No dataset yet covers the period this run forecast. Upload data that "
-            f"reaches past {horizon[0].isoformat()}."
-        )
+        clause = _nothing_to_score_against(choice, horizon[0])
+        card.blocked_reason = clause[:1].upper() + clause[1:]
         return card
 
     parquet_path = Path(source.parquet_path or "")
@@ -499,16 +687,33 @@ async def stored_scorecard(session: AsyncSession, run_id: uuid.UUID) -> Scorecar
         card.series = await _stored_series(session, run_id)
 
     if run.scored_at is None:
-        candidate = await candidate_source(session, run)
+        choice = await choose_source(session, run)
         card.blocked_reason = (
-            f"Not scored yet — '{candidate.name}' now covers this horizon."
-            if candidate
-            else "Not scored yet — no dataset covers the period this run forecast."
+            f"Not scored yet — '{choice.dataset.name}' now covers this horizon."
+            if choice.dataset
+            else f"Not scored yet — {_nothing_to_score_against(choice, run.forecast_start)}"
         )
-        card.source_dataset_id = candidate.id if candidate else None
-        card.source_dataset_name = candidate.name if candidate else None
+        card.source_dataset_id = choice.dataset.id if choice.dataset else None
+        card.source_dataset_name = choice.dataset.name if choice.dataset else None
 
     return card
+
+
+def _nothing_to_score_against(choice: SourceChoice, from_period: date | None) -> str:
+    """Why there is no source, in terms of what the reader can do about it."""
+    if choice.contradicting:
+        one = choice.contradicting == 1
+        return (
+            f"{choice.contradicting} uploaded file{'' if one else 's'} cover"
+            f"{'s' if one else ''} these periods but describe"
+            f"{'s' if one else ''} different figures over the history this run was "
+            "built on, so grading against "
+            f"{'it' if one else 'them'} would not compare like with like. "
+            "Upload a refresh of the data this run used."
+        )
+
+    reach = f" that reaches past {from_period.isoformat()}" if from_period else ""
+    return f"no dataset yet covers the period this run forecast. Upload data{reach}."
 
 
 async def _stored_series(session: AsyncSession, run_id: uuid.UUID) -> list[SeriesScore]:

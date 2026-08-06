@@ -41,7 +41,7 @@ function flatten<T extends string>(items: Items<T>): SelectOption<T>[] {
 }
 
 const TRIGGER = cn(
-  "group flex h-11 w-full items-center gap-2 rounded-input border border-border bg-surface px-2.5 sm:h-8",
+  "group flex h-11 w-full items-center gap-2 rounded-input border border-border bg-surface px-2.5 fine:h-8",
   "text-meta text-text-primary",
   "transition-colors duration-fast",
   "hover:border-border-strong",

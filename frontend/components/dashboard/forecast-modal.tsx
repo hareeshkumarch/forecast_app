@@ -551,7 +551,7 @@ export function ForecastModal() {
               onClick={() => setShowAdvanced(!showAdvanced)}
               aria-expanded={showAdvanced}
               aria-controls="advanced-model-settings"
-              className="flex min-h-11 items-center gap-1.5 rounded-input text-caption font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary sm:min-h-8"
+              className="flex min-h-11 items-center gap-1.5 rounded-input text-caption font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary fine:min-h-8"
             >
               <ChevronRight
                 className={cn(

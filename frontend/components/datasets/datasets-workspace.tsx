@@ -271,7 +271,7 @@ export function DatasetsWorkspace() {
                           onClick={() => handleRemove(dataset)}
                           disabled={remove.isPending}
                           className={cn(
-                            "inline-flex h-11 w-11 items-center justify-center rounded-chip sm:h-7 sm:w-7",
+                            "inline-flex h-11 w-11 items-center justify-center rounded-chip fine:h-7 fine:w-7",
                             "text-text-muted transition-colors duration-fast",
                             "hover:bg-negative-soft hover:text-negative",
                             "disabled:pointer-events-none disabled:opacity-50",

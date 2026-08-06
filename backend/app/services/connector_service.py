@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -109,6 +109,21 @@ async def update_connector(
 
     await session.flush()
     return await get_connector(session, connector.id)
+
+
+async def delete_connector(session: AsyncSession, connector_id: uuid.UUID) -> None:
+    """
+    Forgets a saved source, and the stored credentials with it.
+
+    What was already imported from it stays. Once a table has landed it is a
+    dataset like any other, with forecasts built on it and a history somebody
+    may still be scoring against; taking it away because the connection it
+    arrived through was retired would be a surprising way to lose data. The
+    dataset's pointer back to the connector is cleared by the schema, so it
+    outlives the source rather than going down with it.
+    """
+    connector = await get_connector(session, connector_id)
+    await session.execute(delete(Connector).where(Connector.id == connector.id))
 
 
 def _strip_secrets(connector_type: ConnectorType, config: dict) -> dict:

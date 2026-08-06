@@ -445,6 +445,140 @@ async def test_the_newest_dataset_that_covers_the_horizon_is_chosen(
     assert card.scored is True
 
 
+# ------------------------------------------------- choosing the right actuals
+#
+# `order_date` and `revenue` are what half the world calls its columns, so
+# holding a run's columns is not the same as being a run's data. These are the
+# tests that stop the platform grading one business against another and
+# reporting the answer as fact.
+
+
+def _scaled(factor: float) -> list[dict[str, object]]:
+    """The same panel, at a different size — a different business entirely."""
+    return [{**row, "revenue": float(row["revenue"]) * factor} for row in generate_rows()]  # type: ignore[arg-type]
+
+
+async def test_a_newer_file_at_a_different_scale_is_not_this_run_s_data(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+
+    stranger = await _dataset(session, _scaled(40.0), "Somebody else entirely")
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.source_dataset_id == full, "the newest file disagrees with the run's own history"
+    assert card.source_dataset_id != stranger
+    assert card.scored is True
+
+
+async def test_a_file_a_fraction_of_the_size_is_refused_too(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """
+    The symmetric half, which a plain wMAPE against the run's history misses.
+
+    Dividing the gap by the run's own total lets anything between nothing and
+    twice the run's size through, so a file a fortieth of the size would have
+    scored as 97.5% wrong rather than as the wrong file.
+    """
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+
+    await _dataset(session, _scaled(1 / 40), "A fortieth of the business")
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.source_dataset_id == full
+
+
+async def test_a_restatement_is_still_the_same_data(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """Late corrections are ordinary. Only a different series is refused."""
+    partial, _full = truncated_and_full
+    run_id = await _run_on(session, partial)
+
+    restated = await _dataset(session, _scaled(1.04), "The panel, restated")
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.source_dataset_id == restated, "4% is a correction, not another business"
+    assert card.scored is True
+
+
+async def test_a_file_holding_only_the_new_periods_is_still_usable(
+    session: AsyncSession,
+) -> None:
+    """
+    Sharing no history is not evidence against a file.
+
+    Uploading only the months that have happened since is a perfectly ordinary
+    thing to do, and there is nothing in such a file to check — so it is used,
+    rather than refused for failing a test it could not sit.
+    """
+    months = _months()
+    cutoff = months[-(WITHHELD + 1)]
+
+    partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
+    run_id = await _run_on(session, partial)
+
+    after = [row for row in generate_rows() if date.fromisoformat(str(row["order_date"])) > cutoff]
+    only_new = await _dataset(session, after, "Just what happened since")
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.source_dataset_id == only_new
+    assert card.scored is True
+
+
+async def test_a_file_recording_nothing_where_the_run_recorded_something_is_refused(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """
+    A flat-zero file is not an unjudgeable file.
+
+    It has rows over the run's history and says every one of them was nothing,
+    which is a claim, and a false one. Scoring against it grades the forecast
+    against zeros and reports a total collapse that never happened.
+    """
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+
+    await _dataset(session, _scaled(0.0), "Nothing ever happened")
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.source_dataset_id == full
+    assert card.actual_total > 0
+
+
+async def test_a_run_whose_only_candidates_contradict_it_says_which_way(
+    session: AsyncSession,
+) -> None:
+    months = _months()
+    partial = await _dataset(session, _rows_through(months[-(WITHHELD + 1)]), "Through the cutoff")
+    run_id = await _run_on(session, partial)
+
+    await _dataset(session, _scaled(40.0), "Somebody else entirely")
+
+    choice = await scoring_service.choose_source(
+        session, await forecast_service.get_run(session, run_id)
+    )
+    assert choice.dataset is None
+    assert choice.contradicting == 1
+
+    card = await scoring_service.score_run(session, run_id)
+
+    assert card.scored is False
+    # Not "nothing covers this yet" — something does, and it is the wrong data.
+    # The two call for different actions, so they read differently.
+    assert card.blocked_reason is not None
+    assert "compare like with like" in card.blocked_reason
+    assert "Upload a refresh" in card.blocked_reason
+
+
 async def test_a_run_with_nothing_to_score_against_says_so_rather_than_failing(
     session: AsyncSession,
 ) -> None:

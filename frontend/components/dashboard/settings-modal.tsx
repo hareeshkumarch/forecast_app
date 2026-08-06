@@ -65,7 +65,7 @@ function SegmentedControl<T extends string>({
               aria-checked={active}
               onClick={() => onChange(option.value)}
               className={cn(
-                "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 sm:min-h-8",
+                "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 fine:min-h-8",
                 "text-meta font-medium transition-colors duration-fast",
                 active
                   ? "bg-surface text-text-primary shadow-card"

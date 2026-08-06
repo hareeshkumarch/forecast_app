@@ -147,6 +147,29 @@ export const createConnector = (payload: {
     body: JSON.stringify(payload),
   });
 
+/**
+ * Corrects a saved connector.
+ *
+ * Credentials are optional and omitting them keeps the stored ones — the
+ * browser is never told what they are, so a form that always sent them would
+ * overwrite a working password with the empty string.
+ */
+export const updateConnector = (
+  id: string,
+  payload: {
+    name?: string;
+    config?: Record<string, unknown>;
+    credentials?: Record<string, string>;
+  },
+) =>
+  request<Connector>(`/api/connectors/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+export const deleteConnector = (id: string) =>
+  request<void>(`/api/connectors/${id}`, { method: "DELETE" });
+
 export const testConnector = (payload: {
   connector_id?: string;
   type?: ConnectorType;

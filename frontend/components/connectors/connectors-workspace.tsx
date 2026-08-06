@@ -1,11 +1,11 @@
 "use client";
 
 
-import { Download, Plug, Plus } from "lucide-react";
+import { Download, Pencil, Plug, Plus, Trash2 } from "lucide-react";
 
 import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/connector-logos";
 import { Badge, Button, Card, ErrorState, InlineError, Skeleton } from "@/components/ui/primitives";
-import { useConnectors, useTestConnector } from "@/hooks/use-dashboard";
+import { useConnectors, useDeleteConnector, useTestConnector } from "@/hooks/use-dashboard";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
@@ -139,7 +139,23 @@ export function ConnectorActions({
   onImport: () => void;
 }) {
   const testMutation = useTestConnector();
+  const removeMutation = useDeleteConnector();
+  const openModal = useUiStore((state) => state.openModal);
   const result = testMutation.data;
+
+  // A source nobody has configured is a card on the rail offering a type, not
+  // something the customer owns. Removing it would take the type off the
+  // screen with no way back, so editing and removing appear once there is
+  // something of theirs to edit or remove.
+  const isTheirs = connector.status !== "not_configured";
+
+  function handleRemove() {
+    const confirmed = window.confirm(
+      `Remove "${connector.name}"? Its saved credentials are deleted. Data already ` +
+        "imported through it, and any forecast built on that data, is untouched.",
+    );
+    if (confirmed) removeMutation.mutate(connector.id);
+  }
 
   return (
     <div className="mb-1 mt-1 space-y-1.5 rounded-input border border-border bg-surface-muted/60 px-2 py-2">
@@ -171,6 +187,27 @@ export function ConnectorActions({
         >
           Test
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={Pencil}
+          onClick={() => openModal("edit-connector", connector.id)}
+          title="Change the host, the port or the password"
+        >
+          Edit
+        </Button>
+        {isTheirs ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Trash2}
+            loading={removeMutation.isPending}
+            onClick={handleRemove}
+            className="text-negative hover:bg-negative-soft"
+          >
+            Remove
+          </Button>
+        ) : null}
       </div>
 
       {result ? (

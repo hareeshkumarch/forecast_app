@@ -66,6 +66,23 @@ def connect() -> Iterator[duckdb.DuckDBPyConnection]:
         connection.close()
 
 
+@contextmanager
+def _using(borrowed: duckdb.DuckDBPyConnection | None) -> Iterator[duckdb.DuckDBPyConnection]:
+    """
+    The caller's connection if it lent one, otherwise a fresh one.
+
+    Opening an in-memory DuckDB costs several times what a small query against
+    it costs to run, so a caller asking one modest question of twenty files
+    wants to pay that once rather than twenty times. Only a connection opened
+    here is closed here — a borrowed one outlives the call.
+    """
+    if borrowed is not None:
+        yield borrowed
+        return
+    with connect() as opened:
+        yield opened
+
+
 @dataclass(slots=True)
 class AggregatedSeries:
     periods: list[date]
@@ -335,9 +352,12 @@ def aggregate_segments(
     return totals
 
 
-def column_names(parquet_path: Path) -> list[str]:
-    with connect() as connection:
-        cursor = connection.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT 0")
+def column_names(
+    parquet_path: Path,
+    connection: duckdb.DuckDBPyConnection | None = None,
+) -> list[str]:
+    with _using(connection) as db:
+        cursor = db.execute(f"SELECT * FROM {_source(parquet_path)} LIMIT 0")
         return [str(description[0]) for description in cursor.description or []]
 
 
@@ -362,6 +382,7 @@ def observed_window(
     end: date,
     group_columns: list[str] | None = None,
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
+    connection: duckdb.DuckDBPyConnection | None = None,
 ) -> ObservedWindow:
     """
     Actuals over `start`..`end`, aggregated exactly as a run aggregated its history.
@@ -369,6 +390,10 @@ def observed_window(
     Used to score a finished forecast, so it has to reduce the raw rows the
     same way the run did — a forecast of a monthly sum compared against a
     monthly mean is not a comparison at all.
+
+    Pass `connection` when asking this of file after file: scoring has to read
+    every candidate source before it can pick one, and opening a database per
+    file is most of what that costs.
     """
     part = DATE_TRUNC_PART[frequency]
     reducer = AGGREGATIONS[aggregation]
@@ -402,12 +427,12 @@ def observed_window(
     """
 
     by_key: dict[tuple[str, ...], dict[date, float]] = {}
-    with connect() as connection:
+    with _using(connection) as db:
         totals = {
             _as_date(row[0]): float(row[1] or 0.0)
-            for row in connection.execute(totals_sql, list(window)).fetchall()
+            for row in db.execute(totals_sql, list(window)).fetchall()
         }
-        reach = connection.execute(reach_sql).fetchone()
+        reach = db.execute(reach_sql).fetchone()
 
         if group_columns:
             depth = len(group_columns)
@@ -425,7 +450,7 @@ def observed_window(
                 WHERE {where}
                 GROUP BY {group_keys}, period
             """
-            for row in connection.execute(keyed_sql, list(window)).fetchall():
+            for row in db.execute(keyed_sql, list(window)).fetchall():
                 key = tuple(str(value) for value in row[:depth])
                 by_key.setdefault(key, {})[_as_date(row[depth])] = float(row[depth + 1] or 0.0)
 

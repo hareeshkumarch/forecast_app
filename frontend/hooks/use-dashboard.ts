@@ -422,6 +422,35 @@ export function useCreateConnector() {
   });
 }
 
+export function useUpdateConnector() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string } & Parameters<typeof api.updateConnector>[1]) =>
+      api.updateConnector(id, payload),
+    onSuccess: (connector) => {
+      toast.success(`${connector.name} updated`, "Test it to confirm the new details work.");
+      void client.invalidateQueries({ queryKey: queryKeys.connectors });
+    },
+    onError: (error: unknown) => toast.error("Could not update the connector", errorMessage(error)),
+  });
+}
+
+/**
+ * Datasets already imported through a connector survive it, so only the
+ * connector list needs to hear about this.
+ */
+export function useDeleteConnector() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteConnector,
+    onSuccess: () => {
+      toast.success("Connector removed", "Data already imported through it is untouched.");
+      void client.invalidateQueries({ queryKey: queryKeys.connectors });
+    },
+    onError: (error: unknown) => toast.error("Could not remove the connector", errorMessage(error)),
+  });
+}
+
 export function useImportFromConnector() {
   const client = useQueryClient();
   return useMutation({

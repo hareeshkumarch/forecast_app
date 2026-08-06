@@ -81,7 +81,7 @@ export function TopHeader({ section }: { section: AppSection }) {
             aria-controls="app-navigation"
             className={cn(
               "group -mx-1 flex min-h-11 items-center gap-2.5 rounded-input px-1",
-              "transition-colors duration-fast hover:bg-surface-muted sm:min-h-0 sm:py-1",
+              "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:py-1",
             )}
           >
             <span

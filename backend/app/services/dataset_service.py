@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.core.storage import file_exists
+from app.core.storage import file_exists, remove_file
 from app.datasets import quality, queries
 from app.datasets.ingest import persist_upload, write_parquet
 from app.datasets.profiler import (
@@ -303,8 +303,26 @@ async def profile_stored(session: AsyncSession, dataset_id: uuid.UUID) -> Datase
 
 
 async def delete_dataset(session: AsyncSession, dataset_id: uuid.UUID) -> None:
+    """
+    Removes a dataset, and the files it was the only reason to keep.
+
+    The row went and the bytes stayed, so every delete left an orphaned upload
+    and its parquet behind for ever — invisible, because the only thing that
+    knew their names was the row that had just gone. The screen offering the
+    delete reports how much disk the uploads take up, which that made a lie.
+
+    The files go after the row, and a file that will not go is logged rather
+    than raised: the dataset is already gone as far as the customer asked, and
+    failing the request would leave them staring at a row that is not there.
+    """
     dataset = await get_dataset(session, dataset_id)
+    files = [dataset.parquet_path, dataset.raw_path]
+
     await session.execute(delete(Dataset).where(Dataset.id == dataset.id))
+    await session.flush()
+
+    for path in files:
+        await remove_file(path)
 
 
 async def count_datasets(session: AsyncSession) -> int:

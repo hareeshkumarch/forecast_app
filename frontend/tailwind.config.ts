@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 
 const config: Config = {
@@ -84,7 +85,20 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    /*
+     * `fine:` — there is a mouse.
+     *
+     * Control heights used to shrink at `sm:`, which asks the wrong question.
+     * Width is a proxy for input device and a bad one: a tablet held in two
+     * hands is 768px wide and got a sixteen-pixel sort control, while a
+     * desktop window dragged narrow got targets sized for a thumb nobody was
+     * using. Asking about the pointer gets both right, at any width.
+     */
+    plugin(({ addVariant }) => {
+      addVariant("fine", "@media (pointer: fine)");
+    }),
+  ],
 };
 
 export default config;

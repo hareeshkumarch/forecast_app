@@ -55,7 +55,7 @@ export function Workspace() {
               onClick={() => openModal("model-detail")}
               title="How this model was chosen"
               className={cn(
-                "inline-flex h-11 items-center gap-1 rounded-chip border border-border bg-surface-muted px-2 sm:h-8",
+                "inline-flex h-11 items-center gap-1 rounded-chip border border-border bg-surface-muted px-2 fine:h-8",
                 "text-caption font-medium text-text-secondary",
                 "transition-colors duration-fast hover:border-border-strong hover:text-text-primary",
               )}

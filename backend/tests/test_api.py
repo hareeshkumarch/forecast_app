@@ -4,6 +4,7 @@ import json
 import math
 import uuid
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -13,8 +14,10 @@ from httpx import AsyncClient
 from app.connectors.registry import ADAPTERS, RAIL_ORDER
 from app.database.sample_data import generate_csv_bytes
 from app.database.seed import seed_connectors
+from app.database.session import session_scope
 from app.insights.llm import LlmCallResult, LlmUsageRecord
 from app.models.enums import ModelKind
+from app.services import dataset_service
 
 
 async def _seed_and_run(client: AsyncClient) -> dict:
@@ -119,6 +122,102 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
     supabase = next(item for item in types if item["type"] == "supabase")
     assert supabase["supports_import"] is True
     assert {field["key"] for field in supabase["fields"]} >= {"project_ref", "password"}
+
+
+async def test_deleting_a_dataset_reclaims_the_files_it_owned(client: AsyncClient) -> None:
+    """
+    The row went and the bytes stayed.
+
+    Nothing else knew those files existed once the row naming them was gone, so
+    every delete leaked an upload and a parquet for ever — and the screen that
+    offers the delete reports how much disk the uploads take up.
+    """
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("throwaway.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = upload.json()["dataset"]["id"]
+
+    async with session_scope() as session:
+        dataset = await dataset_service.get_dataset(session, uuid.UUID(dataset_id))
+        files = [Path(path) for path in (dataset.parquet_path, dataset.raw_path) if path]
+
+    assert files, "an upload writes at least one file"
+    assert all(path.exists() for path in files)
+
+    assert (await client.delete(f"/api/datasets/{dataset_id}")).status_code == 204
+
+    assert not any(path.exists() for path in files), "deleting the row leaves the bytes behind"
+    assert (await client.get(f"/api/datasets/{dataset_id}")).status_code == 404
+
+
+async def test_a_connector_can_be_corrected_after_it_is_saved(client: AsyncClient) -> None:
+    """
+    A wrong host or a rotated password used to be permanent.
+
+    The route to fix it existed and nothing called it, so the only way out was
+    a second connector with a slightly different name.
+    """
+    created = await client.post(
+        "/api/connectors",
+        json={
+            "name": "Warehouse",
+            "type": "postgresql",
+            "config": {"host": "wrong.example.com", "port": 5432, "database": "analytics"},
+            "credentials": {"username": "reader", "password": "old-secret"},
+        },
+    )
+    connector_id = created.json()["id"]
+
+    response = await client.patch(
+        f"/api/connectors/{connector_id}",
+        json={
+            "name": "Warehouse (EU)",
+            "config": {"host": "right.example.com", "port": 5432, "database": "analytics"},
+            "credentials": {"username": "reader", "password": "new-secret"},
+        },
+    )
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["name"] == "Warehouse (EU)"
+    assert body["config"]["host"] == "right.example.com"
+    assert "new-secret" not in response.text, "a correction must not echo the new password back"
+    assert sorted(body["credential_keys"]) == ["password", "username"]
+
+
+async def test_deleting_a_connector_keeps_what_was_imported_through_it(
+    client: AsyncClient,
+) -> None:
+    """
+    Retiring a connection is not a reason to lose the data that came through it.
+
+    Once a table has landed it is a dataset like any other, with forecasts
+    built on it, so the connector goes and the dataset stays.
+    """
+    created = await client.post(
+        "/api/connectors",
+        json={
+            "name": "Retire me",
+            "type": "postgresql",
+            "config": {"host": "db.example.com", "port": 5432, "database": "analytics"},
+            "credentials": {"username": "reader", "password": "secret"},
+        },
+    )
+    connector_id = created.json()["id"]
+
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("through-the-connector.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = upload.json()["dataset"]["id"]
+
+    assert (await client.delete(f"/api/connectors/{connector_id}")).status_code == 204
+    assert (await client.get(f"/api/connectors/{connector_id}")).status_code == 404
+    assert (await client.get(f"/api/datasets/{dataset_id}")).status_code == 200
+
+    # And a second delete says so rather than pretending it worked.
+    assert (await client.delete(f"/api/connectors/{connector_id}")).status_code == 404
 
 
 async def test_test_endpoint_reports_not_configured(client: AsyncClient) -> None:

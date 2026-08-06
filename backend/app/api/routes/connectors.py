@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.api.deps import SessionDep
 from app.connectors.registry import describe_all, split_submission
@@ -115,6 +115,17 @@ async def update_connector(
         session, connector_id, name=payload.name, config=config, credentials=credentials
     )
     return connector_service.to_read_model(updated)
+
+
+@router.delete(
+    "/{connector_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Delete a connector",
+)
+async def delete_connector(connector_id: uuid.UUID, session: SessionDep) -> Response:
+    await connector_service.delete_connector(session, connector_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

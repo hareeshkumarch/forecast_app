@@ -54,7 +54,7 @@ export function RailDrawer() {
             <button
               type="button"
               aria-label="Close"
-              className="absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-input text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary sm:h-8 sm:w-8"
+              className="absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-input text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary fine:h-8 fine:w-8"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
