@@ -423,9 +423,6 @@ class ProphetForecaster:
     def _priors(
         self, frame: object, mode: str, flags: dict[str, bool]
     ) -> tuple[dict[str, float], dict[str, object]]:
-        import pandas as pd
-        from prophet import Prophet
-
         default = {"changepoint_prior_scale": 0.05, "seasonality_prior_scale": 10.0}
 
         if self.changepoint_prior_scale is not None:
@@ -433,6 +430,9 @@ class ProphetForecaster:
                 {**default, "changepoint_prior_scale": self.changepoint_prior_scale},
                 {"tuning_method": "set_by_the_run", "tuning_evaluations": 0},
             )
+
+        import pandas as pd
+        from prophet import Prophet
 
         rows = len(frame)  # type: ignore[arg-type]
         splits = validation_splits(rows, min(12, max(1, rows // 5)))
