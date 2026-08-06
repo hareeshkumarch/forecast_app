@@ -49,16 +49,9 @@ class Blend:
     members: tuple[ModelKind, ...]
     weights: dict[ModelKind, float]
     result: BacktestResult
-    #: The error of the best single member, so the caller can say what the
-    #: combination bought.
+    #: The error of the best single member, so what the combination bought can
+    #: be stated rather than implied.
     best_member_error: float = float("nan")
-
-    def describe(self) -> dict[str, object]:
-        return {
-            "members": [member.value for member in self.members],
-            "combiner": "inverse_error_weighted_mean",
-            "weights": {member.value: round(weight, 4) for member, weight in self.weights.items()},
-        }
 
 
 @dataclass(slots=True)
@@ -220,6 +213,13 @@ def blend(
             member.value: round(weight, 4) for member, weight in zip(members, share, strict=True)
         },
         "chosen_from": len(usable),
+        # What the combination actually bought over simply taking the best of
+        # its members. The blend is only kept when this is positive, so saying
+        # it is the difference between "we combined some models" and "we
+        # combined them and it was worth 8%".
+        "improvement_vs_best": round((best - result.mae) / best * 100.0, 2)
+        if np.isfinite(best) and best > 0
+        else None,
     }
 
     return Blend(

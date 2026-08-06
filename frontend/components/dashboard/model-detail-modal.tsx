@@ -216,12 +216,15 @@ function TuningNote({ params }: { params: Record<string, unknown> }) {
   }
 
   const members = Array.isArray(params.members) ? (params.members as string[]) : null;
+  const gain =
+    typeof params.improvement_vs_best === "number" ? params.improvement_vs_best : null;
 
   return (
     <span className="mt-0.5 block pl-5 text-caption text-text-muted">
       Tried {evaluations} setting{evaluations === 1 ? "" : "s"}
       {folds > 0 ? ` over ${folds} stretch${folds === 1 ? "" : "es"} of held-out history` : ""}
       {members ? `, combining ${members.map(humanizeModel).join(", ")}` : ""}.
+      {gain !== null ? ` That was ${gain.toFixed(1)}% better than the best of them alone.` : ""}
     </span>
   );
 }
