@@ -144,17 +144,26 @@ export function Workspace() {
             )}
           </div>
 
-          {breakdowns.length > 1 ? (
+          {/*
+            * Everything below the first row shares one two-column flow rather
+            * than each getting a row of its own. Two breakdowns used to leave
+            * two half-empty rows — the second split alone on the left, the
+            * driver table alone on the left below it — with a column of white
+            * space running down the right of both. An odd one out spans the
+            * full width instead of leaving a hole, which the driver table is
+            * glad of anyway.
+            */}
+          {breakdowns.length > 0 ? (
             <div className="grid-panels mt-3">
               {breakdowns.slice(1).map((breakdown) => (
                 <BreakdownPanel key={breakdown.column} breakdown={breakdown} />
               ))}
-            </div>
-          ) : null}
-
-          {breakdowns.length > 0 ? (
-            <div className="grid-panels mt-3">
-              <DriverTable />
+              {/*
+                * This row holds `breakdowns.length` panels in total: every
+                * split after the first, plus the driver table. The table is
+                * the odd one out when that total is odd.
+                */}
+              <DriverTable className={breakdowns.length % 2 === 1 ? "panel-span" : undefined} />
             </div>
           ) : null}
         </div>

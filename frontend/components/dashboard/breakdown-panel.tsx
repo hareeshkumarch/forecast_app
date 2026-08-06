@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/primitives";
 import { useBreakdown } from "@/hooks/use-dashboard";
 import {
+  type ChartPalette,
   axisLabel,
   categoricalPalette,
   chartColors,
@@ -95,26 +96,48 @@ function BreakdownChart({
   return <EChart option={option} className="chart-box" ariaLabel={ariaLabel} />;
 }
 
+//: The legend's two lines: the name, then the figure with its share.
+const LEGEND_TEXT = (colors: ChartPalette) => ({
+  n: { fontSize: 11, lineHeight: 15, color: colors.textSecondary },
+  v: { fontSize: 11, lineHeight: 15, fontWeight: 600, color: colors.textPrimary },
+  s: { fontSize: 10, lineHeight: 15, color: colors.textMuted },
+});
+
+
 function buildOption(rows: BreakdownRow[], currency: boolean): ChartOption {
   const colors = chartColors();
   const palette = categoricalPalette();
 
   if (rows.length <= READABLE_SLICES) {
+    const byLabel = new Map(rows.map((row) => [row.label, row]));
+
     return {
       tooltip: { ...tooltipStyle(colors), trigger: "item" },
       legend: {
         orient: "vertical",
-        right: 0,
+        // Beside the doughnut rather than pinned to the far edge. Pinned right
+        // on a 600px card left a hand's width of nothing between the two, and
+        // the gap was the first thing the eye landed on.
+        left: "56%",
         top: "middle",
-        textStyle: { ...axisLabel(colors), fontSize: 11 },
+        textStyle: { ...axisLabel(colors), fontSize: 11, rich: LEGEND_TEXT(colors) },
         itemWidth: 8,
         itemHeight: 8,
+        itemGap: 9,
+        // The number as well as the name: a legend that only repeats the
+        // colours is width spent on nothing, and the figure is what the reader
+        // came for. Reading it should not require hovering.
+        formatter: (name: string) => {
+          const row = byLabel.get(name);
+          if (!row) return name;
+          return `{n|${name}}\n{v|${formatCompact(row.forecast, currency)}}{s|  ${row.share.toFixed(0)}%}`;
+        },
       },
       series: [
         {
           type: "pie",
-          radius: ["58%", "82%"],
-          center: ["32%", "50%"],
+          radius: ["58%", "84%"],
+          center: ["27%", "50%"],
           avoidLabelOverlap: true,
           label: { show: false },
           itemStyle: { borderWidth: 2, borderColor: colors.surface },

@@ -67,45 +67,99 @@ function ClaudeMark({ className }: { className?: string }) {
   );
 }
 
-/** The Gemini spark: a four-point star, on Google's blue-to-magenta ramp. */
+/**
+ * The Gemini spark: a four-point star with deeply concave sides, on Google's
+ * blue-to-magenta ramp. The curve control points sit close to the centre,
+ * which is what gives the points their needle shape rather than the fat
+ * diamond a straight-sided star produces.
+ */
 function GeminiMark({ className }: { className?: string }) {
   const gradient = useId();
 
   return (
     <Svg className={className} fill={`url(#${gradient})`}>
       <defs>
-        <linearGradient id={gradient} x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradient} x1="0.1" y1="0" x2="0.9" y2="1">
           <stop offset="0%" stopColor="#4285F4" />
-          <stop offset="52%" stopColor="#9B72CB" />
+          <stop offset="35%" stopColor="#7C6BE8" />
+          <stop offset="70%" stopColor="#9B72CB" />
           <stop offset="100%" stopColor="#D96570" />
         </linearGradient>
       </defs>
-      <path d="M12 1.5c0 5.799 4.701 10.5 10.5 10.5-5.799 0-10.5 4.701-10.5 10.5C12 16.701 7.299 12 1.5 12 7.299 12 12 7.299 12 1.5Z" />
+      <path d="M12 1.2c.35 5.6 5.2 10.45 10.8 10.8-5.6.35-10.45 5.2-10.8 10.8-.35-5.6-5.2-10.45-10.8-10.8C6.8 11.65 11.65 6.8 12 1.2Z" />
     </Svg>
   );
 }
 
-/** xAI's angular X. */
+/**
+ * xAI's X: two slanted bars that cross, cut square at top and bottom rather
+ * than tapering, which is what separates it from every other X in a menu.
+ */
 function XaiMark({ className }: { className?: string }) {
   return (
     <Svg className={cn("text-text-primary", className)}>
-      <path d="M3.2 2h4.05l5.02 7.05L17.32 2h3.48l-6.96 9.66L21.6 22h-4.06l-5.4-7.6L6.72 22H3.2l7.28-10.1Z" />
+      <path d="M4.2 2.4h4.3l11.3 19.2h-4.3L4.2 2.4Z" />
+      <path d="M4 21.6 10.3 13l2.2 3.7-3 4.9H4Z" />
+      <path d="M13.6 8.3 11.4 4.6l1.3-2.2h4.5L13.6 8.3Z" />
     </Svg>
   );
 }
 
-/** Brand-coloured monogram, for providers whose mark is not drawn here. */
+/**
+ * Ollama's llama, drawn as a line rather than a silhouette.
+ *
+ * Filled, it collapsed into a dark blob at the 14px this actually renders at —
+ * the ears and the muzzle all ran together. Stroked, it reads at menu size and
+ * sits with the rest of the icons instead of shouting over them.
+ */
+function OllamaMark({ className }: { className?: string }) {
+  return (
+    <Svg className={cn("text-text-primary", className)} fill="none">
+      <g
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {/* The two ears. */}
+        <path d="M7.8 8.4C7 7.5 6.6 6 6.8 4.6 7 3.3 7.7 2.7 8.4 3c.7.3 1.1 1.5 1.1 2.8 0 .9-.15 1.7-.3 2.2" />
+        <path d="M16.2 8.4c.8-.9 1.2-2.4 1-3.8-.2-1.3-.9-1.9-1.6-1.6-.7.3-1.1 1.5-1.1 2.8 0 .9.15 1.7.3 2.2" />
+        {/* The head and the neck below it. */}
+        <path d="M12 7.4c3.2 0 5.6 2.1 5.6 5 0 1.3-.35 2.1-.6 2.9-.2.65-.3 1.1-.3 1.6 0 1.6-.6 3.1-4.7 3.1s-4.7-1.5-4.7-3.1c0-.5-.1-.95-.3-1.6-.25-.8-.6-1.6-.6-2.9 0-2.9 2.4-5 5.6-5Z" />
+      </g>
+      <circle cx="10" cy="12.4" r="0.95" fill="currentColor" />
+      <circle cx="14" cy="12.4" r="0.95" fill="currentColor" />
+    </Svg>
+  );
+}
+
+/**
+ * A brand-coloured monogram, for a provider whose own mark is not drawn here.
+ *
+ * Deliberately a monogram rather than a logo redrawn from memory: a wrong
+ * logo is worse than an honest initial, and this reads as a chosen tile
+ * rather than a missing asset. Swapping in an official SVG later means
+ * replacing one entry in MARKS.
+ */
 function monogram(letter: string, background: string, foreground = "#FFFFFF"): Mark {
   function Monogram({ className }: { className?: string }) {
+    const shade = useId();
     return (
       <Svg className={className} fill="none">
-        <rect width="24" height="24" rx="6" fill={background} />
+        <defs>
+          <linearGradient id={shade} x1="0" y1="0" x2="0.6" y2="1">
+            <stop offset="0%" stopColor={background} />
+            <stop offset="100%" stopColor={background} stopOpacity="0.78" />
+          </linearGradient>
+        </defs>
+        <rect width="24" height="24" rx="7" fill={`url(#${shade})`} />
         <text
           x="12"
-          y="12"
+          y="12.5"
           fill={foreground}
-          fontSize="13"
+          fontSize={letter.length > 2 ? 8 : letter.length > 1 ? 10 : 13.5}
           fontWeight="700"
+          letterSpacing={letter.length > 2 ? "-0.2" : letter.length > 1 ? "-0.5" : "0"}
           fontFamily="var(--font-sans, ui-sans-serif), system-ui, sans-serif"
           textAnchor="middle"
           dominantBaseline="central"
@@ -125,9 +179,9 @@ const MARKS: Record<string, Mark> = {
   anthropic: ClaudeMark,
   gemini: GeminiMark,
   xai: XaiMark,
-  groq: monogram("G", "#F55036"),
+  groq: monogram("groq", "#F55036"),
   openrouter: monogram("OR", "#6467F2"),
-  custom: monogram("··", "#64748B"),
+  custom: OllamaMark,
 };
 
 /** The mark for a provider id, or a neutral one for anything unrecognised. */

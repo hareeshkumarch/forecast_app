@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 type DriverSortKey = "driver" | "impact_value" | "change_vs_last_year";
 
-export function DriverTable() {
+export function DriverTable({ className }: { className?: string } = {}) {
   const { data, isLoading, isError, error, refetch } = useDrivers();
 
   const { sorted, sort, toggle } = useSortedRows<DriverRow, DriverSortKey>(
@@ -23,7 +23,7 @@ export function DriverTable() {
   );
 
   return (
-    <Card className="flex min-w-0 flex-col">
+    <Card className={cn("flex min-w-0 flex-col", className)}>
       <PanelHeader
         title="What is moving the number"
         subtitle="What is pushing the number up or down"

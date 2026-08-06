@@ -266,6 +266,12 @@ body {
   .grid-panels {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  /* The odd one out takes the whole row rather than leaving a column of white
+     space beside it. Only meaningful once there are two columns to span. */
+  .grid-panels > .panel-span {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Chart canvases scale with the workspace instead of sitting at one height. */

@@ -8,8 +8,8 @@ import {
   ChevronRight,
   Loader2,
   Minus,
+  MessageSquareText,
   Sigma,
-  SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -17,6 +17,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { DataQualityPanel } from "@/components/dashboard/data-quality-panel";
 import { Modal } from "@/components/ui/modal";
 import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
+import { providerMark } from "@/components/ui/provider-logo";
 import { Select, type SelectOption } from "@/components/ui/select";
 import {
   useDataset,
@@ -30,7 +31,7 @@ import {
 import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
 import { errorMessage } from "@/lib/errors";
 import { humanizeModel } from "@/lib/format";
-import { llmRunFields, loadLlmConfig } from "@/lib/llm-config";
+import { PROVIDERS, llmRunFields, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -42,6 +43,9 @@ import type {
 } from "@/types/api";
 
 const NONE = "__none__";
+
+//: No provider — the insights keep the wording the platform computed.
+const PLAIN = "__plain__";
 
 const FREQUENCIES: SelectOption<ForecastFrequency>[] = [
   { value: "daily", label: "Daily", hint: "One point per day" },
@@ -89,7 +93,6 @@ const METRIC_WEIGHTS: Record<Exclude<MetricFocus, "balanced">, Record<string, nu
 export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
-  const openModal = useUiStore((state) => state.openModal);
   const activeRunId = useUiStore((state) => state.activeRunId);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const setRunId = useUiStore((state) => state.setRunId);
@@ -114,6 +117,21 @@ export function ForecastModal() {
   const [gapFill, setGapFill] = useState<GapFill>("auto");
   const [outlierTreatment, setOutlierTreatment] = useState<OutlierTreatment>("none");
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // The saved config is the starting point, and the picker below writes back
+  // to it, so choosing here is also choosing for next time.
+  const [llmProvider, setLlmProvider] = useState<string>(PLAIN);
+  const [hasKey, setHasKey] = useState(false);
+
+  useEffect(() => {
+    const config = loadLlmConfig();
+    const configured = Boolean(config.apiKey.trim());
+    setHasKey(configured);
+    setLlmProvider(configured ? config.provider : PLAIN);
+  }, []);
+
+  const providerLabel =
+    PROVIDERS.find((provider) => provider.value === llmProvider)?.label ?? llmProvider;
   const [maxFolds, setMaxFolds] = useState(5);
   const [seriesLimit, setSeriesLimit] = useState(500);
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
@@ -225,7 +243,11 @@ export function ForecastModal() {
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
 
-        ...llmRunFields(loadLlmConfig()),
+        // The platform's own wording is a real choice, so it turns the
+        // provider off for this run rather than quietly using a saved key.
+        ...(llmProvider === PLAIN
+          ? llmRunFields({ ...loadLlmConfig(), apiKey: "" })
+          : llmRunFields({ ...loadLlmConfig(), provider: llmProvider })),
       },
       {
         onSuccess: (run) => setActiveRun(run.id),
@@ -551,22 +573,46 @@ export function ForecastModal() {
           </div>
 
           {/*
-            * The control sits beside the sentence rather than inside it. A
-            * button buried mid-paragraph is a 16px tap target on a phone, and
-            * it cannot be padded out without pushing the words apart.
+            * Chosen here, not somewhere else. This used to be a button that
+            * opened Settings — and because a modal replaces whatever modal is
+            * already open, pressing it threw away everything the reader had
+            * configured so far. The provider belongs to the run being set up,
+            * so it is set up here, and the choice is saved for the next one.
             */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-caption text-text-muted">
-              The numbers are computed here either way. A provider only rewords the explanations.
-            </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={SlidersHorizontal}
-              onClick={() => openModal("settings")}
-            >
-              Choose a provider
-            </Button>
+          <div className="rounded-card border border-border bg-surface-muted p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-meta font-medium text-text-primary">Wording of the insights</p>
+                <p className="mt-0.5 text-caption text-text-muted">
+                  Every number is computed here. A provider only says them in better English.
+                </p>
+              </div>
+              <div className="w-full sm:w-[220px]">
+                <Select
+                  label="Insight provider"
+                  value={llmProvider}
+                  onChange={setLlmProvider}
+                  options={[
+                    { value: PLAIN, label: "The platform's own words", icon: MessageSquareText },
+                    ...PROVIDERS.map((provider) => ({
+                      value: provider.value,
+                      label: provider.label,
+                      hint: provider.hint,
+                      icon: providerMark(provider.value),
+                      iconKeepsColour: true,
+                    })),
+                  ]}
+                  menuClassName="min-w-[16rem]"
+                />
+              </div>
+            </div>
+
+            {llmProvider !== PLAIN && !hasKey ? (
+              <p className="mt-2 text-caption text-warning">
+                No API key saved for {providerLabel}. The run will use the platform&apos;s wording
+                until you add one in Settings.
+              </p>
+            ) : null}
           </div>
 
           <InlineError message={error ?? undefined} />
