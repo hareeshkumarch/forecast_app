@@ -33,6 +33,34 @@ describe("formatCompact", () => {
     expect(formatCompact(Number.NaN)).toBe("—");
     expect(formatCompact(Number.POSITIVE_INFINITY)).toBe("—");
   });
+
+  // A group forecasting in trillions read "$33160.31B" because the suffixes
+  // stopped at billions.
+  it("carries on past billions", () => {
+    expect(formatCompact(33_160_310_000_000)).toBe("$33.16T");
+    expect(formatCompact(4.2e12)).toBe("$4.20T");
+  });
+
+  // A conversion rate of 0.0000031 read "$0", and so did every card beside it.
+  it("keeps the significant digits of a value below one", () => {
+    expect(formatCompact(0.42)).toBe("$0.42");
+    expect(formatCompact(0.0031)).toBe("$0.0031");
+    expect(formatCompact(3.1e-6)).toBe("$3.10e-6");
+    expect(formatCompact(0)).toBe("$0");
+  });
+
+  it("rounds a tie the way the backend does, so a card and its report agree", () => {
+    expect(formatCompact(1250)).toBe("$1.3K");
+    expect(formatCompact(1_250_000_000_000)).toBe("$1.25T");
+  });
+
+  it("never renders a real magnitude as a bare zero or a blank", () => {
+    for (let exponent = -12; exponent <= 15; exponent += 1) {
+      const rendered = formatCompact(1.7 * 10 ** exponent);
+      expect(rendered, `1.7e${exponent}`).not.toBe("$0");
+      expect(rendered, `1.7e${exponent}`).not.toBe("—");
+    }
+  });
 });
 
 describe("percentages", () => {

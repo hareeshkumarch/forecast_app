@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.numbers import compact
 from app.datasets.profiler import is_currency_like
 from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import (
@@ -45,17 +46,7 @@ def format_value(value: float, *, unit: str = "absolute", currency: bool = True)
     if unit == "count":
         return f"{value:,.0f}"
 
-    prefix = "$" if currency else ""
-    sign = "-" if value < 0 else ""
-    magnitude = abs(value)
-
-    if magnitude >= 1_000_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000_000:.2f}B"
-    if magnitude >= 1_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000:.2f}M"
-    if magnitude >= 1_000:
-        return f"{sign}{prefix}{magnitude / 1_000:.1f}K"
-    return f"{sign}{prefix}{magnitude:,.0f}"
+    return compact(value, currency=currency)
 
 
 async def _metrics(session: AsyncSession, run_id: uuid.UUID) -> dict[str, ForecastMetric]:

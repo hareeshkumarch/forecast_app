@@ -65,9 +65,21 @@ def wmape(y_true: FloatArray, y_pred: FloatArray, weights: FloatArray | None = N
 
 
 def accuracy_from_wmape(value: float) -> float:
-    if not np.isfinite(value):
+    """
+    Accuracy as the complement of the error, where that still means something.
+
+    Past 100% the error is larger than the series it is measured against, and
+    "100 minus the error" stops being a scale: a wMAPE of 101% and one of 400%
+    both pinned to 0.0%, which reads as a measured zero rather than as the
+    measurement having broken down. Intermittent demand lands there routinely —
+    a month of no sales makes the denominator tiny — and telling a planner
+    their forecast is 0% accurate is both wrong and the opposite of useful.
+    Not a number, so the card shows a dash and the error beside it does the
+    talking.
+    """
+    if not np.isfinite(value) or value >= 100.0:
         return float("nan")
-    return float(max(0.0, 100.0 - value))
+    return float(100.0 - value)
 
 
 #: Slack for comparing two percentages arrived at by different arithmetic.

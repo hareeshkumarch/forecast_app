@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import uuid
 from datetime import date
 
@@ -513,3 +515,87 @@ async def test_a_leading_column_in_the_upload_is_found_and_reported(client: Asyn
     assert names == ["web_sessions"]
     assert metrics["leading_columns"][0]["lag"] == lag
     assert "web_sessions from 6 months earlier" in metrics["selection_rationale"]
+
+
+async def _forecast_csv(client: AsyncClient, name: str, rows: list[str], **run: object) -> dict:
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": (f"{name}.csv", "\n".join(rows).encode(), "text/csv")},
+    )
+    assert upload.status_code == 201, upload.text
+
+    started = await client.post(
+        "/api/forecasts/run", json={"dataset_id": upload.json()["dataset"]["id"], **run}
+    )
+    assert started.status_code == 202, started.text
+    run_id = started.json()["id"]
+
+    async with client.stream("GET", f"/api/forecasts/{run_id}/events") as stream:
+        async for _ in stream.aiter_lines():
+            pass
+
+    detail = await client.get(f"/api/forecasts/{run_id}")
+    # The endpoint itself is the assertion: a metric that could not be measured
+    # used to reach the response as a NaN, and `json.dumps` refuses those.
+    assert detail.status_code == 200, detail.text
+    return detail.json()
+
+
+async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
+    client: AsyncClient,
+) -> None:
+    """
+    A discontinued line, or one that has not launched yet. Every error measure
+    divides by the series total, so the fits report an AICc of -Infinity — which
+    Postgres rejects inside a JSON column, failing the whole run with a message
+    naming a token nobody wrote.
+    """
+    rows = ["month,value"] + [
+        f"{date(2021, 1, 1) + relativedelta(months=index):%Y-%m-%d},0" for index in range(36)
+    ]
+
+    detail = await _forecast_csv(client, "all_zero", rows, horizon=6)
+
+    assert detail["status"] == "completed", detail.get("error_message")
+
+    summary = (await client.get("/api/dashboard/summary", params={"run_id": detail["id"]})).json()
+    shown = {kpi["key"]: kpi["display_value"] for kpi in summary["kpis"]}
+
+    # Not measurable is shown as not measurable, never as a confident zero.
+    assert shown["forecast_accuracy"] == "—"
+    assert shown["weighted_mape"] == "—"
+
+    # The invariant behind the fix, checked here because the suite runs on
+    # SQLite and SQLite would happily store the -Infinity that Postgres throws
+    # out. Every stored number has to be one a JSON column can hold.
+    metrics = (await client.get(f"/api/forecasts/{detail['id']}/metrics")).json()
+    for candidate in metrics["candidates"]:
+        for name, value in candidate["params"].items():
+            assert not isinstance(value, float) or math.isfinite(
+                value
+            ), f"{candidate['model']}.{name} is {value}, which Postgres will reject"
+    assert json.dumps(metrics), "the metrics response must be serialisable"
+
+
+async def test_a_dataset_too_short_to_backtest_still_answers_every_endpoint(
+    client: AsyncClient,
+) -> None:
+    """
+    Two rows leaves nothing to hold out, so every accuracy metric is NaN. Those
+    reached the response untouched and turned `GET /forecasts/{id}` into a 500,
+    which meant the run could not even be looked at, let alone deleted.
+    """
+    rows = ["month,value", "2024-01-01,10", "2024-02-01,12"]
+
+    detail = await _forecast_csv(client, "two_rows", rows, horizon=3)
+    run_id = detail["id"]
+
+    for path in ("", "/metrics", "/points", "/series"):
+        response = await client.get(f"/api/forecasts/{run_id}{path}")
+        assert response.status_code == 200, f"{path or '(detail)'}: {response.text[:200]}"
+
+    summary = await client.get("/api/dashboard/summary", params={"run_id": run_id})
+    assert summary.status_code == 200
+    assert all(
+        kpi["display_value"] not in ("nan", "NaN", "inf", "") for kpi in summary.json()["kpis"]
+    )

@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.errors import ForecastError, NotFoundError, ValidationError
 from app.core.logging import get_logger, request_id
+from app.core.numbers import finite, storable
 from app.core.security import (
     CredentialDecryptionError,
     decrypt_credentials,
@@ -802,28 +803,34 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
                 model=ModelKind(candidate["model"]),
                 rank=int(candidate["rank"]),
                 selected=bool(candidate["selected"]),
-                mae=candidate["mae"],
-                rmse=candidate["rmse"],
-                smape=candidate["smape"],
-                wmape=candidate["wmape"],
-                score=candidate["score"],
+                mae=finite(candidate["mae"]),
+                rmse=finite(candidate["rmse"]),
+                smape=finite(candidate["smape"]),
+                wmape=finite(candidate["wmape"]),
+                score=finite(candidate["score"]),
                 folds=int(candidate["folds"]),
-                fit_seconds=candidate["fit_seconds"],
-                params=candidate["params"],
+                fit_seconds=finite(candidate["fit_seconds"]),
+                params=storable(candidate["params"]),
                 failed=bool(candidate["failed"]),
                 failure_reason=candidate["failure_reason"],
             )
         )
 
     previous = await _previous_metrics(session, run)
-    for name, value in output.metrics.items():
+    for name, raw in output.metrics.items():
+        # No row rather than a NaN one. The column cannot hold null, every
+        # reader already asks for a metric by name and copes when it is not
+        # there, and "we could not measure this" is exactly what absence says.
+        value = finite(raw)
+        if value is None:
+            continue
         session.add(
             ForecastMetric(
                 run_id=run.id,
                 name=name,
-                value=float(value),
+                value=value,
                 unit=_metric_unit(name),
-                previous_value=previous.get(name),
+                previous_value=finite(previous.get(name)),
             )
         )
 
@@ -834,8 +841,8 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
                 run_id=run.id,
                 period=period,
                 kind=PointKind.ACTUAL,
-                actual=output.history_values[index],
-                forecast=fitted,
+                actual=finite(output.history_values[index]),
+                forecast=finite(fitted),
             )
         )
 
@@ -845,12 +852,12 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
                 run_id=run.id,
                 period=period,
                 kind=PointKind.FORECAST,
-                forecast=output.point_forecast[index],
-                lower_bound=output.lower_bound[index],
-                upper_bound=output.upper_bound[index],
-                best_case=output.best_case[index],
-                base_case=output.base_case[index],
-                worst_case=output.worst_case[index],
+                forecast=finite(output.point_forecast[index]),
+                lower_bound=finite(output.lower_bound[index]),
+                upper_bound=finite(output.upper_bound[index]),
+                best_case=finite(output.best_case[index]),
+                base_case=finite(output.base_case[index]),
+                worst_case=finite(output.worst_case[index]),
             )
         )
 
@@ -859,11 +866,11 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
             RegionalForecast(
                 run_id=run.id,
                 region=segment.label,
-                forecast_value=segment.forecast_value,
-                prior_year_value=segment.prior_year_value,
-                change_vs_last_year=segment.change_vs_last_year,
-                accuracy=segment.accuracy,
-                share=segment.share,
+                forecast_value=finite(segment.forecast_value) or 0.0,
+                prior_year_value=finite(segment.prior_year_value),
+                change_vs_last_year=finite(segment.change_vs_last_year),
+                accuracy=finite(segment.accuracy),
+                share=finite(segment.share) or 0.0,
                 model=ModelKind(segment.model) if segment.model else None,
                 accuracy_measured=segment.accuracy_measured,
             )
@@ -874,10 +881,10 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
             CategoryForecast(
                 run_id=run.id,
                 category=segment.label,
-                forecast_value=segment.forecast_value,
-                prior_year_value=segment.prior_year_value,
-                share=segment.share,
-                change_vs_last_year=segment.change_vs_last_year,
+                forecast_value=finite(segment.forecast_value) or 0.0,
+                prior_year_value=finite(segment.prior_year_value),
+                share=finite(segment.share) or 0.0,
+                change_vs_last_year=finite(segment.change_vs_last_year),
                 accuracy=segment.accuracy,
                 rank=rank,
             )
@@ -888,9 +895,9 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
             ForecastDriver(
                 run_id=run.id,
                 driver=driver.name,
-                impact_value=driver.impact_value,
-                impact_pct=driver.impact_pct,
-                change_vs_last_year=driver.change_vs_last_year,
+                impact_value=finite(driver.impact_value) or 0.0,
+                impact_pct=finite(driver.impact_pct) or 0.0,
+                change_vs_last_year=finite(driver.change_vs_last_year),
                 direction=driver.direction,
                 trend=driver.trend,
                 rank=rank,
@@ -943,9 +950,9 @@ async def _persist_insights(
                 source_explanation=source_explanation,
                 source_action=source_action,
                 metric_name=insight.metric_name,
-                metric_value=insight.metric_value,
+                metric_value=finite(insight.metric_value) or 0.0,
                 metric_unit=insight.metric_unit,
-                supporting_data=insight.supporting_data,
+                supporting_data=storable(insight.supporting_data),
                 rank=rank,
                 generated_at=insight.generated_at,
                 llm_rewritten=insight.type.value in applied,

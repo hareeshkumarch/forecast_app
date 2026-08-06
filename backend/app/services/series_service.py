@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.numbers import finite
 from app.database.session import session_scope
 from app.datasets import queries
 from app.datasets.queries import DEFAULT_MAX_SERIES
@@ -477,14 +478,14 @@ async def persist(
                 status=result.status,
                 blocked_reason=result.blocked_reason,
                 model=result.model,
-                wmape=result.wmape,
-                accuracy=result.accuracy,
+                wmape=finite(result.wmape),
+                accuracy=finite(result.accuracy),
                 accuracy_measured=result.accuracy_measured,
                 folds=result.folds,
-                forecast_total=result.forecast_total,
-                current_total=result.current_total,
-                prior_total=result.prior_total,
-                share=result.share,
+                forecast_total=finite(result.forecast_total) or 0.0,
+                current_total=finite(result.current_total),
+                prior_total=finite(result.prior_total),
+                share=finite(result.share) or 0.0,
             )
             session.add(row)
             rows[result.label] = row
@@ -502,11 +503,11 @@ async def persist(
                 series_id=rows[result.label].id,
                 period=period,
                 kind=PointKind.FORECAST,
-                forecast=point,
+                forecast=finite(point),
                 # Empty where the series was apportioned rather than fitted, so
                 # a chart draws no band instead of inventing one.
-                lower_bound=low,
-                upper_bound=high,
+                lower_bound=finite(low),
+                upper_bound=finite(high),
             )
             for result in below_root
             for period, point, low, high in _banded(periods, result)
@@ -522,7 +523,7 @@ async def persist(
                 series_id=rows[result.label].id,
                 period=period,
                 kind=PointKind.ACTUAL,
-                actual=value,
+                actual=finite(value),
             )
             for result in below_root
             for period, value in zip(history_periods, result.history, strict=False)

@@ -6,6 +6,7 @@ from datetime import datetime
 
 import numpy as np
 
+from app.core.numbers import compact
 from app.database.base import utcnow
 from app.models.enums import InsightSeverity, InsightType
 
@@ -66,17 +67,7 @@ class GeneratedInsight:
 
 
 def _fmt(value: float, currency_like: bool) -> str:
-    sign = "-" if value < 0 else ""
-    magnitude = abs(value)
-    prefix = "$" if currency_like else ""
-
-    if magnitude >= 1_000_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000_000:.2f}B"
-    if magnitude >= 1_000_000:
-        return f"{sign}{prefix}{magnitude / 1_000_000:.2f}M"
-    if magnitude >= 1_000:
-        return f"{sign}{prefix}{magnitude / 1_000:.1f}K"
-    return f"{sign}{prefix}{magnitude:,.0f}"
+    return compact(value, currency=currency_like)
 
 
 def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
