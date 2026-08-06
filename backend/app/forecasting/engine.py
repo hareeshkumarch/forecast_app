@@ -706,6 +706,10 @@ def _fit_leaf(
             calendar,
             plan,
             frequency,
+            None,
+            # The band this leaf will actually quote, so the cost of getting it
+            # wrong is priced against the promise it makes rather than a default.
+            confidence_level,
         )
         for kind in SEGMENT_CANDIDATES
     ]
