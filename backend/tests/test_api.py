@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
+import numpy as np
 import pytest
+from dateutil.relativedelta import relativedelta
 from httpx import AsyncClient
 
 from app.connectors.registry import ADAPTERS, RAIL_ORDER
@@ -465,3 +468,48 @@ async def test_cancelling_an_unknown_run_is_a_clean_404(client: AsyncClient) -> 
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+async def test_a_leading_column_in_the_upload_is_found_and_reported(client: AsyncClient) -> None:
+    """
+    End to end: a spare numeric column that genuinely leads the target should
+    be picked up from the upload without anybody configuring anything, and the
+    run should say so in words the reader can act on.
+    """
+    rng = np.random.default_rng(5)
+    n, lag = 84, 6
+    driver = rng.normal(0.0, 1.0, n)
+    season = 200.0 + 40.0 * np.sin(2 * np.pi * np.arange(n) / 12.0)
+    shock = np.zeros(n)
+    shock[lag:] = 60.0 * driver[: n - lag]
+    revenue = season + shock + rng.normal(0.0, 2.0, n)
+
+    rows = ["order_date,revenue,web_sessions"]
+    for index in range(n):
+        period = date(2018, 1, 1) + relativedelta(months=index)
+        rows.append(f"{period.isoformat()},{revenue[index]:.2f},{driver[index]:.4f}")
+
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("leading.csv", "\n".join(rows).encode(), "text/csv")},
+    )
+    assert upload.status_code == 201, upload.text
+    dataset = upload.json()["dataset"]
+
+    run = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "horizon": lag},
+    )
+    assert run.status_code == 202, run.text
+    run_id = run.json()["id"]
+
+    async with client.stream("GET", f"/api/forecasts/{run_id}/events") as stream:
+        async for _ in stream.aiter_lines():
+            pass
+
+    metrics = (await client.get(f"/api/forecasts/{run_id}/metrics")).json()
+    names = [column["name"] for column in metrics["leading_columns"]]
+
+    assert names == ["web_sessions"]
+    assert metrics["leading_columns"][0]["lag"] == lag
+    assert "web_sessions from 6 months earlier" in metrics["selection_rationale"]

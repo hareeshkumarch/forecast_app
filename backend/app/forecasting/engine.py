@@ -12,6 +12,7 @@ from app.core.logging import get_logger
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
+from app.forecasting.drivers import DriverLink, DriverPanel, build_panel, describe
 from app.forecasting.frequency import future_periods
 from app.forecasting.hierarchy import (
     Node,
@@ -76,6 +77,12 @@ class ForecastInput:
     metric_weights: dict[str, float] | None = None
     model_options: dict[str, object] | None = None
     quality: dict[str, object] = field(default_factory=dict)
+    #: Other numeric columns from the same upload, on the target's calendar.
+    #: Candidates only — which of them, if any, a model ends up using is
+    #: settled by the fit, not by the caller.
+    drivers: dict[str, list[float]] = field(default_factory=dict)
+    #: What the target is called, so an explanation can name it.
+    target_label: str = "the total"
 
 
 @dataclass(slots=True)
@@ -120,6 +127,10 @@ class ForecastOutput:
     regions: list[SegmentOutput] = field(default_factory=list)
     categories: list[SegmentOutput] = field(default_factory=list)
     drivers: list[Driver] = field(default_factory=list)
+    #: Columns of the customer's own data the winning model actually used, and
+    #: how far ahead each one leads. Empty when none earned their place, which
+    #: is a real answer and worth showing.
+    leading_columns: list[DriverLink] = field(default_factory=list)
 
 
 class CandidateRow(TypedDict):
@@ -154,15 +165,40 @@ def _make_factory(
     kind: ModelKind,
     frequency: ForecastFrequency,
     options: dict[str, object] | None,
+    drivers: DriverPanel | None = None,
 ) -> ModelFactory:
     def factory(y_train: FloatArray, _periods_train: list[date]) -> Forecaster:
         window_profile = profile_series(y_train, frequency)
-        model = build_candidate(kind, frequency, options, window_profile)
+        # The panel spans the whole series, and every fold is a prefix of it.
+        # A driver's lag is at least the horizon, so the furthest back any row
+        # can reach is inside its own training window — the fold cannot see
+        # past its cut, which is what makes the backtest number honest.
+        model = build_candidate(kind, frequency, options, window_profile, drivers)
         if kind in TRANSFORMABLE:
             return TransformedForecaster(model, build_transform(y_train, window_profile))
         return model
 
     return factory
+
+
+def _columns_used(model: Forecaster, panel: DriverPanel) -> list[DriverLink]:
+    """
+    Which of the offered columns the fitted model kept.
+
+    Asked of the model rather than assumed from the panel: the panel is what
+    was offered, and both models that can take drivers are free to decide the
+    series forecasts better without them. Reporting the offer as though it were
+    the decision would be the more flattering answer and the wrong one.
+    """
+    if not panel:
+        return []
+
+    params = model.params
+    used = params.get("drivers_used")
+    if not isinstance(used, list) or not used:
+        return []
+
+    return [link for link in panel.links if any(link.name in str(entry) for entry in used)]
 
 
 ProgressCallback = Callable[[str, int, int, str], None]
@@ -190,6 +226,18 @@ def run_forecast(
     profile = profile_series(values, frequency)
     floor = minimum_history(profile)
 
+    # Other numeric columns from the same upload, screened for the ones that
+    # move before the target does. Screening only earns them a place in the
+    # design matrix; the models decide out of sample whether to use them, and
+    # a dataset with nothing leading anything gets an empty panel and the
+    # forecast it would have had.
+    panel = build_panel(
+        values,
+        {name: np.asarray(column, dtype=float) for name, column in payload.drivers.items()},
+        horizon=horizon,
+        frequency=frequency,
+    )
+
     used_fallback = False
     fallback_reason: str | None = None
 
@@ -214,7 +262,7 @@ def run_forecast(
             )
         ]
     else:
-        candidates = build_candidates(frequency, payload.model_options, profile)
+        candidates = build_candidates(frequency, payload.model_options, profile, panel)
 
     results: list[BacktestResult] = []
     candidate_total = len(candidates)
@@ -229,7 +277,7 @@ def run_forecast(
             )
         results.append(
             run_backtest(
-                _make_factory(kind, frequency, payload.model_options),
+                _make_factory(kind, frequency, payload.model_options, panel),
                 kind,
                 values,
                 periods,
@@ -268,7 +316,9 @@ def run_forecast(
             1,
             f"Fitting {winner_kind.value.replace('_', ' ')} on the full history...",
         )
-    final_model = _make_factory(winner_kind, frequency, payload.model_options)(values, periods)
+    final_model = _make_factory(winner_kind, frequency, payload.model_options, panel)(
+        values, periods
+    )
 
     try:
         final_model.fit(values, periods)
@@ -355,11 +405,18 @@ def run_forecast(
     if progress_callback is not None:
         progress_callback("building_outputs", 1, 1, "Forecast outputs are ready to store.")
 
+    leading = _columns_used(final_model, panel)
+    rationale = (
+        selection.rationale if not used_fallback else f"{fallback_reason} {selection.rationale}"
+    )
+    lead_sentence = describe(leading, frequency, payload.target_label)
+    if lead_sentence:
+        rationale = f"{rationale} {lead_sentence}"
+
     return ForecastOutput(
+        leading_columns=leading,
         selected_model=winner_kind,
-        selection_rationale=(
-            selection.rationale if not used_fallback else f"{fallback_reason} {selection.rationale}"
-        ),
+        selection_rationale=rationale,
         scoring_rule=selection.scoring_rule,
         used_fallback=used_fallback,
         fallback_reason=fallback_reason,

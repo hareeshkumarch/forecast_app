@@ -7,10 +7,16 @@ import numpy as np
 import numpy.typing as npt
 
 from app.forecasting.diagnostics import SeriesProfile
+from app.forecasting.drivers import DriverPanel
 from app.forecasting.frequency import seasonal_period
 from app.models.enums import ForecastFrequency
 
 FloatArray = npt.NDArray[np.float64]
+
+#: Prefix on every column that comes from another column of the customer's
+#: data rather than from the target's own past. Named so a model can hold the
+#: two apart and be asked whether it is better off without them.
+DRIVER_PREFIX = "driver_"
 
 
 @dataclass(slots=True)
@@ -22,12 +28,21 @@ class FeatureSpec:
     use_seasonal: bool = True
     seasonal_period: int = 12
     names: list[str] = field(default_factory=list)
+    #: Columns of the customer's own data that lead the target, if any cleared
+    #: the screen. Empty is the ordinary case and changes nothing.
+    drivers: DriverPanel = field(default_factory=DriverPanel)
+
+
+def driver_mask(names: list[str]) -> npt.NDArray[np.bool_]:
+    """Which columns of a design matrix came from a driver."""
+    return np.array([name.startswith(DRIVER_PREFIX) for name in names], dtype=bool)
 
 
 def build_feature_spec(
     n_observations: int,
     frequency: ForecastFrequency,
     profile: SeriesProfile | None = None,
+    drivers: DriverPanel | None = None,
 ) -> FeatureSpec:
     period = (
         profile.seasonal_period
@@ -58,6 +73,7 @@ def build_feature_spec(
         rolling_windows=rolling_windows,
         use_seasonal=deep_seasonal,
         seasonal_period=period,
+        drivers=drivers or DriverPanel(),
     )
 
 
@@ -130,6 +146,8 @@ def _feature_columns(
         for i in range(2 * p, n):
             seasonal_delta[i] = values[i - p] - values[i - 2 * p]
         columns["seasonal_delta"] = seasonal_delta
+
+    columns.update(spec.drivers.columns(n))
 
     return columns
 

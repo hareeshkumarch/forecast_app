@@ -48,6 +48,7 @@ from app.models.entities import (
     RegionalForecast,
 )
 from app.models.enums import (
+    ColumnRole,
     ForecastFrequency,
     GapFill,
     MeasureAggregation,
@@ -506,8 +507,9 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
         dataset = await dataset_service.get_dataset(session, run.dataset_id)
         grouped = bool(run.group_by)
         parquet_path = Path(dataset.parquet_path or "")
+        driver_candidates = _driver_candidates(run, dataset)
 
-    payload = await asyncio.to_thread(_build_payload, run, parquet_path)
+    payload = await asyncio.to_thread(_build_payload, run, parquet_path, driver_candidates)
 
     if not await checkpoint_progress(
         run_id, 0.30, "backtesting", "Backtesting candidate models..."
@@ -656,7 +658,34 @@ async def complete_run(run_id: uuid.UUID) -> bool:
     return True
 
 
-def _build_payload(run: ForecastRun, parquet_path: Path) -> ForecastInput:
+def _driver_candidates(run: ForecastRun, dataset: Dataset) -> list[str]:
+    """
+    The dataset's other numeric columns — the ones the profiler called measures
+    and that this run is not already using for something else.
+
+    The profiler has been labelling these since the first upload and nothing
+    read them, so a price column, a promotion flag or a traffic count sitting
+    beside the target was ignored however much it explained.
+    """
+    spoken_for = {
+        run.time_column,
+        run.target_column,
+        run.weight_column,
+        run.region_column,
+        run.category_column,
+        *(run.group_by or []),
+    }
+
+    return [
+        column.name
+        for column in dataset.columns
+        if column.role is ColumnRole.MEASURE and column.name not in spoken_for
+    ]
+
+
+def _build_payload(
+    run: ForecastRun, parquet_path: Path, driver_candidates: list[str] | None = None
+) -> ForecastInput:
     series = queries.aggregate_series(
         parquet_path,
         run.time_column,
@@ -689,8 +718,19 @@ def _build_payload(run: ForecastRun, parquet_path: Path) -> ForecastInput:
 
     overrides = RunOverrides.from_stored(run.options)
 
+    drivers = queries.aggregate_candidate_drivers(
+        parquet_path,
+        run.time_column,
+        driver_candidates or [],
+        run.frequency,
+        periods,
+        aggregation=run.aggregation,
+    )
+
     return ForecastInput(
         series=SeriesInput(periods=periods, values=values, weights=weights),
+        drivers=drivers,
+        target_label=run.target_column,
         quality={
             **report.as_dict(),
             "fill_applied": fill_applied.value,
@@ -744,6 +784,10 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
 
     run.selected_model = ModelKind(output.selected_model)
     run.selection_rationale = output.selection_rationale
+    run.leading_columns = [
+        {"name": link.name, "lag": link.lag, "direction": link.direction}
+        for link in output.leading_columns
+    ]
     run.used_fallback = output.used_fallback
     run.fallback_reason = output.fallback_reason
     run.history_start = output.history_periods[0] if output.history_periods else None

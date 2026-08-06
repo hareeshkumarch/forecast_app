@@ -125,6 +125,17 @@ class ForecastRunRequest(StrictModel):
         return self
 
 
+class LeadingColumn(BaseModel):
+    """A column of the customer's own data the forecast read, and its lead."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    lag: NonNegativeInt
+    #: Whether the target tends to follow the driver up or down.
+    direction: str = "up"
+
+
 class ModelCandidateRead(ORMModel):
     id: uuid.UUID
     model: ModelKind
@@ -337,6 +348,7 @@ class ForecastRunRead(ORMModel):
     outlier_treatment: OutlierTreatment
     selected_model: ModelKind | None
     selection_rationale: str | None
+    leading_columns: list[LeadingColumn] = Field(default_factory=list)
     used_fallback: bool
     fallback_reason: str | None
     history_start: date | None
@@ -379,6 +391,10 @@ class ForecastMetricsResponse(BaseModel):
     run_id: uuid.UUID
     selected_model: ModelKind | None
     selection_rationale: str | None
+    leading_columns: list[LeadingColumn] = Field(default_factory=list)
+    #: So a lead can be described in the run's own units — "6 months earlier"
+    #: rather than "6 periods".
+    frequency: ForecastFrequency
     scoring_rule: str
     metrics: list[ForecastMetricRead]
     candidates: list[ModelCandidateRead]

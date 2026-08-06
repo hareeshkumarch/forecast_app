@@ -62,3 +62,21 @@ export function periodsPerYear(frequency: ForecastFrequency | null | undefined):
       return 12;
   }
 }
+
+//: What one step of each frequency is called, so a lead can be described in
+//: the reader's own units rather than as "6 periods".
+const PERIOD_WORDS: Record<ForecastFrequency, [string, string]> = {
+  daily: ["day", "days"],
+  weekly: ["week", "weeks"],
+  monthly: ["month", "months"],
+  quarterly: ["quarter", "quarters"],
+};
+
+/** "6 months earlier", for a lead of six periods on a monthly run. */
+export function periodsAgo(
+  periods: number,
+  frequency: ForecastFrequency | null | undefined,
+): string {
+  const [singular, plural] = PERIOD_WORDS[frequency ?? "monthly"] ?? ["period", "periods"];
+  return `${periods} ${periods === 1 ? singular : plural} earlier`;
+}

@@ -160,6 +160,8 @@ async def get_metrics(run_id: uuid.UUID, session: SessionDep) -> ForecastMetrics
         run_id=run.id,
         selected_model=run.selected_model,
         selection_rationale=run.selection_rationale,
+        leading_columns=list(run.leading_columns or []),
+        frequency=run.frequency,
         scoring_rule=SCORING_RULE,
         metrics=[ForecastMetricRead.model_validate(m) for m in run.metrics],
         candidates=[ModelCandidateRead.model_validate(c) for c in candidates.scalars().all()],

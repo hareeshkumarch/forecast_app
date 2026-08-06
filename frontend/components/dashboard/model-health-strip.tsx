@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowRight, BrainCircuit, CheckCircle2 } from "lucide-react";
+import { ArrowRight, BrainCircuit, CheckCircle2, Link2 } from "lucide-react";
 
 import { Badge, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { useForecastMetrics, useSummary } from "@/hooks/use-dashboard";
 import { formatCompact, humanizeModel } from "@/lib/format";
+import { periodsAgo } from "@/lib/periods";
 import { useUiStore } from "@/stores/ui-store";
 
 export function ModelHealthStrip() {
@@ -18,6 +19,7 @@ export function ModelHealthStrip() {
   if (isError) return <Card className="mt-3"><ErrorState error={error} onRetry={() => void refetch()} className="py-4" /></Card>;
   if (!data) return null;
 
+  const leading = data.leading_columns ?? [];
   const selected = data.candidates.find((candidate) => candidate.selected);
   const scored = data.candidates.filter((candidate) => !candidate.failed);
   const runnerUp = scored.find((candidate) => !candidate.selected);
@@ -46,6 +48,26 @@ export function ModelHealthStrip() {
           {runnerUp ? `, which beat ${humanizeModel(runnerUp.model)}` : ""}
           {selected?.folds ? ` over ${selected.folds} test${selected.folds === 1 ? "" : "s"}` : ""}.
         </p>
+
+        {/*
+          * What the forecast looked at besides the target's own past. Worth a
+          * line of its own: "we also read your web sessions" is the single
+          * most reassuring thing this strip can say, and it only appears when
+          * the column actually earned its place in the fit.
+          */}
+        {leading.length > 0 ? (
+          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
+            <Link2 className="h-3 w-3 shrink-0 text-accent" aria-hidden />
+            Also read{" "}
+            {leading.map((column, index) => (
+              <span key={column.name}>
+                <span className="font-medium text-text-secondary">{column.name}</span>{" "}
+                <span>from {periodsAgo(column.lag, data.frequency)}</span>
+                {index < leading.length - 1 ? "," : ""}
+              </span>
+            ))}
+          </p>
+        ) : null}
       </div>
       <dl className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <div title="How far off this method was when tested on periods it had not seen">
