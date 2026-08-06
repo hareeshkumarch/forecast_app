@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote, urlparse
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,10 +16,22 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
 
+    # Supabase is the platform's store of record. `database_url` is what it
+    # falls back to when Supabase is not configured or cannot be reached.
+    supabase_db_url: str = ""
+    supabase_url: str = ""
+    supabase_db_password: str = ""
+    supabase_db_user: str = "postgres"
+    supabase_db_name: str = "postgres"
+    supabase_db_port: int = 5432
+
     database_url: str = "postgresql+asyncpg://forecasting:forecasting@localhost:5432/forecasting"
     sync_database_url: str = (
         "postgresql+psycopg://forecasting:forecasting@localhost:5432/forecasting"
     )
+
+    database_fallback_enabled: bool = True
+    database_probe_timeout: float = 5.0
 
     storage_root: Path = Path("./storage")
 
@@ -56,6 +69,41 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     insight_llm_model: str = "claude-3-5-sonnet-20241022"
+
+    @property
+    def supabase_project_ref(self) -> str:
+        raw = self.supabase_url.strip()
+        if not raw:
+            return ""
+        host = urlparse(raw if "://" in raw else f"https://{raw}").hostname or ""
+        if not host.endswith(".supabase.co"):
+            return ""
+        return host.removesuffix(".supabase.co").removeprefix("db.")
+
+    @property
+    def supabase_dsn(self) -> str:
+        """A plain ``postgresql://`` DSN for Supabase, or "" when unconfigured.
+
+        Either give the whole connection string Supabase shows under Project
+        Settings → Database, or give the project URL and the database password
+        and let the host be derived from the project ref.
+        """
+        explicit = self.supabase_db_url.strip()
+        if explicit:
+            return explicit
+
+        ref = self.supabase_project_ref
+        if not ref or not self.supabase_db_password:
+            return ""
+        return (
+            f"postgresql://{quote(self.supabase_db_user, safe='')}"
+            f":{quote(self.supabase_db_password, safe='')}"
+            f"@db.{ref}.supabase.co:{self.supabase_db_port}/{self.supabase_db_name}"
+        )
+
+    @property
+    def supabase_configured(self) -> bool:
+        return bool(self.supabase_dsn)
 
     @property
     def broker_url(self) -> str:

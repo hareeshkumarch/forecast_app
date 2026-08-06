@@ -7,6 +7,7 @@ import { Badge, Button, Card, ErrorState, InlineError, Skeleton } from "@/compon
 import { useConnectors, useDeleteConnector, useTestConnector } from "@/hooks/use-dashboard";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { confirm } from "@/stores/confirm-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { Connector, ConnectorStatus } from "@/types/api";
 
@@ -139,11 +140,14 @@ function ConnectorActions({
 
   const isTheirs = connector.status !== "not_configured";
 
-  function handleRemove() {
-    const confirmed = window.confirm(
-      `Remove "${connector.name}"? Its saved credentials are deleted. Data already ` +
+  async function handleRemove() {
+    const confirmed = await confirm({
+      title: "Remove this connector?",
+      message:
+        `The saved credentials for "${connector.name}" are deleted. Data already ` +
         "imported through it, and any forecast built on that data, is untouched.",
-    );
+      confirmLabel: "Remove connector",
+    });
     if (confirmed) removeMutation.mutate(connector.id);
   }
 
@@ -192,7 +196,7 @@ function ConnectorActions({
             variant="ghost"
             icon={Trash2}
             loading={removeMutation.isPending}
-            onClick={handleRemove}
+            onClick={() => void handleRemove()}
             className="text-negative hover:bg-negative-soft"
           >
             Remove

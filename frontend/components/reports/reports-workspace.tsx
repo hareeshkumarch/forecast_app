@@ -21,6 +21,7 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { formatDateRange, formatRelativeTime, humanizeKey, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWord } from "@/lib/periods";
 import { cn } from "@/lib/utils";
+import { confirm } from "@/stores/confirm-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastRun, MeasureAggregation, RunSort, RunState, RunStatus } from "@/types/api";
 
@@ -227,10 +228,12 @@ export function ReportsWorkspace() {
   const total = data?.total ?? 0;
   const showing = data ? `${data.offset + 1}–${data.offset + shown.length} of ${total}` : "";
 
-  function handleClear(run: ForecastRun) {
-    const confirmed = window.confirm(
-      `Clear "${run.name}"? This permanently removes its forecast results and generated exports.`,
-    );
+  async function handleClear(run: ForecastRun) {
+    const confirmed = await confirm({
+      title: "Clear this run?",
+      message: `"${run.name}" loses its forecast results and generated exports permanently.`,
+      confirmLabel: "Clear run",
+    });
     if (!confirmed) return;
 
     clearRun.mutate(run.id, {

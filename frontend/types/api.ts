@@ -626,6 +626,9 @@ export interface DataQualityResponse {
 export interface HealthResponse {
   status: string;
   database: string;
+  database_target: "supabase" | "local";
+  database_host: string;
+  supabase_configured: boolean;
   storage_writable: boolean;
   forecast_workers: number;
   max_upload_mb: number;

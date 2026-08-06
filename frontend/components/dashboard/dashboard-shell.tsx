@@ -18,6 +18,7 @@ import { Workspace } from "@/components/dashboard/workspace";
 import { ReportsWorkspace } from "@/components/reports/reports-workspace";
 import { SeriesWorkspace } from "@/components/series/series-workspace";
 import { SettingsWorkspace } from "@/components/settings/settings-workspace";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Toaster } from "@/components/ui/toaster";
 import { AllInsightsModal } from "@/components/insights/all-insights-modal";
 import { InsightDrawer } from "@/components/insights/insight-drawer";
@@ -64,6 +65,7 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
       <AllInsightsModal />
       <SettingsModal />
       <InsightDrawer />
+      <ConfirmDialog />
     </div>
   );
 }
