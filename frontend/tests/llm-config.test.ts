@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   EMPTY_LLM_CONFIG,
+  PROVIDERS,
+  PROVIDERS_NEEDING_BASE_URL,
+  PROVIDER_MODELS,
   clearLlmConfig,
   defaultModelFor,
   llmRunFields,
@@ -89,9 +92,20 @@ describe("llmRunFields", () => {
 });
 
 describe("defaultModelFor", () => {
+  // Named model ids move as providers ship new ones, so this pins the rule —
+  // the first of the provider's list — rather than today's answer to it.
   it("picks the first model of a known provider and empties an unknown one", () => {
-    expect(defaultModelFor("anthropic")).toBe("claude-3-5-sonnet-20241022");
+    for (const [provider, models] of Object.entries(PROVIDER_MODELS)) {
+      expect(defaultModelFor(provider)).toBe(models[0] ?? "");
+    }
     expect(defaultModelFor("custom")).toBe("");
     expect(defaultModelFor("nope")).toBe("");
+  });
+
+  it("offers a model for every provider that is not self-hosted", () => {
+    for (const provider of PROVIDERS) {
+      if (PROVIDERS_NEEDING_BASE_URL.has(provider.value)) continue;
+      expect(defaultModelFor(provider.value), provider.value).not.toBe("");
+    }
   });
 });

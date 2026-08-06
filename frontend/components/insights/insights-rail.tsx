@@ -1,11 +1,13 @@
 "use client";
 
 
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   AlertTriangle,
   ArrowUpRight,
   Flame,
   Lightbulb,
+  MoreHorizontal,
   ShieldAlert,
   Sparkles,
   TrendingDown,
@@ -13,10 +15,21 @@ import {
   Waves,
   type LucideIcon,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
-import { Badge, Button, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
-import { useInsights } from "@/hooks/use-dashboard";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  MENU_CONTENT,
+  MENU_ITEM,
+  Skeleton,
+} from "@/components/ui/primitives";
+import { ProviderLogo } from "@/components/ui/provider-logo";
+import { usePlainInsights, useInsights, useRewriteInsights } from "@/hooks/use-dashboard";
 import { formatMetric } from "@/lib/format";
+import { PROVIDERS, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { Insight, InsightSeverity, InsightType } from "@/types/api";
@@ -80,23 +93,112 @@ export function InsightsRail() {
   );
 }
 
+/**
+ * Which provider is configured in this browser, if any.
+ *
+ * Read after mount, not during render: the config lives in localStorage, and
+ * reading it on the server would make the first paint disagree with the second.
+ */
+function useConfiguredProvider(): { id: string; label: string } | null {
+  const [provider, setProvider] = useState<{ id: string; label: string } | null>(null);
+
+  useEffect(() => {
+    const config = loadLlmConfig();
+    if (!config.apiKey.trim()) return;
+    const known = PROVIDERS.find((entry) => entry.value === config.provider);
+    setProvider({ id: config.provider, label: known?.label ?? config.provider });
+  }, []);
+
+  return provider;
+}
+
 export function InsightsRailBody() {
   const { data, isLoading, isError, error, refetch } = useInsights();
   const openInsight = useUiStore((state) => state.openInsight);
   const openModal = useUiStore((state) => state.openModal);
+  const provider = useConfiguredProvider();
+  const rewrite = useRewriteInsights();
+  const plain = usePlainInsights();
 
   const items = data?.items ?? [];
+  const rewritten = items.filter((insight) => insight.llm_rewritten).length;
+  const busy = rewrite.isPending || plain.isPending;
 
   return (
     <>
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
-     <h2 className="text-subhead font-semibold text-text-primary">Forecast Insights</h2>
+          <h2 className="text-subhead font-semibold text-text-primary">Forecast Insights</h2>
           {items.length > 0 ? (
             <span className="ml-auto text-caption text-text-muted num">{items.length}</span>
           ) : null}
+
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                aria-label="Insight wording"
+                disabled={items.length === 0}
+                className={cn(
+                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-chip",
+                  "text-text-muted transition-colors duration-fast",
+                  "hover:bg-surface-muted hover:text-text-primary",
+                  "disabled:pointer-events-none disabled:opacity-40",
+                  items.length === 0 ? "" : "ml-0.5",
+                )}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT}>
+                <DropdownMenu.Item
+                  disabled={!provider || busy}
+                  onSelect={() => rewrite.mutate()}
+                  className={MENU_ITEM}
+                >
+                  {provider ? (
+                    <ProviderLogo provider={provider.id} className="h-3.5 w-3.5" />
+                  ) : null}
+                  {provider ? `Reword with ${provider.label}` : "Reword with AI"}
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  disabled={rewritten === 0 || busy}
+                  onSelect={() => plain.mutate()}
+                  className={MENU_ITEM}
+                >
+                  Use the plain wording
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                <DropdownMenu.Item onSelect={() => openModal("settings")} className={MENU_ITEM}>
+                  Choose a provider…
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
+
+        {/*
+          * Who wrote what you are reading. Without this the badge on a card
+          * was the only clue that a model had been anywhere near it, and there
+          * was nothing at all to say why it had not.
+          */}
+        {items.length > 0 ? (
+          <p className="mt-1 flex items-center gap-1.5 text-caption text-text-muted">
+            {rewritten > 0 && provider ? (
+              <>
+                <ProviderLogo provider={provider.id} className="h-3 w-3" />
+                <span>Worded by {provider.label}. The figures are the platform&apos;s.</span>
+              </>
+            ) : (
+              <span>
+                Written by the platform.
+                {provider ? "" : " Add a provider in Settings to have them reworded."}
+              </span>
+            )}
+          </p>
+        ) : null}
 
         <div className="mt-2.5 h-px w-full bg-gradient-to-r from-accent/45 to-transparent" />
       </div>

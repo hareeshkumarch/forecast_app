@@ -1,18 +1,14 @@
 "use client";
 
-import { Maximize2, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Modal } from "@/components/ui/modal";
+import { Panel } from "@/components/ui/panel";
 import {
   Badge,
-  Card,
   EmptyState,
-  ErrorState,
-  IconButton,
   Input,
-  PanelHeader,
   Skeleton,
 } from "@/components/ui/primitives";
 import { useBreakdown } from "@/hooks/use-dashboard";
@@ -39,64 +35,40 @@ const READABLE_SLICES = 7;
 const PANEL_ROWS = 8;
 
 export function BreakdownPanel({ breakdown }: { breakdown: BreakdownRef }) {
-  const [enlarged, setEnlarged] = useState(false);
   const { data, isLoading, isError, error, refetch } = useBreakdown(breakdown.column);
   const rows = data?.rows ?? [];
+  const currency = data?.currency ?? true;
+  const count = `${rows.length.toLocaleString()} ${rows.length === 1 ? "value" : "values"}`;
 
   return (
-    <>
-      <Card className="flex min-w-0 flex-col">
-        <div className="flex items-start justify-between gap-2 pr-2">
-          <PanelHeader
-            title={`Forecast by ${breakdown.label}`}
-            subtitle={
-              rows.length > 0
-                ? `${rows.length.toLocaleString()} ${rows.length === 1 ? "value" : "values"}, largest first`
-                : "Where the forecast comes from"
-            }
-          />
-          <IconButton
-            label={`Enlarge forecast by ${breakdown.label}`}
-            icon={Maximize2}
-            onClick={() => setEnlarged(true)}
-            className="mt-3 shrink-0"
-          />
+    <Panel
+      title={`Forecast by ${breakdown.label}`}
+      subtitle={rows.length > 0 ? `${count}, largest first` : "Where the forecast comes from"}
+      state={{ isLoading, isError, error, refetch: () => void refetch() }}
+      isEmpty={rows.length === 0}
+      empty={{
+        title: `No ${breakdown.label.toLowerCase()} to show`,
+        message: "This forecast produced no split for that column.",
+      }}
+      enlarged={{
+        title: `Forecast by ${breakdown.label}`,
+        description: `${count} · ${formatCompact(data?.total ?? 0, currency)} in total`,
+        content: <Enlarged rows={rows} currency={currency} label={breakdown.label} />,
+      }}
+      skeleton={
+        <div className="space-y-2.5 px-1 pt-2" aria-hidden>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-5 w-full" />
+          ))}
         </div>
-
-        <div className="min-h-0 flex-1 px-3 pb-3">
-          {isLoading ? (
-            <div className="space-y-2.5 px-1 pt-2" aria-hidden>
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Skeleton key={index} className="h-5 w-full" />
-              ))}
-            </div>
-          ) : isError ? (
-            <ErrorState error={error} onRetry={() => void refetch()} />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              title={`No ${breakdown.label.toLowerCase()} to show`}
-              message="This forecast produced no split for that column."
-            />
-          ) : (
-            <BreakdownChart
-              rows={rows.slice(0, PANEL_ROWS)}
-              currency={data?.currency ?? true}
-              ariaLabel={`Forecast by ${breakdown.label}`}
-            />
-          )}
-        </div>
-      </Card>
-
-      <Modal
-        open={enlarged}
-        onClose={() => setEnlarged(false)}
-        title={`Forecast by ${breakdown.label}`}
-        description={`${rows.length.toLocaleString()} ${rows.length === 1 ? "value" : "values"} · ${formatCompact(data?.total ?? 0, data?.currency ?? true)} in total`}
-        size="xl"
-      >
-        <Enlarged rows={rows} currency={data?.currency ?? true} label={breakdown.label} />
-      </Modal>
-    </>
+      }
+    >
+      <BreakdownChart
+        rows={rows.slice(0, PANEL_ROWS)}
+        currency={currency}
+        ariaLabel={`Forecast by ${breakdown.label}`}
+      />
+    </Panel>
   );
 }
 

@@ -176,31 +176,38 @@ def select_model(
 
 
 def _rationale(winner: ScoredCandidate, scored: list[ScoredCandidate]) -> str:
-    name = winner.result.model.value.replace("_", " ")
+    """
+    Why this method won, for the person who has to trust the number.
+
+    This sentence sits on the dashboard and at the top of the report, so it
+    says what the figures mean rather than naming them. wMAPE, sMAPE and RMSE
+    are all still on the model screen for anyone who wants them; three
+    acronyms and a composite score are not what the first screen is for.
+    """
+    name = winner.result.model.value.replace("_", " ").capitalize()
+    folds = winner.result.n_folds
     parts = [
-        f"Selected {name}: wMAPE {winner.result.wmape:.2f}%, "
-        f"sMAPE {winner.result.smape:.2f}%, RMSE {winner.result.rmse:,.0f} "
-        f"across {winner.result.n_folds} backtest folds."
+        f"{name} was off by {winner.result.wmape:.1f}% on average when tested against "
+        f"{folds} stretch{'' if folds == 1 else 'es'} of history it had not seen."
     ]
 
     runner_up = next((c for c in scored[1:] if math.isfinite(c.score)), None)
     if runner_up is not None:
-        gap = runner_up.score - winner.score
         runner_name = runner_up.result.model.value.replace("_", " ")
-        if gap < 0.05:
+        if runner_up.score - winner.score < 0.05:
             parts.append(
-                f"It edged out {runner_name} by {gap:.3f} on the composite score — "
-                "close enough that the simplicity tie-breaker mattered."
+                f"{runner_name.capitalize()} was so close behind that the simpler of "
+                "the two was preferred."
             )
         else:
-            parts.append(
-                f"Next best was {runner_name} at wMAPE {runner_up.result.wmape:.2f}% "
-                f"(composite gap {gap:.3f})."
-            )
+            parts.append(f"Next best was {runner_name}, off by {runner_up.result.wmape:.1f}%.")
 
     skipped = [c for c in scored if c.result.failed]
     if skipped:
         names = ", ".join(c.result.model.value.replace("_", " ") for c in skipped)
-        parts.append(f"Not scoreable on this history: {names}.")
+        parts.append(
+            f"There was not enough history to test {names}, so {'it was' if len(skipped) == 1 else 'they were'} "
+            "left out."
+        )
 
     return " ".join(parts)

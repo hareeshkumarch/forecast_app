@@ -55,12 +55,12 @@ const LEVELS = [
   {
     value: "all",
     label: "Every level",
-    hint: "Total, groups and the grain itself",
+    hint: "The total, the groups, and every single line",
   },
   {
     value: "leaf",
-    label: "The grain only",
-    hint: "Just the series you forecast at",
+    label: "Individual lines only",
+    hint: "Skip the totals and groups above them",
   },
 ];
 
@@ -91,7 +91,7 @@ export function SeriesWorkspace() {
           <p className="mt-0.5 text-caption text-text-muted">
             {run?.group_by.length
               ? `${run.series_count.toLocaleString()} lines, broken down by ${run.group_by.join(" and ")}`
-              : "Forecasts broken down by the grain a run was given"}
+              : "Forecasts broken down by whatever a run was split on"}
           </p>
         </header>
 
@@ -125,8 +125,8 @@ export function SeriesWorkspace() {
             <EmptyState
               icon={SlidersHorizontal}
               title="This run forecasts one total"
-              message="Pick a forecast grain when you start a run — SKU by store, account by product — and every combination is forecast in its own right."
-              action={<NewForecastButton label="Run one at a grain" />}
+              message="Choose what to break the forecast down by when you start a run — product by store, account by service — and each combination gets forecast on its own."
+              action={<NewForecastButton label="Run a broken-down forecast" />}
             />
           </Card>
         ) : (

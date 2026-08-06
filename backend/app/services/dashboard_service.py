@@ -9,21 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.datasets.profiler import is_currency_like
 from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import (
-    CategoryForecast,
     ForecastDriver,
     ForecastMetric,
     ForecastPoint,
     ForecastRun,
     Insight,
-    RegionalForecast,
 )
 from app.models.enums import PointKind
 from app.schemas.dashboard import (
     BreakdownRef,
     BreakdownResponse,
     BreakdownRowRead,
-    CategoryResponse,
-    CategoryRow,
     DashboardQuery,
     DashboardSummary,
     DriverResponse,
@@ -31,8 +27,6 @@ from app.schemas.dashboard import (
     InsightRead,
     InsightResponse,
     KpiCard,
-    RegionResponse,
-    RegionRow,
 )
 from app.services import breakdown_service, forecast_service
 
@@ -370,43 +364,6 @@ def _card(
         delta_display=delta_display,
         direction=direction,
         tone=tone,
-    )
-
-
-async def regions(session: AsyncSession, query: DashboardQuery) -> RegionResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
-    if run is None:
-        return RegionResponse(run_id=None, rows=[], total=0.0)
-
-    result = await session.execute(
-        select(RegionalForecast)
-        .where(RegionalForecast.run_id == run.id)
-        .order_by(RegionalForecast.forecast_value.desc())
-    )
-    rows = [RegionRow.model_validate(row) for row in result.scalars().all()]
-    return RegionResponse(
-        run_id=run.id, rows=rows, total=round(sum(r.forecast_value for r in rows), 4)
-    )
-
-
-async def categories(session: AsyncSession, query: DashboardQuery) -> CategoryResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
-    if run is None:
-        return CategoryResponse(run_id=None, rows=[], total=0.0, total_display="—")
-
-    result = await session.execute(
-        select(CategoryForecast)
-        .where(CategoryForecast.run_id == run.id)
-        .order_by(CategoryForecast.rank)
-    )
-    rows = [CategoryRow.model_validate(row) for row in result.scalars().all()]
-    total = sum(r.forecast_value for r in rows)
-
-    return CategoryResponse(
-        run_id=run.id,
-        rows=rows,
-        total=round(total, 4),
-        total_display=format_value(total, currency=_is_currency(run.target_column)),
     )
 
 

@@ -13,6 +13,11 @@ import { cn } from "@/lib/utils";
  * A bare "Refresh" button asks the reader to wonder whether they need it. The
  * age answers that before they click, and it keeps counting while they watch —
  * which is also what tells them the screen is live rather than stuck.
+ *
+ * While it fetches, the glyph turns and everything else holds still. The
+ * screen already has the previous answer on it; replacing the age with
+ * "Checking…" reflows the whole header row, and swapping the icon for a
+ * spinner says the content went away when it did not.
  */
 export function RefreshButton({
   updatedAt,
@@ -35,11 +40,14 @@ export function RefreshButton({
     <div className={cn("flex items-center gap-2", className)}>
       <span
         aria-live="polite"
-        className="hidden text-caption text-text-muted sm:inline tabular-nums"
+        // Fixed width: the wording steps between "just now" and "12 minutes
+        // ago" on its own timer, and without a floor for it the button beside
+        // it walks across the header every time it does.
+        className="hidden min-w-[112px] text-right text-caption text-text-muted sm:inline tabular-nums"
       >
-        {isFetching ? "Checking for new data…" : age}
+        {age}
       </span>
-      <Button variant="ghost" icon={RefreshCw} loading={isFetching} onClick={onRefresh}>
+      <Button variant="ghost" icon={RefreshCw} loading={isFetching} spin onClick={onRefresh}>
         {label}
       </Button>
     </div>

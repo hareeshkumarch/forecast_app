@@ -477,43 +477,6 @@ export interface DashboardSummary {
   breakdowns: BreakdownRef[];
 }
 
-export interface RegionRow {
-  region: string;
-  forecast_value: number;
-  prior_year_value: number | null;
-  change_vs_last_year: number | null;
-  accuracy: number | null;
-  share: number | null;
-  /** The model that won this segment's own backtest, when it had one. */
-  model: ModelKind | null;
-  /** False when the accuracy was inherited from the top line rather than measured here. */
-  accuracy_measured: boolean;
-}
-
-export interface RegionResponse {
-  run_id: string | null;
-  rows: RegionRow[];
-  total: number;
-}
-
-export interface CategoryRow {
-  category: string;
-  forecast_value: number;
-  share: number;
-  change_vs_last_year: number | null;
-  accuracy: number | null;
-  rank: number;
-  model: ModelKind | null;
-  accuracy_measured: boolean;
-}
-
-export interface CategoryResponse {
-  run_id: string | null;
-  rows: CategoryRow[];
-  total: number;
-  total_display: string;
-}
-
 export interface DriverRow {
   driver: string;
   impact_value: number;
@@ -544,6 +507,42 @@ export interface Insight {
   rank: number;
   generated_at: string;
   llm_rewritten: boolean;
+}
+
+/**
+ * Which provider to talk to, for one request.
+ *
+ * Never stored server-side: the key lives in the browser and rides along with
+ * the request that needs it.
+ */
+export interface LlmRunFields {
+  llm_provider: string | null;
+  llm_api_key: string | null;
+  llm_model: string | null;
+  llm_base_url: string | null;
+  llm_input_cost_per_million: number | null;
+  llm_output_cost_per_million: number | null;
+}
+
+/** What one pass of the insight rewriter did. */
+export interface InsightRewriteResponse {
+  run_id: string | null;
+  considered: number;
+  rewritten: number;
+  provider: string;
+  model: string;
+  summary: string;
+  items: Insight[];
+}
+
+/** Whether the configured provider answered, and what to do if it did not. */
+export interface LlmCheckResponse {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latency_ms: number;
+  message: string;
+  error_code: string | null;
 }
 
 export interface InsightResponse {

@@ -41,3 +41,24 @@ export function periodWindowEnd(
 export function labelGranularity(frequency: ForecastFrequency | null | undefined): "day" | "month" {
   return frequency === "daily" || frequency === "weekly" ? "day" : "month";
 }
+
+/**
+ * How many periods make a year at this frequency.
+ *
+ * "Last year" has to mean 365 days on a daily run and four periods on a
+ * quarterly one; a fixed count would quietly mean something different for
+ * every dataset.
+ */
+export function periodsPerYear(frequency: ForecastFrequency | null | undefined): number {
+  switch (frequency) {
+    case "daily":
+      return 365;
+    case "weekly":
+      return 52;
+    case "quarterly":
+      return 4;
+    case "monthly":
+    default:
+      return 12;
+  }
+}

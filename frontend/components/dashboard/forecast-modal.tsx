@@ -337,11 +337,11 @@ export function ForecastModal() {
 
           <Section title="What to forecast">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Frequency" hint="Period the series is on" required>
+              <Field label="Time step" hint="How often the data is recorded" required>
                 <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
               </Field>
 
-              <Field label="Horizon" hint="Periods ahead" required>
+              <Field label="How far ahead" hint="How many periods to forecast" required>
                 <Input
                   type="number"
                   min={1}
@@ -351,7 +351,7 @@ export function ForecastModal() {
                 />
               </Field>
 
-              <Field label="Confidence %" hint="Width of the band">
+              <Field label="Confidence" hint="How often the real number should land inside the range">
                 <Input
                   type="number"
                   min={51}
@@ -365,21 +365,21 @@ export function ForecastModal() {
 
           <Section title="Break it down by" note="Optional">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Region" hint="Splits the total by geography">
+              <Field label="Region" hint="A column like region or country">
                 <DimensionSelect
                   value={regionColumn}
                   onChange={setRegionColumn}
                   options={dimensions.map((column) => column.name)}
                 />
               </Field>
-              <Field label="Category" hint="Splits the total by product">
+              <Field label="Category" hint="A column like product or service">
                 <DimensionSelect
                   value={categoryColumn}
                   onChange={setCategoryColumn}
                   options={dimensions.map((column) => column.name)}
                 />
               </Field>
-              <Field label="Weight" hint="Used for weighted MAPE">
+              <Field label="Weight by" hint="Make bigger periods count for more">
                 <DimensionSelect
                   value={weightColumn}
                   onChange={setWeightColumn}
@@ -399,7 +399,7 @@ export function ForecastModal() {
               levels still add up.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Forecast each" hint="The outer level of the tree">
+              <Field label="Break it down by" hint="The first thing to split on">
                 <DimensionSelect
                   value={grainOne}
                   onChange={(next) => {
@@ -441,7 +441,7 @@ export function ForecastModal() {
 
           <Section title="How to read the data">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Combine rows by" hint="Collapses duplicate periods">
+              <Field label="Repeated dates" hint="How to combine rows that share a date">
                 <Select value={aggregation} onChange={setAggregation} options={AGGREGATIONS} />
               </Field>
 
@@ -499,7 +499,7 @@ export function ForecastModal() {
                 id="advanced-model-settings"
                 className="mt-3 grid grid-cols-1 gap-3 rounded-card border border-border bg-surface-muted/40 p-3 sm:grid-cols-2"
               >
-                <Field label="Validation folds" hint="Backtest windows, 1 to 10">
+                <Field label="How many tests" hint="Times to check the method on past periods">
                   <Input
                     type="number"
                     min={1}
@@ -509,11 +509,11 @@ export function ForecastModal() {
                   />
                 </Field>
 
-                <Field label="Metric emphasis" hint="How candidates are scored">
+                <Field label="What matters most" hint="Which kind of mistake to avoid">
                   <Select value={metricFocus} onChange={setMetricFocus} options={METRIC_FOCUS} />
                 </Field>
 
-                <Field label="Tree depth" hint="Gradient boosting only">
+                <Field label="Model complexity" hint="Gradient boosting only — deeper finds more, and overfits sooner">
                   <Input
                     type="number"
                     min={1}
