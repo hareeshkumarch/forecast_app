@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 20 * 1024 * 1024
 
     forecast_workers: int = 2
-    run_seed_on_startup: bool = True
 
     # Set a broker to run forecasts on Celery. Left empty the platform stays
     # single-node and fits models in an in-process pool, which is what the

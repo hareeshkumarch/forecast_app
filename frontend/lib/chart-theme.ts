@@ -1,4 +1,3 @@
-import type { EChartsOption } from "echarts";
 
 /**
  * Charts paint on a canvas, so they cannot inherit CSS variables the way the
@@ -97,15 +96,6 @@ export function axisLabel(colors: ChartPalette = chartColors()) {
 
 export function axisLine(colors: ChartPalette = chartColors()) {
   return { show: true, lineStyle: { color: colors.border, width: 1 } };
-}
-
-export function baseChartOption(colors: ChartPalette = chartColors()): EChartsOption {
-  return {
-    backgroundColor: "transparent",
-    textStyle: baseTextStyle(colors),
-    animation: false,
-    tooltip: { ...tooltipStyle(colors), confine: true },
-  };
 }
 
 export function axisValueFormatter(currency = true) {

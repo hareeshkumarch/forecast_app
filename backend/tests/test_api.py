@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from app.connectors.registry import ADAPTERS, RAIL_ORDER
 from app.database.sample_data import generate_csv_bytes
 from app.database.seed import seed_connectors
+from app.insights.llm import LlmCallResult, LlmUsageRecord
 from app.models.enums import ModelKind
 
 
@@ -298,21 +299,39 @@ async def test_inverted_date_range_is_rejected(client: AsyncClient) -> None:
     assert "after the end date" in response.json()["error"]["message"]
 
 
-async def test_regions_categories_and_drivers(client: AsyncClient) -> None:
+async def test_breakdowns_come_from_the_run_and_add_up(client: AsyncClient) -> None:
+    """
+    The splits are whatever columns this run actually has, so the test asks the
+    summary which ones exist rather than assuming a region and a category.
+    """
     await _seed_and_run(client)
 
-    regions = (await client.get("/api/dashboard/regions")).json()
-    categories = (await client.get("/api/dashboard/categories")).json()
+    summary = (await client.get("/api/dashboard/summary")).json()
+    offered = summary["breakdowns"]
+    assert offered, "a run with dimensions should offer at least one split"
+
+    for reference in offered:
+        breakdown = (
+            await client.get("/api/dashboard/breakdown", params={"column": reference["column"]})
+        ).json()
+
+        assert breakdown["label"] == reference["label"]
+        assert breakdown["rows"]
+        assert sum(row["forecast"] for row in breakdown["rows"]) == pytest.approx(
+            breakdown["total"], rel=1e-6
+        )
+        assert sum(row["share"] for row in breakdown["rows"]) == pytest.approx(100.0, abs=0.1)
+
+
+async def test_drivers_are_ranked(client: AsyncClient) -> None:
+    await _seed_and_run(client)
+
     drivers = (await client.get("/api/dashboard/drivers")).json()
 
-    assert len(regions["rows"]) == 5
-    assert len(categories["rows"]) == 5
     assert len(drivers["rows"]) == 5
-
-    assert sum(r["forecast_value"] for r in regions["rows"]) == pytest.approx(
-        regions["total"], rel=1e-6
+    assert [row["rank"] for row in drivers["rows"]] == sorted(
+        row["rank"] for row in drivers["rows"]
     )
-    assert sum(c["share"] for c in categories["rows"]) == pytest.approx(100.0, abs=0.1)
 
 
 async def test_insights_are_generated_from_the_run(client: AsyncClient) -> None:
@@ -329,6 +348,53 @@ async def test_insights_are_generated_from_the_run(client: AsyncClient) -> None:
         assert insight["metric_name"]
         assert insight["generated_at"]
         assert insight["severity"] in {"positive", "info", "warning", "critical"}
+
+
+async def test_insights_can_be_reworded_and_put_back(client: AsyncClient, monkeypatch) -> None:
+    """
+    The rewriter has to work against a finished run: a key added afterwards is
+    worth nothing if applying it means refitting every model again.
+    """
+    await _seed_and_run(client)
+
+    def stub(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
+        title, explanation, action = [*source.split("\n"), "", "", ""][:3]
+        return LlmCallResult(
+            text=f"Reworded: {title}\n{explanation}\n{action}",
+            usage=LlmUsageRecord(provider="stub", model="stub-1", status="success", latency_ms=1.0),
+        )
+
+    monkeypatch.setattr("app.insights.llm._call_llm_api", stub)
+
+    computed = (await client.get("/api/insights")).json()["items"]
+
+    rewritten = (
+        await client.post("/api/insights/rewrite", json={"llm_api_key": "k", "llm_model": "stub-1"})
+    ).json()
+
+    assert rewritten["rewritten"] == rewritten["considered"] == len(computed)
+    assert all(item["title"].startswith("Reworded: ") for item in rewritten["items"])
+    assert all(item["llm_rewritten"] for item in rewritten["items"])
+
+    # Twice over must not compound: the rewriter always starts from the
+    # platform's own words, not from its own previous answer.
+    again = (
+        await client.post("/api/insights/rewrite", json={"llm_api_key": "k", "llm_model": "stub-1"})
+    ).json()
+    assert not any(item["title"].startswith("Reworded: Reworded: ") for item in again["items"])
+
+    restored = (await client.post("/api/insights/plain")).json()
+    assert [item["title"] for item in restored["items"]] == [item["title"] for item in computed]
+    assert not any(item["llm_rewritten"] for item in restored["items"])
+
+
+async def test_checking_a_provider_without_a_key_says_so(client: AsyncClient) -> None:
+    response = await client.post("/api/insights/check", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "no_key"
 
 
 @pytest.mark.parametrize(

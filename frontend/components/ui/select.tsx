@@ -1,18 +1,27 @@
 "use client";
 
 import * as RadixSelect from "@radix-ui/react-select";
-import { Check, ChevronDown, ChevronUp, type LucideIcon } from "lucide-react";
-import { forwardRef, useContext } from "react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { forwardRef, useContext, type ComponentType } from "react";
 
 import { FieldContext } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
+
+/**
+ * Anything that draws itself into the space an icon gets. Lucide glyphs
+ * satisfy this, and so do the brand marks, which carry their own colour and
+ * so must not be a `LucideIcon` the caller can tint.
+ */
+export type SelectIcon = ComponentType<{ className?: string }>;
 
 export interface SelectOption<T extends string = string> {
   value: T;
   label: string;
   /** Second line inside the menu — the reason to pick this one. */
   hint?: string;
-  icon?: LucideIcon;
+  icon?: SelectIcon;
+  /** Leave the icon its own colours instead of matching the label. */
+  iconKeepsColour?: boolean;
   disabled?: boolean;
 }
 
@@ -59,7 +68,12 @@ function Option<T extends string>({ option }: { option: SelectOption<T> }) {
       )}
     >
       {Icon ? (
-        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
+        <Icon
+          className={cn(
+            "mt-0.5 h-3.5 w-3.5 shrink-0",
+            option.iconKeepsColour ? undefined : "text-text-muted",
+          )}
+        />
       ) : null}
       <span className="min-w-0 flex-1">
         <RadixSelect.ItemText>
@@ -111,7 +125,12 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         className={cn(TRIGGER, className)}
       >
         {SelectedIcon ? (
-          <SelectedIcon className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
+          <SelectedIcon
+            className={cn(
+              "h-3.5 w-3.5 shrink-0",
+              selected?.iconKeepsColour ? undefined : "text-text-muted",
+            )}
+          />
         ) : null}
         <span className="min-w-0 flex-1 truncate text-left">
           <RadixSelect.Value placeholder={placeholder} />

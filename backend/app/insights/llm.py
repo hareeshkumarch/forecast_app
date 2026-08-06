@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -11,6 +12,11 @@ from app.core.logging import get_logger
 from app.insights.generators import GeneratedInsight
 
 logger = get_logger(__name__)
+
+#: Rewrites are one small independent request each, so they run together. The
+#: ceiling is about the provider's rate limit, not this machine — eight is
+#: comfortably under every free tier and turns a minute of waiting into seconds.
+MAX_CONCURRENT_REWRITES = 8
 
 
 @dataclass(slots=True)
@@ -82,6 +88,24 @@ def _numbers_preserved(original: str, rewritten: str) -> bool:
 
 def _resolve_api_key() -> str | None:
     return settings.llm_api_key or settings.anthropic_api_key
+
+
+DEFAULT_MODELS = {"anthropic": "claude-3-5-sonnet-20241022"}
+FALLBACK_MODEL = "gpt-4o-mini"
+
+
+def resolve_provider(config: dict[str, object] | None = None) -> str:
+    cfg = config or {}
+    return str(cfg.get("llm_provider") or settings.llm_provider or "openai").lower().strip()
+
+
+def resolve_model(config: dict[str, object] | None = None) -> str:
+    cfg = config or {}
+    return str(
+        cfg.get("llm_model")
+        or settings.llm_model
+        or DEFAULT_MODELS.get(resolve_provider(config), FALLBACK_MODEL)
+    )
 
 
 def _non_negative_int(value: object) -> int | None:
@@ -184,12 +208,8 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
     if not api_key:
         return None
 
-    provider = str(cfg.get("llm_provider") or settings.llm_provider or "openai").lower().strip()
-    model = str(
-        cfg.get("llm_model")
-        or settings.llm_model
-        or ("claude-3-5-sonnet-20241022" if provider == "anthropic" else "gpt-4o-mini")
-    )
+    provider = resolve_provider(cfg)
+    model = resolve_model(cfg)
     override_url = str(cfg.get("llm_base_url")) if cfg.get("llm_base_url") else None
     started = perf_counter()
 
@@ -293,6 +313,52 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
     )
 
 
+def _apply_rewrite(
+    insight: GeneratedInsight, config: dict[str, object] | None
+) -> LlmUsageRecord | None:
+    """
+    Asks the provider to re-say one insight, and takes the answer only if it
+    says exactly the same thing. Mutates `insight` on success.
+    """
+    source = f"{insight.title}\n{insight.explanation}\n{insight.suggested_action}"
+    result = _call_llm_api(source, config=config)
+    if result is None:
+        return None
+
+    usage = result.usage
+    usage.insight_type = insight.type.value
+
+    text = result.text
+    if not text:
+        if usage.status == "success":
+            usage.status = "rejected"
+            usage.error_code = "empty_response"
+        return usage
+
+    lines = [line.strip() for line in strip_emojis(text).splitlines() if line.strip()]
+    if len(lines) < 3:
+        usage.status = "rejected"
+        usage.error_code = "invalid_format"
+        return usage
+
+    title, explanation, action = lines[0], lines[1], " ".join(lines[2:])
+
+    if not _numbers_preserved(source, f"{title}\n{explanation}\n{action}"):
+        logger.warning(
+            "LLM rewrite for %s introduced a number not present in the computed insight; discarding.",
+            insight.type,
+        )
+        usage.status = "rejected"
+        usage.error_code = "number_validation"
+        return usage
+
+    insight.title = strip_emojis(title[:160])
+    insight.explanation = strip_emojis(explanation)
+    insight.suggested_action = strip_emojis(action)
+    usage.applied = True
+    return usage
+
+
 def rewrite_insights(
     insights: list[GeneratedInsight],
     llm_config: dict[str, object] | None = None,
@@ -306,44 +372,15 @@ def rewrite_insights(
     if not llm_enabled(llm_config) or not insights:
         return insights
 
-    for insight in insights:
-        source = f"{insight.title}\n{insight.explanation}\n{insight.suggested_action}"
-        result = _call_llm_api(source, config=llm_config)
-        if result is None:
-            continue
-        usage = result.usage
-        usage.insight_type = insight.type.value
-        if usage_sink is not None:
-            usage_sink.append(usage)
-        text = result.text
-        if not text:
-            if usage.status == "success":
-                usage.status = "rejected"
-                usage.error_code = "empty_response"
-            continue
+    # One request per insight, and they do not depend on each other. Run in
+    # order-preserving parallel: eight sequential ten-second timeouts is over a
+    # minute of a run spent waiting on wording.
+    workers = min(MAX_CONCURRENT_REWRITES, len(insights))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="llm-rewrite") as pool:
+        records = list(pool.map(lambda item: _apply_rewrite(item, llm_config), insights))
 
-        text = strip_emojis(text)
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        if len(lines) < 3:
-            usage.status = "rejected"
-            usage.error_code = "invalid_format"
-            continue
-
-        title, explanation, action = lines[0], lines[1], " ".join(lines[2:])
-
-        if not _numbers_preserved(source, f"{title}\n{explanation}\n{action}"):
-            logger.warning(
-                "LLM rewrite for %s introduced a number not present in the computed insight; discarding.",
-                insight.type,
-            )
-            usage.status = "rejected"
-            usage.error_code = "number_validation"
-            continue
-
-        insight.title = strip_emojis(title[:160])
-        insight.explanation = strip_emojis(explanation)
-        insight.suggested_action = strip_emojis(action)
-        usage.applied = True
+    if usage_sink is not None:
+        usage_sink.extend(record for record in records if record is not None)
 
     return insights
 
@@ -352,3 +389,72 @@ def llm_enabled(llm_config: dict[str, object] | None = None) -> bool:
     if llm_config and llm_config.get("llm_api_key"):
         return True
     return bool(_resolve_api_key())
+
+
+@dataclass(slots=True)
+class LlmProbe:
+    """The answer to "is this key going to work", before a run spends on it."""
+
+    ok: bool
+    provider: str
+    model: str
+    latency_ms: float
+    error_code: str | None = None
+    message: str = ""
+
+
+PROBE_PROMPT = "Sales rose 4.0%\nRevenue for the quarter grew 4.0% over the prior quarter.\nHold the current plan."
+
+PROBE_MESSAGES = {
+    "401": "The provider rejected the API key.",
+    "403": "The key is valid but not allowed to use this model.",
+    "404": "The provider does not recognise that model name.",
+    "429": "The provider is rate-limiting this key right now.",
+}
+
+
+def probe(llm_config: dict[str, object] | None = None) -> LlmProbe:
+    """Sends one real rewrite request so a key can be checked without a run."""
+    provider = resolve_provider(llm_config)
+    model = resolve_model(llm_config)
+
+    if not llm_enabled(llm_config):
+        return LlmProbe(
+            ok=False,
+            provider=provider,
+            model=model,
+            latency_ms=0.0,
+            error_code="no_key",
+            message="No API key is configured for this provider.",
+        )
+
+    result = _call_llm_api(PROBE_PROMPT, config=llm_config)
+    if result is None:
+        return LlmProbe(
+            ok=False,
+            provider=provider,
+            model=model,
+            latency_ms=0.0,
+            error_code="no_key",
+            message="No API key is configured for this provider.",
+        )
+
+    usage = result.usage
+    if usage.status == "success" and result.text:
+        return LlmProbe(
+            ok=True,
+            provider=usage.provider,
+            model=usage.model,
+            latency_ms=usage.latency_ms,
+            message=f"{usage.model} answered in {usage.latency_ms / 1000:.1f}s.",
+        )
+
+    code = usage.error_code or "unknown"
+    return LlmProbe(
+        ok=False,
+        provider=usage.provider,
+        model=usage.model,
+        latency_ms=usage.latency_ms,
+        error_code=code,
+        message=PROBE_MESSAGES.get(code, f"The provider could not be reached ({code})."),
+    )

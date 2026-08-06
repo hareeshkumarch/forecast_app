@@ -74,41 +74,6 @@ class DashboardSummary(BaseModel):
     breakdowns: list[BreakdownRef] = Field(default_factory=list)
 
 
-class RegionRow(ORMModel):
-    region: str
-    forecast_value: float
-    prior_year_value: float | None
-    change_vs_last_year: float | None
-    accuracy: float | None
-    share: float | None
-    model: ModelKind | None = None
-    accuracy_measured: bool = False
-
-
-class RegionResponse(BaseModel):
-    run_id: uuid.UUID | None
-    rows: list[RegionRow] = Field(default_factory=list)
-    total: float = 0.0
-
-
-class CategoryRow(ORMModel):
-    category: str
-    forecast_value: float
-    share: float
-    change_vs_last_year: float | None
-    accuracy: float | None
-    rank: int
-    model: ModelKind | None = None
-    accuracy_measured: bool = False
-
-
-class CategoryResponse(BaseModel):
-    run_id: uuid.UUID | None
-    rows: list[CategoryRow] = Field(default_factory=list)
-    total: float = 0.0
-    total_display: str = "—"
-
-
 class DriverRow(ORMModel):
     driver: str
     impact_value: float
@@ -144,6 +109,53 @@ class InsightRead(ORMModel):
 class InsightResponse(BaseModel):
     run_id: uuid.UUID | None
     items: list[InsightRead] = Field(default_factory=list)
+
+
+class LlmCredentials(BaseModel):
+    """
+    A provider to talk to, for this request only.
+
+    Nothing here is stored: the key lives in the caller's browser and is sent
+    with the request that needs it, so the server never holds a credential it
+    was not handed. Omitting them all falls back to the server's own settings.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    llm_provider: str | None = Field(default=None, max_length=64)
+    llm_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    llm_model: str | None = Field(default=None, max_length=128)
+    llm_base_url: str | None = Field(default=None, max_length=512)
+    llm_input_cost_per_million: float | None = Field(default=None, ge=0.0, le=100_000.0)
+    llm_output_cost_per_million: float | None = Field(default=None, ge=0.0, le=100_000.0)
+
+    def as_config(self) -> dict[str, object]:
+        return self.model_dump()
+
+
+class InsightRewriteRequest(LlmCredentials):
+    run_id: uuid.UUID | None = None
+
+
+class InsightRewriteResponse(BaseModel):
+    """What the rewriter did, in words the person who pressed the button reads."""
+
+    run_id: uuid.UUID | None
+    considered: NonNegativeInt = 0
+    rewritten: NonNegativeInt = 0
+    provider: str = ""
+    model: str = ""
+    summary: str = ""
+    items: list[InsightRead] = Field(default_factory=list)
+
+
+class LlmCheckResponse(BaseModel):
+    ok: bool
+    provider: str
+    model: str
+    latency_ms: float
+    message: str
+    error_code: str | None = None
 
 
 class DashboardQuery(BaseModel):

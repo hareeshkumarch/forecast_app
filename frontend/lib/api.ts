@@ -1,7 +1,6 @@
 import type {
   ApiErrorBody,
   BreakdownResponse,
-  CategoryResponse,
   Connector,
   ConnectorSchemaList,
   ConnectorTestResult,
@@ -24,10 +23,12 @@ import type {
   GapFill,
   HealthResponse,
   InsightResponse,
+  InsightRewriteResponse,
+  LlmCheckResponse,
+  LlmRunFields,
   LlmUsageResponse,
   MeasureAggregation,
   OutlierTreatment,
-  RegionResponse,
   Scorecard,
   SeriesResponse,
   SeriesSort,
@@ -134,8 +135,6 @@ export const getHealth = () => request<HealthResponse>("/api/health");
 export const listConnectors = () => request<Connector[]>("/api/connectors");
 
 export const listConnectorTypes = () => request<ConnectorTypeInfo[]>("/api/connectors/types");
-
-export const getConnector = (id: string) => request<Connector>(`/api/connectors/${id}`);
 
 export const createConnector = (payload: {
   name: string;
@@ -254,13 +253,7 @@ export const startForecast = (payload: {
   metric_weights?: Record<string, number> | null;
   sarimax_order?: number[] | null;
   gbm_max_depth?: number | null;
-  llm_provider?: string | null;
-  llm_api_key?: string | null;
-  llm_model?: string | null;
-  llm_base_url?: string | null;
-  llm_input_cost_per_million?: number | null;
-  llm_output_cost_per_million?: number | null;
-}) =>
+} & Partial<LlmRunFields>) =>
   request<ForecastRun>("/api/forecasts/run", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -312,17 +305,36 @@ export const getBreakdown = (filters: DashboardFilters, column: string) =>
     `/api/dashboard/breakdown${buildQuery({ ...filterParams(filters), column })}`,
   );
 
-export const getRegions = (filters: DashboardFilters) =>
-  request<RegionResponse>(`/api/dashboard/regions${buildQuery(filterParams(filters))}`);
-
-export const getCategories = (filters: DashboardFilters) =>
-  request<CategoryResponse>(`/api/dashboard/categories${buildQuery(filterParams(filters))}`);
-
 export const getDrivers = (filters: DashboardFilters) =>
   request<DriverResponse>(`/api/dashboard/drivers${buildQuery(filterParams(filters))}`);
 
 export const getInsights = (filters: DashboardFilters) =>
   request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`);
+
+/**
+ * Re-says the stored insights in the configured model's words.
+ *
+ * A phrasing pass over a finished run — no model is refitted and no figure can
+ * change, so this is what applies a key added after the fact.
+ */
+export const rewriteInsights = (runId: string | null, llm: LlmRunFields) =>
+  request<InsightRewriteResponse>("/api/insights/rewrite", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId, ...llm }),
+  });
+
+/** Puts the platform's own wording back. */
+export const plainInsights = (filters: DashboardFilters) =>
+  request<InsightRewriteResponse>(`/api/insights/plain${buildQuery(filterParams(filters))}`, {
+    method: "POST",
+  });
+
+/** One real request to the provider, so a key can be checked before a run. */
+export const checkLlm = (llm: LlmRunFields) =>
+  request<LlmCheckResponse>("/api/insights/check", {
+    method: "POST",
+    body: JSON.stringify(llm),
+  });
 
 export const getLlmUsage = (days = 30) =>
   request<LlmUsageResponse>(`/api/usage/llm${buildQuery({ days })}`);

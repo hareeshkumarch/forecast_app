@@ -3,16 +3,13 @@
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { LineChart, MoreHorizontal } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
+import { Panel } from "@/components/ui/panel";
 import {
-  Card,
-  EmptyState,
-  ErrorState,
   MENU_CONTENT,
   MENU_ITEM,
-  PanelHeader,
   Skeleton,
 } from "@/components/ui/primitives";
 import { downloadExport, useForecastPoints, useSummary } from "@/hooks/use-dashboard";
@@ -28,7 +25,7 @@ import {
   tooltipStyle,
 } from "@/lib/chart-theme";
 import { formatCompact, formatDayMonth, formatMonth } from "@/lib/format";
-import { labelGranularity } from "@/lib/periods";
+import { labelGranularity, periodsPerYear } from "@/lib/periods";
 import { cn } from "@/lib/utils";
 import { useThemeRevision } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -42,12 +39,21 @@ const VIEW_FIELD: Record<ForecastView, "forecast" | "best_case" | "worst_case"> 
 };
 
 
+/**
+ * How much history sits behind the horizon.
+ *
+ * The panel shows a working window — three horizons back, at least eighteen
+ * periods — because a three-year run behind a three-month forecast squeezes
+ * the forecast into a sliver at the edge. The enlarged view can ask for all
+ * of it, which is what `history` overrides.
+ */
 function displayWindow(
   points: ForecastPointsResponse["points"],
   boundary: number,
+  history?: number,
 ): { sliced: ForecastPointsResponse["points"]; offset: number; trimmed: number } {
   const horizon = points.length - boundary;
-  const historyToShow = Math.max(18, horizon * 3);
+  const historyToShow = history ?? Math.max(18, horizon * 3);
   const offset = Math.max(0, boundary - historyToShow);
 
   return {
@@ -61,6 +67,7 @@ function buildOption(
   data: ForecastPointsResponse,
   view: ForecastView,
   colors: ChartPalette,
+  options: { history?: number; band?: boolean } = {},
 ): ChartOption {
   const { confidence_level: confidence } = data;
 
@@ -69,7 +76,7 @@ function buildOption(
     labelGranularity(data.frequency) === "day" ? formatDayMonth : formatMonth;
 
   const rawBoundary = data.boundary_index ?? data.points.length;
-  const { sliced: points, offset } = displayWindow(data.points, rawBoundary);
+  const { sliced: points, offset } = displayWindow(data.points, rawBoundary, options.history);
   const boundaryIndex = rawBoundary - offset;
 
   const labels = points.map((point) => period(point.period));
@@ -203,7 +210,7 @@ function buildOption(
       {
         name: `${Math.round(confidence * 100)}% confidence`,
         type: "line",
-        data: bandBase,
+        data: options.band === false ? [] : bandBase,
         lineStyle: { opacity: 0 },
         
         
@@ -217,7 +224,7 @@ function buildOption(
         
         name: "confidence-span",
         type: "line",
-        data: bandSpan,
+        data: options.band === false ? [] : bandSpan,
         lineStyle: { opacity: 0 },
         stack: "confidence",
         symbol: "none",
@@ -306,20 +313,43 @@ export function ForecastVsActual({
     [data, view, revision],
   );
 
+  const empty = data && data.points.length > 0 ? null : true;
+
   return (
-    <Card className="flex min-w-0 flex-col">
-      <PanelHeader
-        title={title}
-        subtitle={subtitle ?? summary?.run_name ?? undefined}
-        actions={
-          !showActions ? null : (
+    <Panel
+      title={title}
+      subtitle={subtitle ?? summary?.run_name ?? undefined}
+      state={{ isLoading, isError, error, refetch: () => void refetch() }}
+      isEmpty={Boolean(empty)}
+      empty={{
+        icon: LineChart,
+        // Without a run there is no window to widen, and saying so sends a new
+        // user hunting through a date filter for data that was never there.
+        title: runId ? "Nothing in this window" : "No forecast yet",
+        message: !runId
+          ? "Run a forecast and its history and horizon will be plotted here."
+          : seriesId
+            ? "This series has no periods inside the selected range."
+            : "No period falls inside the selected range — widen it to see the series.",
+      }}
+      enlarged={
+        data
+          ? {
+              title,
+              description: summary?.run_name ?? undefined,
+              content: <Enlarged data={data} view={view} />,
+            }
+          : undefined
+      }
+      actions={
+        !showActions ? null : (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button
                 type="button"
                 aria-label="Panel actions"
                 className={cn(
-         "inline-flex h-11 w-11 items-center justify-center rounded-chip sm:h-6 sm:w-6",
+                  "inline-flex h-11 w-11 items-center justify-center rounded-chip sm:h-6 sm:w-6",
                   "text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary",
                 )}
               >
@@ -327,66 +357,151 @@ export function ForecastVsActual({
               </button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={4}
-                className={MENU_CONTENT}
-              >
+              <DropdownMenu.Content align="end" sideOffset={4} className={MENU_CONTENT}>
                 <DropdownMenu.Item
                   disabled={!runId}
                   onSelect={() => runId && downloadExport(runId, "csv")}
                   className={MENU_ITEM}
                 >
-                  Download series (CSV)
+                  Download the numbers (CSV)
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   disabled={!runId}
                   onSelect={() => runId && downloadExport(runId, "pdf")}
                   className={MENU_ITEM}
                 >
-                  Download report (PDF)
+                  Download the report (PDF)
                 </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  onSelect={() => void refetch()}
-                  className={MENU_ITEM}
-                >
+                <DropdownMenu.Item onSelect={() => void refetch()} className={MENU_ITEM}>
                   Refresh
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
-          )
-        }
-      />
+        )
+      }
+      skeleton={
+        <div className="space-y-2 px-1 pt-2" aria-hidden>
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="chart-box w-full rounded-[9px]" />
+        </div>
+      }
+    >
+      {option ? <EChart option={option} ariaLabel="Forecast versus actual over time" /> : null}
+    </Panel>
+  );
+}
 
-      <div className="min-h-0 flex-1 px-3 pb-3">
-        {isLoading ? (
-          <div className="space-y-2 px-1 pt-2" aria-hidden>
-            <Skeleton className="h-3 w-40" />
-            <Skeleton className="chart-box w-full rounded-[9px]" />
-          </div>
-        ) : isError ? (
-          <ErrorState error={error} onRetry={() => void refetch()} />
-        ) : option && data && data.points.length > 0 ? (
-          <EChart option={option} ariaLabel="Forecast versus actual over time" />
-        ) : (
-          <EmptyState
-            className="chart-box"
-            icon={LineChart}
-            // Without a run there is no window to widen, and saying so sends a
-            // new user hunting through a date filter for data that was never
-            // there.
-            title={runId ? "Nothing in this window" : "No forecast yet"}
-            message={
-              !runId
-                ? "Run a forecast and its history and horizon will be plotted here."
-                : seriesId
-                  ? "This series has no periods inside the selected range."
-                  : "No period falls inside the selected range — widen it to see the series."
-            }
+/** How much history the enlarged chart puts behind the horizon. */
+const WINDOWS = [
+  { key: "working", label: "Recent" },
+  { key: "year", label: "Last year" },
+  { key: "all", label: "Everything" },
+] as const;
+
+/**
+ * The enlarged chart: the same picture with room for the whole history, the
+ * band on or off, and the numbers underneath it.
+ */
+function Enlarged({ data, view }: { data: ForecastPointsResponse; view: ForecastView }) {
+  const [window, setWindow] = useState<(typeof WINDOWS)[number]["key"]>("working");
+  const [band, setBand] = useState(true);
+  const revision = useThemeRevision();
+
+  const history =
+    window === "all"
+      ? data.points.length
+      : window === "year"
+        ? periodsPerYear(data.frequency)
+        : undefined;
+
+  const option = useMemo(
+    () => buildOption(data, view, chartColors(), { history, band }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, view, history, band, revision],
+  );
+
+  const boundary = data.boundary_index ?? data.points.length;
+  const rows = useMemo(
+    () => [...data.points].reverse().map((point, index) => ({
+      point,
+      ahead: data.points.length - 1 - index >= boundary,
+    })),
+    [data.points, boundary],
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap gap-1">
+          {WINDOWS.map((option_) => (
+            <button
+              key={option_.key}
+              type="button"
+              onClick={() => setWindow(option_.key)}
+              aria-pressed={window === option_.key}
+              className={cn(
+                "rounded-chip border px-2 py-1 text-caption font-medium transition-colors duration-fast",
+                window === option_.key
+                  ? "border-accent bg-accent-soft text-accent"
+                  : "border-border text-text-secondary hover:bg-surface-muted",
+              )}
+            >
+              {option_.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-1.5 text-caption text-text-secondary">
+          <input
+            type="checkbox"
+            checked={band}
+            onChange={(event) => setBand(event.target.checked)}
+            className="h-3.5 w-3.5 accent-[var(--accent)]"
           />
-        )}
+          Show the likely range
+        </label>
       </div>
-    </Card>
+
+      <div className="h-[min(46vh,380px)]">
+        <EChart option={option} ariaLabel="Forecast versus actual, enlarged" fill />
+      </div>
+
+      <div className="scroll-thin max-h-[240px] overflow-y-auto rounded-card border border-border">
+        <table className="w-full border-collapse text-meta">
+          <thead className="sticky top-0 bg-surface">
+            <tr className="border-b border-border text-caption text-text-muted">
+              <th className="px-3 py-2 text-left font-medium">Period</th>
+              <th className="px-3 py-2 text-right font-medium">Actual</th>
+              <th className="px-3 py-2 text-right font-medium">Forecast</th>
+              <th className="px-3 py-2 text-right font-medium">Likely range</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ point, ahead }) => (
+              <tr key={point.period} className="border-b border-border last:border-0">
+                <td className="px-3 py-1.5 text-text-primary">
+                  {point.period}
+                  {ahead ? (
+                    <span className="ml-1.5 text-caption text-text-muted">ahead</span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-1.5 text-right num text-text-primary">
+                  {point.actual === null ? "—" : formatCompact(point.actual)}
+                </td>
+                <td className="px-3 py-1.5 text-right num text-text-secondary">
+                  {point.forecast === null ? "—" : formatCompact(point.forecast)}
+                </td>
+                <td className="px-3 py-1.5 text-right num text-text-muted">
+                  {point.lower_bound === null || point.upper_bound === null
+                    ? "—"
+                    : `${formatCompact(point.lower_bound)} – ${formatCompact(point.upper_bound)}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

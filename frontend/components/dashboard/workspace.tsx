@@ -10,13 +10,15 @@ import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { ModelHealthStrip } from "@/components/dashboard/model-health-strip";
 import { Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
-import { useSummary } from "@/hooks/use-dashboard";
+import { RefreshButton } from "@/components/ui/refresh-button";
+import { useDashboardRefresh, useSummary } from "@/hooks/use-dashboard";
 import { humanizeModel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 export function Workspace() {
   const { data: summary, isSuccess, isPending, isError, error, refetch } = useSummary();
+  const live = useDashboardRefresh();
   const openModal = useUiStore((state) => state.openModal);
 
   // Only once the summary has actually answered — a slow first load must not
@@ -38,6 +40,15 @@ export function Workspace() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {/* Only once there is something on screen worth being stale. */}
+          {isSuccess && summary.has_data ? (
+            <RefreshButton
+              updatedAt={live.updatedAt}
+              isFetching={live.isFetching}
+              onRefresh={live.refresh}
+            />
+          ) : null}
+
           {summary?.selected_model ? (
             <button
               type="button"

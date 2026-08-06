@@ -542,6 +542,12 @@ class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # What the generators computed, kept apart from what is displayed so the
+    # rewriter always works from the platform's own words and can be undone.
+    source_title: Mapped[str] = mapped_column(Text, nullable=False)
+    source_explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    source_action: Mapped[str] = mapped_column(Text, nullable=False)
+
     metric_name: Mapped[str] = mapped_column(String(80), nullable=False)
     metric_value: Mapped[float] = mapped_column(Float, nullable=False)
     metric_unit: Mapped[str] = mapped_column(String(24), default="absolute")

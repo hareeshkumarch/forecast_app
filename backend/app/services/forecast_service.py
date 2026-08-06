@@ -56,7 +56,7 @@ from app.models.enums import (
     PointKind,
     RunStatus,
 )
-from app.services import dataset_service
+from app.services import dataset_service, insight_service
 from app.services.job_runner import ProgressEvent, executors, publish_progress
 
 logger = get_logger(__name__)
@@ -874,14 +874,19 @@ async def _persist_insights(
     )
     insights = generate_insights(context)
 
+    # The computed wording, before the rewriter is allowed near it. Captured
+    # here rather than after so a later rewrite always works from the
+    # platform's own words, however many times it is asked for.
+    computed = [(item.title, item.explanation, item.suggested_action) for item in insights]
+
     usage: list[LlmUsageRecord] = []
     if llm_enabled(llm_config):
         insights = rewrite_insights(insights, llm_config=llm_config, usage_sink=usage)
 
-    for rank, insight in enumerate(insights, start=1):
-        rewritten = any(
-            record.insight_type == insight.type.value and record.applied for record in usage
-        )
+    applied = {record.insight_type for record in usage if record.applied}
+
+    for rank, (insight, source) in enumerate(zip(insights, computed, strict=True), start=1):
+        source_title, source_explanation, source_action = source
         session.add(
             Insight(
                 run_id=run.id,
@@ -890,37 +895,20 @@ async def _persist_insights(
                 title=insight.title,
                 explanation=insight.explanation,
                 suggested_action=insight.suggested_action,
+                source_title=source_title,
+                source_explanation=source_explanation,
+                source_action=source_action,
                 metric_name=insight.metric_name,
                 metric_value=insight.metric_value,
                 metric_unit=insight.metric_unit,
                 supporting_data=insight.supporting_data,
                 rank=rank,
                 generated_at=insight.generated_at,
-                llm_rewritten=rewritten,
+                llm_rewritten=insight.type.value in applied,
             )
         )
 
-    for record in usage:
-        session.add(
-            LlmUsageEvent(
-                run_id=run.id,
-                purpose="insight_rewrite",
-                insight_type=record.insight_type,
-                provider=record.provider,
-                model=record.model,
-                status=record.status,
-                applied=record.applied,
-                input_tokens=record.input_tokens,
-                output_tokens=record.output_tokens,
-                cached_input_tokens=record.cached_input_tokens,
-                reasoning_tokens=record.reasoning_tokens,
-                total_tokens=record.total_tokens,
-                latency_ms=record.latency_ms,
-                cost_usd=record.cost_usd,
-                cost_source=record.cost_source,
-                error_code=record.error_code,
-            )
-        )
+    insight_service.record_usage(session, run.id, usage)
 
     await session.flush()
 

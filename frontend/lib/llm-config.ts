@@ -1,8 +1,10 @@
 /**
  * Optional per-browser LLM credentials for the insight rewriter. The backend
- * has its own server-side configuration; anything set here is sent with a run
- * request and overrides it for that run only.
+ * has its own server-side configuration; anything set here is sent with the
+ * request that needs it and overrides the server's for that request only.
  */
+
+import type { LlmRunFields } from "@/types/api";
 
 export interface LlmConfig {
   provider: string;
@@ -13,23 +15,30 @@ export interface LlmConfig {
   outputCostPerMillion: number | null;
 }
 
-export const PROVIDERS: { value: string; label: string }[] = [
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic (Claude)" },
-  { value: "groq", label: "Groq" },
-  { value: "xai", label: "xAI (Grok)" },
-  { value: "gemini", label: "Google Gemini" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "custom", label: "Custom / Ollama" },
+export const PROVIDERS: { value: string; label: string; hint: string }[] = [
+  { value: "openai", label: "OpenAI", hint: "GPT models, from platform.openai.com" },
+  { value: "anthropic", label: "Anthropic", hint: "Claude models, from console.anthropic.com" },
+  { value: "gemini", label: "Google Gemini", hint: "Gemini models, from Google AI Studio" },
+  { value: "xai", label: "xAI", hint: "Grok models, from console.x.ai" },
+  { value: "groq", label: "Groq", hint: "Open models, served fast" },
+  { value: "openrouter", label: "OpenRouter", hint: "One key for many providers" },
+  { value: "custom", label: "Ollama or self-hosted", hint: "Anything with an OpenAI-shaped API" },
 ];
 
+/**
+ * Models worth offering per provider, cheapest-capable first.
+ *
+ * Rewriting eight short paragraphs is a small job, so the default is the small
+ * fast model rather than the flagship — the flagship is there for anyone who
+ * wants it, but nobody should pay frontier rates by accident.
+ */
 export const PROVIDER_MODELS: Record<string, string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4o", "o3-mini"],
-  anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+  openai: ["gpt-4o-mini", "gpt-4o"],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5"],
   groq: ["llama-3.3-70b-versatile", "deepseek-r1-distill-llama-70b"],
   xai: ["grok-2-latest", "grok-beta"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
-  openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o-mini", "google/gemini-2.5-flash"],
+  openrouter: ["anthropic/claude-haiku-4.5", "openai/gpt-4o-mini", "google/gemini-2.5-flash"],
   custom: [],
 };
 
@@ -93,8 +102,8 @@ export function clearLlmConfig(): void {
   }
 }
 
-/** Shapes the stored config into the fields a run request expects. */
-export function llmRunFields(config: LlmConfig) {
+/** Shapes the stored config into the fields a request expects. */
+export function llmRunFields(config: LlmConfig): LlmRunFields {
   const apiKey = config.apiKey.trim();
   if (!apiKey) {
     return {

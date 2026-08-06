@@ -30,18 +30,41 @@ const BUTTON_SIZES: Record<ButtonSize, string> = {
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** The action is running and its result is not here yet. */
   loading?: boolean;
+  /**
+   * While `loading`, turn the button's own icon rather than replacing it with
+   * a spinner. For controls that re-run something already on screen: swapping
+   * the glyph reads as the thing having gone away, when in fact it is still
+   * there and about to be updated in place.
+   */
+  spin?: boolean;
   icon?: LucideIcon;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", loading, icon: Icon, className, children, disabled, ...rest },
+  {
+    variant = "secondary",
+    size = "md",
+    loading,
+    spin,
+    icon: Icon,
+    className,
+    children,
+    disabled,
+    ...rest
+  },
   ref,
 ) {
+  const turning = Boolean(loading && spin && Icon);
+
   return (
     <button
       ref={ref}
-      disabled={disabled || loading}
+      // A spinning refresh stays clickable-looking but must not queue a second
+      // request; a replacing spinner disables the action outright.
+      disabled={disabled || (loading && !turning)}
+      aria-busy={loading || undefined}
       className={cn(
         "inline-flex items-center justify-center rounded-input font-medium",
         "transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-70",
@@ -51,10 +74,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {...rest}
     >
-      {loading ? (
+      {loading && !turning ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
       ) : Icon ? (
-        <Icon className="h-3.5 w-3.5" aria-hidden />
+        <Icon className={cn("h-3.5 w-3.5", turning && "animate-spin")} aria-hidden />
       ) : null}
       {children}
     </button>

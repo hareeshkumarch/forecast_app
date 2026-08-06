@@ -1,11 +1,18 @@
 "use client";
 
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { llmRunFields, loadLlmConfig, type LlmConfig } from "@/lib/llm-config";
 import { toast } from "@/stores/toast-store";
 import { useDashboardFilters } from "@/stores/ui-store";
 import type {
@@ -53,10 +60,8 @@ export const queryKeys = {
   runSeries: (id: string, query: SeriesQuery) => ["forecasts", id, "series", query] as const,
   runScore: (id: string) => ["forecasts", id, "score"] as const,
   summary: (f: DashboardFilters) => ["dashboard", "summary", filterKey(f)] as const,
-  regions: (f: DashboardFilters) => ["dashboard", "regions", filterKey(f)] as const,
   breakdown: (f: DashboardFilters, column: string) =>
     ["dashboard", "breakdown", column, filterKey(f)] as const,
-  categories: (f: DashboardFilters) => ["dashboard", "categories", filterKey(f)] as const,
   drivers: (f: DashboardFilters) => ["dashboard", "drivers", filterKey(f)] as const,
   insights: (f: DashboardFilters) => ["dashboard", "insights", filterKey(f)] as const,
   llmUsage: (days: number) => ["usage", "llm", days] as const,
@@ -80,6 +85,32 @@ export function useSummary() {
   });
 }
 
+//: What "the dashboard" is, for the purposes of refreshing it.
+const LIVE_PREFIXES = new Set(["dashboard", "forecasts"]);
+
+/**
+ * The state a refresh control needs: how old the screen is, whether anything
+ * is in flight, and how to ask for new numbers.
+ *
+ * Every panel owns its own query, so one button has to reach across all of
+ * them — refreshing the summary alone would leave the chart and the splits
+ * showing older figures beside a newer headline. Each panel keeps what it is
+ * already drawing until its replacement arrives, so the screen updates in
+ * place rather than emptying and refilling.
+ */
+export function useDashboardRefresh() {
+  const refresh = useRefreshDashboard();
+  const inFlight = useIsFetching({
+    predicate: (query) => LIVE_PREFIXES.has(String(query.queryKey[0])),
+  });
+  // The summary is the headline every other panel is read against, so its age
+  // is the one worth reporting. Sharing a key with the panels means this adds
+  // an observer, not a request.
+  const { dataUpdatedAt } = useSummary();
+
+  return { isFetching: inFlight > 0, updatedAt: dataUpdatedAt, refresh };
+}
+
 /**
  * One split of the forecast. Disabled until a column is known, because the
  * available splits come from the summary and are not knowable up front.
@@ -90,22 +121,7 @@ export function useBreakdown(column: string | null) {
     queryKey: queryKeys.breakdown(filters, column ?? "none"),
     queryFn: () => api.getBreakdown(filters, column as string),
     enabled: Boolean(column),
-  });
-}
-
-export function useRegions() {
-  const filters = useDashboardFilters();
-  return useQuery({
-    queryKey: queryKeys.regions(filters),
-    queryFn: () => api.getRegions(filters),
-  });
-}
-
-export function useCategories() {
-  const filters = useDashboardFilters();
-  return useQuery({
-    queryKey: queryKeys.categories(filters),
-    queryFn: () => api.getCategories(filters),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -122,6 +138,61 @@ export function useInsights() {
   return useQuery({
     queryKey: queryKeys.insights(filters),
     queryFn: () => api.getInsights(filters),
+  });
+}
+
+/**
+ * Re-says the insights on screen in the configured model's words.
+ *
+ * The alternative was re-running the whole forecast, which refits every
+ * candidate model for what is only a phrasing change — so a key added after a
+ * run used to be worth nothing until the next one.
+ */
+export function useRewriteInsights() {
+  const client = useQueryClient();
+  const filters = useDashboardFilters();
+
+  return useMutation({
+    mutationFn: () => api.rewriteInsights(filters.runId ?? null, llmRunFields(loadLlmConfig())),
+    onSuccess: (result) => {
+      client.setQueryData(queryKeys.insights(filters), {
+        run_id: result.run_id,
+        items: result.items,
+      });
+      if (result.rewritten > 0) {
+        toast.success("Insights rewritten", result.summary);
+      } else {
+        toast.info("Insights left as they were", result.summary);
+      }
+    },
+    onError: (error: unknown) =>
+      toast.error("Could not rewrite the insights", errorMessage(error)),
+  });
+}
+
+/** Puts the platform's own wording back, without touching a provider. */
+export function usePlainInsights() {
+  const client = useQueryClient();
+  const filters = useDashboardFilters();
+
+  return useMutation({
+    mutationFn: () => api.plainInsights(filters),
+    onSuccess: (result) => {
+      client.setQueryData(queryKeys.insights(filters), {
+        run_id: result.run_id,
+        items: result.items,
+      });
+      toast.success("Back to plain wording", result.summary);
+    },
+    onError: (error: unknown) => toast.error("Could not restore the wording", errorMessage(error)),
+  });
+}
+
+/** One real request to the provider, so a key can be checked before a run. */
+export function useCheckLlm() {
+  return useMutation({
+    mutationFn: (config: LlmConfig) => api.checkLlm(llmRunFields(config)),
+    onError: (error: unknown) => toast.error("Could not reach the provider", errorMessage(error)),
   });
 }
 
@@ -150,6 +221,10 @@ export function useLlmUsage(days = 30) {
     queryKey: queryKeys.llmUsage(days),
     queryFn: () => api.getLlmUsage(days),
     refetchInterval: 30_000,
+    // Changing the window is a new query key. Without this the whole page
+    // drops to skeletons to answer "the same question over 7 days instead of
+    // 30", which reads as the screen breaking rather than narrowing.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -165,6 +240,10 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
         ...(seriesId ? { series_id: seriesId } : {}),
       }),
     enabled: Boolean(runId),
+    // Picking a different series, or narrowing the dates, keeps the current
+    // chart drawn until the new one arrives rather than flashing a skeleton
+    // over a picture that was already correct a moment ago.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -187,7 +266,7 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
         ...(query.search ? { search: query.search } : {}),
       }),
     enabled: Boolean(runId),
-    placeholderData: (previous) => previous,
+    placeholderData: keepPreviousData,
   });
 }
 

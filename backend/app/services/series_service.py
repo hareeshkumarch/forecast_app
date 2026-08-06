@@ -378,11 +378,24 @@ def blocked_chunk(job: dict[str, Any], reason: str) -> list[dict[str, Any]]:
         LeafFit(label=str(leaf["label"]), blocked_reason=reason).to_dict()
         for leaf in job.get("leaves", [])
     ]
-    run_id = uuid.UUID(str(job["run_id"]))
-    total = int(job.get("series_total") or 0)
-    counted = count_series(run_id, len(rows))
-    if counted is not None and total:
-        _publish_fitting(run_id, min(counted, total), total)
+
+    # Reporting progress is a courtesy; returning the rows is the job. This is
+    # the last-resort path — a timeout or an unhandled error — and a malformed
+    # job is exactly the sort of thing that lands here, so a missing run id
+    # must not throw a second time and take the whole chunk with it.
+    raw_run_id = job.get("run_id")
+    if raw_run_id is not None:
+        try:
+            run_id = uuid.UUID(str(raw_run_id))
+        except ValueError:
+            logger.warning("A blocked chunk carried an unusable run id: %r", raw_run_id)
+            return rows
+
+        total = int(job.get("series_total") or 0)
+        counted = count_series(run_id, len(rows))
+        if counted is not None and total:
+            _publish_fitting(run_id, min(counted, total), total)
+
     return rows
 
 

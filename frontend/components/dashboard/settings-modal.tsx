@@ -1,11 +1,13 @@
 "use client";
 
-import { Monitor, Moon, Rows3, Rows4, ShieldCheck, Sun } from "lucide-react";
+import { CheckCircle2, Monitor, Moon, Rows3, Rows4, ShieldCheck, Sun, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
 import { Button, Card, Field, Input } from "@/components/ui/primitives";
+import { ProviderLogo, providerMark } from "@/components/ui/provider-logo";
 import { Select } from "@/components/ui/select";
+import { useCheckLlm } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
 import {
   EMPTY_LLM_CONFIG,
@@ -94,12 +96,14 @@ export function SettingsPanel({ className }: { className?: string }) {
 
   const [config, setConfig] = useState<LlmConfig>(EMPTY_LLM_CONFIG);
   const [saved, setSaved] = useState(false);
+  const check = useCheckLlm();
 
   useEffect(() => setConfig(loadLlmConfig()), []);
 
   function update(patch: Partial<LlmConfig>) {
     setConfig((previous) => ({ ...previous, ...patch }));
     setSaved(false);
+    check.reset();
   }
 
   function handleSave() {
@@ -111,9 +115,11 @@ export function SettingsPanel({ className }: { className?: string }) {
     clearLlmConfig();
     setConfig(EMPTY_LLM_CONFIG);
     setSaved(false);
+    check.reset();
   }
 
   const models = PROVIDER_MODELS[config.provider] ?? [];
+  const result = check.data;
 
   return (
     <div className={cn("grid gap-4 xl:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]", className)}>
@@ -150,10 +156,12 @@ export function SettingsPanel({ className }: { className?: string }) {
             <ShieldCheck className="h-4 w-4 text-accent" aria-hidden />
           </span>
           <div>
-            <h2 className="panel-title">Insight rewriter and pricing</h2>
+            <h2 className="panel-title">How insights are worded</h2>
             <p className="mt-0.5 max-w-[68ch] text-caption text-text-muted">
-              Forecast numbers are computed by the platform. The LLM only rewrites explanations.
-              Token, latency, outcome, and cost metadata are recorded without prompts or API keys.
+              Every figure on this platform is computed here. A provider connected below is only
+              ever asked to say those figures in better English — if it changes one, its answer is
+              thrown away and the platform&apos;s own wording stands. Your key stays in this
+              browser; only token counts, timings and cost are recorded.
             </p>
           </div>
         </div>
@@ -167,7 +175,11 @@ export function SettingsPanel({ className }: { className?: string }) {
                 options={PROVIDERS.map((provider) => ({
                   value: provider.value,
                   label: provider.label,
+                  hint: provider.hint,
+                  icon: providerMark(provider.value),
+                  iconKeepsColour: true,
                 }))}
+                menuClassName="min-w-[16rem]"
               />
             </Field>
 
@@ -188,7 +200,10 @@ export function SettingsPanel({ className }: { className?: string }) {
             </Field>
           </div>
 
-          <Field label="API key" hint="Stored in this browser and sent only when starting a run.">
+          <Field
+            label="API key"
+            hint="Kept in this browser and sent with the requests that need it, never stored on the server."
+          >
             <Input
               type="password"
               autoComplete="new-password"
@@ -208,11 +223,46 @@ export function SettingsPanel({ className }: { className?: string }) {
             </Field>
           ) : null}
 
+          {/*
+            * One real request, so nobody finds out their key is wrong by
+            * waiting out a forecast and getting the plain wording back.
+            */}
+          <div className="flex flex-wrap items-center gap-2 rounded-card border border-border bg-surface-muted px-3 py-2.5">
+            <ProviderLogo provider={config.provider} className="h-4 w-4" />
+            <span className="min-w-0 flex-1 text-caption text-text-secondary">
+              {result ? (
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5",
+                    result.ok ? "text-positive" : "text-negative",
+                  )}
+                >
+                  {result.ok ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  ) : (
+                    <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  )}
+                  {result.message}
+                </span>
+              ) : (
+                "Check the key before a forecast depends on it."
+              )}
+            </span>
+            <Button
+              size="sm"
+              loading={check.isPending}
+              disabled={!config.apiKey.trim()}
+              onClick={() => check.mutate(config)}
+            >
+              Test connection
+            </Button>
+          </div>
+
           <div className="rounded-card border border-border bg-surface-muted p-3">
-            <p className="text-meta font-medium text-text-primary">Cost fallback</p>
+            <p className="text-meta font-medium text-text-primary">If the provider bills silently</p>
             <p className="mt-0.5 text-caption text-text-muted">
-              Optional USD rates per one million tokens, used only when the provider does not
-              return a cost.
+              Some providers return the cost of a request and some do not. Rates entered here are
+              used to work it out for the ones that do not.
             </p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Input token rate">

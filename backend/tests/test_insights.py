@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 import numpy as np
 
 from app.insights.engine import generate_insights
@@ -13,7 +16,14 @@ from app.insights.generators import (
     forecast_gap,
     worst_case_risk,
 )
-from app.insights.llm import _numbers_preserved
+from app.insights.llm import (
+    NUMBER_PATTERN,
+    LlmCallResult,
+    LlmUsageRecord,
+    _numbers_preserved,
+    probe,
+    rewrite_insights,
+)
 from app.models.enums import InsightSeverity, InsightType
 
 
@@ -196,3 +206,111 @@ def test_llm_rewrite_must_not_invent_numbers() -> None:
 def test_llm_rewrite_must_not_drop_a_figure() -> None:
     original = "Revenue grows 12.4% to $2.48M over 6 months."
     assert not _numbers_preserved(original, "Revenue grows to $2.48M.")
+
+
+def _rewrite_reply(source: str) -> str:
+    title, explanation, action = [*source.split("\n"), "", "", ""][:3]
+    return f"Rewritten: {title}\n{explanation} Stated plainly.\n{action}"
+
+
+def _fake_call(faithful: bool = True):
+    """Stands in for the provider, so the rewriter can be tested without one."""
+
+    def call(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
+        text = _rewrite_reply(source)
+        if not faithful:
+            text = NUMBER_PATTERN.sub("999", text, count=1)
+        return LlmCallResult(
+            text=text,
+            usage=LlmUsageRecord(provider="stub", model="stub-1", status="success", latency_ms=1.0),
+        )
+
+    return call
+
+
+def test_a_faithful_rewrite_is_applied(monkeypatch) -> None:
+    monkeypatch.setattr("app.insights.llm._call_llm_api", _fake_call())
+    insight = generate_insights(make_context())[0]
+    original_action = insight.suggested_action
+
+    usage: list[LlmUsageRecord] = []
+    rewrite_insights([insight], {"llm_api_key": "k"}, usage)
+
+    assert insight.title.startswith("Rewritten: ")
+    assert insight.suggested_action == original_action
+    assert [record.applied for record in usage] == [True]
+
+
+def test_a_rewrite_that_moves_a_figure_is_discarded(monkeypatch) -> None:
+    monkeypatch.setattr("app.insights.llm._call_llm_api", _fake_call(faithful=False))
+    insight = generate_insights(make_context())[0]
+    before = (insight.title, insight.explanation, insight.suggested_action)
+
+    usage: list[LlmUsageRecord] = []
+    rewrite_insights([insight], {"llm_api_key": "k"}, usage)
+
+    assert (insight.title, insight.explanation, insight.suggested_action) == before
+    assert [record.error_code for record in usage] == ["number_validation"]
+
+
+def test_rewrites_run_together_rather_than_one_after_another(monkeypatch) -> None:
+    """Eight ten-second timeouts in series is over a minute of a run spent waiting."""
+    in_flight = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def call(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
+        nonlocal in_flight, peak
+        with guard:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        time.sleep(0.05)
+        with guard:
+            in_flight -= 1
+        return LlmCallResult(
+            text=_rewrite_reply(source),
+            usage=LlmUsageRecord(provider="stub", model="stub-1", status="success", latency_ms=1.0),
+        )
+
+    monkeypatch.setattr("app.insights.llm._call_llm_api", call)
+    insights = generate_insights(make_context(), limit=8)
+
+    rewrite_insights(insights, {"llm_api_key": "k"}, [])
+
+    assert peak > 1
+
+
+def test_no_provider_leaves_the_platform_wording_alone() -> None:
+    insight = generate_insights(make_context())[0]
+    before = (insight.title, insight.explanation, insight.suggested_action)
+
+    usage: list[LlmUsageRecord] = []
+    rewrite_insights([insight], None, usage)
+
+    assert (insight.title, insight.explanation, insight.suggested_action) == before
+    assert usage == []
+
+
+def test_probe_says_plainly_that_there_is_no_key() -> None:
+    result = probe({})
+
+    assert result.ok is False
+    assert result.error_code == "no_key"
+    assert "API key" in result.message
+
+
+def test_probe_translates_a_rejected_key(monkeypatch) -> None:
+    def call(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
+        return LlmCallResult(
+            text=None,
+            usage=LlmUsageRecord(
+                provider="openai", model="m", status="error", latency_ms=5.0, error_code="401"
+            ),
+        )
+
+    monkeypatch.setattr("app.insights.llm._call_llm_api", call)
+
+    result = probe({"llm_api_key": "k"})
+
+    assert result.ok is False
+    assert result.message == "The provider rejected the API key."
