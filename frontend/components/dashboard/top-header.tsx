@@ -131,11 +131,13 @@ export function TopHeader({ section }: { section: AppSection }) {
         </div>
         {isDashboard ? <ExportControl /> : null}
 
+        {/* Accessible name matches the visible label so the two never disagree,
+            and it collapses into the overflow menu below sm like its siblings. */}
         <Link
           href="/"
-          aria-label="Back to home"
+          aria-label="Home"
           title="Back to home"
-          className={cn(ICON_BUTTON, "w-auto gap-1.5 px-2.5 fine:w-auto")}
+          className={cn(ICON_BUTTON, "hidden w-auto gap-1.5 px-2.5 sm:inline-flex")}
         >
           <House className="h-4 w-4" aria-hidden />
           <span className="hidden text-caption font-medium lg:inline">Home</span>
@@ -176,6 +178,12 @@ export function TopHeader({ section }: { section: AppSection }) {
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content align="end" sideOffset={6} className={MENU_CONTENT}>
+              <DropdownMenu.Item asChild className={MENU_ITEM}>
+                <Link href="/">
+                  <House className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+                  Home
+                </Link>
+              </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={toggleTheme} className={MENU_ITEM}>
                 <ThemeIcon className="h-3.5 w-3.5 text-text-muted" aria-hidden />
                 {resolvedTheme === "dark" ? "Light theme" : "Dark theme"}

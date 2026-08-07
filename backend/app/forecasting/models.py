@@ -8,6 +8,7 @@ from typing import Any, Protocol
 import numpy as np
 import numpy.typing as npt
 
+from app.core.config import settings
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
@@ -28,7 +29,6 @@ FittedModel = Any
 
 RANDOM_STATE = 20260804
 
-MIN_GBM_ROWS = 8
 OBSERVATIONS_PER_PARAMETER = 3
 MAX_STATE_SPACE_PERIOD = 24
 MAX_FOURIER_HARMONICS = 3
@@ -831,8 +831,6 @@ class GradientBoostingForecaster:
             len(y), self.frequency, profile=self.profile, drivers=self.drivers
         )
         matrix, target, names, _rows = build_design_matrix(y, periods, spec, self.frequency)
-
-        from app.core.config import settings
 
         min_rows = settings.min_gbm_rows
         if matrix.shape[0] < min_rows:

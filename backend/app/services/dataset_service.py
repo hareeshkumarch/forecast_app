@@ -202,8 +202,6 @@ async def create_from_frame(
 
 
 def _default_horizon(frequency: ForecastFrequency | None) -> int:
-    from app.core.config import settings
-
     return {
         ForecastFrequency.DAILY: settings.default_horizon_daily,
         ForecastFrequency.WEEKLY: settings.default_horizon_weekly,

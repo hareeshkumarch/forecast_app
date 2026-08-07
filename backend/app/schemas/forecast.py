@@ -43,6 +43,7 @@ def _accuracy(wmape: float | None) -> float | None:
 Horizon = Annotated[int, Field(ge=1, le=365)]
 Folds = Annotated[int, Field(ge=1, le=10)]
 TreeDepth = Annotated[int, Field(ge=1, le=10)]
+LearningRate = Annotated[float, Field(gt=0.0, le=1.0)]
 SeriesLimit = Annotated[int, Field(ge=1, le=DEFAULT_MAX_SERIES)]
 ArimaOrder = Annotated[list[Annotated[int, Field(ge=0, le=5)]], Field(min_length=3, max_length=3)]
 
@@ -67,6 +68,7 @@ class ForecastRunRequest(StrictModel):
     metric_weights: dict[str, float] | None = None
     sarimax_order: ArimaOrder | None = None
     gbm_max_depth: TreeDepth | None = None
+    gbm_learning_rate: LearningRate | None = None
     candidate_models: list[ModelKind] | None = None
     prophet_changepoint_prior_scale: float | None = Field(default=None, ge=0.001, le=1.0)
     prophet_interval_width: float | None = Field(default=None, ge=0.5, le=0.99)
@@ -285,6 +287,10 @@ class ScorecardResponse(BaseModel):
     unforecast_keys: NonNegativeInt
     currency: bool
     blocked_reason: str | None
+    #: Cumulative error in mean absolute deviations. Near zero the misses cancel;
+    #: a large value means the run missed the same way every period.
+    tracking_signal: float | None = None
+    drifted: bool = False
     series: list[SeriesScoreRow] = Field(default_factory=list)
 
     @computed_field
@@ -435,10 +441,15 @@ class ForecastProgressEvent(BaseModel):
         return round(self.progress * 100.0, 2)
 
 
+DriverMultiplier = Annotated[float, Field(ge=0.1, le=10.0)]
+
+
 class WhatIfSimulationRequest(StrictModel):
     volume_multiplier: float = Field(default=1.0, ge=0.1, le=10.0)
     target_shift_pct: float = Field(default=0.0, ge=-90.0, le=1000.0)
-    driver_multipliers: dict[str, float] = Field(default_factory=dict)
+    # Bounded like volume_multiplier: an unbounded dict lets a request overflow the
+    # forecast to inf, which is not representable in the response.
+    driver_multipliers: dict[str, DriverMultiplier] = Field(default_factory=dict, max_length=50)
 
 
 class PointSimulationResult(BaseModel):

@@ -13,8 +13,6 @@ from app.insights.generators import GeneratedInsight
 
 logger = get_logger(__name__)
 
-MAX_CONCURRENT_REWRITES = 8
-
 
 @dataclass(slots=True)
 class LlmUsageRecord:

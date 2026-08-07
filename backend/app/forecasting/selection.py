@@ -2,32 +2,11 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from app.core.config import settings
 from app.forecasting.backtest import BacktestResult
 from app.models.enums import ModelKind
-
-SCORING_RULE = (
-    "score = 0.50*norm(wMAPE) + 0.30*norm(sMAPE) + 0.20*norm(RMSE) "
-    "+ 0.15*norm(Winkler) + complexity_penalty; "
-    "metrics min-max normalised across candidates, lower is better"
-)
-
-def default_metric_weights() -> dict[str, float]:
-    from app.core.config import settings
-
-    return {
-        "wmape": settings.metric_weight_wmape,
-        "smape": settings.metric_weight_smape,
-        "rmse": settings.metric_weight_rmse,
-    }
-
-
-def get_interval_weight() -> float:
-    from app.core.config import settings
-
-    return settings.interval_weight
-
 
 INTERMITTENT_METRIC_WEIGHTS: dict[str, float] = {
     "mae": 0.50,
@@ -36,7 +15,25 @@ INTERMITTENT_METRIC_WEIGHTS: dict[str, float] = {
 
 
 def metric_weights_for(intermittent: bool) -> dict[str, float]:
-    return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else default_metric_weights())
+    return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else settings.metric_weights)
+
+
+def scoring_rule(
+    weights: dict[str, float] | None = None, interval_weight: float | None = None
+) -> str:
+    """The formula a run was actually scored by, spelled out in its own numbers.
+
+    Read from settings rather than written down, so a deployment that reweighs
+    the metrics does not go on telling people it used the defaults.
+    """
+    weights = weights if weights is not None else settings.metric_weights
+    interval = interval_weight if interval_weight is not None else settings.interval_weight
+    return (
+        "score = "
+        + " + ".join(f"{weight:.2f}*norm({metric.upper()})" for metric, weight in weights.items())
+        + f" + {interval:.2f}*norm(WINKLER) where measurable"
+        + " + complexity_penalty; metrics min-max normalised across candidates, lower is better"
+    )
 
 
 COMPLEXITY_PENALTY: dict[ModelKind, float] = {
@@ -92,7 +89,7 @@ class Selection:
     candidates: list[ScoredCandidate]
     winner: ScoredCandidate | None
     rationale: str
-    scoring_rule: str = SCORING_RULE
+    scoring_rule: str = field(default_factory=scoring_rule)
 
 
 OUTLIER_MAD_MULTIPLIER = 6.0
@@ -132,16 +129,12 @@ def select_model(
     n_observations: int | None = None,
     complexity_penalty_scale: float | None = None,
 ) -> Selection:
-    weights = metric_weights or default_metric_weights()
+    weights = metric_weights or settings.metric_weights
     penalties = complexity_penalties or COMPLEXITY_PENALTY
     penalty_multiplier = complexity_penalty_scale if complexity_penalty_scale is not None else 1.0
-    interval_weight = get_interval_weight()
+    interval_weight = settings.interval_weight
 
-    rule_str = (
-        " + ".join(f"{w:.2f}*norm({m.upper()})" for m, w in weights.items())
-        + f" + {interval_weight:.2f}*norm(WINKLER) where measurable"
-        + " + complexity_penalty; metrics min-max normalised across candidates, lower is better"
-    )
+    rule_str = scoring_rule(weights, interval_weight)
 
     usable = [r for r in results if not r.failed and math.isfinite(r.wmape)]
 

@@ -446,6 +446,11 @@ export interface Scorecard {
   accuracy: number | null;
 
   intervals_held: boolean | null;
+
+  /** Cumulative error in mean absolute deviations: near zero the misses cancel out. */
+  tracking_signal: number | null;
+  /** True when the run missed the same way every period, or simply missed badly. */
+  drifted: boolean;
 }
 
 export interface ForecastProgressEvent {

@@ -431,77 +431,95 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
     seasons = n / period if period > 1 else 0.0
 
     return SeriesProfile(
-        n_observations=int(y.size),
+        n_observations=n,
         frequency=frequency,
         seasonal_period=period,
-        has_seasonality=has_seasonality,
-        seasonality_strength=round(strength, 4),
-        has_trend=has_trend,
-        trend_strength=round(trend_strength, 4),
-        stationarity_status=stationarity,
-        difference_order=difference_order,
-        box_cox_lambda=round(box_cox_lambda, 4),
+        seasonal_strength=strength,
+        seasonal_scores=scores,
+        trend_strength=_trend_strength(finite, period),
+        strictly_positive=strictly_positive,
+        zero_share=zero_share,
         intermittent=intermittent,
-        adi=round(adi, 4),
-        cv2=round(cv2, 4),
-        outlier_share=round(outliers, 4),
-        recommendations=profile_recommendations(
-            n_observations=int(y.size),
-            has_seasonality=has_seasonality,
-            seasonal_period=period,
-            has_trend=has_trend,
-            stationarity_status=stationarity,
-            difference_order=difference_order,
-            intermittent=intermittent,
-            outlier_share=outliers,
-        ),
+        coefficient_of_variation=cv,
+        outlier_share=_outlier_share(finite),
+        box_cox_lambda=lambda_hint,
+        transform=transform,
+        difference_order=_difference_order(finite, period),
+        seasonal_difference_order=_seasonal_difference_order(strength, seasons),
+        seasonal_noise_floor=seasonal_floor,
+        trend_noise_floor=trend_floor,
+        demand_interval=interval,
+        demand_cv2=cv2,
+        demand_class=demand_class,
     )
 
 
+CHANGEPOINT_SIGMAS = 2.2
+MIN_CHANGEPOINT_HISTORY = 16
+
+
 def detect_changepoints(values: FloatArray) -> list[int]:
-    """Detect indices where historical level undergoes a structural break."""
-    if values.size < 16:
+    """Indices where the level of a history steps onto a new plateau.
+
+    Each candidate split is measured against the spread *within* the two halves
+    it creates, never against the spread of the series as a whole: the break
+    itself inflates the latter, so scoring against it makes a bigger step
+    harder to find rather than easier — the opposite of what is wanted.
+
+    This is a single-split scan, so on a history that steps twice it names the
+    larger of the two rather than both. Recursing into the halves would find
+    the rest; nothing here needs that yet.
+    """
+    finite = values[np.isfinite(values)]
+    n = int(finite.size)
+    if n < MIN_CHANGEPOINT_HISTORY:
         return []
 
-    split_points: list[int] = []
-    window = max(4, values.size // 6)
-
-    for i in range(window, values.size - window):
-        left, right = values[:i], values[i:]
-        mean_diff = abs(np.mean(left) - np.mean(right))
-        combined_std = max(float(np.std(values)), 1e-9)
-
-        if mean_diff > 2.2 * combined_std:
-            split_points.append(i)
-
-    if not split_points:
+    window = max(4, n // 6)
+    if n - window <= window:
         return []
 
-    pruned = [split_points[0]]
-    for idx in split_points[1:]:
-        if idx - pruned[-1] >= window:
-            pruned.append(idx)
-    return pruned
+    # Prefix sums, so each candidate's segment mean and variance cost O(1)
+    # rather than re-averaging both halves at every index.
+    running = np.concatenate([[0.0], np.cumsum(finite)])
+    running_sq = np.concatenate([[0.0], np.cumsum(finite * finite)])
 
+    def moments(start: int, end: int) -> tuple[float, float, int]:
+        count = end - start
+        mean = (running[end] - running[start]) / count
+        mean_square = (running_sq[end] - running_sq[start]) / count
+        return float(mean), float(max(mean_square - mean * mean, 0.0)), count
 
-def winsorize_outliers(values: FloatArray, threshold: float = 3.5) -> FloatArray:
-    """Robustly winsorize extreme historical spikes using Median Absolute Deviation."""
-    if values.size < 5:
-        return values.copy()
+    found: list[tuple[int, float]] = []
+    for index in range(window, n - window + 1):
+        left_mean, left_var, left_n = moments(0, index)
+        right_mean, right_var, right_n = moments(index, n)
 
-    med = float(np.median(values))
-    mad = float(np.median(np.abs(values - med)))
-    scale = 1.4826 * mad
-    if scale <= 0:
-        return values.copy()
+        within = float(np.sqrt((left_var * left_n + right_var * right_n) / n))
+        if within <= 0.0:
+            # Two perfectly flat plateaus: any difference at all is the break.
+            if left_mean != right_mean:
+                found.append((index, float("inf")))
+            continue
 
-    cleaned = values.copy()
-    high_mask = (values - med) / scale > threshold
-    low_mask = (values - med) / scale < -threshold
+        strength = abs(left_mean - right_mean) / within
+        if strength > CHANGEPOINT_SIGMAS:
+            found.append((index, strength))
 
-    cleaned[high_mask] = med + threshold * scale
-    cleaned[low_mask] = med - threshold * scale
-    return cleaned
+    if not found:
+        return []
+
+    # One break makes its neighbours look like breaks too. Collapse each run of
+    # adjacent candidates to the index that scored highest, so the answer names
+    # where the level actually moved rather than where the evidence started.
+    clusters: list[list[tuple[int, float]]] = [[found[0]]]
+    for candidate in found[1:]:
+        if candidate[0] - clusters[-1][-1][0] < window:
+            clusters[-1].append(candidate)
+        else:
+            clusters.append([candidate])
+
+    return [max(cluster, key=lambda item: item[1])[0] for cluster in clusters]
 
 
 def minimum_history(profile: SeriesProfile) -> int:

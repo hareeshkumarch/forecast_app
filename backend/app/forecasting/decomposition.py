@@ -232,38 +232,49 @@ def _yoy(values: FloatArray, frequency: ForecastFrequency) -> float | None:
     return round((recent - prior) / abs(prior) * 100.0, 2)
 
 
+FLAT_ATTRIBUTION: dict[str, float] = {
+    "baseline_pct": 100.0,
+    "trend_pct": 0.0,
+    "seasonality_pct": 0.0,
+}
+
+
 def forecast_attribution(
     forecast: FloatArray, history: FloatArray, frequency: ForecastFrequency
 ) -> dict[str, float]:
-    """Attribute projected forecast volume to baseline level, trend, and seasonality."""
-    if forecast.size == 0:
-        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+    """Split the projected volume into the level it starts from, the trend carried
+    into it, and the seasonal swing laid on top."""
+    horizon = int(forecast.size)
+    clean = history[np.isfinite(history)]
 
-    total = float(np.sum(np.abs(forecast)))
-    if total == 0:
-        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+    if horizon == 0 or clean.size == 0 or float(np.sum(np.abs(forecast))) == 0.0:
+        return dict(FLAT_ATTRIBUTION)
 
     period = seasonal_period(frequency)
-    trend, seasonal, _ = classical_decomposition(history, period)
+    trend, seasonal, _ = _decompose(clean, frequency)
 
-    trend_slope = _trend_slope(trend)
-    base_level = float(trend[-1]) if trend.size else float(np.mean(history))
+    finite_trend = trend[np.isfinite(trend)]
+    base_level = float(finite_trend[-1]) if finite_trend.size else float(np.mean(clean))
 
-    baseline_val = base_level * forecast.size
-    trend_val = trend_slope * (forecast.size * (forecast.size + 1) / 2.0)
+    # The forecast covers steps 1..horizon, so a constant slope contributes the
+    # sum of that arithmetic series rather than slope * horizon.
+    baseline_value = base_level * horizon
+    trend_value = _trend_slope(trend) * (horizon * (horizon + 1) / 2.0)
 
-    if seasonal.size >= period:
+    if period > 1 and seasonal.size >= period:
+        # pattern[k] sits at absolute index size - period + k, which has the same
+        # phase as forecast step k, so the phase continues without an offset.
         pattern = seasonal[-period:]
-        seasonal_val = float(np.sum([pattern[i % period] for i in range(forecast.size)]))
+        seasonal_value = float(np.sum([pattern[step % period] for step in range(horizon)]))
     else:
-        seasonal_val = 0.0
+        seasonal_value = 0.0
 
-    raw_sum = abs(baseline_val) + abs(trend_val) + abs(seasonal_val)
+    raw_sum = abs(baseline_value) + abs(trend_value) + abs(seasonal_value)
     if raw_sum == 0:
-        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+        return dict(FLAT_ATTRIBUTION)
 
     return {
-        "baseline_pct": round(abs(baseline_val) / raw_sum * 100.0, 2),
-        "trend_pct": round(abs(trend_val) / raw_sum * 100.0, 2),
-        "seasonality_pct": round(abs(seasonal_val) / raw_sum * 100.0, 2),
+        "baseline_pct": round(abs(baseline_value) / raw_sum * 100.0, 2),
+        "trend_pct": round(abs(trend_value) / raw_sum * 100.0, 2),
+        "seasonality_pct": round(abs(seasonal_value) / raw_sum * 100.0, 2),
     }

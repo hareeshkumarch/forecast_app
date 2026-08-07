@@ -90,7 +90,7 @@ async def seed_dataset() -> Dataset | None:
         return dataset
 
 
-async def seed_forecast(dataset_id: uuid.UUID) -> None:
+async def seed_forecast(dataset_id: uuid.UUID) -> bool:
     async with session_scope() as session:
         completed = await session.execute(
             select(func.count())
@@ -102,7 +102,7 @@ async def seed_forecast(dataset_id: uuid.UUID) -> None:
         )
         if int(completed.scalar_one()) > 0:
             logger.info("A completed forecast already exists; skipping.")
-            return
+            return True
 
         run = await forecast_service.create_run(
             session,
@@ -131,22 +131,32 @@ async def seed_forecast(dataset_id: uuid.UUID) -> None:
                     "n/a",
                 ),
             )
-        else:
-            logger.warning(
-                "Seed forecast finished with status %s: %s", run.status, run.error_message
-            )
+            return True
+
+        logger.error("Seed forecast finished with status %s: %s", run.status, run.error_message)
+        return False
 
 
-async def seed() -> None:
+async def seed() -> bool:
+    """Seed the demo rows. False when the sample forecast did not complete.
+
+    Callers that need a populated dashboard — the e2e job does — should treat
+    that as a failure rather than reading it back as an empty list several
+    steps later.
+    """
     configure_logging()
     await seed_connectors()
     dataset = await seed_dataset()
-    if dataset is not None:
-        await seed_forecast(dataset.id)
+    if dataset is None:
+        return False
+    return await seed_forecast(dataset.id)
 
 
 def main() -> None:
-    asyncio.run(seed())
+    # Non-zero when the sample forecast did not complete, so a broken engine
+    # fails here with its own error rather than as a timeout further down.
+    if not asyncio.run(seed()):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -129,6 +129,8 @@ class CandidateRow(TypedDict):
     rmse: float | None
     smape: float | None
     wmape: float | None
+    mase: float | None
+    winkler: float | None
     score: float | None
     folds: int
     fit_seconds: float
@@ -270,7 +272,6 @@ def run_forecast(
         results,
         frequency=frequency,
         confidence_level=payload.confidence_level,
-        weights=weights,
     )
     if combined is not None:
         results.append(combined.result)
@@ -279,11 +280,16 @@ def run_forecast(
         results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
 
     cps = payload.model_options.get("complexity_penalty_scale") if payload.model_options else None
+    # model_options round-trips through stored JSON, so the value is only a number
+    # if whoever wrote it put one there.
+    penalty_scale = (
+        float(cps) if isinstance(cps, int | float) and not isinstance(cps, bool) else None
+    )
     selection = select_model(
         results,
         metric_weights=payload.metric_weights or metric_weights_for(profile.intermittent),
         n_observations=int(values.size),
-        complexity_penalty_scale=float(cps) if cps is not None else None,
+        complexity_penalty_scale=penalty_scale,
     )
     if selection.winner is None:
         raise InsufficientDataError(
@@ -299,6 +305,7 @@ def run_forecast(
             1,
             f"Fitting {winner_kind.value.replace('_', ' ')} on the full history...",
         )
+    final_model: Forecaster
     if winner_kind is ModelKind.ENSEMBLE and combined is not None:
         final_model = EnsembleForecaster(
             frequency, profile, members=combined.members, weights=combined.weights

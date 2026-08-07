@@ -7,11 +7,12 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 
+from app.core.config import settings
+
 FloatArray = npt.NDArray[np.float64]
 
 SEARCH_SEED = 20260804
 MIN_VALIDATION_ROWS = 6
-MAX_EVALUATIONS = 24
 MIN_EVALUATIONS = 4
 ROWS_PER_EVALUATION = 12
 CACHE_LIMIT = 64
@@ -83,15 +84,11 @@ _CACHE = _Cache()
 
 
 def evaluation_budget(n_rows: int, space_size: int) -> int:
-    from app.core.config import settings
-
     affordable = max(MIN_EVALUATIONS, n_rows // ROWS_PER_EVALUATION)
     return int(min(space_size, settings.tuning_max_evaluations, affordable))
 
 
 def validation_splits(n_rows: int, horizon: int) -> list[tuple[int, int]]:
-    from app.core.config import settings
-
     min_rows = settings.tuning_min_validation_rows
     if n_rows < min_rows * 2:
         return []

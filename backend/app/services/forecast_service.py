@@ -161,6 +161,10 @@ RUN_SORTS: dict[str, Any] = {
 DEFAULT_RUN_SORT = "newest"
 MAX_RUN_PAGE = settings.api_max_page_size
 
+# Deliberately looser than quality.OUTLIER_SIGMAS: clipping a series a run was
+# asked to forecast should only catch the spikes nothing can explain.
+WINSORISE_SIGMAS = 6.0
+
 
 @dataclass(slots=True)
 class RunPage:
@@ -279,6 +283,7 @@ async def create_run(
     metric_weights: dict[str, float] | None = None,
     sarimax_order: list[int] | None = None,
     gbm_max_depth: int | None = None,
+    gbm_learning_rate: float | None = None,
     candidate_models: list[str] | None = None,
     prophet_changepoint_prior_scale: float | None = None,
     prophet_interval_width: float | None = None,
@@ -360,6 +365,7 @@ async def create_run(
         metric_weights=metric_weights,
         sarimax_order=sarimax_order,
         gbm_max_depth=gbm_max_depth,
+        gbm_learning_rate=gbm_learning_rate,
         candidate_models=candidate_models,
         prophet_changepoint_prior_scale=prophet_changepoint_prior_scale,
         prophet_interval_width=prophet_interval_width,
@@ -764,9 +770,10 @@ def _build_payload(
     overrides = RunOverrides.from_stored(run.options)
 
     if run.outlier_treatment is OutlierTreatment.WINSORISE:
+        # The override is a count of robust deviations, which is what `sigmas` is.
         values = quality.winsorise(
             values,
-            mad_threshold=overrides.outlier_mad_threshold or 6.0,
+            sigmas=overrides.outlier_mad_threshold or WINSORISE_SIGMAS,
         )
 
     regions = _segments(parquet_path, run, run.region_column)
@@ -1138,6 +1145,28 @@ async def points_for_run(
     return list(result.scalars().all())
 
 
+async def driver_leverage(session: AsyncSession, run_id: uuid.UUID) -> dict[str, float]:
+    """Each driver's share of the movement this run explained, as a 0..1 fraction.
+
+    A driver holding 40% of the impact moves the total by 40% of whatever is asked
+    of it, so a 1.5x on that driver lifts the forecast by 20%, not 50%.
+    """
+    result = await session.execute(
+        select(ForecastDriver.driver, ForecastDriver.impact_pct).where(
+            ForecastDriver.run_id == run_id
+        )
+    )
+    return {name: max(0.0, min(float(pct or 0.0) / 100.0, 1.0)) for name, pct in result.all()}
+
+
+def _driver_scale(multipliers: dict[str, float], leverage: dict[str, float]) -> float:
+    """Combine per-driver multipliers into one factor, weighted by their leverage."""
+    scale = 1.0
+    for name, multiplier in multipliers.items():
+        scale *= 1.0 + leverage.get(name, 0.0) * (multiplier - 1.0)
+    return max(scale, 0.0)
+
+
 async def simulate_what_if(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -1150,16 +1179,24 @@ async def simulate_what_if(
     if run.status is not RunStatus.COMPLETED:
         raise ValidationError("Only completed forecast runs can be simulated.")
 
-    points = await get_points(session, run.id)
-    forecast_points = [p for p in points if p.kind == PointKind.FORECAST and p.series_id is None]
+    points = await points_for_run(session, run.id)
+    forecast_points = [p for p in points if p.kind is PointKind.FORECAST]
 
     if not forecast_points:
         raise ValidationError("This forecast run has no forecast points to simulate.")
 
+    driver_mults = dict(driver_multipliers or {})
+    leverage = await driver_leverage(session, run.id)
+
+    unknown = sorted(set(driver_mults) - set(leverage))
+    if unknown:
+        known = ", ".join(sorted(leverage)) or "none"
+        raise ValidationError(
+            f"This run has no driver named {', '.join(unknown)}. Available drivers: {known}."
+        )
+
     effective_shift = 1.0 + (target_shift_pct / 100.0)
-    driver_mults = driver_multipliers or {}
-    combined_driver_mult = float(np.prod(list(driver_mults.values()))) if driver_mults else 1.0
-    effective_scale = volume_multiplier * effective_shift * combined_driver_mult
+    effective_scale = volume_multiplier * effective_shift * _driver_scale(driver_mults, leverage)
 
     simulated_points = []
     baseline_total = 0.0
@@ -1167,13 +1204,18 @@ async def simulate_what_if(
     simulated_best_total = 0.0
     simulated_worst_total = 0.0
 
+    def scaled(value: float | None) -> float | None:
+        return None if value is None else float(value) * effective_scale
+
     for point in sorted(forecast_points, key=lambda p: p.period):
         base = float(point.forecast or 0.0)
         sim = base * effective_scale
-        low = float(point.lower_bound * effective_scale) if point.lower_bound is not None else None
-        high = float(point.upper_bound * effective_scale) if point.upper_bound is not None else None
-        best = float(point.best_case * effective_scale) if point.best_case is not None else (high or sim)
-        worst = float(point.worst_case * effective_scale) if point.worst_case is not None else (low or sim)
+        low = scaled(point.lower_bound)
+        high = scaled(point.upper_bound)
+        best = scaled(point.best_case)
+        worst = scaled(point.worst_case)
+        best = best if best is not None else (high if high is not None else sim)
+        worst = worst if worst is not None else (low if low is not None else sim)
 
         delta = sim - base
         delta_pct = (delta / abs(base) * 100.0) if base != 0 else 0.0
