@@ -62,8 +62,11 @@ const config: Config = {
         header: "var(--header-height)",
       },
       fontSize: {
-        micro: ["10px", { lineHeight: "14px", letterSpacing: "0.06em" }],
-        caption: ["11px", { lineHeight: "16px" }],
+        // Floor raised from 10px — `micro` carries the eyebrow and the kbd,
+        // both uppercase and tracked, which is where 10px stopped being
+        // readable rather than merely small.
+        micro: ["11px", { lineHeight: "15px", letterSpacing: "0.05em" }],
+        caption: ["11.5px", { lineHeight: "16px" }],
         meta: ["12px", { lineHeight: "16px" }],
         body: ["13px", { lineHeight: "18px" }],
         subhead: ["14px", { lineHeight: "20px" }],
