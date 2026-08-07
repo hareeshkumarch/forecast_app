@@ -61,6 +61,13 @@ const config: Config = {
         insights: "var(--insights-width)",
         header: "var(--header-height)",
       },
+      fontFamily: {
+        // Landing-page faces. The app keeps the `body` default (Inter) set in
+        // globals.css; these are opted into, never inherited.
+        display: ["var(--font-display)", "Georgia", "ui-serif", "serif"],
+        plex: ["var(--font-plex-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
       fontSize: {
         // Floor raised from 10px — `micro` carries the eyebrow and the kbd,
         // both uppercase and tracked, which is where 10px stopped being
@@ -73,6 +80,15 @@ const config: Config = {
         title: ["16px", { lineHeight: "22px" }],
         heading: ["20px", { lineHeight: "26px" }],
         kpi: ["24px", { lineHeight: "30px" }],
+        // The marketing page needs sizes the product never does. Kept as its
+        // own `display-*` run so nothing in the app can reach for them by
+        // accident.
+        lead: ["17px", { lineHeight: "1.62" }],
+        "display-xs": ["27px", { lineHeight: "1.16", letterSpacing: "-0.015em" }],
+        "display-sm": ["33px", { lineHeight: "1.14", letterSpacing: "-0.015em" }],
+        "display-md": ["40px", { lineHeight: "1.12", letterSpacing: "-0.018em" }],
+        "display-lg": ["52px", { lineHeight: "1.08", letterSpacing: "-0.02em" }],
+        "display-xl": ["72px", { lineHeight: "1.02", letterSpacing: "-0.022em" }],
       },
       boxShadow: {
         card: "var(--shadow-card)",
@@ -86,9 +102,23 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(8px) scale(0.98)" },
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
+        // The landing page's scroll choreography keeps its @keyframes in
+        // globals.css next to the rules that reference them — Tailwind only
+        // emits a keyframes block when a matching `animate-*` utility is
+        // actually used in the markup, and those are driven from CSS.
+        "pulse-dot": {
+          "0%, 100%": { opacity: "1", transform: "scale(1)" },
+          "50%": { opacity: "0.45", transform: "scale(0.82)" },
+        },
+        drift: {
+          "0%, 100%": { transform: "translate3d(0, 0, 0) scale(1)" },
+          "50%": { transform: "translate3d(2%, -3%, 0) scale(1.08)" },
+        },
       },
       animation: {
         "toast-in": "toast-in 160ms ease-out",
+        "pulse-dot": "pulse-dot 2.4s ease-in-out infinite",
+        drift: "drift 22s ease-in-out infinite",
       },
     },
   },

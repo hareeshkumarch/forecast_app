@@ -20,7 +20,7 @@ import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
 const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
-  { href: "/", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
   { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
   { href: "/datasets", label: "Data", description: "Files you have uploaded", icon: FileSpreadsheet },
   { href: "/reports", label: "Reports", description: "Runs and exports", icon: FileBarChart2 },
@@ -55,7 +55,9 @@ function labelFade(collapsed: boolean): string {
 }
 
 function isActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // `/dashboard` is the app root and has no children, so it matches exactly.
+  // Everything else owns its subtree.
+  return href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
 }
 
 function useSidebarShortcut(): void {
