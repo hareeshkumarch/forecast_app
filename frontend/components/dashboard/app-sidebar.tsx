@@ -48,7 +48,9 @@ const LABEL_FADE = {
 function labelFade(collapsed: boolean): string {
   return cn(
     "transition-opacity ease-out motion-reduce:transition-none motion-reduce:delay-0",
-    collapsed ? LABEL_FADE.hidden : LABEL_FADE.shown,
+    // Faded out is not gone: without this the labels stay clickable and
+    // selectable inside a rail that reads as icon-only.
+    collapsed ? cn(LABEL_FADE.hidden, "pointer-events-none select-none") : LABEL_FADE.shown,
   );
 }
 
@@ -113,6 +115,7 @@ function NavLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
+      aria-label={item.label}
       className={cn(
         "group relative flex h-9 items-center rounded-input px-2.5",
         "transition-colors duration-fast",
@@ -130,6 +133,7 @@ function NavLink({
       />
 
       <span
+        aria-hidden={collapsed || undefined}
         className={cn(
           "absolute left-[34px] right-2.5 truncate text-meta font-medium leading-none",
           labelFade(collapsed),
