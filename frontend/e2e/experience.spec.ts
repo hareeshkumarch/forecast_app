@@ -1,12 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function load(page: Page) {
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+import { loadDashboard } from "./fixtures";
 
-  await expect(page.locator('[data-workspace]:not([data-workspace="loading"])')).toBeVisible({
-    timeout: 15_000,
-  });
+async function load(page: Page) {
+  await loadDashboard(page);
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 }
 
 const theme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme);
