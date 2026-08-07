@@ -41,7 +41,7 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-canvas">
       <a
         href="#main-content"
-        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-white focus:translate-y-0"
+        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"
       >
         Skip to main content
       </a>

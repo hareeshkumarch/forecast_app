@@ -80,7 +80,7 @@ export function InsightsRail() {
   return (
     <aside
    aria-label="Forecast insights"
-   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1720px]:flex"
+   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1440px]:flex"
     >
       <InsightsRailBody />
     </aside>
@@ -183,7 +183,7 @@ export function InsightsRailBody() {
           </p>
         ) : null}
 
-        <div className="mt-2.5 h-px w-full bg-gradient-to-r from-accent/45 to-transparent" />
+        <div className="mt-2.5 h-px w-full bg-gradient-to-r from-accent-border to-transparent" />
       </div>
 
       <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3">

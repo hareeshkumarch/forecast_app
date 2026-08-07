@@ -5,26 +5,29 @@
 /* ---------------------------------------------------------------- tokens */
 
 /*
- * Ink & Azure. Cool neutrals carrying a slight blue bias so they read as
- * chosen rather than inherited, and an azure accent that stays clear of the
- * green and red the tables use to mean good and bad.
+ * Linen & Azure. Warm neutrals carrying a slight amber bias so the ground
+ * reads as paper rather than screen, and an azure accent that stays clear of
+ * the green and red the tables use to mean good and bad.
  */
 :root {
-  --canvas: #f6f8fb;
+  --canvas: #faf8f4;
   --surface: #ffffff;
-  --surface-muted: #eff3f9;
-  --border: #e0e6f0;
-  --border-strong: #c9d3e2;
+  --surface-muted: #f2eee7;
+  --border: #e7e1d6;
+  --border-strong: #d5cec0;
 
-  --text-primary: #111826;
-  --text-secondary: #586274;
-  --text-muted: #8a93a3;
+  --text-primary: #191713;
+  --text-secondary: #6a6357;
+  --text-muted: #9a9285;
 
   --accent: #2c5fa8;
-  --accent-soft: #e9f0fa;
+  --accent-soft: #eaf1fa;
   --accent-hover: #234e8f;
   --accent-border: #c4d8f0;
   --accent-disabled: #9bbadd;
+  /* Foreground for anything sitting ON --accent. Split out so the dark theme
+   * can flip it instead of hardcoding white against a light-blue fill. */
+  --on-accent: #ffffff;
 
   --navy: #1d3c68;
   --teal: #3d868c;
@@ -32,26 +35,28 @@
   --sand: #9db2cf;
 
   --positive: #1a7f5a;
-  --positive-soft: #e6f4ee;
-  --positive-border: #c6e4d6;
+  --positive-soft: #e8f2ec;
+  --positive-border: #c9e2d5;
   --negative: #c94a4a;
-  --negative-soft: #fdeaea;
-  --negative-border: #f4cbcb;
+  --negative-soft: #fbeae7;
+  --negative-border: #f2cdc6;
   --warning: #a9721a;
-  --warning-soft: #fbf0da;
-  --warning-border: #eddcb4;
+  --warning-soft: #f9efdc;
+  --warning-border: #ecdcb8;
 
-  --overlay: rgba(17, 24, 38, 0.28);
-  --shadow-card: 0 1px 2px rgba(17, 24, 38, 0.05);
-  --shadow-popover: 0 8px 24px rgba(17, 24, 38, 0.12), 0 2px 6px rgba(17, 24, 38, 0.07);
+  --overlay: rgba(25, 23, 19, 0.28);
+  --shadow-card: 0 1px 2px rgba(25, 23, 19, 0.05);
+  --shadow-popover: 0 8px 24px rgba(25, 23, 19, 0.12), 0 2px 6px rgba(25, 23, 19, 0.07);
 
   /* Row heights and padding step down together in compact mode. */
   --density-row: 9px;
   --density-cell-y: 9px;
   --density-panel-gap: 12px;
 
-  /* Layout rails. The header shrinks on phones; the rails only exist from
-   * `lg` up — below that they are served as off-canvas drawers. */
+  /* Layout rails. The single source of truth — tailwind.config.ts maps
+   * `h-header` / `w-rail` / `w-insights` onto these, and `.workspace` reads
+   * the padding below. The header shrinks on phones; the rails only exist
+   * from `lg` up — below that they are served as off-canvas drawers. */
   --header-height: 56px;
   --rail-width: 224px;
   --insights-width: 320px;
@@ -67,25 +72,26 @@
 
 /*
  * The same azure identity, lifted for contrast on a dark ground rather than
- * inverted — the accent brightens, the neutrals keep their blue bias, and the
+ * inverted — the accent brightens, the neutrals keep their warm bias, and the
  * series colours are raised so lines stay legible.
  */
 :root[data-theme="dark"] {
-  --canvas: #0f131a;
-  --surface: #161b24;
-  --surface-muted: #1e242f;
-  --border: #293141;
-  --border-strong: #394356;
+  --canvas: #14120f;
+  --surface: #1c1a17;
+  --surface-muted: #24211c;
+  --border: #332f28;
+  --border-strong: #464138;
 
-  --text-primary: #e7ecf4;
-  --text-secondary: #9fa9bb;
-  --text-muted: #747e8f;
+  --text-primary: #ece7dd;
+  --text-secondary: #a49c8e;
+  --text-muted: #7c7568;
 
-  --accent: #5e9ce0;
-  --accent-soft: #152535;
-  --accent-hover: #7db0e9;
-  --accent-border: #27405c;
-  --accent-disabled: #3f5f83;
+  --accent: #7db0e9;
+  --accent-soft: #1a2431;
+  --accent-hover: #9ac5f1;
+  --accent-border: #2f4763;
+  --accent-disabled: #43607f;
+  --on-accent: #0f1a26;
 
   --navy: #7fb0e2;
   --teal: #5fb5b3;
@@ -93,16 +99,16 @@
   --sand: #8fa8c8;
 
   --positive: #45c08c;
-  --positive-soft: #10291f;
-  --positive-border: #1e4432;
+  --positive-soft: #14261f;
+  --positive-border: #234433;
   --negative: #ec7773;
-  --negative-soft: #2c1b1b;
-  --negative-border: #4a2b2a;
+  --negative-soft: #2b1c1a;
+  --negative-border: #4a2c29;
   --warning: #d9a03e;
-  --warning-soft: #2b2417;
-  --warning-border: #453820;
+  --warning-soft: #2a2318;
+  --warning-border: #443821;
 
-  --overlay: rgba(4, 7, 12, 0.62);
+  --overlay: rgba(8, 6, 4, 0.62);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
 
@@ -181,11 +187,11 @@ body {
   }
 
   .eyebrow {
-    @apply text-micro font-semibold uppercase tracking-[0.09em] text-text-muted;
+    @apply text-micro font-semibold uppercase tracking-[0.08em] text-text-muted;
   }
 
   .kbd {
-    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-[4px] border border-border
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-border
            bg-surface-muted px-1 text-micro font-medium leading-none text-text-muted;
   }
 
@@ -228,6 +234,8 @@ body {
  */
 .workspace {
   container: workspace / inline-size;
+  padding-left: var(--workspace-padding);
+  padding-right: var(--workspace-padding);
 }
 
 .grid-kpi,
@@ -318,6 +326,142 @@ body {
   }
 }
 
+/* --------------------------------------------------------------- landing */
+
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes wipe-x {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Opacity only. A CSS `transform` here would win over each slice's SVG
+   rotate() attribute and stack all four arcs on top of each other — the spin
+   belongs on the wrapping <g>, which carries no attribute of its own. */
+@keyframes donut-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A slow warm wash behind the hero headline. Two radials rather than one, so
+   the accent and the gold meet instead of one fading to nothing. Both stay
+   well clear of the box edges — the hero clips its overflow, and a gradient
+   that is still tinted where it meets that clip shows up as a straight line
+   across the page. */
+.hero-wash {
+  background:
+    radial-gradient(34% 40% at 27% 52%, var(--accent-soft) 0%, transparent 72%),
+    radial-gradient(30% 36% at 68% 40%, var(--warning-soft) 0%, transparent 74%);
+  opacity: 0.8;
+}
+
+/*
+ * Scroll choreography for the marketing page.
+ *
+ * The hidden state is scoped to `.motion-ready`, a class the client adds only
+ * after mount and only when the visitor has not asked for reduced motion. So
+ * the page ships from the server fully composed: no JavaScript, no animation
+ * budget, or a slow observer all render the same finished page rather than a
+ * blank one waiting to be revealed.
+ */
+.motion-ready .reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.motion-ready .reveal[data-shown="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* A stroke draws itself in. Without .motion-ready the dash covers the whole
+   path, which is simply the finished line. */
+.draw-line {
+  stroke-dasharray: var(--draw-length);
+}
+
+.motion-ready .draw-line {
+  stroke-dashoffset: var(--draw-length);
+}
+
+.motion-ready [data-shown="true"] .draw-line {
+  animation: draw-line 1500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--draw-delay, 0ms);
+}
+
+.motion-ready .grow-x {
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.motion-ready [data-shown="true"] .grow-x {
+  animation: grow-x 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: var(--grow-delay, 0ms);
+}
+
+/* Wipes left-to-right — the forecast half of the chart extending forward. */
+.motion-ready .wipe-x {
+  clip-path: inset(0 100% 0 0);
+}
+
+.motion-ready [data-shown="true"] .wipe-x {
+  animation: wipe-x 1100ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--wipe-delay, 0ms);
+}
+
+.motion-ready .donut-in {
+  opacity: 0;
+}
+
+.motion-ready [data-shown="true"] .donut-in {
+  animation: donut-in 620ms ease-out forwards;
+  animation-delay: var(--donut-delay, 0ms);
+}
+
+.motion-ready .donut-spin {
+  transform: rotate(-24deg) scale(0.92);
+  transform-origin: 50% 50%;
+  transition: transform 1100ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.motion-ready [data-shown="true"] .donut-spin {
+  transform: none;
+}
+
+/* Hairline that sweeps out from the heading it sits under. */
+.motion-ready .sweep {
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1) 160ms;
+}
+
+.motion-ready .reveal[data-shown="true"] .sweep,
+.motion-ready [data-shown="true"] > .sweep {
+  transform: scaleX(1);
+}
+
 /* -------------------------------------------------------------- skeleton */
 
 @keyframes shimmer {
@@ -341,7 +485,7 @@ body {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.65),
+    rgba(255, 255, 255, 0.55),
     transparent
   );
   animation: shimmer 1.4s infinite;

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Instrument_Serif, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./globals.css";
@@ -11,6 +11,33 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+/*
+ * The marketing page has its own voice: a serif for display headings, Plex
+ * Sans for its prose and Plex Mono for keys and terminal output. They are
+ * exposed as variables and scoped by the landing page — the app itself stays
+ * on Inter, where a UI face beats a text face.
+ */
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+  variable: "--font-display",
+});
+
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+  variable: "--font-plex-sans",
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
+  variable: "--font-plex-mono",
+});
+
 export const metadata: Metadata = {
   title: "Forecast Hub",
   description: "Forecast operations, reports, data connectors, and LLM usage analytics.",
@@ -20,8 +47,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f8fb" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f131a" },
+    { media: "(prefers-color-scheme: light)", color: "#faf8f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#14120f" },
   ],
 };
 
@@ -45,7 +72,11 @@ const THEME_BOOTSTRAP = `
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${instrumentSerif.variable} ${plexSans.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>

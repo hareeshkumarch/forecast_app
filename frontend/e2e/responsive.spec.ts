@@ -1,15 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { loadDashboard } from "./fixtures";
+
 const appNavigation = (page: Page) => page.locator('aside[aria-label="Primary navigation"]');
 const insightsRail = (page: Page) => page.locator('aside[aria-label="Forecast insights"]');
 
 async function load(page: Page) {
-  await page.goto("/");
+  await loadDashboard(page);
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-
-  await expect(page.locator('[data-workspace]:not([data-workspace="loading"])')).toBeVisible({
-    timeout: 15_000,
-  });
 }
 
 test("the page never scrolls horizontally", async ({ page }) => {
@@ -28,7 +26,7 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
 
   const width = page.viewportSize()?.width ?? 0;
   await expect(appNavigation(page)).toBeVisible({ visible: width >= 1024 });
-  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1720 });
+  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1440 });
 
   if (width < 1024) {
     await page.getByRole("button", { name: "Open navigation" }).click();
@@ -37,7 +35,7 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
     await page.keyboard.press("Escape");
   }
 
-  if (width < 1720) {
+  if (width < 1440) {
     await page.getByRole("button", { name: /Forecast insights/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -72,7 +70,10 @@ test("the header keeps its controls reachable at every width", async ({ page }) 
 
   const width = page.viewportSize()?.width ?? 0;
 
-  if (width < 768) {
+  // The run / scenario / range trio only fits from `xl`; below it they fold
+  // into one Filters popover. 768 was never the boundary — the assertion just
+  // never ran, because the dashboard it needed had no data to render.
+  if (width < 1280) {
     await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
     await expect(page.getByText("Forecast window")).toBeVisible();

@@ -24,7 +24,7 @@ export function Workspace() {
   const breakdowns = summary?.breakdowns ?? [];
 
   return (
-    <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas px-4 py-4 sm:px-6 sm:py-5">
+    <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas py-4 sm:py-5">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <h2 className="text-heading font-semibold tracking-[-0.015em] text-text-primary">

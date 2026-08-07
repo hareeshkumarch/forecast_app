@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export const RAIL_MEDIA = {
   navigation: "(min-width: 1024px)",
-  insights: "(min-width: 1720px)",
+  insights: "(min-width: 1440px)",
 } as const;
 
 export function useMediaQuery(query: string): boolean {

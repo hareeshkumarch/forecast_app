@@ -20,7 +20,7 @@ import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
 const APP_NAV: { href: string; label: string; description: string; icon: LucideIcon }[] = [
-  { href: "/", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", description: "Forecast overview", icon: LayoutDashboard },
   { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
   { href: "/datasets", label: "Data", description: "Files you have uploaded", icon: FileSpreadsheet },
   { href: "/reports", label: "Reports", description: "Runs and exports", icon: FileBarChart2 },
@@ -48,12 +48,16 @@ const LABEL_FADE = {
 function labelFade(collapsed: boolean): string {
   return cn(
     "transition-opacity ease-out motion-reduce:transition-none motion-reduce:delay-0",
-    collapsed ? LABEL_FADE.hidden : LABEL_FADE.shown,
+    // Faded out is not gone: without this the labels stay clickable and
+    // selectable inside a rail that reads as icon-only.
+    collapsed ? cn(LABEL_FADE.hidden, "pointer-events-none select-none") : LABEL_FADE.shown,
   );
 }
 
 function isActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // `/dashboard` is the app root and has no children, so it matches exactly.
+  // Everything else owns its subtree.
+  return href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
 }
 
 function useSidebarShortcut(): void {
@@ -113,6 +117,7 @@ function NavLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
+      aria-label={item.label}
       className={cn(
         "group relative flex h-9 items-center rounded-input px-2.5",
         "transition-colors duration-fast",
@@ -130,6 +135,7 @@ function NavLink({
       />
 
       <span
+        aria-hidden={collapsed || undefined}
         className={cn(
           "absolute left-[34px] right-2.5 truncate text-meta font-medium leading-none",
           labelFade(collapsed),

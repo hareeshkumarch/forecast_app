@@ -251,7 +251,7 @@ export function ReportsWorkspace() {
       return;
     }
     setRunId(run.id);
-    router.push("/");
+    router.push("/dashboard");
   }
 
   return (

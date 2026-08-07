@@ -163,6 +163,7 @@ pip install -r backend/requirements-optional.txt
 | `U` | Upload dataset |
 | `I` | All insights |
 | `T` | Toggle theme |
+| `[` | Collapse / expand the sidebar |
 
 ---
 

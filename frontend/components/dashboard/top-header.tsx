@@ -84,7 +84,7 @@ export function TopHeader({ section }: { section: AppSection }) {
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent"
               aria-hidden
             >
-              <TrendingUp className="h-4 w-4 text-white" />
+              <TrendingUp className="h-4 w-4 text-on-accent" />
             </span>
             <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
               Forecast Hub
@@ -191,11 +191,11 @@ export function TopHeader({ section }: { section: AppSection }) {
             aria-label={`Forecast insights${insightCount > 0 ? ` (${insightCount})` : ""}`}
             title="Forecast insights"
             onClick={() => openRail("insights")}
-            className={cn(ICON_BUTTON, "relative min-[1720px]:hidden")}
+            className={cn(ICON_BUTTON, "relative min-[1440px]:hidden")}
           >
             <Sparkles className="h-4 w-4 text-accent" aria-hidden />
             {insightCount > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-white num">
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-on-accent num">
                 {insightCount > 9 ? "9+" : insightCount}
               </span>
             ) : null}
