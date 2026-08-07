@@ -149,5 +149,16 @@ def test_the_scoring_rule_quotes_the_weights_actually_in_force() -> None:
 
     rule = scoring_rule({"wmape": 0.9, "smape": 0.1}, 0.4)
 
-    assert "0.90*norm(WMAPE)" in rule
-    assert "0.40*norm(WINKLER)" in rule
+    assert "0.90*norm(wMAPE)" in rule
+    assert "0.40*norm(Winkler)" in rule
+
+
+def test_the_scoring_rule_spells_each_metric_the_way_it_is_written() -> None:
+    # These names are read by people. wMAPE is not WMAPE, and upper-casing the
+    # dictionary key was enough to change what the metrics endpoint reported.
+    from app.forecasting.selection import scoring_rule
+
+    assert "norm(wMAPE)" in scoring_rule()
+    assert "norm(sMAPE)" in scoring_rule()
+    assert "norm(RMSE)" in scoring_rule()
+    assert "norm(MAE)" in scoring_rule({"mae": 1.0})

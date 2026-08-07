@@ -18,6 +18,21 @@ def metric_weights_for(intermittent: bool) -> dict[str, float]:
     return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else settings.metric_weights)
 
 
+#: How each metric is written when it is shown to someone, rather than how it
+#: is spelled as a key. These names are read, so wMAPE is not WMAPE.
+METRIC_DISPLAY_NAMES: dict[str, str] = {
+    "wmape": "wMAPE",
+    "smape": "sMAPE",
+    "rmse": "RMSE",
+    "mae": "MAE",
+    "winkler": "Winkler",
+}
+
+
+def metric_display_name(metric: str) -> str:
+    return METRIC_DISPLAY_NAMES.get(metric.lower(), metric.upper())
+
+
 def scoring_rule(
     weights: dict[str, float] | None = None, interval_weight: float | None = None
 ) -> str:
@@ -30,8 +45,11 @@ def scoring_rule(
     interval = interval_weight if interval_weight is not None else settings.interval_weight
     return (
         "score = "
-        + " + ".join(f"{weight:.2f}*norm({metric.upper()})" for metric, weight in weights.items())
-        + f" + {interval:.2f}*norm(WINKLER) where measurable"
+        + " + ".join(
+            f"{weight:.2f}*norm({metric_display_name(metric)})"
+            for metric, weight in weights.items()
+        )
+        + f" + {interval:.2f}*norm({metric_display_name('winkler')}) where measurable"
         + " + complexity_penalty; metrics min-max normalised across candidates, lower is better"
     )
 
