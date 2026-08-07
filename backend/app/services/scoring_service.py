@@ -79,6 +79,22 @@ class Scorecard:
         return self.scored_periods > 0
 
     @property
+    def tracking_signal(self) -> float | None:
+        """Calculate Trigg's Tracking Signal: cumulative error / MAD."""
+        if not self.scored_periods or not self.mae or self.mae == 0:
+            return None
+        cum_error = self.forecast_total - self.actual_total
+        return round(cum_error / self.mae, 2)
+
+    @property
+    def is_drifted(self) -> bool:
+        """Return True if systematic bias or severe error indicates forecast model drift."""
+        ts = self.tracking_signal
+        if ts is not None and abs(ts) > 4.0:
+            return True
+        return self.wmape is not None and self.wmape > 50.0
+
+    @property
     def accuracy_percent(self) -> float | None:
         return None if self.wmape is None else _finite(accuracy_from_wmape(self.wmape))
 

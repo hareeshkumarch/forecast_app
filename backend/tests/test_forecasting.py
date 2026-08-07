@@ -405,3 +405,16 @@ def test_a_short_history_is_compared_against_what_it_has() -> None:
     # And never a window of zero, which would make every comparison undefined.
     for observations in (0, 1, 2, 3):
         assert comparison_window(ForecastFrequency.MONTHLY, observations) >= 1
+
+
+def test_driver_panel_project_future() -> None:
+    from app.forecasting.drivers import DriverLink, DriverPanel
+
+    link = DriverLink(name="price", lag=1, strength=-0.8)
+    series = np.array([10.0, 11.0, 12.0, 13.0, 14.0])
+    panel = DriverPanel(links=[link], series={"price": series})
+
+    projected = panel.project_future(3, MONTHLY)
+    assert "price" in projected.series
+    assert projected.series["price"].size == 8
+    assert projected.series["price"][-1] > projected.series["price"][-2]

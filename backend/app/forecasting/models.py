@@ -832,10 +832,13 @@ class GradientBoostingForecaster:
         )
         matrix, target, names, _rows = build_design_matrix(y, periods, spec, self.frequency)
 
-        if matrix.shape[0] < MIN_GBM_ROWS:
+        from app.core.config import settings
+
+        min_rows = settings.min_gbm_rows
+        if matrix.shape[0] < min_rows:
             raise ValueError(
                 f"Only {matrix.shape[0]} usable training rows after lag construction; "
-                f"gradient boosting needs at least {MIN_GBM_ROWS}."
+                f"gradient boosting needs at least {min_rows}."
             )
 
         n_rows = int(matrix.shape[0])

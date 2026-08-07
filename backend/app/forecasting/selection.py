@@ -13,13 +13,21 @@ SCORING_RULE = (
     "metrics min-max normalised across candidates, lower is better"
 )
 
-INTERVAL_WEIGHT = 0.15
+def default_metric_weights() -> dict[str, float]:
+    from app.core.config import settings
 
-METRIC_WEIGHTS: dict[str, float] = {
-    "wmape": 0.50,
-    "smape": 0.30,
-    "rmse": 0.20,
-}
+    return {
+        "wmape": settings.metric_weight_wmape,
+        "smape": settings.metric_weight_smape,
+        "rmse": settings.metric_weight_rmse,
+    }
+
+
+def get_interval_weight() -> float:
+    from app.core.config import settings
+
+    return settings.interval_weight
+
 
 INTERMITTENT_METRIC_WEIGHTS: dict[str, float] = {
     "mae": 0.50,
@@ -28,7 +36,7 @@ INTERMITTENT_METRIC_WEIGHTS: dict[str, float] = {
 
 
 def metric_weights_for(intermittent: bool) -> dict[str, float]:
-    return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else METRIC_WEIGHTS)
+    return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else default_metric_weights())
 
 
 COMPLEXITY_PENALTY: dict[ModelKind, float] = {
@@ -124,13 +132,14 @@ def select_model(
     n_observations: int | None = None,
     complexity_penalty_scale: float | None = None,
 ) -> Selection:
-    weights = metric_weights or METRIC_WEIGHTS
+    weights = metric_weights or default_metric_weights()
     penalties = complexity_penalties or COMPLEXITY_PENALTY
     penalty_multiplier = complexity_penalty_scale if complexity_penalty_scale is not None else 1.0
+    interval_weight = get_interval_weight()
 
     rule_str = (
         " + ".join(f"{w:.2f}*norm({m.upper()})" for m, w in weights.items())
-        + f" + {INTERVAL_WEIGHT:.2f}*norm(WINKLER) where measurable"
+        + f" + {interval_weight:.2f}*norm(WINKLER) where measurable"
         + " + complexity_penalty; metrics min-max normalised across candidates, lower is better"
     )
 
@@ -164,7 +173,7 @@ def select_model(
     for index, result in enumerate(usable):
         composite = sum(weight * normalised[metric][index] for metric, weight in weights.items())
         if interval is not None:
-            composite += INTERVAL_WEIGHT * interval[index]
+            composite += interval_weight * interval[index]
         composite += (
             penalties.get(result.model, 0.0)
             * penalty_scale(n_observations, result.model)

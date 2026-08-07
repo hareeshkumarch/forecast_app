@@ -56,6 +56,45 @@ class DriverPanel:
 
         return out
 
+    def project_future(self, horizon: int, frequency: ForecastFrequency) -> DriverPanel:
+        if horizon <= 0 or not self.series:
+            return self
+
+        period = seasonal_period(frequency)
+        projected_series: dict[str, FloatArray] = {}
+
+        for name, values in self.series.items():
+            finite = values[np.isfinite(values)]
+            if finite.size < 3:
+                filler = float(finite[-1]) if finite.size else 0.0
+                extended = np.concatenate([values, np.full(horizon, filler)])
+            else:
+                x = np.arange(finite.size, dtype=float)
+                slope, intercept = np.polyfit(x, finite, 1) if finite.size >= 4 else (0.0, float(np.mean(finite)))
+
+                future_x = np.arange(finite.size, finite.size + horizon, dtype=float)
+                future_trend = slope * future_x + intercept
+
+                if period > 1 and finite.size >= 2 * period:
+                    detrended = finite - (slope * x + intercept)
+                    seasonal_pattern = np.array(
+                        [np.mean(detrended[phase::period]) for phase in range(period)]
+                    )
+                    seasonal_pattern -= np.mean(seasonal_pattern)
+                    phase_start = finite.size % period
+                    future_seasonal = np.array(
+                        [seasonal_pattern[(phase_start + step) % period] for step in range(horizon)]
+                    )
+                else:
+                    future_seasonal = np.zeros(horizon)
+
+                future_values = future_trend + future_seasonal
+                extended = np.concatenate([values, future_values])
+
+            projected_series[name] = extended
+
+        return DriverPanel(links=list(self.links), series=projected_series)
+
 
 PERIOD_WORDS: dict[ForecastFrequency, tuple[str, str]] = {
     ForecastFrequency.DAILY: ("day", "days"),

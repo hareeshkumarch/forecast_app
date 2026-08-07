@@ -433,3 +433,39 @@ class ForecastProgressEvent(BaseModel):
     @property
     def percent(self) -> Percentage:
         return round(self.progress * 100.0, 2)
+
+
+class WhatIfSimulationRequest(StrictModel):
+    volume_multiplier: float = Field(default=1.0, ge=0.1, le=10.0)
+    target_shift_pct: float = Field(default=0.0, ge=-90.0, le=1000.0)
+    driver_multipliers: dict[str, float] = Field(default_factory=dict)
+
+
+class PointSimulationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period: date
+    baseline_forecast: float
+    simulated_forecast: float
+    simulated_lower_bound: float | None
+    simulated_upper_bound: float | None
+    simulated_best_case: float | None
+    simulated_worst_case: float | None
+    delta: float
+    delta_pct: float
+
+
+class WhatIfSimulationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    volume_multiplier: float
+    target_shift_pct: float
+    driver_multipliers: dict[str, float]
+    baseline_total: float
+    simulated_total: float
+    total_delta: float
+    total_delta_pct: float
+    simulated_best_case_total: float
+    simulated_worst_case_total: float
+    points: list[PointSimulationResult]

@@ -72,6 +72,7 @@ class RunOverrides:
     metric_weights: dict[str, float] | None = None
     sarimax_order: list[int] | None = None
     gbm_max_depth: int | None = None
+    gbm_learning_rate: float | None = None
     candidate_models: list[str] | None = None
     prophet_changepoint_prior_scale: float | None = None
     prophet_interval_width: float | None = None
@@ -158,7 +159,7 @@ RUN_SORTS: dict[str, Any] = {
     "series": ForecastRun.series_count.desc(),
 }
 DEFAULT_RUN_SORT = "newest"
-MAX_RUN_PAGE = 200
+MAX_RUN_PAGE = settings.api_max_page_size
 
 
 @dataclass(slots=True)
@@ -214,7 +215,7 @@ async def list_runs(
         select(ForecastRun)
         .where(*where)
         .order_by(RUN_SORTS.get(sort, RUN_SORTS[DEFAULT_RUN_SORT]), ForecastRun.id.desc())
-        .limit(max(1, min(limit, MAX_RUN_PAGE)))
+        .limit(max(1, min(limit, settings.api_max_page_size)))
         .offset(max(0, offset))
     )
 
@@ -800,6 +801,7 @@ def _build_payload(
         model_options={
             "sarimax_order": overrides.sarimax_order,
             "gbm_max_depth": overrides.gbm_max_depth,
+            "gbm_learning_rate": overrides.gbm_learning_rate,
             "candidate_models": overrides.candidate_models,
             "prophet_changepoint_prior_scale": overrides.prophet_changepoint_prior_scale,
             "prophet_interval_width": overrides.prophet_interval_width,
@@ -1134,3 +1136,80 @@ async def points_for_run(
 
     result = await session.execute(statement.order_by(ForecastPoint.period, ForecastPoint.kind))
     return list(result.scalars().all())
+
+
+async def simulate_what_if(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    volume_multiplier: float = 1.0,
+    target_shift_pct: float = 0.0,
+    driver_multipliers: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    run = await get_run(session, run_id)
+    if run.status is not RunStatus.COMPLETED:
+        raise ValidationError("Only completed forecast runs can be simulated.")
+
+    points = await get_points(session, run.id)
+    forecast_points = [p for p in points if p.kind == PointKind.FORECAST and p.series_id is None]
+
+    if not forecast_points:
+        raise ValidationError("This forecast run has no forecast points to simulate.")
+
+    effective_shift = 1.0 + (target_shift_pct / 100.0)
+    driver_mults = driver_multipliers or {}
+    combined_driver_mult = float(np.prod(list(driver_mults.values()))) if driver_mults else 1.0
+    effective_scale = volume_multiplier * effective_shift * combined_driver_mult
+
+    simulated_points = []
+    baseline_total = 0.0
+    simulated_total = 0.0
+    simulated_best_total = 0.0
+    simulated_worst_total = 0.0
+
+    for point in sorted(forecast_points, key=lambda p: p.period):
+        base = float(point.forecast or 0.0)
+        sim = base * effective_scale
+        low = float(point.lower_bound * effective_scale) if point.lower_bound is not None else None
+        high = float(point.upper_bound * effective_scale) if point.upper_bound is not None else None
+        best = float(point.best_case * effective_scale) if point.best_case is not None else (high or sim)
+        worst = float(point.worst_case * effective_scale) if point.worst_case is not None else (low or sim)
+
+        delta = sim - base
+        delta_pct = (delta / abs(base) * 100.0) if base != 0 else 0.0
+
+        baseline_total += base
+        simulated_total += sim
+        simulated_best_total += best
+        simulated_worst_total += worst
+
+        simulated_points.append(
+            {
+                "period": point.period,
+                "baseline_forecast": round(base, 4),
+                "simulated_forecast": round(sim, 4),
+                "simulated_lower_bound": round(low, 4) if low is not None else None,
+                "simulated_upper_bound": round(high, 4) if high is not None else None,
+                "simulated_best_case": round(best, 4) if best is not None else None,
+                "simulated_worst_case": round(worst, 4) if worst is not None else None,
+                "delta": round(delta, 4),
+                "delta_pct": round(delta_pct, 2),
+            }
+        )
+
+    total_delta = simulated_total - baseline_total
+    total_delta_pct = (total_delta / abs(baseline_total) * 100.0) if baseline_total != 0 else 0.0
+
+    return {
+        "run_id": run.id,
+        "volume_multiplier": volume_multiplier,
+        "target_shift_pct": target_shift_pct,
+        "driver_multipliers": driver_mults,
+        "baseline_total": round(baseline_total, 4),
+        "simulated_total": round(simulated_total, 4),
+        "total_delta": round(total_delta, 4),
+        "total_delta_pct": round(total_delta_pct, 2),
+        "simulated_best_case_total": round(simulated_best_total, 4),
+        "simulated_worst_case_total": round(simulated_worst_total, 4),
+        "points": simulated_points,
+    }

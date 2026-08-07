@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.database.base import utcnow
 from app.models.entities import LlmUsageEvent
 from app.schemas.usage import (
@@ -39,7 +40,7 @@ async def summary(session: AsyncSession, *, days: int = 30) -> LlmUsageResponse:
         select(LlmUsageEvent)
         .where(LlmUsageEvent.created_at >= start)
         .order_by(LlmUsageEvent.created_at.desc())
-        .limit(5000)
+        .limit(settings.usage_events_limit)
     )
     events = list(result.scalars().all())
 

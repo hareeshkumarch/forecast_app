@@ -91,13 +91,16 @@ def blend(
     frequency: ForecastFrequency,
     confidence_level: float = 0.8,
     weights: np.ndarray | None = None,
-    max_members: int = MAX_MEMBERS,
+    max_members: int | None = None,
 ) -> Blend | None:
+    from app.core.config import settings
+
+    effective_max_members = max_members if max_members is not None else settings.ensemble_max_members
     usable = sorted(_usable(results), key=lambda result: result.mae)
     if len(usable) < MIN_MEMBERS:
         return None
 
-    chosen = usable[: max(MIN_MEMBERS, min(max_members, len(usable)))]
+    chosen = usable[: max(MIN_MEMBERS, min(effective_max_members, len(usable)))]
     aligned = _align(chosen)
     if aligned is None:
         return None
@@ -143,7 +146,7 @@ def blend(
     result.fit_seconds = sum(member.fit_seconds for member in chosen)
 
     best = min(member.mae for member in chosen)
-    if not np.isfinite(result.mae) or result.mae > best * (1.0 - WORTH_THE_COMPLICATION):
+    if not np.isfinite(result.mae) or result.mae > best * (1.0 - settings.ensemble_min_improvement):
         return None
 
     members = tuple(aligned.models)

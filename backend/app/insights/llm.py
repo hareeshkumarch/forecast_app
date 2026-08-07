@@ -220,11 +220,11 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
             }
             body = {
                 "model": model,
-                "max_tokens": 400,
+                "max_tokens": settings.llm_max_tokens,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": source}],
             }
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
                 res = client.post(url, headers=headers, json=body)
                 res.raise_for_status()
                 data = res.json()
@@ -260,14 +260,14 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
 
         body = {
             "model": model,
-            "max_tokens": 400,
-            "temperature": 0.2,
+            "max_tokens": settings.llm_max_tokens,
+            "temperature": settings.llm_temperature,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": source},
             ],
         }
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
             res = client.post(url, headers=headers, json=body)
             res.raise_for_status()
             data = res.json()
@@ -366,7 +366,7 @@ def rewrite_insights(
     if not llm_enabled(llm_config) or not insights:
         return insights
 
-    workers = min(MAX_CONCURRENT_REWRITES, len(insights))
+    workers = min(settings.llm_max_concurrent_rewrites, len(insights))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="llm-rewrite") as pool:
         records = list(pool.map(lambda item: _apply_rewrite(item, llm_config), insights))
 

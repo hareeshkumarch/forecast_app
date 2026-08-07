@@ -41,6 +41,8 @@ from app.schemas.forecast import (
     SeriesResponse,
     SeriesRow,
     SeriesScoreRow,
+    WhatIfSimulationRequest,
+    WhatIfSimulationResponse,
 )
 from app.services import forecast_service, scoring_service, series_service
 from app.services.job_runner import ProgressEvent, progress_bus
@@ -263,6 +265,26 @@ async def score(
     )
     await session.commit()
     return _scorecard(card, run.target_column, limit)
+
+
+@router.post(
+    "/{run_id}/simulate",
+    response_model=WhatIfSimulationResponse,
+    summary="Simulate what-if scenario shifts on a finished forecast",
+)
+async def simulate_run(
+    run_id: uuid.UUID,
+    payload: WhatIfSimulationRequest,
+    session: SessionDep,
+) -> WhatIfSimulationResponse:
+    result = await forecast_service.simulate_what_if(
+        session,
+        run_id,
+        volume_multiplier=payload.volume_multiplier,
+        target_shift_pct=payload.target_shift_pct,
+        driver_multipliers=payload.driver_multipliers,
+    )
+    return WhatIfSimulationResponse.model_validate(result)
 
 
 def _scorecard(

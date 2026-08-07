@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.core.storage import file_exists, remove_file
@@ -46,7 +47,7 @@ DATASET_SORTS: dict[str, Any] = {
     "size_asc": Dataset.file_size_bytes.asc(),
 }
 DEFAULT_DATASET_SORT = "newest"
-MAX_DATASET_PAGE = 200
+MAX_DATASET_PAGE = settings.api_max_page_size
 
 
 @dataclass(slots=True)
@@ -93,7 +94,7 @@ async def list_datasets(
         select(Dataset)
         .where(*where)
         .order_by(DATASET_SORTS.get(sort, DATASET_SORTS[DEFAULT_DATASET_SORT]), Dataset.id.desc())
-        .limit(max(1, min(limit, MAX_DATASET_PAGE)))
+        .limit(max(1, min(limit, settings.api_max_page_size)))
         .offset(max(0, offset))
     )
 
@@ -201,12 +202,14 @@ async def create_from_frame(
 
 
 def _default_horizon(frequency: ForecastFrequency | None) -> int:
+    from app.core.config import settings
+
     return {
-        ForecastFrequency.DAILY: 30,
-        ForecastFrequency.WEEKLY: 13,
-        ForecastFrequency.MONTHLY: 6,
-        ForecastFrequency.QUARTERLY: 4,
-    }.get(frequency or ForecastFrequency.MONTHLY, 6)
+        ForecastFrequency.DAILY: settings.default_horizon_daily,
+        ForecastFrequency.WEEKLY: settings.default_horizon_weekly,
+        ForecastFrequency.MONTHLY: settings.default_horizon_monthly,
+        ForecastFrequency.QUARTERLY: settings.default_horizon_quarterly,
+    }.get(frequency or ForecastFrequency.MONTHLY, settings.default_horizon_monthly)
 
 
 def _attach_columns(session: AsyncSession, dataset: Dataset, profile: DatasetProfileResult) -> None:

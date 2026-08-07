@@ -140,10 +140,9 @@ def _season(frequency: ForecastFrequency) -> int:
 
 ModelFactory = Callable[[FloatArray, list[date]], Forecaster]
 
-DIVERGENCE_SIGMAS = 12.0
-
-
 def _divergence_ceiling(y_train: FloatArray) -> float:
+    from app.core.config import settings
+
     finite = y_train[np.isfinite(y_train)]
     if finite.size == 0:
         return float("inf")
@@ -152,12 +151,13 @@ def _divergence_ceiling(y_train: FloatArray) -> float:
     if finite.size < 3:
         return max(level * 4.0, 1.0)
 
+    sigmas = settings.divergence_sigmas
     steps = np.abs(np.diff(finite))
     typical = float(np.median(steps)) if steps.size else 0.0
     spread = float(np.median(np.abs(steps - typical))) * 1.4826 if steps.size else 0.0
-    volatility = max(typical + DIVERGENCE_SIGMAS * spread, float(np.std(finite, ddof=1)))
+    volatility = max(typical + sigmas * spread, float(np.std(finite, ddof=1)))
 
-    return max(level + DIVERGENCE_SIGMAS * volatility, level * 2.0, 1.0)
+    return max(level + sigmas * volatility, level * 2.0, 1.0)
 
 
 def _diverged(predictions: FloatArray, y_train: FloatArray) -> str | None:

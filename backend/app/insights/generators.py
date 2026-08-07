@@ -75,7 +75,10 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
         return None
 
     if ctx.previous_accuracy is None or not np.isfinite(ctx.previous_accuracy):
-        if ctx.accuracy < 80:
+        from app.core.config import settings
+
+        threshold = settings.insight_accuracy_warning
+        if ctx.accuracy < threshold:
             return GeneratedInsight(
                 type=InsightType.ACCURACY_CHANGE,
                 severity=InsightSeverity.WARNING,
@@ -83,7 +86,7 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
                 explanation=(
                     f"Backtested accuracy is {ctx.accuracy:.1f}% "
                     f"(wMAPE {ctx.wmape:.1f}%) using {ctx.model_label}. "
-                    "Below 80%, period-level figures should be treated as directional."
+                    f"Below {int(threshold)}%, period-level figures should be treated as directional."
                 ),
                 suggested_action=(
                     "Add more history or a cleaner target column, then re-run the forecast."
@@ -199,7 +202,9 @@ def worst_case_risk(ctx: InsightContext) -> GeneratedInsight | None:
     if downside_pct < 3.0:
         return None
 
-    severe = downside_pct >= 15.0
+    from app.core.config import settings
+
+    severe = downside_pct >= settings.insight_downside_severe_pct
     return GeneratedInsight(
         type=InsightType.WORST_CASE_RISK,
         severity=InsightSeverity.CRITICAL if severe else InsightSeverity.WARNING,
@@ -285,7 +290,9 @@ def anomaly(ctx: InsightContext) -> GeneratedInsight | None:
         tail, key=lambda item: abs(item[1] - item[2]) / sigma
     )
     z = (worst_actual - worst_fit) / sigma
-    if abs(z) < 2.5:
+    from app.core.config import settings
+
+    if abs(z) < settings.insight_anomaly_z_threshold:
         return None
 
     periods_ago = len(ctx.history) - 1 - worst_index
@@ -441,7 +448,10 @@ def recommendation(ctx: InsightContext) -> GeneratedInsight | None:
     total = float(np.sum(ctx.point_forecast))
     top_region = max(ctx.regions, key=lambda r: r.forecast_value) if ctx.regions else None
 
-    if np.isfinite(ctx.accuracy) and ctx.accuracy < 75:
+    from app.core.config import settings
+
+    plannable_threshold = settings.insight_accuracy_plannable
+    if np.isfinite(ctx.accuracy) and ctx.accuracy < plannable_threshold:
         return GeneratedInsight(
             type=InsightType.RECOMMENDATION,
             severity=InsightSeverity.WARNING,
@@ -455,14 +465,14 @@ def recommendation(ctx: InsightContext) -> GeneratedInsight | None:
             metric_name="accuracy",
             metric_value=round(ctx.accuracy, 2),
             metric_unit="percent",
-            supporting_data={"threshold": 75},
+            supporting_data={"threshold": plannable_threshold},
             weight=90,
         )
 
     worst_total = float(np.sum(ctx.worst_case)) if ctx.worst_case else total
     downside = (total - worst_total) / abs(total) * 100 if total else 0.0
 
-    if downside >= 15:
+    if downside >= settings.insight_downside_severe_pct:
         return GeneratedInsight(
             type=InsightType.RECOMMENDATION,
             severity=InsightSeverity.WARNING,

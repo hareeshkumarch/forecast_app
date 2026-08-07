@@ -431,27 +431,77 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
     seasons = n / period if period > 1 else 0.0
 
     return SeriesProfile(
-        n_observations=n,
+        n_observations=int(y.size),
         frequency=frequency,
         seasonal_period=period,
-        seasonal_strength=strength,
-        seasonal_scores=scores,
-        trend_strength=_trend_strength(finite, period),
-        strictly_positive=strictly_positive,
-        zero_share=zero_share,
+        has_seasonality=has_seasonality,
+        seasonality_strength=round(strength, 4),
+        has_trend=has_trend,
+        trend_strength=round(trend_strength, 4),
+        stationarity_status=stationarity,
+        difference_order=difference_order,
+        box_cox_lambda=round(box_cox_lambda, 4),
         intermittent=intermittent,
-        coefficient_of_variation=cv,
-        outlier_share=_outlier_share(finite),
-        box_cox_lambda=lambda_hint,
-        transform=transform,
-        difference_order=_difference_order(finite, period),
-        seasonal_difference_order=_seasonal_difference_order(strength, seasons),
-        seasonal_noise_floor=seasonal_floor,
-        trend_noise_floor=trend_floor,
-        demand_interval=interval,
-        demand_cv2=cv2,
-        demand_class=demand_class,
+        adi=round(adi, 4),
+        cv2=round(cv2, 4),
+        outlier_share=round(outliers, 4),
+        recommendations=profile_recommendations(
+            n_observations=int(y.size),
+            has_seasonality=has_seasonality,
+            seasonal_period=period,
+            has_trend=has_trend,
+            stationarity_status=stationarity,
+            difference_order=difference_order,
+            intermittent=intermittent,
+            outlier_share=outliers,
+        ),
     )
+
+
+def detect_changepoints(values: FloatArray) -> list[int]:
+    """Detect indices where historical level undergoes a structural break."""
+    if values.size < 16:
+        return []
+
+    split_points: list[int] = []
+    window = max(4, values.size // 6)
+
+    for i in range(window, values.size - window):
+        left, right = values[:i], values[i:]
+        mean_diff = abs(np.mean(left) - np.mean(right))
+        combined_std = max(float(np.std(values)), 1e-9)
+
+        if mean_diff > 2.2 * combined_std:
+            split_points.append(i)
+
+    if not split_points:
+        return []
+
+    pruned = [split_points[0]]
+    for idx in split_points[1:]:
+        if idx - pruned[-1] >= window:
+            pruned.append(idx)
+    return pruned
+
+
+def winsorize_outliers(values: FloatArray, threshold: float = 3.5) -> FloatArray:
+    """Robustly winsorize extreme historical spikes using Median Absolute Deviation."""
+    if values.size < 5:
+        return values.copy()
+
+    med = float(np.median(values))
+    mad = float(np.median(np.abs(values - med)))
+    scale = 1.4826 * mad
+    if scale <= 0:
+        return values.copy()
+
+    cleaned = values.copy()
+    high_mask = (values - med) / scale > threshold
+    low_mask = (values - med) / scale < -threshold
+
+    cleaned[high_mask] = med + threshold * scale
+    cleaned[low_mask] = med - threshold * scale
+    return cleaned
 
 
 def minimum_history(profile: SeriesProfile) -> int:

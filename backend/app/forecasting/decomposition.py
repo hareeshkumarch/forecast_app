@@ -230,3 +230,40 @@ def _yoy(values: FloatArray, frequency: ForecastFrequency) -> float | None:
     if prior == 0:
         return None
     return round((recent - prior) / abs(prior) * 100.0, 2)
+
+
+def forecast_attribution(
+    forecast: FloatArray, history: FloatArray, frequency: ForecastFrequency
+) -> dict[str, float]:
+    """Attribute projected forecast volume to baseline level, trend, and seasonality."""
+    if forecast.size == 0:
+        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+
+    total = float(np.sum(np.abs(forecast)))
+    if total == 0:
+        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+
+    period = seasonal_period(frequency)
+    trend, seasonal, _ = classical_decomposition(history, period)
+
+    trend_slope = _trend_slope(trend)
+    base_level = float(trend[-1]) if trend.size else float(np.mean(history))
+
+    baseline_val = base_level * forecast.size
+    trend_val = trend_slope * (forecast.size * (forecast.size + 1) / 2.0)
+
+    if seasonal.size >= period:
+        pattern = seasonal[-period:]
+        seasonal_val = float(np.sum([pattern[i % period] for i in range(forecast.size)]))
+    else:
+        seasonal_val = 0.0
+
+    raw_sum = abs(baseline_val) + abs(trend_val) + abs(seasonal_val)
+    if raw_sum == 0:
+        return {"baseline_pct": 100.0, "trend_pct": 0.0, "seasonality_pct": 0.0}
+
+    return {
+        "baseline_pct": round(abs(baseline_val) / raw_sum * 100.0, 2),
+        "trend_pct": round(abs(trend_val) / raw_sum * 100.0, 2),
+        "seasonality_pct": round(abs(seasonal_val) / raw_sum * 100.0, 2),
+    }

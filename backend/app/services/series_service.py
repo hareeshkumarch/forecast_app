@@ -32,7 +32,7 @@ from app.services.progress_relay import count_series, forget_series_count
 
 logger = get_logger(__name__)
 
-FAN_OUT_CHUNK = 10
+FAN_OUT_CHUNK = settings.series_fan_out_chunk
 
 FIT_FROM, FIT_TO = 0.68, 0.94
 STORE_AT = 0.96
@@ -450,7 +450,7 @@ SORTS: dict[str, Any] = {
     "label": ForecastSeries.label.asc(),
 }
 DEFAULT_SORT = "value_at_risk"
-MAX_PAGE = 200
+MAX_PAGE = settings.api_max_page_size
 
 
 async def list_series(
@@ -483,7 +483,7 @@ async def list_series(
             ordering,
             ForecastSeries.label.asc(),
         )
-        .limit(max(1, min(limit, MAX_PAGE)))
+        .limit(max(1, min(limit, settings.api_max_page_size)))
         .offset(max(0, offset))
     )
 

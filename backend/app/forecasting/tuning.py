@@ -83,22 +83,27 @@ _CACHE = _Cache()
 
 
 def evaluation_budget(n_rows: int, space_size: int) -> int:
+    from app.core.config import settings
+
     affordable = max(MIN_EVALUATIONS, n_rows // ROWS_PER_EVALUATION)
-    return int(min(space_size, MAX_EVALUATIONS, affordable))
+    return int(min(space_size, settings.tuning_max_evaluations, affordable))
 
 
 def validation_splits(n_rows: int, horizon: int) -> list[tuple[int, int]]:
-    if n_rows < MIN_VALIDATION_ROWS * 2:
+    from app.core.config import settings
+
+    min_rows = settings.tuning_min_validation_rows
+    if n_rows < min_rows * 2:
         return []
 
-    block = max(MIN_VALIDATION_ROWS, min(horizon, n_rows // 5))
+    block = max(min_rows, min(horizon, n_rows // 5))
     folds = 1 if n_rows < 60 else 2 if n_rows < 200 else 3
 
     splits: list[tuple[int, int]] = []
     for index in range(folds):
         end = n_rows - index * block
         start = end - block
-        if start < MIN_VALIDATION_ROWS * 2:
+        if start < min_rows * 2:
             break
         splits.append((start, end))
 

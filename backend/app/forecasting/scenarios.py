@@ -10,7 +10,12 @@ from app.forecasting.backtest import BacktestResult
 
 FloatArray = npt.NDArray[np.float64]
 
-SCENARIO_CONFIDENCE = 0.95
+def get_scenario_confidence() -> float:
+    from app.core.config import settings
+
+    return settings.scenario_confidence
+
+
 MIN_EMPIRICAL_RESIDUALS = 8
 
 FALLBACK_VOLATILITY_WEIGHT = 0.75
@@ -139,8 +144,9 @@ def build_intervals(
 
     sigmas, method = _sigma_by_step(backtest, horizon, past)
 
+    scenario_confidence = get_scenario_confidence()
     empirical = _quantile_offsets(backtest, horizon, confidence_level)
-    scenario = _quantile_offsets(backtest, horizon, SCENARIO_CONFIDENCE)
+    scenario = _quantile_offsets(backtest, horizon, scenario_confidence)
 
     if empirical is not None and scenario is not None:
         interval_low, interval_high = empirical
@@ -148,7 +154,7 @@ def build_intervals(
         method = "empirical_quantiles"
     else:
         z_interval = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
-        z_scenario = float(stats.norm.ppf(0.5 + SCENARIO_CONFIDENCE / 2.0))
+        z_scenario = float(stats.norm.ppf(0.5 + scenario_confidence / 2.0))
         interval_low, interval_high = -z_interval * sigmas, z_interval * sigmas
         scenario_low, scenario_high = -z_scenario * sigmas, z_scenario * sigmas
 
