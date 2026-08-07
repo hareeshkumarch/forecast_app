@@ -38,6 +38,12 @@ export type RevealProps = {
   as?: ElementType;
   delay?: number;
   amount?: number;
+  /**
+   * `"rise"` fades and lifts the element itself. `"none"` animates nothing but
+   * still publishes `data-shown`, so children can run their own choreography —
+   * a masked heading, say — without the parent fading over the top of it.
+   */
+  effect?: "rise" | "none";
   children: ReactNode;
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
 
@@ -45,6 +51,7 @@ export function Reveal({
   as: Tag = "div",
   delay = 0,
   amount = 0.15,
+  effect = "rise",
   className,
   style,
   children,
@@ -78,7 +85,7 @@ export function Reveal({
     <Tag
       ref={ref}
       data-shown={shown ? "true" : undefined}
-      className={cn("reveal", className)}
+      className={cn(effect === "rise" && "reveal", className)}
       style={{ ...style, "--reveal-delay": `${delay}ms` } as CSSProperties}
       {...rest}
     >

@@ -22,7 +22,10 @@ import { cn } from "@/lib/utils";
 
 const REPO_URL = "https://github.com/hareeshkumarch/forecast_app";
 
-const SHELL = "mx-auto w-full max-w-[1160px] px-5 sm:px-8";
+// Wider than the 1160 the design was drawn at, and with the padding doing
+// more of the work than the margin — at 1440 the old shell left 140px of
+// nothing down each side before the padding even started.
+const SHELL = "mx-auto w-full max-w-[1380px] px-5 sm:px-8 lg:px-12";
 
 const NAV_LINKS = [
   { href: "#method", label: "How it works" },
@@ -140,14 +143,14 @@ function SectionTitle({
   return (
     <h2
       className={cn(
-        "mt-3.5 font-display font-normal text-text-primary",
+        "line-mask mt-3.5 font-display font-normal text-text-primary",
         size === "sm" && "text-display-xs sm:text-display-sm",
         size === "md" && "text-display-sm sm:text-display-md",
         size === "lg" && "text-display-md sm:text-display-lg",
         className,
       )}
     >
-      {children}
+      <span className="line-rise">{children}</span>
     </h2>
   );
 }
@@ -208,17 +211,40 @@ export function Landing() {
 
 function SiteNav() {
   const [scrolled, setScrolled] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
+    let frame = 0;
+
+    const measure = () => {
+      frame = 0;
+      const travel = document.documentElement.scrollHeight - window.innerHeight;
+      setScrolled(window.scrollY > 8);
+      setProgress(travel > 0 ? Math.min(window.scrollY / travel, 1) : 0);
+    };
+
+    // Scroll fires far faster than the screen refreshes; coalesce to one
+    // measurement per frame so this stays off the critical path.
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+
+    measure();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, []);
 
   return (
     <header
       className={cn(
+        // `sticky` is a positioned value, so it is already the containing
+        // block for the progress rule below — adding `relative` here would
+        // just be twMerge dropping one of them, and it drops the sticky.
         "sticky top-0 z-20 border-b bg-canvas/[0.86] backdrop-blur-[12px]",
         "transition-[border-color,box-shadow] duration-300",
         scrolled ? "border-border shadow-[0_1px_12px_-6px_var(--overlay)]" : "border-transparent",
@@ -261,6 +287,13 @@ function SiteNav() {
           </Link>
         </div>
       </div>
+
+      {/* How far down the page you are, on the rule the header already had. */}
+      <div
+        className="absolute inset-x-0 bottom-[-1px] h-px origin-left bg-accent"
+        style={{ transform: `scaleX(${progress})` }}
+        aria-hidden
+      />
     </header>
   );
 }
@@ -277,7 +310,7 @@ function Hero() {
       </div>
 
       <div className={cn(SHELL, "relative pt-20 sm:pt-24")}>
-        <div className="max-w-[760px]">
+        <div className="max-w-[820px]">
           <Reveal className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
             <Eyebrow>Demand forecasting, without the guesswork</Eyebrow>
@@ -285,15 +318,19 @@ function Hero() {
 
           <Reveal
             as="h1"
-            delay={90}
+            effect="none"
             className="mt-6 font-display text-[44px] font-normal leading-[1.04] tracking-[-0.02em] text-text-primary sm:text-display-lg lg:text-display-xl"
           >
-            Nothing about the fit
-            <br />
-            is fixed in advance.
+            {["Nothing about the fit", "is fixed in advance."].map((line, index) => (
+              <span key={line} className="line-mask">
+                <span className="line-rise" style={delayVar(index * 110, "--line-delay")}>
+                  {line}
+                </span>
+              </span>
+            ))}
           </Reveal>
 
-          <Reveal as="p" delay={180} className="mt-7 max-w-[600px] text-lead text-text-secondary">
+          <Reveal as="p" delay={180} className="mt-7 max-w-[640px] text-lead text-text-secondary">
             Point it at your sales history. It works out the shape of your demand on its own, tries
             a full bench of forecasts, checks each one against what actually happened — and keeps
             the one that was right.
@@ -336,7 +373,7 @@ function Preview() {
 function Steps() {
   return (
     <section className={cn(SHELL, "pt-24 sm:pt-28")}>
-      <div className="grid gap-10 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-16">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-20">
         <Reveal>
           <Eyebrow>01 — Getting started</Eyebrow>
           <SectionTitle>Three steps from raw history to a ranked forecast.</SectionTitle>
@@ -556,7 +593,7 @@ function Models() {
 function Connectors() {
   return (
     <section id="data" className={cn(SHELL, "pt-24 sm:pt-28")}>
-      <div className="grid gap-10 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-16">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:gap-20">
         <Reveal>
           <Eyebrow>04 — Data in</Eyebrow>
           <SectionTitle>Twelve ways in.</SectionTitle>
@@ -576,12 +613,12 @@ function Connectors() {
                 className={cn(
                   "flex items-center gap-3 rounded-[12px] border border-border bg-surface px-4 py-3.5",
                   "text-subhead font-medium text-text-primary",
-                  "transition-[transform,box-shadow,border-color] duration-300",
+                  "group transition-[transform,box-shadow,border-color] duration-300",
                   "hover:border-border-strong hover:shadow-[0_12px_28px_-20px_var(--overlay)]",
                   "motion-safe:hover:-translate-y-1",
                 )}
               >
-                <Logo className="h-[18px] w-[18px] shrink-0" />
+                <Logo className="h-[18px] w-[18px] shrink-0 transition-transform duration-300 motion-safe:group-hover:scale-110" />
                 <span className="truncate">{connector.label}</span>
               </Reveal>
             );
@@ -719,25 +756,32 @@ function SelfHost() {
               <span className="ml-3 font-mono text-micro text-[#8b8479]">bash</span>
             </div>
             <div className="p-5 font-mono text-body leading-[2.05] text-[#e6e0d6]">
-              {["git clone github.com/hareeshkumarch/forecast_app", "cd forecast_app", "docker compose up --build"].map(
-                (line) => (
-                  <div key={line}>
-                    <span className="text-[#8b8479]">$ </span>
-                    {line}
-                  </div>
-                ),
-              )}
+              {[
+                "git clone github.com/hareeshkumarch/forecast_app",
+                "cd forecast_app",
+                "docker compose up --build",
+              ].map((line, index) => (
+                <Reveal key={line} delay={index * 190} amount={0.01}>
+                  <span className="text-[#8b8479]">$ </span>
+                  {line}
+                </Reveal>
+              ))}
               <div className="h-3" />
               {[
                 { label: "app", url: "http://localhost:3000" },
                 { label: "api", url: "http://localhost:8000" },
                 { label: "docs", url: "http://localhost:8000/docs" },
-              ].map((row) => (
-                <div key={row.label} className="flex gap-2 text-[#8b8479]">
+              ].map((row, index) => (
+                <Reveal
+                  key={row.label}
+                  delay={620 + index * 130}
+                  amount={0.01}
+                  className="flex gap-2 text-[#8b8479]"
+                >
                   <span aria-hidden>&rarr;</span>
                   <span className="w-12 shrink-0">{row.label}</span>
                   <span className="truncate text-[#7fb0e2]">{row.url}</span>
-                </div>
+                </Reveal>
               ))}
             </div>
           </Reveal>
@@ -753,8 +797,8 @@ function ClosingCta() {
   return (
     <section className={cn(SHELL, "py-24 sm:py-28")}>
       <Reveal className="mx-auto max-w-[640px] text-center">
-        <h2 className="font-display text-display-md font-normal text-text-primary sm:text-display-lg">
-          See what it picks for your data.
+        <h2 className="line-mask font-display text-display-md font-normal text-text-primary sm:text-display-lg">
+          <span className="line-rise">See what it picks for your data.</span>
         </h2>
         <p className="mt-5 text-title leading-[1.65] text-text-secondary">
           The dashboard opens on a sample retail history. Bring your own file and the bench refits

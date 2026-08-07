@@ -56,6 +56,26 @@ test("every section is readable once scrolled to", async ({ page }) => {
   }
 });
 
+test("the header stays put and tracks how far down the page you are", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+  const header = page.locator("header").first();
+  const rule = header.locator("div[aria-hidden]").last();
+
+  const scaleX = () =>
+    rule.evaluate((node) => new DOMMatrixReadOnly(getComputedStyle(node).transform).a);
+
+  expect(await scaleX()).toBeCloseTo(0, 1);
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect.poll(scaleX, { timeout: 4000 }).toBeGreaterThan(0.9);
+
+  // Sticky, not scrolled away with the page — `relative` here would silently
+  // win over `sticky` through twMerge and nobody would notice.
+  expect((await header.boundingBox())?.y ?? -1).toBeCloseTo(0, 0);
+});
+
 test("with reduced motion the page is composed from the first paint", async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: "reduce" });
   const page = await context.newPage();

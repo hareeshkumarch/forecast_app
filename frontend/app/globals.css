@@ -384,15 +384,41 @@ body {
  */
 .motion-ready .reveal {
   opacity: 0;
-  transform: translateY(20px);
+  transform: translateY(24px);
   transition:
-    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 760ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 760ms cubic-bezier(0.16, 1, 0.3, 1);
   transition-delay: var(--reveal-delay, 0ms);
 }
 
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
+  transform: none;
+}
+
+/*
+ * Display type rises out of its own box rather than fading in. The parent
+ * clips, the line slides up from beneath the clip — the letterforms stay at
+ * full opacity and full weight throughout, which is the point: a serif this
+ * large looks thin and grey mid-fade.
+ */
+.line-mask {
+  display: block;
+  overflow: hidden;
+  /* Room for descenders, which sit below the line box and would otherwise be
+     shaved off once the line has settled. */
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+
+.motion-ready .line-rise {
+  display: block;
+  transform: translateY(115%);
+  transition: transform 1000ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--line-delay, 0ms);
+}
+
+.motion-ready [data-shown="true"] .line-rise {
   transform: none;
 }
 
