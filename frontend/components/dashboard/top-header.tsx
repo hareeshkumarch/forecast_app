@@ -191,7 +191,7 @@ export function TopHeader({ section }: { section: AppSection }) {
             aria-label={`Forecast insights${insightCount > 0 ? ` (${insightCount})` : ""}`}
             title="Forecast insights"
             onClick={() => openRail("insights")}
-            className={cn(ICON_BUTTON, "relative min-[1720px]:hidden")}
+            className={cn(ICON_BUTTON, "relative min-[1440px]:hidden")}
           >
             <Sparkles className="h-4 w-4 text-accent" aria-hidden />
             {insightCount > 0 ? (

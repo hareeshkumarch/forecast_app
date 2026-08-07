@@ -80,7 +80,7 @@ export function InsightsRail() {
   return (
     <aside
    aria-label="Forecast insights"
-   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1720px]:flex"
+   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1440px]:flex"
     >
       <InsightsRailBody />
     </aside>

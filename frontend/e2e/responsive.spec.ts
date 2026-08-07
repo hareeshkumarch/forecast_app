@@ -28,7 +28,7 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
 
   const width = page.viewportSize()?.width ?? 0;
   await expect(appNavigation(page)).toBeVisible({ visible: width >= 1024 });
-  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1720 });
+  await expect(insightsRail(page)).toBeVisible({ visible: width >= 1440 });
 
   if (width < 1024) {
     await page.getByRole("button", { name: "Open navigation" }).click();
@@ -37,7 +37,7 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
     await page.keyboard.press("Escape");
   }
 
-  if (width < 1720) {
+  if (width < 1440) {
     await page.getByRole("button", { name: /Forecast insights/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.keyboard.press("Escape");
