@@ -19,6 +19,7 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { formatBytes, formatDateRange, formatRelativeTime, humanizeKey } from "@/lib/format";
 import { labelGranularity } from "@/lib/periods";
 import { cn } from "@/lib/utils";
+import { confirm } from "@/stores/confirm-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { Dataset, DatasetSort } from "@/types/api";
 
@@ -88,10 +89,12 @@ export function DatasetsWorkspace() {
   const total = data?.total ?? 0;
   const showing = data ? `${data.offset + 1}–${data.offset + sorted.length} of ${total}` : "";
 
-  function handleRemove(dataset: Dataset) {
-    const confirmed = window.confirm(
-      `Delete "${dataset.name}"? Any forecast built from it is removed too, and the uploaded file is deleted.`,
-    );
+  async function handleRemove(dataset: Dataset) {
+    const confirmed = await confirm({
+      title: "Delete this dataset?",
+      message: `"${dataset.name}" will be deleted along with the uploaded file. Any forecast built from it is removed too.`,
+      confirmLabel: "Delete dataset",
+    });
     if (confirmed) remove.mutate(dataset.id);
   }
 
@@ -294,7 +297,7 @@ export function DatasetsWorkspace() {
                         <button
                           type="button"
                           aria-label={`Delete ${dataset.name}`}
-                          onClick={() => handleRemove(dataset)}
+                          onClick={() => void handleRemove(dataset)}
                           disabled={remove.isPending}
                           className={cn(
                             "inline-flex h-11 w-11 items-center justify-center rounded-chip fine:h-7 fine:w-7",

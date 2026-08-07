@@ -11,6 +11,7 @@ from app.api.deps import SessionDep
 from app.core.config import settings
 from app.core.security import using_insecure_default_key
 from app.database.base import utcnow
+from app.database.session import active_target
 
 router = APIRouter(tags=["health"])
 
@@ -19,6 +20,9 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     database: Annotated[str, Field(min_length=1)]
+    database_target: Literal["supabase", "local"]
+    database_host: Annotated[str, Field(min_length=1)]
+    supabase_configured: bool
     storage_writable: bool
     forecast_workers: Annotated[int, Field(ge=0)]
     max_upload_mb: Annotated[float, Field(gt=0)]
@@ -28,7 +32,13 @@ class HealthResponse(BaseModel):
     @computed_field
     @property
     def status(self) -> Literal["ok", "degraded"]:
-        return "ok" if self.database == "ok" and self.storage_writable else "degraded"
+        if self.database != "ok" or not self.storage_writable:
+            return "degraded"
+        # Serving from the fallback while Supabase is configured is working,
+        # but not what the deployment asked for.
+        if self.supabase_configured and self.database_target != "supabase":
+            return "degraded"
+        return "ok"
 
 
 def _probe_storage() -> bool:
@@ -54,6 +64,9 @@ async def health(session: SessionDep) -> HealthResponse:
 
     return HealthResponse(
         database=database,
+        database_target=active_target.name,
+        database_host=active_target.safe_url,
+        supabase_configured=settings.supabase_configured,
         storage_writable=storage_writable,
         forecast_workers=settings.forecast_workers,
         max_upload_mb=round(settings.max_upload_bytes / (1024 * 1024), 2),

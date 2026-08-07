@@ -157,6 +157,7 @@ export function ForecastModal() {
   const [outlierMad, setOutlierMad] = useState(6.0);
   const [penaltyScale, setPenaltyScale] = useState(1.0);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const { data: dataset } = useDataset(datasetId || null);
   const { data: profile } = useDatasetProfile(datasetId || null);
@@ -246,9 +247,17 @@ export function ForecastModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  useEffect(() => {
+    setConfirmingCancel(false);
+  }, [activeRunId, open]);
+
   function handleRun() {
     if (!datasetId) {
       setError("Choose a dataset to forecast.");
+      return;
+    }
+    if (selectedModels.length === 0) {
+      setError("Tick at least one candidate algorithm — there is nothing to backtest.");
       return;
     }
     if (quality.data?.blocked) {
@@ -312,10 +321,8 @@ export function ForecastModal() {
 
   function handleCancelRun() {
     if (!activeRunId) return;
-    const confirmed = window.confirm(
-      "Cancel this forecast? Completed work for this run will not be used.",
-    );
-    if (confirmed) cancelMutation.mutate(activeRunId);
+    cancelMutation.mutate(activeRunId);
+    setConfirmingCancel(false);
   }
 
   const dimensions = dataset?.columns.filter((column) => column.role === "dimension") ?? [];
@@ -347,18 +354,30 @@ export function ForecastModal() {
             <Button variant="primary" onClick={handleClearPreviousRun}>Start another forecast</Button>
           </>
         ) : activeRunId ? (
-          <>
-            <Button
-              variant="danger"
-              onClick={handleCancelRun}
-              loading={cancelMutation.isPending}
-            >
-              Cancel forecast
-            </Button>
-            <Button variant="secondary" onClick={handleClose}>
-              Run in background
-            </Button>
-          </>
+          confirmingCancel ? (
+            <>
+              <Button variant="ghost" onClick={() => setConfirmingCancel(false)}>
+                Keep running
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleCancelRun}
+                loading={cancelMutation.isPending}
+                autoFocus
+              >
+                Yes, cancel it
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
+                Cancel forecast
+              </Button>
+              <Button variant="secondary" onClick={handleClose}>
+                Run in background
+              </Button>
+            </>
+          )
         ) : (
           <>
             <Button variant="ghost" onClick={handleClose}>
@@ -378,7 +397,25 @@ export function ForecastModal() {
       }
     >
       {activeRunId ? (
-        <ProgressPanel progress={progress} />
+        <div className="space-y-3">
+          {confirmingCancel ? (
+            <div
+              role="alertdialog"
+              aria-label="Confirm cancelling this forecast"
+              className="flex items-start gap-2.5 rounded-card border border-negative-border bg-negative-soft px-3 py-2.5"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-negative" aria-hidden />
+              <div className="min-w-0">
+                <p className="text-meta font-medium text-negative">Cancel this forecast?</p>
+                <p className="mt-0.5 text-caption text-text-secondary">
+                  Models already fitted for this run are discarded, and the dashboard keeps
+                  showing the previous run.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <ProgressPanel progress={progress} />
+        </div>
       ) : (
         <div className="space-y-4">
           <Field label="Dataset" required>
@@ -541,99 +578,73 @@ export function ForecastModal() {
           </Section>
 
           <Section
-            title="Candidate Algorithm Pool"
+            title="Candidate algorithms"
             note={`${selectedModels.length} of ${ALL_MODELS.length} selected`}
           >
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <p className="text-caption text-text-muted">
-                Pick candidate algorithms to backtest. Unchecked models will be excluded.
+                Unticked algorithms are left out of the backtest.
               </p>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedModels(ALL_MODELS.map((m) => m.value))}
-                  className="text-micro font-medium text-accent hover:underline"
+                  className="text-caption font-medium text-accent hover:underline"
                 >
-                  Select All
+                  Select all
                 </button>
-                <span className="text-text-muted text-micro">·</span>
+                <span className="text-caption text-text-muted" aria-hidden>
+                  ·
+                </span>
                 <button
                   type="button"
                   onClick={() => setSelectedModels([])}
-                  className="text-micro font-medium text-text-muted hover:underline"
+                  className="text-caption font-medium text-text-muted hover:underline"
                 >
-                  Clear All
+                  Clear all
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {ALL_MODELS.map((m) => {
-                const isSelected = selectedModels.includes(m.value);
-                return (
-                  <label
-                    key={m.value}
-                    className={cn(
-                      "flex items-center gap-2 rounded-card border px-2.5 py-1.5 cursor-pointer text-caption transition-colors",
-                      isSelected
-                        ? "border-accent bg-accent-soft text-text-primary"
-                        : "border-border bg-surface text-text-muted hover:border-border-strong"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedModels([...selectedModels, m.value]);
-                        } else {
-                          setSelectedModels(selectedModels.filter((val) => val !== m.value));
-                        }
-                      }}
-                      className="rounded border-border text-accent focus:ring-accent"
-                    />
-                    <span className="truncate font-medium">{m.label}</span>
-                  </label>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
+              {ALL_MODELS.map((m) => (
+                <CheckRow
+                  key={m.value}
+                  label={m.label}
+                  checked={selectedModels.includes(m.value)}
+                  onChange={(next) =>
+                    setSelectedModels(
+                      next
+                        ? [...selectedModels, m.value]
+                        : selectedModels.filter((val) => val !== m.value),
+                    )
+                  }
+                />
+              ))}
             </div>
           </Section>
 
           {numerics.length > 0 && (
-            <Section title="Leading Driver Regressors" note="Optional exogenous features">
-              <p className="mb-2 text-caption text-text-muted">
-                Select numeric columns to evaluate as leading indicators for SARIMAX and Gradient Boosting models.
+            <Section title="Leading drivers" note="Optional">
+              <p className="mb-1.5 text-caption text-text-muted">
+                Numeric columns to test as leading indicators for SARIMAX and gradient boosting.
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
                 {numerics
                   .filter((col) => col.name !== dataset?.target_column)
-                  .map((col) => {
-                    const isSelected = selectedDrivers.includes(col.name);
-                    return (
-                      <label
-                        key={col.name}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-card border px-2.5 py-1 cursor-pointer text-caption transition-colors",
-                          isSelected
-                            ? "border-accent bg-accent-soft text-text-primary"
-                            : "border-border bg-surface text-text-muted hover:border-border-strong"
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedDrivers([...selectedDrivers, col.name]);
-                            } else {
-                              setSelectedDrivers(selectedDrivers.filter((n) => n !== col.name));
-                            }
-                          }}
-                          className="rounded border-border text-accent focus:ring-accent"
-                        />
-                        <span>{col.name}</span>
-                      </label>
-                    );
-                  })}
+                  .map((col) => (
+                    <CheckRow
+                      key={col.name}
+                      label={col.name}
+                      checked={selectedDrivers.includes(col.name)}
+                      onChange={(next) =>
+                        setSelectedDrivers(
+                          next
+                            ? [...selectedDrivers, col.name]
+                            : selectedDrivers.filter((n) => n !== col.name),
+                        )
+                      }
+                    />
+                  ))}
               </div>
             </Section>
           )}
@@ -790,6 +801,34 @@ export function ForecastModal() {
         </div>
       )}
     </Modal>
+  );
+}
+
+function CheckRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex min-w-0 cursor-pointer items-center gap-2 rounded-input py-1.5 pl-1.5 pr-2",
+        "text-caption transition-colors duration-fast hover:bg-surface-muted",
+        checked ? "font-medium text-text-primary" : "text-text-muted",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
+      />
+      <span className="truncate">{label}</span>
+    </label>
   );
 }
 

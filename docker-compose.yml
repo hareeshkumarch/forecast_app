@@ -2,7 +2,7 @@
 #
 #   docker compose up --build
 #
-#   postgres  → durable store for connectors, datasets, forecast runs, insights
+#   postgres  → local fallback store, used when Supabase is not configured
 #   backend   → FastAPI on :8000 (runs Alembic migrations + seed on boot)
 #   frontend  → Next.js App Router on :3000
 #
@@ -48,9 +48,18 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
+      # Supabase is the store of record. Set SUPABASE_DB_URL (or SUPABASE_URL +
+      # SUPABASE_DB_PASSWORD) and every run, dataset and insight is written
+      # there; leave them empty and the local postgres service below is used.
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-}
+      # Fallback, used when Supabase is unset or unreachable at boot.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
       # Alembic drives migrations synchronously, so it needs the psycopg URL.
       SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      # Set false to refuse the fallback and fail the boot instead.
+      DATABASE_FALLBACK_ENABLED: ${DATABASE_FALLBACK_ENABLED:-true}
       STORAGE_ROOT: /storage
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
@@ -92,8 +101,14 @@ services:
       - --queues=forecasts
       - --concurrency=${WORKER_CONCURRENCY:-2}
     environment:
+      # Workers must resolve to the same store as the API, so they take the
+      # same Supabase settings and the same fallback.
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
       SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      DATABASE_FALLBACK_ENABLED: ${DATABASE_FALLBACK_ENABLED:-true}
       STORAGE_ROOT: /storage
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}

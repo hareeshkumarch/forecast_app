@@ -1,6 +1,6 @@
 # Forecasting Platform
 
-A full-stack demand forecasting and analytics platform built with **FastAPI**, **Next.js (App Router)**, and **PostgreSQL**.
+A full-stack demand forecasting and analytics platform built with **FastAPI**, **Next.js (App Router)**, and **Supabase** (with a local **PostgreSQL** fallback).
 
 ---
 
@@ -8,7 +8,7 @@ A full-stack demand forecasting and analytics platform built with **FastAPI**, *
 
 ```
 forecast-hub/
-├── backend/          # FastAPI REST API, Alembic migrations, forecasting engine
+├── backend/          # FastAPI REST API, Alembic migrations, forecasting engine, Supabase/Postgres access
 ├── frontend/         # Next.js App Router UI, ECharts, Zustand state, Tailwind CSS
 ├── storage/          # Local persistent storage for uploads, exports, and SQLite/DuckDB
 ├── docker-compose.yml# Single-command local dev environment
@@ -35,6 +35,40 @@ forecast-hub/
 
 - **Storage (`/storage`)**:
   - Local directory for dataset uploads, generated Parquet files, and exports.
+
+---
+
+## Where the data lives
+
+Supabase is the store of record. Everything the platform persists — connectors,
+datasets, forecast runs, per-series forecasts, insights and usage — is written
+there. Point the API at it with either form:
+
+```bash
+# The connection string from Project Settings → Database → Connection string → URI
+SUPABASE_DB_URL=postgresql://postgres:YOUR-PASSWORD@db.YOUR-PROJECT-REF.supabase.co:5432/postgres
+
+# …or the project URL and the database password, and the host is derived
+SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_DB_PASSWORD=your-password
+```
+
+The pooled host (`…pooler.supabase.com:6543`) is supported and detected: server-side
+statement caching is turned off for it, because pgbouncer in transaction mode cannot
+carry a prepared statement between statements.
+
+**Local PostgreSQL is the fallback.** With no Supabase settings — a plain
+`docker compose up`, or the test suite — the platform uses `DATABASE_URL`
+unchanged. If Supabase *is* configured but cannot be reached when a process
+starts, that process falls back to the local database, logs a warning, and
+reports `status: degraded` from `/api/health`; Settings → *Where runs are stored*
+shows the same thing in the UI. Set `DATABASE_FALLBACK_ENABLED=false` to refuse
+the fallback and fail the boot instead.
+
+The choice is made once per process, and Alembic migrates whichever store was
+chosen — so migrations and the request path never disagree about where the
+schema lives. API and Celery workers read the same settings, so they resolve to
+the same database.
 
 ---
 

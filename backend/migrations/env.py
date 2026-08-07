@@ -6,11 +6,15 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import app.models  # noqa: F401
-from app.core.config import settings
 from app.database.base import Base
+from app.database.target import resolve_target
+
+# Alembic migrates whichever store the API will actually use — Supabase when it
+# is configured and reachable, the local PostgreSQL otherwise.
+target = resolve_target()
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+config.set_main_option("sqlalchemy.url", target.sync_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -20,7 +24,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.sync_database_url,
+        url=target.sync_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

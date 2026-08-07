@@ -2,7 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  output: "standalone",
+  // "standalone" is needed for Docker, but Vercel handles output natively.
+  ...(process.env.DOCKER_BUILD === "1" ? { output: "standalone" } : {}),
   eslint: {
     dirs: ["app", "components", "hooks", "lib", "stores", "types"],
   },

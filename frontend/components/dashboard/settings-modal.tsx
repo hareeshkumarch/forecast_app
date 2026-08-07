@@ -1,13 +1,24 @@
 "use client";
 
-import { CheckCircle2, Monitor, Moon, Rows3, Rows4, ShieldCheck, Sun, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  Monitor,
+  Moon,
+  Rows3,
+  Rows4,
+  ShieldCheck,
+  Sun,
+  XCircle,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/ui/modal";
-import { Button, Card, Field, Input } from "@/components/ui/primitives";
+import { Badge, Button, Card, Field, Input, Skeleton } from "@/components/ui/primitives";
 import { ProviderLogo, providerMark } from "@/components/ui/provider-logo";
 import { Select } from "@/components/ui/select";
-import { useCheckLlm } from "@/hooks/use-dashboard";
+import { useCheckLlm, useHealth } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
 import {
   EMPTY_LLM_CONFIG,
@@ -82,6 +93,65 @@ function SegmentedControl<T extends string>({
   );
 }
 
+function StorageCard() {
+  const { data, isLoading } = useHealth();
+
+  const onSupabase = data?.database_target === "supabase";
+  const fellBack = Boolean(data && data.supabase_configured && !onSupabase);
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="panel-title">Where runs are stored</h2>
+          <p className="mt-0.5 text-caption text-text-muted">
+            Datasets, forecast runs, series and insights all live here.
+          </p>
+        </div>
+        {data ? (
+          <Badge
+            tone={onSupabase ? "positive" : fellBack ? "warning" : "neutral"}
+            className="shrink-0 whitespace-nowrap"
+          >
+            {onSupabase ? "Supabase" : "Local"}
+          </Badge>
+        ) : null}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="mt-3 h-14 w-full" />
+      ) : data ? (
+        <>
+          <div className="mt-3 flex items-start gap-2 rounded-card border border-border bg-surface-muted px-3 py-2.5">
+            <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
+            <code className="min-w-0 break-all text-caption text-text-primary">
+              {data.database_host}
+            </code>
+          </div>
+
+          {fellBack ? (
+            <p className="mt-2 flex items-start gap-1.5 text-caption text-warning">
+              <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden />
+              <span>
+                Supabase is configured but was unreachable when the API started, so this node is
+                writing to its local fallback. Restart the API once Supabase is back.
+              </span>
+            </p>
+          ) : (
+            <p className="mt-2 text-caption text-text-muted">
+              {onSupabase
+                ? "Supabase is the store of record for this deployment."
+                : "Set SUPABASE_DB_URL on the API to make Supabase the store of record."}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-3 text-caption text-text-muted">The API did not report its store.</p>
+      )}
+    </Card>
+  );
+}
+
 function parseRate(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -148,6 +218,8 @@ export function SettingsPanel({ className }: { className?: string }) {
             Configured at build time with NEXT_PUBLIC_API_BASE_URL.
           </p>
         </Card>
+
+        <StorageCard />
       </div>
 
       <Card className="p-4">

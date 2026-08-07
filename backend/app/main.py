@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
-from app.database.session import engine
+from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
 from app.services.job_runner import executors
 from app.services.progress_relay import relay
@@ -27,10 +27,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     executors.start()
     relay.start()
     logger.info(
-        "%s ready — forecasts run %s.",
+        "%s ready — storing to %s (%s), forecasts run %s.",
         settings.app_name,
+        active_target.label,
+        active_target.safe_url,
         "on Celery workers" if settings.distributed else "in this process",
     )
+    if settings.supabase_configured and active_target.name != "supabase":
+        logger.warning(
+            "Supabase is configured but was unreachable at boot. This process is "
+            "reading and writing the local fallback; restart it once Supabase is back."
+        )
 
     yield
 
