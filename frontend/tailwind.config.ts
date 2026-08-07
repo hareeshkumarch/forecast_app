@@ -27,6 +27,8 @@ const config: Config = {
         "accent-hover": "var(--accent-hover)",
         "accent-border": "var(--accent-border)",
         "accent-disabled": "var(--accent-disabled)",
+        // Use text-on-accent, never text-white, on an accent fill.
+        "on-accent": "var(--on-accent)",
 
         navy: "var(--navy)",
         teal: "var(--teal)",

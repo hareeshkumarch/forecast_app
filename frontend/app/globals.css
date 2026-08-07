@@ -25,6 +25,9 @@
   --accent-hover: #234e8f;
   --accent-border: #c4d8f0;
   --accent-disabled: #9bbadd;
+  /* Foreground for anything sitting ON --accent. Split out so the dark theme
+   * can flip it instead of hardcoding white against a light-blue fill. */
+  --on-accent: #ffffff;
 
   --navy: #1d3c68;
   --teal: #3d868c;
@@ -86,6 +89,7 @@
   --accent-hover: #9ac5f1;
   --accent-border: #2f4763;
   --accent-disabled: #43607f;
+  --on-accent: #0f1a26;
 
   --navy: #7fb0e2;
   --teal: #5fb5b3;

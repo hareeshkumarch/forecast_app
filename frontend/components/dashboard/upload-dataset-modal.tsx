@@ -437,7 +437,7 @@ function FlowSteps({ current }: { current: 1 | 2 }) {
                 done
                   ? "bg-positive text-white"
                   : active
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-on-accent"
                     : "border border-border bg-surface text-text-muted",
               )}
               aria-hidden
