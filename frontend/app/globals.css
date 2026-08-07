@@ -53,8 +53,10 @@
   --density-cell-y: 9px;
   --density-panel-gap: 12px;
 
-  /* Layout rails. The header shrinks on phones; the rails only exist from
-   * `lg` up — below that they are served as off-canvas drawers. */
+  /* Layout rails. The single source of truth — tailwind.config.ts maps
+   * `h-header` / `w-rail` / `w-insights` onto these, and `.workspace` reads
+   * the padding below. The header shrinks on phones; the rails only exist
+   * from `lg` up — below that they are served as off-canvas drawers. */
   --header-height: 56px;
   --rail-width: 224px;
   --insights-width: 320px;
@@ -232,6 +234,8 @@ body {
  */
 .workspace {
   container: workspace / inline-size;
+  padding-left: var(--workspace-padding);
+  padding-right: var(--workspace-padding);
 }
 
 .grid-kpi,

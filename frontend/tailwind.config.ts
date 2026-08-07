@@ -54,10 +54,12 @@ const config: Config = {
         chip: "6px",
       },
       spacing: {
-        
-        rail: "224px",
-        insights: "320px",
-        header: "74px",
+        // Driven by the CSS variables in globals.css so these track the
+        // viewport instead of being frozen at their desktop size — `h-header`
+        // is 56px on a phone and 74px from `lg` up.
+        rail: "var(--rail-width)",
+        insights: "var(--insights-width)",
+        header: "var(--header-height)",
       },
       fontSize: {
         micro: ["10px", { lineHeight: "14px", letterSpacing: "0.06em" }],
