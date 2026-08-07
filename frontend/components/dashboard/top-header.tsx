@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   BookOpen,
+  House,
   Monitor,
   MoreVertical,
   Moon,
@@ -129,6 +130,16 @@ export function TopHeader({ section }: { section: AppSection }) {
           <StatusControl />
         </div>
         {isDashboard ? <ExportControl /> : null}
+
+        <Link
+          href="/"
+          aria-label="Back to home"
+          title="Back to home"
+          className={cn(ICON_BUTTON, "w-auto gap-1.5 px-2.5 fine:w-auto")}
+        >
+          <House className="h-4 w-4" aria-hidden />
+          <span className="hidden text-caption font-medium lg:inline">Home</span>
+        </Link>
 
         <IconButton
           label={`Theme: ${theme}. Switch to ${resolvedTheme === "dark" ? "light" : "dark"}`}

@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 const REPO_URL = "https://github.com/hareeshkumarch/forecast_app";
 
-const SHELL = "mx-auto w-full max-w-[1160px] px-5 sm:px-8";
+const SHELL = "mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8";
 
 const NAV_LINKS = [
   { href: "#method", label: "How it works" },
@@ -325,7 +325,17 @@ function Hero() {
 
 function Preview() {
   return (
-    <section id="demo" className={cn(SHELL, "pt-14 sm:pt-16")}>
+    <section id="demo" className={cn(SHELL, "pt-16 sm:pt-20")}>
+      <Reveal className="mb-7 flex flex-wrap items-end justify-between gap-5 sm:mb-9">
+        <div className="max-w-[620px]">
+          <Eyebrow>A planning workspace, not a black box</Eyebrow>
+          <SectionTitle size="sm">See the forecast, the range, and what moved it.</SectionTitle>
+        </div>
+        <p className="max-w-[440px] text-subhead leading-[1.65] text-text-secondary">
+          A decision-ready view of the next twelve months, with the drivers and risks kept close to
+          the numbers they explain.
+        </p>
+      </Reveal>
       <DashboardPreview />
     </section>
   );
@@ -678,13 +688,13 @@ function SelfHost() {
   return (
     <section id="selfhost" className="mt-24 border-t border-border bg-surface sm:mt-28">
       <div className={cn(SHELL, "py-20")}>
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
-          <Reveal>
+        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)] lg:gap-20">
+          <Reveal className="max-w-[620px]">
             <Eyebrow>07 — Self-host</Eyebrow>
-            <SectionTitle>One command, whole stack.</SectionTitle>
+            <SectionTitle>Your forecast stack, on your infrastructure.</SectionTitle>
             <p className="mt-[18px] text-[15px] leading-[1.7] text-text-secondary">
-              The database, the API and the app come up together. Your data never leaves the machine
-              you run it on.
+              Run the database, API and app together, with no hosted account in the middle. You keep
+              the data, the deployment and every model result under your control.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2.5">
@@ -708,39 +718,39 @@ function SelfHost() {
             </div>
           </Reveal>
 
-          <Reveal
-            delay={120}
-            className="overflow-hidden rounded-[14px] border border-border-strong bg-[#1c1a17] shadow-[0_16px_40px_-24px_var(--overlay)]"
-          >
-            <div className="flex h-[34px] items-center gap-2 border-b border-white/[0.08] px-3.5">
-              {[0, 1, 2].map((dot) => (
-                <span key={dot} className="h-2 w-2 rounded-full bg-[#4a453c]" aria-hidden />
-              ))}
-              <span className="ml-3 font-mono text-micro text-[#8b8479]">bash</span>
-            </div>
-            <div className="p-5 font-mono text-body leading-[2.05] text-[#e6e0d6]">
-              {["git clone github.com/hareeshkumarch/forecast_app", "cd forecast_app", "docker compose up --build"].map(
-                (line) => (
-                  <div key={line}>
-                    <span className="text-[#8b8479]">$ </span>
-                    {line}
-                  </div>
-                ),
-              )}
-              <div className="h-3" />
-              {[
-                { label: "app", url: "http://localhost:3000" },
-                { label: "api", url: "http://localhost:8000" },
-                { label: "docs", url: "http://localhost:8000/docs" },
-              ].map((row) => (
-                <div key={row.label} className="flex gap-2 text-[#8b8479]">
-                  <span aria-hidden>&rarr;</span>
-                  <span className="w-12 shrink-0">{row.label}</span>
-                  <span className="truncate text-[#7fb0e2]">{row.url}</span>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {[
+              {
+                icon: CirclePlay,
+                title: "One coordinated stack",
+                body: "The app, API and database ship together and stay versioned together.",
+              },
+              {
+                icon: Database,
+                title: "Private by default",
+                body: "Source data and generated forecasts stay inside the environment you choose.",
+              },
+              {
+                icon: Github,
+                title: "Open and adaptable",
+                body: "MIT licensed, inspectable, and ready to fit into the tools you already run.",
+              },
+            ].map((item, index) => (
+              <Reveal
+                key={item.title}
+                delay={100 + index * 90}
+                className="flex gap-4 rounded-[14px] border border-border bg-canvas p-4 sm:flex-col lg:flex-row"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-accent-border bg-accent-soft text-accent">
+                  <item.icon className="h-[18px] w-[18px]" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-subhead font-semibold text-text-primary">{item.title}</div>
+                  <p className="mt-1.5 text-body leading-[1.6] text-text-secondary">{item.body}</p>
                 </div>
-              ))}
-            </div>
-          </Reveal>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </div>
     </section>
