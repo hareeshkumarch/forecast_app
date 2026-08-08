@@ -99,7 +99,10 @@ function buildOption(
     backgroundColor: "transparent",
     animation: false,
 
-    grid: { left: 8, right: 14, top: 42, bottom: points.length > 40 ? 26 : 4, containLabel: true },
+    // The band is at its widest on the last period, and with only 14px to the
+    // card edge it ended in a wall that read as a clipped chart. The extra room
+    // lets the horizon close inside the frame instead of against it.
+    grid: { left: 8, right: 28, top: 42, bottom: points.length > 40 ? 26 : 4, containLabel: true },
     dataZoom: [
       { type: "inside", throttle: 50, zoomOnMouseWheel: "shift", moveOnMouseWheel: false },
       ...(points.length > 40

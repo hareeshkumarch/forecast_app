@@ -93,7 +93,13 @@
   --accent-disabled: #43607f;
   --on-accent: #0f1a26;
 
-  --navy: #7fb0e2;
+  /* --navy carries the Actual line and the first categorical slot, --accent the
+   * Forecast line and the second. In light they sit 22 dE apart; the first pass
+   * at a dark palette lightened both to #7fb0e2 / #7db0e9, which is 3.9 dE — the
+   * same colour on a 1.9px stroke, leaving solid-vs-dashed as the only cue.
+   * Light inverts the relationship, so the strongest-against-background here is
+   * the palest, not the deepest. */
+  --navy: #c9def2;
   --teal: #5fb5b3;
   --gold: #d3a54f;
   --sand: #8fa8c8;
@@ -282,20 +288,24 @@ body {
   }
 }
 
-/* Chart canvases scale with the workspace instead of sitting at one height. */
+/* Chart canvases scale with the workspace instead of sitting at one height.
+ * The steps rise faster than they used to: width grows far quicker than height
+ * across these breakpoints, so the old 200/218/244 left the forecast line at
+ * 3.8:1 on a desktop — a letterbox that gave the confidence band no room to
+ * read as a band at all. */
 .chart-box {
-  height: 200px;
+  height: 216px;
 }
 
 @container workspace (min-width: 700px) {
   .chart-box {
-    height: 218px;
+    height: 272px;
   }
 }
 
 @container workspace (min-width: 1280px) {
   .chart-box {
-    height: 244px;
+    height: 320px;
   }
 }
 

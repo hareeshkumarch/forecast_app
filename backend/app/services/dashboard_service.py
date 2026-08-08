@@ -129,6 +129,7 @@ async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSumm
             comparison=prior_ytd,
             comparison_label=_actual_window_label(run),
             higher_is_better=True,
+            label_describes_the_window=True,
         ),
         _accuracy_card(run, accuracy),
         _error_card(run, wmape),
@@ -297,7 +298,16 @@ def _card(
     higher_is_better: bool,
     unit: str = "absolute",
     symbol: str = "$",
+    label_describes_the_window: bool = False,
 ) -> KpiCard:
+    """Build one KPI card.
+
+    `comparison_label` normally names what the delta is measured against ("vs
+    previous run"), and is dropped when there is no delta — a first run has no
+    previous one, and a caption pointing at a comparison nobody made reads as a
+    card that failed to load. Set `label_describes_the_window` where the caption
+    stands on its own, like the date range under Actual YTD.
+    """
     import math
 
     safe_value = value if math.isfinite(value) else 0.0
@@ -333,7 +343,9 @@ def _card(
         ),
         unit=unit,
         comparison_value=comparison,
-        comparison_label=comparison_label,
+        comparison_label=(
+            comparison_label if label_describes_the_window or delta_display is not None else None
+        ),
         delta=round(delta, 3) if delta is not None else None,
         delta_display=delta_display,
         direction=direction,

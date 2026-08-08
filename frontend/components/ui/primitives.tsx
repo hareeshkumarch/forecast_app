@@ -280,7 +280,10 @@ export function EmptyState({
         </span>
       ) : null}
       <p className="text-body font-medium text-text-primary">{title}</p>
-      {message ? <p className="max-w-[36ch] text-caption text-text-muted">{message}</p> : null}
+      {/* 36ch broke a three-clause message into a five-line ribbon barely wider
+        * than the button under it. Centred text wants a shorter measure than
+        * ranged-left, but not that short. */}
+      {message ? <p className="max-w-[52ch] text-caption text-text-muted">{message}</p> : null}
       {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
