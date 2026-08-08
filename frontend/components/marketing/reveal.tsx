@@ -52,6 +52,7 @@ export function Reveal({
 }: RevealProps) {
   const ref = useRef<HTMLElement>(null);
   const [shown, setShown] = useState(false);
+  const revealDelay = Math.min(delay, 180);
 
   useEffect(() => {
     const node = ref.current;
@@ -79,7 +80,7 @@ export function Reveal({
       ref={ref}
       data-shown={shown ? "true" : undefined}
       className={cn("reveal", className)}
-      style={{ ...style, "--reveal-delay": `${delay}ms` } as CSSProperties}
+      style={{ ...style, "--reveal-delay": `${revealDelay}ms` } as CSSProperties}
       {...rest}
     >
       {children}

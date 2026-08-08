@@ -5,8 +5,9 @@ import {
   Check,
   CirclePlay,
   Database,
+  FileSpreadsheet,
   Github,
-  Sparkles,
+  Server,
   TrendingUp,
   Upload,
   type LucideIcon,
@@ -15,7 +16,6 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
 
-import { CONNECTOR_LOGOS, type ConnectorLogoKey } from "@/components/connectors/connector-logos";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,6 @@ const SHELL = "mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8";
 
 const NAV_LINKS = [
   { href: "#method", label: "How it works" },
-  { href: "#models", label: "Models" },
   { href: "#data", label: "Your data" },
   { href: "#selfhost", label: "Self-host" },
 ];
@@ -45,47 +44,28 @@ const STEPS: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: CirclePlay,
     title: "Run it",
-    body: "The bench is fitted, tested and ranked. The one that wins fills the dashboard.",
+    body: "Several approaches are tested against real history. The strongest result fills the dashboard.",
   },
 ];
 
 const FOLDS = [64, 72, 80, 88, 96];
 
-const MODELS: { name: string; note: string; badge?: string; state?: "winner" | "optional" }[] = [
-  { name: "Naive", note: "Last value carried forward" },
-  { name: "Seasonal Naive", note: "Last value one season back" },
-  { name: "Holt-Winters", note: "Level, trend and season" },
-  { name: "Auto-ETS", note: "Finds its own settings" },
-  { name: "Theta", note: "Strong on short histories" },
-  { name: "Croston / SBA", note: "For stop-start demand" },
-  { name: "SARIMAX", note: "Tunes its own seasonality", badge: "WINNER", state: "winner" },
-  { name: "Gradient boosting", note: "Learns the repeating patterns" },
-  { name: "Ensemble", note: "A blend of the best few" },
-  { name: "Prophet", note: "Available as an add-on", badge: "OPTIONAL", state: "optional" },
-];
-
-const CONNECTORS: { key: ConnectorLogoKey; label: string }[] = [
-  { key: "bigquery", label: "BigQuery" },
-  { key: "snowflake", label: "Snowflake" },
-  { key: "redshift", label: "Redshift" },
-  { key: "sqlserver", label: "SQL Server" },
-  { key: "mysql", label: "MySQL" },
-  { key: "postgresql", label: "PostgreSQL" },
-  { key: "supabase", label: "Supabase" },
-  { key: "google_sheets", label: "Sheets" },
-  { key: "excel", label: "Excel" },
-  { key: "rest_api", label: "REST API" },
-  { key: "salesforce", label: "Salesforce" },
-  { key: "csv", label: "CSV" },
-];
-
-const SHORTCUTS = [
-  { keys: "⌘K", action: "Command palette" },
-  { keys: "N", action: "New forecast" },
-  { keys: "U", action: "Upload data" },
-  { keys: "I", action: "All insights" },
-  { keys: "T", action: "Toggle theme" },
-  { keys: "[", action: "Collapse the sidebar" },
+const DATA_PATHS: { icon: LucideIcon; title: string; body: string }[] = [
+  {
+    icon: FileSpreadsheet,
+    title: "Files",
+    body: "Start quickly with CSV, Excel, or a spreadsheet.",
+  },
+  {
+    icon: Database,
+    title: "Databases",
+    body: "Connect the operational database you already use.",
+  },
+  {
+    icon: Server,
+    title: "Warehouses and APIs",
+    body: "Pull a table from your warehouse or a REST endpoint.",
+  },
 ];
 
 const FOOTER_COLUMNS = [
@@ -93,26 +73,19 @@ const FOOTER_COLUMNS = [
     title: "Product",
     links: [
       { href: "/dashboard", label: "Dashboard" },
-      { href: "#models", label: "Models" },
-      { href: "#data", label: "Connectors" },
       { href: "#method", label: "How it works" },
     ],
   },
   {
     title: "Docs",
     links: [
-      { href: "#selfhost", label: "Quick start" },
       { href: `${REPO_URL}#readme`, label: "README" },
-      { href: `${REPO_URL}/blob/main/README.md#optional-models`, label: "Optional models" },
-      { href: "#keyboard", label: "Shortcuts" },
     ],
   },
   {
     title: "Source",
     links: [
       { href: REPO_URL, label: "GitHub" },
-      { href: `${REPO_URL}/issues`, label: "Issues" },
-      { href: `${REPO_URL}/commits/main`, label: "Changelog" },
       { href: `${REPO_URL}#licence`, label: "Licence" },
     ],
   },
@@ -153,20 +126,19 @@ function SectionTitle({
 }
 
 const PRIMARY_CTA = cn(
-  "group inline-flex items-center justify-center gap-2 rounded-[10px] border border-accent bg-accent",
-  "font-medium text-on-accent transition-[background-color,transform,box-shadow] duration-200",
-  "hover:bg-accent-hover hover:shadow-[0_10px_24px_-12px_var(--accent)] motion-safe:hover:-translate-y-0.5",
+  "inline-flex items-center justify-center gap-2 rounded-[10px] border border-accent bg-accent",
+  "font-medium text-on-accent transition-[background-color,box-shadow] duration-200",
+  "hover:bg-accent-hover hover:shadow-[0_8px_20px_-14px_var(--accent)]",
 );
 
 const SECONDARY_CTA = cn(
   "inline-flex items-center justify-center gap-2 rounded-[10px] border border-border-strong bg-surface",
-  "font-medium text-text-primary transition-[background-color,transform] duration-200",
-  "hover:bg-surface-muted motion-safe:hover:-translate-y-0.5",
+  "font-medium text-text-primary transition-colors duration-200 hover:bg-surface-muted",
 );
 
 const CARD = cn(
-  "rounded-[14px] border border-border bg-surface transition-[transform,box-shadow,border-color] duration-300",
-  "hover:border-border-strong hover:shadow-[0_12px_28px_-20px_var(--overlay)] motion-safe:hover:-translate-y-1",
+  "rounded-[14px] border border-border bg-surface transition-[box-shadow,border-color] duration-200",
+  "hover:border-border-strong hover:shadow-[0_10px_24px_-20px_var(--overlay)]",
 );
 
 function delayVar(ms: number, key: string): CSSProperties {
@@ -192,9 +164,7 @@ export function Landing() {
         <Preview />
         <Steps />
         <Method />
-        <Models />
         <Connectors />
-        <InsightsAndKeyboard />
         <SelfHost />
         <ClosingCta />
       </main>
@@ -242,7 +212,7 @@ function SiteNav() {
             <a
               key={link.href}
               href={link.href}
-              className="whitespace-nowrap text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary"
+              className="inline-flex min-h-11 items-center whitespace-nowrap text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary"
             >
               {link.label}
             </a>
@@ -254,7 +224,7 @@ function SiteNav() {
             href={REPO_URL}
             target="_blank"
             rel="noreferrer"
-            className="hidden text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary sm:block"
+            className="hidden min-h-11 items-center text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary sm:inline-flex"
           >
             Docs
           </a>
@@ -264,7 +234,7 @@ function SiteNav() {
           <Link
             href="/dashboard"
             aria-label="Open the dashboard"
-            className={cn(PRIMARY_CTA, "h-[34px] shrink-0 whitespace-nowrap px-4 text-subhead")}
+            className={cn(PRIMARY_CTA, "h-11 shrink-0 whitespace-nowrap px-4 text-subhead")}
           >
             <span className="sm:hidden">Dashboard</span>
             <span className="hidden sm:inline">Open the dashboard</span>
@@ -280,10 +250,8 @@ function SiteNav() {
 function Hero() {
   return (
     <section id="top" className="relative overflow-hidden">
-      {/* A slow warm wash behind the headline. Decorative, and it stops
-          moving entirely when reduced motion is asked for. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[620px]" aria-hidden>
-        <div className="hero-wash h-full w-full motion-safe:animate-drift" />
+        <div className="hero-wash h-full w-full" />
       </div>
 
       <div className={cn(SHELL, "relative pt-20 sm:pt-24")}>
@@ -298,24 +266,21 @@ function Hero() {
             delay={90}
             className="mt-6 font-display text-[44px] font-normal leading-[1.04] tracking-[-0.02em] text-text-primary sm:text-display-lg lg:text-display-xl"
           >
-            Nothing about the fit
+            Turn sales history into
             <br />
-            is fixed in advance.
+            a forecast you can trust.
           </Reveal>
 
           <Reveal as="p" delay={180} className="mt-7 max-w-[600px] text-lead text-text-secondary">
-            Point it at your sales history. It works out the shape of your demand on its own, tries
-            a full bench of forecasts, checks each one against what actually happened — and keeps
-            the one that was right.
+            Connect your sales history and get a forecast that has already been checked against
+            what actually happened. You see the outlook, uncertainty, and business drivers in one
+            decision-ready workspace.
           </Reveal>
 
           <Reveal delay={270} className="mt-9 flex flex-wrap gap-3">
             <Link href="/dashboard" className={cn(PRIMARY_CTA, "h-11 px-6 text-[15px]")}>
               Open the dashboard
-              <ArrowRight
-                className="h-[15px] w-[15px] transition-transform duration-200 motion-safe:group-hover:translate-x-0.5"
-                aria-hidden
-              />
+              <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
             </Link>
             <a href="#selfhost" className={cn(SECONDARY_CTA, "h-11 px-6 text-[15px]")}>
               Self-host it
@@ -359,9 +324,9 @@ function Steps() {
       <div className="grid gap-10 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-16">
         <Reveal>
           <Eyebrow>01 — Getting started</Eyebrow>
-          <SectionTitle>Three steps from raw history to a ranked forecast.</SectionTitle>
+          <SectionTitle>Three steps from raw history to a useful forecast.</SectionTitle>
           <p className="mt-4 text-[15px] leading-[1.65] text-text-secondary">
-            No modelling decisions up front. It proposes, you confirm.
+            No technical setup up front. It proposes, you confirm.
           </p>
         </Reveal>
 
@@ -492,81 +457,12 @@ function Method() {
                 <Check className="h-3 w-3 text-positive" strokeWidth={2.6} />
               </span>
               <span className="text-body text-text-secondary">
-                SARIMAX won this run — picked on the stretches it never trained on.
+                Best-performing forecast selected from results on unseen history.
               </span>
             </div>
           </Reveal>
         </div>
       </div>
-    </section>
-  );
-}
-
-/* ---------------------------------------------------------------- models */
-
-function Models() {
-  return (
-    <section id="models" className={cn(SHELL, "pt-24 sm:pt-28")}>
-      <Reveal className="flex flex-wrap items-end justify-between gap-8">
-        <div className="max-w-[560px]">
-          <Eyebrow>03 — The bench</Eyebrow>
-          <SectionTitle>Ten forecasts, every run.</SectionTitle>
-        </div>
-        <p className="max-w-[400px] text-subhead leading-[1.65] text-text-secondary">
-          Each one sets itself up from the shape of your data. Seasonality is measured, not assumed.
-        </p>
-      </Reveal>
-
-      <div className="mt-9 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {MODELS.map((model, index) => (
-          <Reveal
-            key={model.name}
-            delay={(index % 5) * 70}
-            className={cn(
-              "rounded-[12px] border p-4 transition-[transform,box-shadow,border-color] duration-300",
-              "motion-safe:hover:-translate-y-1 hover:shadow-[0_12px_28px_-20px_var(--overlay)]",
-              model.state === "winner" && "border-accent-border bg-accent-soft",
-              model.state === "optional" && "border-dashed border-border-strong bg-transparent",
-              !model.state && "border-border bg-surface hover:border-border-strong",
-            )}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  "text-subhead font-semibold",
-                  model.state === "optional" ? "text-text-secondary" : "text-text-primary",
-                )}
-              >
-                {model.name}
-              </span>
-              {model.badge ? (
-                <span
-                  className={cn(
-                    "rounded-[5px] border px-1.5 py-px text-[10.5px] font-semibold",
-                    model.state === "winner"
-                      ? "border-accent-border bg-surface text-accent"
-                      : "border-border-strong text-text-muted",
-                  )}
-                >
-                  {model.badge}
-                </span>
-              ) : null}
-            </div>
-            <div
-              className={cn(
-                "mt-1.5 text-meta leading-[1.5]",
-                model.state === "winner" ? "text-text-secondary" : "text-text-muted",
-              )}
-            >
-              {model.note}
-            </div>
-          </Reveal>
-        ))}
-      </div>
-
-      <p className="mt-5 text-body text-text-muted">
-        Prophet is an optional extra. If it is not installed, the run carries on without it.
-      </p>
     </section>
   );
 }
@@ -578,115 +474,24 @@ function Connectors() {
     <section id="data" className={cn(SHELL, "pt-24 sm:pt-28")}>
       <div className="grid gap-10 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-16">
         <Reveal>
-          <Eyebrow>04 — Data in</Eyebrow>
-          <SectionTitle>Twelve ways in.</SectionTitle>
+          <Eyebrow>03 — Data in</Eyebrow>
+          <SectionTitle>Use the data you already have.</SectionTitle>
           <p className="mt-4 text-[15px] leading-[1.65] text-text-secondary">
-            Drop a file, or point at a warehouse and pull a table. Credentials never leave your own
-            deployment.
+            Upload a file or connect a live source. Credentials stay inside your own deployment.
           </p>
         </Reveal>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {CONNECTORS.map((connector, index) => {
-            const Logo = CONNECTOR_LOGOS[connector.key];
-            return (
-              <Reveal
-                key={connector.key}
-                delay={(index % 4) * 70 + Math.floor(index / 4) * 40}
-                className={cn(
-                  "flex items-center gap-3 rounded-[12px] border border-border bg-surface px-4 py-3.5",
-                  "text-subhead font-medium text-text-primary",
-                  "transition-[transform,box-shadow,border-color] duration-300",
-                  "hover:border-border-strong hover:shadow-[0_12px_28px_-20px_var(--overlay)]",
-                  "motion-safe:hover:-translate-y-1",
-                )}
-              >
-                <Logo className="h-[18px] w-[18px] shrink-0" />
-                <span className="truncate">{connector.label}</span>
-              </Reveal>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------- insights + shortcuts */
-
-function InsightsAndKeyboard() {
-  return (
-    <section id="keyboard" className={cn(SHELL, "pt-24 sm:pt-28")}>
-      <div className="grid items-stretch gap-6 lg:grid-cols-[56fr_44fr]">
-        <Reveal className="rounded-[16px] border border-border bg-surface p-6 sm:p-8">
-          <Eyebrow>05 — Insights</Eyebrow>
-          <SectionTitle size="sm">
-            The platform writes them. An LLM only rewords them.
-          </SectionTitle>
-          <p className="mt-4 text-subhead leading-[1.65] text-text-secondary">
-            Every insight comes out of the finished run — where accuracy moved, where a gap opened,
-            where the range is widening. Connect a provider and it will say the same thing in
-            plainer language. The numbers stay ours.
-          </p>
-
-          <div className="mt-6 rounded-[12px] border border-border bg-canvas p-4">
-            <div className="flex items-center gap-2 text-meta text-text-muted">
-              <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
-              Plain wording
-            </div>
-            <p className="mt-2 text-subhead leading-[1.6] text-text-primary">
-              Accuracy improved 1.8 points to 91.4% after SARIMAX replaced Holt-Winters as the
-              ranked winner.
-            </p>
-
-            <div className="my-4 h-px bg-border" />
-
-            <div className="flex items-center gap-2 text-meta text-text-muted">
-              <span className="inline-flex items-center rounded-[5px] border border-accent-border bg-accent-soft px-1.5 py-px text-[10.5px] font-semibold text-accent">
-                LLM ENHANCED
+        <div className="grid gap-3 sm:grid-cols-3">
+          {DATA_PATHS.map((path, index) => (
+            <Reveal key={path.title} delay={index * 60} className={cn(CARD, "p-5")}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent-soft text-accent">
+                <path.icon className="h-4 w-4" aria-hidden />
               </span>
-              Reworded
-            </div>
-            <p className="mt-2 text-subhead leading-[1.6] text-text-primary">
-              Forecasts got noticeably closer to reality this run — the error rate dropped from
-              10.4% to 8.6% once a seasonal model took over.
-            </p>
-          </div>
-
-          <p className="mt-4 text-meta text-text-muted">
-            What each provider costs you is tracked in LLM Usage.
-          </p>
-        </Reveal>
-
-        <Reveal
-          delay={120}
-          className="flex flex-col rounded-[16px] border border-border bg-surface p-6 sm:p-8"
-        >
-          <Eyebrow>06 — Keyboard</Eyebrow>
-          <SectionTitle size="sm">Built for people who don&apos;t reach for the mouse.</SectionTitle>
-
-          <div className="mt-6 flex flex-col">
-            {SHORTCUTS.map((shortcut, index) => (
-              <div
-                key={shortcut.keys}
-                className={cn(
-                  "flex items-center gap-3.5 py-3",
-                  index < SHORTCUTS.length - 1 && "border-b border-border",
-                )}
-              >
-                <kbd className="inline-flex h-[26px] min-w-[34px] items-center justify-center rounded-[7px] border border-border-strong bg-surface-muted px-2 font-mono text-meta text-text-primary">
-                  {shortcut.keys}
-                </kbd>
-                <span className="text-subhead text-text-secondary">{shortcut.action}</span>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-auto pt-6 text-meta text-text-muted">
-            Light and dark themes, plus a density switch that steps row heights and panel gaps down
-            together.
-          </p>
-        </Reveal>
+              <div className="mt-4 text-subhead font-semibold text-text-primary">{path.title}</div>
+              <p className="mt-2 text-body leading-[1.6] text-text-secondary">{path.body}</p>
+            </Reveal>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -700,11 +505,11 @@ function SelfHost() {
       <div className={cn(SHELL, "py-20")}>
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)] lg:gap-20">
           <Reveal className="max-w-[620px]">
-            <Eyebrow>07 — Self-host</Eyebrow>
+            <Eyebrow>04 — Self-host</Eyebrow>
             <SectionTitle>Your forecast stack, on your infrastructure.</SectionTitle>
             <p className="mt-[18px] text-[15px] leading-[1.7] text-text-secondary">
               Run the database, API and app together, with no hosted account in the middle. You keep
-              the data, the deployment and every model result under your control.
+              the data, the deployment and every forecast result under your control.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-2.5">
@@ -774,19 +579,16 @@ function ClosingCta() {
     <section className={cn(SHELL, "py-24 sm:py-28")}>
       <Reveal className="mx-auto max-w-[640px] text-center">
         <h2 className="font-display text-display-md font-normal text-text-primary sm:text-display-lg">
-          See what it picks for your data.
+          See what your next twelve months could look like.
         </h2>
         <p className="mt-5 text-title leading-[1.65] text-text-secondary">
-          The dashboard opens on a sample retail history. Bring your own file and the bench refits
-          in under a minute.
+          The dashboard opens with sample retail history. Bring your own file and refresh the
+          forecast in under a minute.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link href="/dashboard" className={cn(PRIMARY_CTA, "h-[46px] px-7 text-[15px]")}>
             Open the dashboard
-            <ArrowRight
-              className="h-[15px] w-[15px] transition-transform duration-200 motion-safe:group-hover:translate-x-0.5"
-              aria-hidden
-            />
+            <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
           </Link>
           <a href="#selfhost" className={cn(SECONDARY_CTA, "h-[46px] bg-transparent px-7 text-[15px]")}>
             Self-host it
@@ -815,7 +617,7 @@ function SiteFooter() {
               <span className="text-subhead font-semibold text-text-primary">Forecast Hub</span>
             </div>
             <p className="mt-3.5 max-w-[280px] text-body leading-[1.6] text-text-muted">
-              Forecast operations, reports, data connectors, and LLM usage analytics.
+              Clear forecasts, useful drivers, and practical planning in one workspace.
             </p>
           </div>
 
@@ -857,11 +659,10 @@ function SiteFooter() {
           ))}
         </div>
 
-        <div className="mt-11 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
+        <div className="mt-11 border-t border-border pt-5">
           <span className="font-mono text-meta text-text-muted">
             MIT licensed · self-hosted · your data stays yours
           </span>
-          <span className="font-mono text-meta text-text-muted">hareeshkumarch/forecast_app</span>
         </div>
       </div>
     </footer>

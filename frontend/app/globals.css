@@ -338,12 +338,6 @@ body {
 
 /* --------------------------------------------------------------- landing */
 
-@keyframes draw-line {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
 @keyframes grow-x {
   from {
     transform: scaleX(0);
@@ -353,25 +347,7 @@ body {
   }
 }
 
-@keyframes wipe-x {
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-
-/* Opacity only. A CSS `transform` here would win over each slice's SVG
-   rotate() attribute and stack all four arcs on top of each other — the spin
-   belongs on the wrapping <g>, which carries no attribute of its own. */
-@keyframes donut-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* A slow warm wash behind the hero headline. Two radials rather than one, so
+/* A static warm wash behind the hero headline. Two radials rather than one, so
    the accent and the gold meet instead of one fading to nothing. Both stay
    well clear of the box edges — the hero clips its overflow, and a gradient
    that is still tinted where it meets that clip shows up as a straight line
@@ -394,82 +370,23 @@ body {
  */
 .motion-ready .reveal {
   opacity: 0;
-  transform: translateY(20px);
-  transition:
-    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 360ms ease-out;
   transition-delay: var(--reveal-delay, 0ms);
 }
 
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
-  transform: none;
 }
 
-/* A stroke draws itself in. Without .motion-ready the dash covers the whole
-   path, which is simply the finished line. */
-.draw-line {
-  stroke-dasharray: var(--draw-length);
-}
-
-.motion-ready .draw-line {
-  stroke-dashoffset: var(--draw-length);
-}
-
-.motion-ready [data-shown="true"] .draw-line {
-  animation: draw-line 1500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: var(--draw-delay, 0ms);
-}
-
+/* The rolling-test bars are the only spatial entrance motion on the page. */
 .motion-ready .grow-x {
   transform: scaleX(0);
   transform-origin: left center;
 }
 
 .motion-ready [data-shown="true"] .grow-x {
-  animation: grow-x 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: grow-x 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: var(--grow-delay, 0ms);
-}
-
-/* Wipes left-to-right — the forecast half of the chart extending forward. */
-.motion-ready .wipe-x {
-  clip-path: inset(0 100% 0 0);
-}
-
-.motion-ready [data-shown="true"] .wipe-x {
-  animation: wipe-x 1100ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: var(--wipe-delay, 0ms);
-}
-
-.motion-ready .donut-in {
-  opacity: 0;
-}
-
-.motion-ready [data-shown="true"] .donut-in {
-  animation: donut-in 620ms ease-out forwards;
-  animation-delay: var(--donut-delay, 0ms);
-}
-
-.motion-ready .donut-spin {
-  transform: rotate(-24deg) scale(0.92);
-  transform-origin: 50% 50%;
-  transition: transform 1100ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.motion-ready [data-shown="true"] .donut-spin {
-  transform: none;
-}
-
-/* Hairline that sweeps out from the heading it sits under. */
-.motion-ready .sweep {
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1) 160ms;
-}
-
-.motion-ready .reveal[data-shown="true"] .sweep,
-.motion-ready [data-shown="true"] > .sweep {
-  transform: scaleX(1);
 }
 
 /* -------------------------------------------------------------- skeleton */

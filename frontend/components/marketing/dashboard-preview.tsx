@@ -11,7 +11,6 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import type { CSSProperties } from "react";
 
 import { Reveal } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils";
@@ -57,10 +56,6 @@ const DRIVERS = [
   { label: "Household", value: "$1.26M", change: "+3.1%", width: "66%" },
   { label: "Frozen", value: "$1.04M", change: "−1.8%", width: "52%", caution: true },
 ];
-
-function delay(ms: number, key = "--reveal-delay"): CSSProperties {
-  return { [key]: `${ms}ms` } as CSSProperties;
-}
 
 export function DashboardPreview() {
   return (
@@ -135,10 +130,9 @@ function PreviewWorkspace() {
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        {SUMMARY.map((item, index) => (
-          <Reveal
+        {SUMMARY.map((item) => (
+          <div
             key={item.label}
-            delay={80 + index * 70}
             className="rounded-card border border-border bg-surface p-4 shadow-card"
           >
             <div className="flex items-center justify-between gap-3">
@@ -161,7 +155,7 @@ function PreviewWorkspace() {
               {item.value}
             </div>
             <div className="mt-1 text-caption text-text-muted">{item.detail}</div>
-          </Reveal>
+          </div>
         ))}
       </div>
 
@@ -201,7 +195,7 @@ function OutlookChart() {
             ))}
           </g>
 
-          <g className="wipe-x" style={delay(950, "--wipe-delay")}>
+          <g>
             <defs>
               <linearGradient id="preview-band" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--accent)" stopOpacity=".22" />
@@ -223,8 +217,6 @@ function OutlookChart() {
           </g>
 
           <path
-            className="draw-line"
-            style={{ "--draw-length": "520", "--draw-delay": "180ms" } as CSSProperties}
             d="M16 194 C54 178 88 184 126 166 S198 144 232 153 S298 119 334 126 S362 121 380 117"
             fill="none"
             stroke="var(--navy)"
@@ -265,8 +257,8 @@ function Drivers() {
       </div>
 
       <div className="mt-5 space-y-5">
-        {DRIVERS.map((driver, index) => (
-          <Reveal key={driver.label} delay={260 + index * 90}>
+        {DRIVERS.map((driver) => (
+          <div key={driver.label}>
             <div className="flex items-center gap-3 text-caption">
               <span className="font-medium text-text-primary">{driver.label}</span>
               <span className="ml-auto text-text-secondary num">{driver.value}</span>
@@ -280,14 +272,14 @@ function Drivers() {
                 style={{ width: driver.width }}
               />
             </div>
-          </Reveal>
+          </div>
         ))}
       </div>
 
       <div className="mt-6 rounded-[10px] border border-border bg-canvas p-3">
         <div className="flex items-center gap-2 text-caption font-medium text-text-primary">
           <Activity className="h-3.5 w-3.5 text-accent" aria-hidden />
-          Model health
+          Forecast quality
           <span className="ml-auto text-positive">Strong</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-muted">
@@ -300,10 +292,7 @@ function Drivers() {
 
 function InsightBar() {
   return (
-    <Reveal
-      delay={420}
-      className="mt-3 flex flex-col gap-3 rounded-card border border-accent-border bg-accent-soft p-4 sm:flex-row sm:items-center"
-    >
+    <div className="mt-3 flex flex-col gap-3 rounded-card border border-accent-border bg-accent-soft p-4 sm:flex-row sm:items-center">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-surface text-accent shadow-card">
         <Sparkles className="h-4 w-4" aria-hidden />
       </span>
@@ -316,6 +305,6 @@ function InsightBar() {
       <span className="inline-flex shrink-0 items-center gap-1 text-caption font-semibold text-accent sm:ml-auto">
         Review insight <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
       </span>
-    </Reveal>
+    </div>
   );
 }
