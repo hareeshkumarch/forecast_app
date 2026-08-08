@@ -140,15 +140,20 @@ mark, cp1252 and latin-1, so `région` stays `région`. A report title and a
 blank line above the header are skipped, and blank trailing rows are dropped.
 
 **Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
-a German ERP as `1.234,56`, from an accounting package as `(890.00)`, from a
+a German ERP as `1.234,56`, from a French one as `1 234,56`, from an Indian
+ledger as `₹1,00,000`, from an accounting package as `(890.00)`, from a
 mainframe as `1000-`, and with a unit stuck on the end as `1000 kg`. All of
-those are numbers, and all of them are read as numbers. Dates arrive as ISO, as
-`15.01.2024`, as an ISO timestamp with or without milliseconds and with or
-without a zone, as `20240115`, as `2024Q1`, as `2024-W03`, as `FY24-P01`, and
-as the Excel serial `45292` that a spreadsheet leaves behind when it loses its
-formatting. A convention is chosen from a sample, applied to the whole column,
-and kept only if it explains nearly every row — so one stray token cannot drag
-a column into the wrong reading.
+those are numbers, and all of them are read as numbers — by one reader, which
+works out what the separators mean before removing them. Stripping the commas
+as decoration first is how `1.234,56` becomes 1.23456, and a target a
+thousandfold small is a file that looks like it imported cleanly.
+
+Dates arrive as ISO, as `15.01.2024`, as an ISO timestamp with or without
+milliseconds and with or without a zone, as `20240115`, as `2024Q1`, as
+`2024-W03`, as `FY24-P01`, and as the Excel serial `45292` that a spreadsheet
+leaves behind when it loses its formatting. A convention is chosen from a
+sample, applied to the whole column, and kept only if it explains nearly every
+row — so one stray token cannot drag a column into the wrong reading.
 
 The values that come out are what gets stored. Everything downstream reads the
 Parquet through DuckDB's `TRY_CAST`, and `"$1,234.56"` casts to `NULL`, so a
@@ -201,8 +206,24 @@ training size.
 Candidates are backtested over expanding (or rolling, on long histories)
 windows, scored on a weighted blend of wMAPE/sMAPE/RMSE — or absolute error for
 intermittent demand, where percentage metrics reward forecasting zero — and the
-winner refits on the full history. The profile is recomputed inside every fold,
-so nothing leaks backwards from the future.
+winner refits on the full history.
+
+**Nothing leaks backwards from the future.** Every step that looks at the
+values around a point is done inside the fold that is about to be scored, not
+once over the whole history: the series profile, the variance transform, the
+interpolation that fills a missing period, the clip that damps an outlier, and
+the search for which column leads the target and by how many periods. Any one
+of them done up front puts the validation window into its own training data,
+and the only symptom is a reported accuracy better than the real one. A period
+that was never observed is not scored at all — filling a gap invents a number,
+and grading the model against it reports an accuracy nobody measured.
+
+Models that tune their own hyperparameters search against the metrics the run
+is scored by, and are evaluated the way they will really be used. Reading a
+validation block out of a design matrix hands a recursive model the true last
+observation at every step, so it is graded on one-step-ahead accuracy with the
+answers in front of it — and the search then picks the settings that lean
+hardest on the value it will not have.
 
 ### Optional models
 
@@ -224,6 +245,26 @@ outside its range fails the start naming the variable, instead of quietly
 producing a forecast nobody can account for. The scoring rule the API reports
 is built from the weights actually in force, so a re-weighted deployment
 describes itself correctly.
+
+### What it refuses
+
+A run that reports "completed" has to have done what it was asked, so the
+things that cannot be done are refused rather than quietly skipped. A column
+is checked for what it *holds*, not just that it exists — a text column chosen
+as the target casts to a column of nulls and fails somewhere far from the
+choice that caused it. A driver that is not numeric, or not in the dataset, is
+named back rather than filtered out of the list in silence. A model roster
+that matches nothing fails the run instead of falling back to the full roster
+and reporting the winner as though it had been asked for. A horizon longer
+than half the history is refused, because no backtest fold can be built that
+measures a forecast that far out. And a series the profiler marks severe — no
+usable rows, too few periods — stops there, because a number produced from
+that is indistinguishable from a real one.
+
+A target that never moves is not in that list. A discontinued line is the same
+value in every period and the flat forecast is the right answer for it; what
+the report says instead is that its accuracy cannot be measured, because every
+percentage error divides by a total that does not change.
 
 ### After the fact
 

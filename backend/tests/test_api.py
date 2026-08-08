@@ -804,7 +804,7 @@ async def test_a_dataset_too_short_to_backtest_still_answers_every_endpoint(
     """
     rows = ["month,value", "2024-01-01,10", "2024-02-01,12"]
 
-    detail = await _forecast_csv(client, "two_rows", rows, horizon=3)
+    detail = await _forecast_csv(client, "two_rows", rows, horizon=1)
     run_id = detail["id"]
 
     for path in ("", "/metrics", "/points", "/series"):
@@ -816,3 +816,156 @@ async def test_a_dataset_too_short_to_backtest_still_answers_every_endpoint(
     assert all(
         kpi["display_value"] not in ("nan", "NaN", "inf", "") for kpi in summary.json()["kpis"]
     )
+
+
+# ------------------------------------------------- refusing what cannot be run
+#
+# Every one of these used to be accepted and then quietly not done: a text
+# column read as the target came back as a column of nulls, a driver that was
+# not numeric was filtered out of the list without a word, a model roster that
+# matched nothing fell back to running everything, and a horizon longer than
+# the history produced a forecast whose accuracy had never been measured at
+# that range. A run that says "completed" has to have done what it was asked.
+
+
+async def _dataset(client: AsyncClient, name: str, rows: list[str]) -> dict:
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": (f"{name}.csv", "\n".join(rows).encode(), "text/csv")},
+    )
+    assert upload.status_code == 201, upload.text
+    return dict(upload.json()["dataset"])
+
+
+def _monthly(columns: str, row: str, months: int = 36) -> list[str]:
+    return [columns] + [
+        f"{date(2021, 1, 1) + relativedelta(months=index):%Y-%m-%d},{row.format(i=index)}"
+        for index in range(months)
+    ]
+
+
+async def test_a_text_column_cannot_be_the_target(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "typed", _monthly("month,revenue,note", "{i}00,note-{i}"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "target_column": "note", "horizon": 6},
+    )
+
+    assert response.status_code == 422, response.text
+    body = response.json()["error"]
+    assert "note" in body["message"]
+    assert body["detail"]["required_kind"] == "numeric"
+    assert "revenue" in body["detail"]["candidates"]
+
+
+async def test_a_numeric_column_cannot_be_the_time_column(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "timed", _monthly("month,revenue", "{i}00"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "time_column": "revenue", "horizon": 6},
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["detail"]["required_kind"] == "date"
+
+
+async def test_a_driver_that_cannot_be_read_is_refused_rather_than_dropped(
+    client: AsyncClient,
+) -> None:
+    dataset = await _dataset(client, "drivers", _monthly("month,revenue,region", "{i}00,north"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "driver_columns": ["region"], "horizon": 6},
+    )
+
+    assert response.status_code == 422, response.text
+    assert "region" in response.json()["error"]["message"]
+
+
+async def test_a_driver_that_is_not_in_the_dataset_is_refused(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "nodriver", _monthly("month,revenue", "{i}00"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "driver_columns": ["web_sessions"], "horizon": 6},
+    )
+
+    assert response.status_code == 422, response.text
+    assert "web_sessions" in response.json()["error"]["message"]
+
+
+async def test_a_model_name_the_engine_does_not_know_is_refused(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "roster", _monthly("month,revenue", "{i}00"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "candidate_models": ["lstm"], "horizon": 6},
+    )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_a_roster_that_fits_nothing_fails_the_run_rather_than_running_everything(
+    client: AsyncClient,
+) -> None:
+    """Croston is only offered for intermittent demand. Asked for on a smooth
+    series the filter came back empty, and an empty filter fell back to the
+    whole roster — so a run restricted to one model ran nine, and reported the
+    winner as though it had been the one asked for."""
+    dataset = await _dataset(client, "wrongmodel", _monthly("month,revenue", "{i}00"))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "candidate_models": ["croston"], "horizon": 6},
+    )
+    assert response.status_code == 202, response.text
+    run_id = response.json()["id"]
+
+    async with client.stream("GET", f"/api/forecasts/{run_id}/events") as stream:
+        async for _ in stream.aiter_lines():
+            pass
+
+    detail = (await client.get(f"/api/forecasts/{run_id}")).json()
+
+    assert detail["status"] == "failed"
+    assert "croston" in (detail["error_message"] or "").lower()
+
+
+async def test_a_horizon_longer_than_the_history_is_refused(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "shorthist", _monthly("month,revenue", "{i}00", months=12))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "horizon": 24},
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["error"]["detail"]
+    assert detail["periods_available"] == 12
+    assert detail["max_horizon"] == 6
+
+
+async def test_a_horizon_the_history_supports_is_accepted(client: AsyncClient) -> None:
+    dataset = await _dataset(client, "longhist", _monthly("month,revenue", "{i}00", months=36))
+
+    response = await client.post(
+        "/api/forecasts/run",
+        json={"dataset_id": dataset["id"], "horizon": 12},
+    )
+
+    assert response.status_code == 202, response.text
+
+
+async def test_the_default_horizon_is_shortened_rather_than_refused(client: AsyncClient) -> None:
+    """Refusing a run over a number nobody typed is no more helpful than
+    answering a question nobody asked. A horizon somebody chose is refused; the
+    default is held to what the history supports."""
+    dataset = await _dataset(client, "tiny", _monthly("month,revenue", "{i}00", months=6))
+
+    response = await client.post("/api/forecasts/run", json={"dataset_id": dataset["id"]})
+
+    assert response.status_code == 202, response.text
+    assert response.json()["horizon"] == 3

@@ -6,14 +6,34 @@ from datetime import date
 import numpy as np
 
 from app.forecasting.frequency import add_periods
+from app.forecasting.preparation import INTERMITTENT_ZERO_SHARE, OUTLIER_SIGMAS
+from app.forecasting.preparation import fill_gaps as _fill_gaps
+from app.forecasting.preparation import resolve_fill as _resolve_fill
+from app.forecasting.preparation import winsorise as _winsorise
 from app.models.enums import ForecastFrequency, GapFill, IssueSeverity
 
-OUTLIER_SIGMAS = 3.5
 LOW_COVERAGE = 0.90
 SEVERE_COVERAGE = 0.60
 PARTIAL_PERIOD_RATIO = 0.35
-INTERMITTENT_ZERO_SHARE = 0.30
 MIN_PERIODS = 2
+
+__all__ = [
+    "INTERMITTENT_ZERO_SHARE",
+    "LOW_COVERAGE",
+    "MIN_PERIODS",
+    "OUTLIER_SIGMAS",
+    "PARTIAL_PERIOD_RATIO",
+    "SEVERE_COVERAGE",
+    "AlignedSeries",
+    "QualityIssue",
+    "QualityReport",
+    "align_calendar",
+    "build_report",
+    "expected_periods",
+    "regularise",
+    "resolve_fill",
+    "winsorise",
+]
 
 
 @dataclass(slots=True)
@@ -98,15 +118,66 @@ def expected_periods(start: date, end: date, frequency: ForecastFrequency) -> li
 
 
 def resolve_fill(values: list[float], requested: GapFill) -> GapFill:
-    if requested is not GapFill.AUTO:
-        return requested
+    return _resolve_fill(np.asarray(values, dtype=float), requested)
 
-    finite = np.asarray([v for v in values if np.isfinite(v)], dtype=float)
-    if finite.size == 0:
-        return GapFill.ZERO
 
-    zero_share = float(np.mean(np.isclose(finite, 0.0)))
-    return GapFill.ZERO if zero_share >= INTERMITTENT_ZERO_SHARE else GapFill.INTERPOLATE
+@dataclass(slots=True)
+class AlignedSeries:
+    """A series on its regular calendar, with the holes still holes.
+
+    `values` carries NaN wherever the calendar expects a period the data does
+    not have. Filling them is a modelling decision that belongs to whoever is
+    about to fit — done here it would be done once, over the whole history,
+    and every backtest fold would train on numbers derived from its own
+    validation window.
+    """
+
+    periods: list[date]
+    values: list[float]
+    weights: list[float] | None
+    missing: list[int]
+    #: False when the series was left on its own irregular index, because no
+    #: filling was asked for and a fabricated calendar would be worse.
+    regular: bool = True
+
+
+def align_calendar(
+    periods: list[date],
+    values: list[float],
+    weights: list[float] | None,
+    frequency: ForecastFrequency,
+    fill: GapFill = GapFill.AUTO,
+) -> AlignedSeries:
+    """Put a series on its regular calendar without filling the gaps."""
+    if len(periods) < 2:
+        return AlignedSeries(periods, values, weights, [], regular=False)
+
+    calendar = expected_periods(periods[0], periods[-1], frequency)
+    observed = {period: index for index, period in enumerate(periods)}
+    missing = [index for index, period in enumerate(calendar) if period not in observed]
+
+    if not missing:
+        return AlignedSeries(periods, values, weights, [])
+    if fill is GapFill.NONE:
+        # Nothing will fill them, so a calendar full of holes is worse than the
+        # irregular index the data actually has.
+        return AlignedSeries(periods, values, weights, missing, regular=False)
+
+    holed: list[float] = []
+    holed_weights: list[float] | None = [] if weights is not None else None
+
+    for period in calendar:
+        source = observed.get(period)
+        if source is None:
+            holed.append(float("nan"))
+            if holed_weights is not None:
+                holed_weights.append(0.0)
+        else:
+            holed.append(values[source])
+            if holed_weights is not None and weights is not None:
+                holed_weights.append(weights[source])
+
+    return AlignedSeries(calendar, holed, holed_weights, missing)
 
 
 def regularise(
@@ -116,58 +187,26 @@ def regularise(
     frequency: ForecastFrequency,
     fill: GapFill = GapFill.AUTO,
 ) -> tuple[list[date], list[float], list[float] | None, GapFill, list[int]]:
-    if len(periods) < 2:
-        return periods, values, weights, GapFill.NONE, []
+    """Align and fill in one step, for callers that want the whole series at once."""
+    aligned = align_calendar(periods, values, weights, frequency, fill)
+    if not aligned.missing or not aligned.regular:
+        return aligned.periods, aligned.values, aligned.weights, GapFill.NONE, aligned.missing
 
-    calendar = expected_periods(periods[0], periods[-1], frequency)
-    observed = {period: index for index, period in enumerate(periods)}
-    missing = [index for index, period in enumerate(calendar) if period not in observed]
+    array = np.asarray(aligned.values, dtype=float)
+    applied = _resolve_fill(array, fill)
+    filled = _fill_gaps(array, applied)
 
-    if not missing:
-        return periods, values, weights, GapFill.NONE, []
-
-    applied = resolve_fill(values, fill)
-    if applied is GapFill.NONE:
-        return periods, values, weights, GapFill.NONE, missing
-
-    filled_values: list[float] = []
-    filled_weights: list[float] | None = [] if weights is not None else None
-
-    for period in calendar:
-        source = observed.get(period)
-        if source is None:
-            filled_values.append(np.nan)
-            if filled_weights is not None:
-                filled_weights.append(0.0)
-        else:
-            filled_values.append(values[source])
-            if filled_weights is not None and weights is not None:
-                filled_weights.append(weights[source])
-
-    array = np.asarray(filled_values, dtype=float)
-    holes = ~np.isfinite(array)
-
-    if applied is GapFill.ZERO:
-        array[holes] = 0.0
-    else:
-        known = np.flatnonzero(~holes)
-        array[holes] = np.interp(np.flatnonzero(holes), known, array[known])
-
-    return calendar, [float(v) for v in array], filled_weights, applied, missing
+    return (
+        aligned.periods,
+        [float(v) for v in filled],
+        aligned.weights,
+        applied,
+        aligned.missing,
+    )
 
 
 def winsorise(values: list[float], sigmas: float = OUTLIER_SIGMAS) -> list[float]:
-    array = np.asarray(values, dtype=float)
-    if array.size < 5:
-        return [float(v) for v in array]
-
-    centre = float(np.median(array))
-    deviation = float(np.median(np.abs(array - centre)))
-    if deviation <= 0:
-        return [float(v) for v in array]
-
-    spread = 1.4826 * deviation * sigmas
-    return [float(v) for v in np.clip(array, centre - spread, centre + spread)]
+    return [float(v) for v in _winsorise(np.asarray(values, dtype=float), sigmas)]
 
 
 def _outlier_count(values: np.ndarray) -> int:
@@ -271,9 +310,15 @@ def build_report(
         issues.append(
             QualityIssue(
                 "constant_target",
-                IssueSeverity.SEVERE,
+                # A warning rather than a refusal. A discontinued line, or one
+                # that has not launched, is the same value in every period —
+                # usually zero — and the flat forecast is the right answer for
+                # it. What cannot be done is *measuring* that forecast: every
+                # percentage error divides by the series total.
+                IssueSeverity.WARNING,
                 "The target is the same value in every period.",
-                "Choose a column that varies over time.",
+                "The forecast will be that same value, and its accuracy cannot be "
+                "measured against a series that never moves.",
             )
         )
 

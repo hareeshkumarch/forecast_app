@@ -13,7 +13,7 @@ from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
-from app.forecasting.drivers import DriverLink, DriverPanel, build_panel, describe
+from app.forecasting.drivers import DriverLink, DriverPanel, DriverSource, describe
 from app.forecasting.frequency import future_periods
 from app.forecasting.hierarchy import (
     Node,
@@ -31,6 +31,7 @@ from app.forecasting.models import (
     build_candidates,
     unavailable_models,
 )
+from app.forecasting.preparation import Preparation
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
@@ -76,6 +77,10 @@ class ForecastInput:
     quality: dict[str, object] = field(default_factory=dict)
     drivers: dict[str, list[float]] = field(default_factory=dict)
     target_label: str = "the total"
+    #: What to do to a window of history before fitting on it. Held as an
+    #: instruction rather than applied to `series.values` up front, so each
+    #: backtest fold can apply it to its own training slice.
+    preparation: Preparation = field(default_factory=Preparation)
 
 
 @dataclass(slots=True)
@@ -155,11 +160,20 @@ def _make_factory(
     kind: ModelKind,
     frequency: ForecastFrequency,
     options: dict[str, object] | None,
-    drivers: DriverPanel | None = None,
+    drivers: DriverSource | None = None,
 ) -> ModelFactory:
-    def factory(y_train: FloatArray, _periods_train: list[date]) -> Forecaster:
+    """A model built from the window it is about to be fitted on.
+
+    Everything the model configures itself from — the seasonal period, the
+    variance transform, which columns lead the target — is measured inside
+    the window. The factory is handed each fold's training slice, so none of
+    those choices can be made with the fold's validation data in hand.
+    """
+
+    def factory(y_train: FloatArray, periods_train: list[date]) -> Forecaster:
         window_profile = profile_series(y_train, frequency)
-        model = build_candidate(kind, frequency, options, window_profile, drivers)
+        panel = drivers.panel_for(y_train, periods_train) if drivers else None
+        model = build_candidate(kind, frequency, options, window_profile, panel)
         if kind in TRANSFORMABLE:
             return TransformedForecaster(model, build_transform(y_train, window_profile))
         return model
@@ -185,7 +199,13 @@ ProgressCallback = Callable[[str, int, int, str], None]
 def run_forecast(
     payload: ForecastInput, progress_callback: ProgressCallback | None = None
 ) -> ForecastOutput:
-    values = np.asarray(payload.series.values, dtype=float)
+    #: As observed, NaN where the calendar expects a period the data never had.
+    observed = np.asarray(payload.series.values, dtype=float)
+    #: The same series with the run's gap fill and outlier treatment applied
+    #: over its whole length. Correct for the final fit, where the whole
+    #: history is the training data, and for everything the user is shown —
+    #: but never handed to the backtest, which prepares each fold for itself.
+    values = payload.preparation.apply(observed)
     periods = list(payload.series.periods)
     weights = (
         np.asarray(payload.series.weights, dtype=float)
@@ -204,12 +224,23 @@ def run_forecast(
     profile = profile_series(values, frequency)
     floor = minimum_history(profile)
 
-    panel = build_panel(
-        values,
-        {name: np.asarray(column, dtype=float) for name, column in payload.drivers.items()},
+    # Every model that tunes its own hyperparameters searches against the
+    # metrics this run is scored by, so the search and the selection cannot
+    # disagree about what a good forecast is.
+    scoring_weights = payload.metric_weights or metric_weights_for(profile.intermittent)
+    model_options = {**(payload.model_options or {}), "metric_weights": scoring_weights}
+
+    source = DriverSource(
+        periods=periods,
+        columns={name: np.asarray(column, dtype=float) for name, column in payload.drivers.items()},
         horizon=horizon,
         frequency=frequency,
     )
+    # The roster of candidate models is a structural choice — whether it is
+    # worth offering a driver-using variant at all — so it is made from the
+    # whole history, which is also what the final model is fitted on. What
+    # each fold *fits* is discovered inside that fold.
+    panel = source.panel_for(values, periods)
 
     used_fallback = False
     fallback_reason: str | None = None
@@ -230,12 +261,12 @@ def run_forecast(
             build_candidate(
                 ModelKind.SEASONAL_NAIVE if seasonal_ready else ModelKind.NAIVE,
                 frequency,
-                payload.model_options,
+                model_options,
                 profile,
             )
         ]
     else:
-        candidates = build_candidates(frequency, payload.model_options, profile, panel)
+        candidates = build_candidates(frequency, model_options, profile, panel)
 
     results: list[BacktestResult] = []
     candidate_total = len(candidates)
@@ -250,14 +281,15 @@ def run_forecast(
             )
         results.append(
             run_backtest(
-                _make_factory(kind, frequency, payload.model_options, panel),
+                _make_factory(kind, frequency, model_options, source),
                 kind,
-                values,
+                observed,
                 periods,
                 plan,
                 frequency,
                 weights,
                 payload.confidence_level,
+                prepare=payload.preparation,
             )
         )
         if progress_callback is not None:
@@ -287,7 +319,7 @@ def run_forecast(
     )
     selection = select_model(
         results,
-        metric_weights=payload.metric_weights or metric_weights_for(profile.intermittent),
+        metric_weights=scoring_weights,
         n_observations=int(values.size),
         complexity_penalty_scale=penalty_scale,
     )
@@ -311,9 +343,7 @@ def run_forecast(
             frequency, profile, members=combined.members, weights=combined.weights
         )
     else:
-        final_model = _make_factory(winner_kind, frequency, payload.model_options, panel)(
-            values, periods
-        )
+        final_model = _make_factory(winner_kind, frequency, model_options, source)(values, periods)
 
     try:
         final_model.fit(values, periods)
@@ -325,7 +355,7 @@ def run_forecast(
             f"({type(exc).__name__}: {exc}). Fell back to a naive baseline."
         )
         winner_kind = ModelKind.NAIVE
-        final_model = build_candidate(winner_kind, frequency, payload.model_options, profile)
+        final_model = build_candidate(winner_kind, frequency, model_options, profile)
         final_model.fit(values, periods)
 
     if progress_callback is not None:

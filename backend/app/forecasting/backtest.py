@@ -14,6 +14,7 @@ from app.forecasting.frequency import future_periods as make_future_periods
 from app.forecasting.frequency import seasonal_period
 from app.forecasting.metrics import evaluate, mase, winkler
 from app.forecasting.models import Forecaster
+from app.forecasting.preparation import Preparation
 from app.models.enums import ForecastFrequency, ModelKind
 
 FloatArray = npt.NDArray[np.float64]
@@ -186,7 +187,20 @@ def run_backtest(
     frequency: ForecastFrequency,
     weights: FloatArray | None = None,
     confidence_level: float = 0.8,
+    prepare: Preparation | None = None,
 ) -> BacktestResult:
+    """Score a model over the plan's folds.
+
+    `y` is the series as observed, with NaN in any period the data never had.
+    `prepare` is applied to each fold's training slice — so a gap is
+    interpolated from the training window alone, and outliers are clipped
+    against its spread, rather than against a history that includes the very
+    periods the fold is about to be scored on.
+
+    A period that was never observed is not scored. Filling one and then
+    counting the model's error against the number that filling invented
+    reports an accuracy nobody measured.
+    """
     result = BacktestResult(model=model_kind)
 
     if plan.n_folds == 0:
@@ -194,6 +208,7 @@ def run_backtest(
         result.failure_reason = "Not enough history to construct a single validation fold."
         return result
 
+    preparation = prepare or Preparation()
     all_true: list[float] = []
     all_pred: list[float] = []
     all_weights: list[float] = []
@@ -202,14 +217,18 @@ def run_backtest(
 
     for fold_index, cut in enumerate(plan.cut_points):
         train_start = 0 if plan.scheme == "expanding" else max(0, cut - (plan.window or cut))
-        y_train = y[train_start:cut]
+        y_train = preparation.apply(y[train_start:cut])
         periods_train = periods[train_start:cut]
 
         test_end = min(cut + plan.horizon, len(y))
         y_test = y[cut:test_end]
         test_periods = periods[cut:test_end]
 
-        if y_test.size == 0 or y_train.size == 0:
+        if y_test.size == 0 or y_train.size == 0 or not np.all(np.isfinite(y_train)):
+            continue
+
+        observed = np.isfinite(y_test)
+        if not np.any(observed):
             continue
 
         try:
@@ -245,19 +264,23 @@ def run_backtest(
             logger.debug("Backtest fold diverged for %s: %s", model_kind, diverged)
             return result
 
-        fold_weights = [float(v) for v in weights[cut:test_end]] if weights is not None else None
+        scored_true = y_test[observed]
+        scored_pred = predictions[observed]
+        fold_weights = (
+            [float(v) for v in weights[cut:test_end][observed]] if weights is not None else None
+        )
         result.folds.append(
             FoldResult(
                 fold=fold_index,
                 train_size=int(y_train.size),
-                test_size=int(y_test.size),
-                y_true=[float(v) for v in y_test],
-                y_pred=[float(v) for v in predictions],
+                test_size=int(scored_true.size),
+                y_true=[float(v) for v in scored_true],
+                y_pred=[float(v) for v in scored_pred],
                 y_weight=fold_weights,
             )
         )
-        all_true.extend(float(v) for v in y_test)
-        all_pred.extend(float(v) for v in predictions)
+        all_true.extend(float(v) for v in scored_true)
+        all_pred.extend(float(v) for v in scored_pred)
         if fold_weights is not None:
             all_weights.extend(fold_weights)
 
@@ -281,7 +304,7 @@ def run_backtest(
     result.mase = mase(
         np.array(all_true),
         np.array(all_pred),
-        y[: plan.cut_points[0]] if plan.cut_points else y,
+        preparation.apply(y[: plan.cut_points[0]]) if plan.cut_points else preparation.apply(y),
         seasonal_period(frequency),
     )
     result.winkler = interval_cost(result, confidence_level)
