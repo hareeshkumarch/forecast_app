@@ -24,7 +24,7 @@ from app.core.storage import file_exists
 from app.database.base import utcnow
 from app.database.session import session_scope
 from app.datasets import quality, queries
-from app.datasets.profiler import is_currency_like
+from app.datasets.profiler import is_currency_like, natural_aggregation
 from app.forecasting.engine import (
     ForecastInput,
     ForecastOutput,
@@ -168,6 +168,12 @@ MAX_RUN_PAGE = settings.api_max_page_size
 # asked to forecast should only catch the spikes nothing can explain.
 WINSORISE_SIGMAS = 6.0
 
+#: How much a simulated interval widens per unit of intervention. A scenario
+#: that moves the total by half again is a long way outside anything the
+#: backtest measured, and a band that stayed the same relative width would be
+#: claiming an accuracy nobody has for a world that does not exist yet.
+SIMULATION_BAND_WIDENING = 0.5
+
 
 @dataclass(slots=True)
 class RunPage:
@@ -278,7 +284,7 @@ async def create_run(
     frequency: ForecastFrequency | None = None,
     horizon: int | None = None,
     confidence_level: float = 0.8,
-    aggregation: MeasureAggregation = MeasureAggregation.SUM,
+    aggregation: MeasureAggregation | None = None,
     gap_fill: GapFill = GapFill.AUTO,
     outlier_treatment: OutlierTreatment = OutlierTreatment.NONE,
     max_folds: int | None = None,
@@ -339,6 +345,7 @@ async def create_run(
     _require_kind(kinds, weight_column, ColumnKind.NUMERIC, "weight")
 
     grain = _validated_grain(group_by, available, resolved_time, resolved_target)
+    resolved_aggregation = _validated_aggregation(aggregation, resolved_target)
     _validated_drivers(driver_columns, kinds)
     _validated_models(candidate_models)
     resolved_horizon = _validated_horizon(
@@ -365,7 +372,7 @@ async def create_run(
         frequency=resolved_frequency,
         horizon=resolved_horizon,
         confidence_level=confidence_level,
-        aggregation=aggregation,
+        aggregation=resolved_aggregation,
         gap_fill=gap_fill,
         outlier_treatment=outlier_treatment,
     )
@@ -445,6 +452,22 @@ def _require_kind(
             "candidates": sorted(name for name, kind in kinds.items() if kind is expected),
         },
     )
+
+
+def _validated_aggregation(requested: MeasureAggregation | None, target: str) -> MeasureAggregation:
+    """How the target adds up over the rows inside a period.
+
+    Nothing checked this. Summing is right for a quantity and meaningless for
+    a level: add up a unit price or a conversion rate over the rows in a month
+    and the figure grows with how many rows there were, so the series being
+    forecast is order volume wearing the target's name.
+
+    An explicit choice is honoured — somebody who asks to sum a column called
+    price may have a reason, and a run that answers a different question from
+    the one it was asked is worse than one that answers awkwardly. Left unset,
+    the column's own name decides.
+    """
+    return requested if requested is not None else natural_aggregation(target)
 
 
 def _validated_drivers(driver_columns: list[str] | None, kinds: dict[str, ColumnKind]) -> None:
@@ -959,6 +982,11 @@ def _build_payload(
         run.frequency,
         periods,
         aggregation=run.aggregation,
+        # A driver adds up the way its own name says it does. Taking the
+        # target's aggregation says something about the target and nothing
+        # about the driver, and summing a price or a conversion rate over the
+        # rows in a month produces a number that tracks the row count.
+        per_column={name: natural_aggregation(name) for name in driver_candidates or []},
     )
 
     return ForecastInput(
@@ -1002,6 +1030,10 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
         run.target_column,
         column,
         run.frequency,
+        # The same reducer the headline number uses. Summing a breakdown of a
+        # measure the run averages gives regions that do not add up to the
+        # total they are shown beside.
+        aggregation=run.aggregation,
     )
     return [
         SegmentInput(
@@ -1378,16 +1410,27 @@ async def simulate_what_if(
     simulated_best_total = 0.0
     simulated_worst_total = 0.0
 
-    def scaled(value: float | None) -> float | None:
-        return None if value is None else float(value) * effective_scale
+    # An assumption the model was never fitted under is less certain than the
+    # forecast it came from, and scaling the band by the same factor as the
+    # point claims otherwise: it reports the measured relative uncertainty for
+    # a scenario nothing measured. The band widens with the size of the
+    # intervention, around the re-priced point rather than around zero.
+    intervention = abs(effective_scale - 1.0)
+    widening = 1.0 + SIMULATION_BAND_WIDENING * intervention
+
+    def scaled(value: float | None, base: float, simulated: float) -> float | None:
+        if value is None:
+            return None
+        offset = (float(value) - base) * effective_scale
+        return simulated + offset * widening
 
     for point in sorted(forecast_points, key=lambda p: p.period):
         base = float(point.forecast or 0.0)
         sim = base * effective_scale
-        low = scaled(point.lower_bound)
-        high = scaled(point.upper_bound)
-        best = scaled(point.best_case)
-        worst = scaled(point.worst_case)
+        low = scaled(point.lower_bound, base, sim)
+        high = scaled(point.upper_bound, base, sim)
+        best = scaled(point.best_case, base, sim)
+        worst = scaled(point.worst_case, base, sim)
         best = best if best is not None else (high if high is not None else sim)
         worst = worst if worst is not None else (low if low is not None else sim)
 
@@ -1427,5 +1470,7 @@ async def simulate_what_if(
         "total_delta_pct": round(total_delta_pct, 2),
         "simulated_best_case_total": round(simulated_best_total, 4),
         "simulated_worst_case_total": round(simulated_worst_total, 4),
+        "method": "repriced_from_measured_leverage",
+        "intervention_size": round(intervention, 4),
         "points": simulated_points,
     }

@@ -336,7 +336,9 @@ def test_every_grouped_series_shares_one_calendar(tmp_path) -> None:
     assert len(calendars) == 1, "series must line up period for period"
 
     late = next(s for s in series if s.key["sku"] == "B")
-    assert late.values[:2] == [0.0, 0.0], "a period with no rows is a zero, not a gap"
+    # The calendar is shared; the periods B has no rows for are gaps, not
+    # zeros. Which one they become is the run's gap-fill setting to decide.
+    assert all(value != value for value in late.values[:2])
     assert len(late.values) == 4
 
 

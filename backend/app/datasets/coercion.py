@@ -425,7 +425,20 @@ def _numeric_dates(series: pl.Series, *, name_suggests_date: bool) -> DateParse 
     return None
 
 
-def _period_dates(text: pl.Series, total: int) -> DateParse | None:
+def _fiscal_start_month() -> int:
+    """The configured month a fiscal year opens in, read lazily.
+
+    Read at call time rather than at import, so a deployment that sets it does
+    not depend on which module happened to be imported first.
+    """
+    from app.core.config import settings
+
+    return int(settings.fiscal_year_start_month)
+
+
+def _period_dates(
+    text: pl.Series, total: int, fiscal_start_month: int | None = None
+) -> DateParse | None:
     """2024Q1, Q1 2024 and 2024-W03, none of which strptime handles."""
 
     def quarter(value: str | None) -> date | None:
@@ -467,12 +480,14 @@ def _period_dates(text: pl.Series, total: int) -> DateParse | None:
         return None
 
     def fiscal(value: str | None) -> date | None:
-        """FY24-P01 becomes the first of that fiscal period's month.
+        """FY24-P01 becomes the first of that fiscal period's calendar month.
 
-        The fiscal year is assumed to start in January. Where it does not, the
-        periods still come out evenly spaced and in the right order, which is
-        what a forecast needs — the labels shown against them are the caller's
-        to translate.
+        Which month that is depends on where the fiscal year starts, and that
+        is a property of the company, not of the file: a US federal year opens
+        in October, an Indian one in April, a UK one in April, a retailer's
+        often in February. Reading P01 as January puts every period of such a
+        file three to nine months out — the shape survives, the dates do not,
+        and a forecast dated to the wrong months is one nobody can act on.
         """
         if value is None:
             return None
@@ -487,7 +502,13 @@ def _period_dates(text: pl.Series, total: int) -> DateParse | None:
             year += 2000
         if not MIN_YEAR <= year <= MAX_YEAR:
             return None
-        return date(year, period, 1)
+
+        start = fiscal_start_month if fiscal_start_month is not None else _fiscal_start_month()
+        offset = start - 1 + period - 1
+        month = offset % 12 + 1
+        # A fiscal year that opens after January runs into the next calendar
+        # one, which is what "FY24" labelling a month in 2024 or 2025 means.
+        return date(year + offset // 12, month, 1)
 
     for reader, label in ((quarter, "YYYYQn"), (iso_week, "ISO week"), (fiscal, "fiscal period")):
         probe = sample.map_elements(reader, return_dtype=pl.Date)
@@ -504,6 +525,7 @@ def parse_dates(
     *,
     day_first: bool | None = None,
     name_suggests_date: bool = False,
+    fiscal_start_month: int | None = None,
 ) -> DateParse | None:
     """Read a column of dates, or return None if it is not one.
 
@@ -575,7 +597,7 @@ def parse_dates(
                     order_evidence=evidence if label == ordered[1] else "",
                 )
 
-    return _period_dates(text, non_null_count)
+    return _period_dates(text, non_null_count, fiscal_start_month)
 
 
 # ------------------------------------------------------------------- reshaping

@@ -60,7 +60,10 @@ class ForecastRunRequest(StrictModel):
     frequency: ForecastFrequency | None = None
     horizon: Horizon | None = None
     confidence_level: Probability = 0.8
-    aggregation: MeasureAggregation = MeasureAggregation.SUM
+    #: Left unset, the run picks the reducer that suits the target — summing a
+    #: price or a conversion rate gives a number that grows with the row count.
+    #: Set explicitly, what was asked for is what runs.
+    aggregation: MeasureAggregation | None = None
     gap_fill: GapFill = GapFill.AUTO
     outlier_treatment: OutlierTreatment = OutlierTreatment.NONE
     max_folds: Folds | None = None
@@ -479,4 +482,11 @@ class WhatIfSimulationResponse(BaseModel):
     total_delta_pct: float
     simulated_best_case_total: float
     simulated_worst_case_total: float
+    #: What this simulation is, so nobody reads it as a refit. The run is
+    #: re-priced under the assumption; the model is not fitted again against
+    #: it, because the history under the new assumption does not exist.
+    method: str
+    #: How far outside the measured scenario the assumption sits, as the
+    #: fraction the total was moved by. The bands widen with it.
+    intervention_size: float
     points: list[PointSimulationResult]

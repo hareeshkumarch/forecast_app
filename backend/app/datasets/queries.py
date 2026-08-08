@@ -36,6 +36,13 @@ AGGREGATIONS: dict[MeasureAggregation, str] = {
     MeasureAggregation.MAX: "MAX",
 }
 
+#: A period a series has no row for. Not zero — a SKU nobody reported this
+#: month and a SKU that sold nothing this month are different facts, and only
+#: the run's gap-fill setting decides which one to treat it as. Writing the
+#: zero here made that decision for every grouped series, whatever was asked
+#: for, and made it invisible.
+NOT_REPORTED = float("nan")
+
 
 def _quote(identifier: str) -> str:
     if not identifier or "\x00" in identifier:
@@ -92,19 +99,29 @@ def aggregate_candidate_drivers(
     periods: list[date],
     *,
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
+    per_column: dict[str, MeasureAggregation] | None = None,
 ) -> dict[str, list[float]]:
+    """Bring each driver to the run's calendar, reduced by what it *is*.
+
+    A driver took the target's aggregation, which is a statement about the
+    target and not about the driver. Sum a price, an index, a temperature or a
+    conversion rate across the rows in a month and the number that comes out
+    grows with the row count and means nothing — and the correlation search
+    that follows it is then reading traffic volume, not the driver.
+    """
     if not columns or not periods:
         return {}
 
     part = DATE_TRUNC_PART[frequency]
-    reducer = AGGREGATIONS[aggregation]
+    chosen = per_column or {}
     time_sql = _quote(time_column)
-    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
 
-    projections = ", ".join(
-        f"{reducer}(TRY_CAST({_quote(name)} AS DOUBLE){order_for_last}) AS c{index}"
-        for index, name in enumerate(columns)
-    )
+    def projection(index: int, name: str) -> str:
+        reducer = AGGREGATIONS[chosen.get(name, aggregation)]
+        order = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
+        return f"{reducer}(TRY_CAST({_quote(name)} AS DOUBLE){order}) AS c{index}"
+
+    projections = ", ".join(projection(index, name) for index, name in enumerate(columns))
 
     sql = f"""
         SELECT date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period, {projections}
@@ -235,11 +252,14 @@ def aggregate_segments(
     max_segments: int = 12,
     start: date | None = None,
     end: date | None = None,
+    aggregation: MeasureAggregation = MeasureAggregation.SUM,
 ) -> list[SegmentTotals]:
     part = DATE_TRUNC_PART[frequency]
+    reducer = AGGREGATIONS[aggregation]
     time_sql = _quote(time_column)
     target_sql = _quote(target_column)
     segment_sql = _quote(segment_column)
+    order_for_last = f" ORDER BY TRY_CAST({time_sql} AS DATE)" if reducer == "LAST" else ""
 
     where = [
         f"TRY_CAST({time_sql} AS DATE) IS NOT NULL",
@@ -258,7 +278,7 @@ def aggregate_segments(
         SELECT
             CAST({segment_sql} AS VARCHAR) AS label,
             date_trunc('{part}', TRY_CAST({time_sql} AS DATE)) AS period,
-            SUM(TRY_CAST({target_sql} AS DOUBLE)) AS value
+            {reducer}(TRY_CAST({target_sql} AS DOUBLE){order_for_last}) AS value
         FROM {_source(parquet_path)}
         WHERE {" AND ".join(where)}
         GROUP BY label, period
@@ -286,7 +306,7 @@ def aggregate_segments(
         prior = sum(value for period, value in series if period in prior_window)
 
         observed = dict(series)
-        values = [float(observed.get(period, 0.0)) for period in all_periods]
+        values = [float(observed.get(period, NOT_REPORTED)) for period in all_periods]
 
         totals.append(
             SegmentTotals(
@@ -573,7 +593,7 @@ def aggregate_grouped(
 
     def build(bucket: tuple[tuple[str, ...], bool], by_period: dict[date, float]) -> GroupedSeries:
         key, pooled = bucket
-        values = [by_period.get(period, 0.0) for period in calendar]
+        values = [by_period.get(period, NOT_REPORTED) for period in calendar]
         return GroupedSeries(
             key=dict(zip(group_columns, key, strict=True)),
             label=POOLED_LABEL if pooled else SERIES_LABEL_SEPARATOR.join(key),

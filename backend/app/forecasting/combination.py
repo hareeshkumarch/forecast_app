@@ -74,6 +74,22 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
     return aligned
 
 
+def _member_errors(aligned: _Aligned, skip: int | None = None) -> list[float]:
+    """Each member's absolute error, optionally with one fold left out."""
+    errors: list[float] = []
+    for member in aligned.predictions:
+        total = 0.0
+        count = 0
+        for index, predictions in enumerate(member):
+            if index == skip:
+                continue
+            truth = aligned.truth[index]
+            total += float(np.sum(np.abs(np.asarray(predictions) - np.asarray(truth))))
+            count += len(truth)
+        errors.append(total / count if count else float("nan"))
+    return errors
+
+
 def inverse_error_weights(errors: list[float]) -> list[float]:
     finite = [error for error in errors if np.isfinite(error) and error > 0.0]
     floor = min(finite) if finite else 1.0
@@ -104,7 +120,10 @@ def blend(
     if aligned is None:
         return None
 
-    share = inverse_error_weights([result.mae for result in chosen])
+    # What the fitted ensemble will use: every member weighed by how it did
+    # over the whole backtest. Correct for the model that gets shipped, and
+    # not for scoring it — see below.
+    share = inverse_error_weights(_member_errors(aligned))
 
     folds: list[FoldResult] = []
     all_true: list[float] = []
@@ -116,7 +135,14 @@ def blend(
         stacked = np.vstack(
             [np.asarray(member[index], dtype=float) for member in aligned.predictions]
         )
-        combined = np.average(stacked, axis=0, weights=share)
+        # The blend scored on this fold is weighed by how the members did on
+        # every *other* fold. Weighing them by an error that includes this one
+        # tunes the combination on the window it is about to be judged over,
+        # and the ensemble then beats its own best member on paper more often
+        # than it does in use — which is exactly the comparison that decides
+        # whether it is offered at all.
+        held_out = inverse_error_weights(_member_errors(aligned, skip=index))
+        combined = np.average(stacked, axis=0, weights=held_out)
         fold_weights = aligned.weights[index]
 
         folds.append(

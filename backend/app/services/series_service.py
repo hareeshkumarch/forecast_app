@@ -25,8 +25,16 @@ from app.forecasting.engine import (
     fit_leaf,
 )
 from app.forecasting.frequency import comparison_window
+from app.forecasting.preparation import Preparation
 from app.models.entities import ForecastPoint, ForecastRun, ForecastSeries
-from app.models.enums import ForecastFrequency, MeasureAggregation, PointKind, RunStatus
+from app.models.enums import (
+    ForecastFrequency,
+    GapFill,
+    MeasureAggregation,
+    OutlierTreatment,
+    PointKind,
+    RunStatus,
+)
 from app.services.job_runner import ProgressEvent, executors, publish_progress
 from app.services.progress_relay import count_series, forget_series_count
 
@@ -48,6 +56,12 @@ class GroupedPlan:
     confidence_level: float
     total_path: list[float]
     forecast_periods: list[date]
+    #: The run's gap-fill setting, carried down so a series under the total is
+    #: prepared by the same rules as the total. Sent as the two plain values
+    #: rather than as a `Preparation`, because this plan crosses a Celery
+    #: boundary and only what JSON can carry survives it.
+    gap_fill: GapFill = GapFill.NONE
+    winsorise_sigmas: float | None = None
 
 
 async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
@@ -70,6 +84,12 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
         confidence_level = run.confidence_level
         time_column, target_column = run.time_column, run.target_column
         aggregation = run.aggregation
+        gap_fill = run.gap_fill
+        winsorise_sigmas = (
+            (overrides.outlier_mad_threshold or forecast_service.WINSORISE_SIGMAS)
+            if run.outlier_treatment is OutlierTreatment.WINSORISE
+            else None
+        )
         max_series = max(1, min(overrides.max_series or DEFAULT_MAX_SERIES, DEFAULT_MAX_SERIES))
 
     leaves = await asyncio.to_thread(
@@ -92,6 +112,8 @@ async def plan_for(run_id: uuid.UUID) -> GroupedPlan | None:
         confidence_level=confidence_level,
         total_path=total_path,
         forecast_periods=periods,
+        gap_fill=gap_fill,
+        winsorise_sigmas=winsorise_sigmas,
     )
 
 
@@ -184,6 +206,8 @@ async def _fit_here(run_id: uuid.UUID, plan: GroupedPlan) -> list[LeafFit]:
             plan.horizon,
             plan.max_folds,
             plan.confidence_level,
+            plan.gap_fill,
+            plan.winsorise_sigmas,
         )
         for chunk in chunks
     ]
@@ -203,7 +227,10 @@ def fit_chunk(
     horizon: int,
     max_folds: int | None,
     confidence_level: float,
+    gap_fill: GapFill = GapFill.NONE,
+    winsorise_sigmas: float | None = None,
 ) -> list[dict[str, Any]]:
+    preparation = Preparation(fill=GapFill(gap_fill), winsorise_sigmas=winsorise_sigmas)
     return [
         fit_leaf(
             str(payload["label"]),
@@ -213,6 +240,7 @@ def fit_chunk(
             horizon,
             max_folds,
             confidence_level,
+            preparation,
         ).to_dict()
         for payload in payloads
     ]

@@ -17,8 +17,8 @@ from app.forecasting.tuning import (
     SearchSpace,
     as_float,
     as_int,
+    blended_error,
     tune,
-    tuning_error,
     validation_splits,
 )
 from app.models.enums import ForecastFrequency, ModelKind
@@ -30,6 +30,10 @@ FittedModel = Any
 RANDOM_STATE = 20260804
 
 OBSERVATIONS_PER_PARAMETER = 3
+#: Hold-out windows the Prophet prior search uses. Every evaluation compiles
+#: and fits a Stan model, so this buys most of the variance reduction that a
+#: full pass over the splits would, at a cost anybody will actually wait for.
+PROPHET_TUNING_SPLITS = 2
 MAX_STATE_SPACE_PERIOD = 24
 MAX_FOURIER_HARMONICS = 3
 
@@ -350,6 +354,9 @@ class ProphetForecaster:
     profile: SeriesProfile | None = None
     changepoint_prior_scale: float | None = None
     interval_width: float = 0.8
+    #: The metrics the run scores by, so the prior search minimises the same
+    #: thing model selection will.
+    metric_weights: dict[str, float] | None = None
     kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -439,10 +446,19 @@ class ProphetForecaster:
         if not splits:
             return default, {"tuning_method": "defaults_short_history", "tuning_evaluations": 0}
 
-        start, end = splits[-1]
-        train = frame.iloc[:start]  # type: ignore[attr-defined]
-        holdout = frame.iloc[start:end]  # type: ignore[attr-defined]
-        actual = np.asarray(holdout["y"].to_numpy(), dtype=np.float64)
+        # More than one window. A single hold-out picks the prior that suited
+        # one stretch of history, and a changepoint prior in particular is
+        # exactly the setting a single window cannot separate — whichever
+        # value happens to bend towards that window's last turn wins. Capped
+        # at two, because every evaluation here is a Stan fit.
+        used_splits = splits[-PROPHET_TUNING_SPLITS:]
+        windows = [
+            (
+                frame.iloc[:start],  # type: ignore[attr-defined]
+                frame.iloc[start:end],  # type: ignore[attr-defined]
+            )
+            for start, end in used_splits
+        ]
 
         best, best_score, evaluated = default, float("inf"), 0
         for changepoint in self.CHANGEPOINT_PRIORS:
@@ -451,23 +467,32 @@ class ProphetForecaster:
                     "changepoint_prior_scale": changepoint,
                     "seasonality_prior_scale": seasonality,
                 }
-                try:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        trial = Prophet(
-                            seasonality_mode=mode, interval_width=0.8, **candidate, **flags
-                        )
-                        trial.fit(train)
-                        predicted = trial.predict(pd.DataFrame({"ds": holdout["ds"]}))
-                except Exception:
-                    continue
+                errors: list[float] = []
+                for train, holdout in windows:
+                    actual = np.asarray(holdout["y"].to_numpy(), dtype=np.float64)
+                    try:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            trial = Prophet(
+                                seasonality_mode=mode, interval_width=0.8, **candidate, **flags
+                            )
+                            trial.fit(train)
+                            predicted = trial.predict(pd.DataFrame({"ds": holdout["ds"]}))
+                    except Exception:
+                        errors = []
+                        break
 
-                yhat = np.asarray(predicted["yhat"].to_numpy(), dtype=np.float64)
-                if yhat.size != actual.size or not np.all(np.isfinite(yhat)):
+                    yhat = np.asarray(predicted["yhat"].to_numpy(), dtype=np.float64)
+                    if yhat.size != actual.size or not np.all(np.isfinite(yhat)):
+                        errors = []
+                        break
+                    errors.append(blended_error(actual, yhat, self.metric_weights))
+
+                if not errors:
                     continue
 
                 evaluated += 1
-                score = tuning_error(actual, yhat)
+                score = float(np.mean(errors))
                 if score < best_score:
                     best, best_score = candidate, score
 
@@ -477,7 +502,7 @@ class ProphetForecaster:
         return best, {
             "tuning_method": "grid",
             "tuning_evaluations": evaluated,
-            "tuning_folds": 1,
+            "tuning_folds": len(windows),
             "tuning_score": round(best_score, 6),
         }
 
@@ -1132,6 +1157,7 @@ def build_candidates(
                     as_float(prophet_cps, 0.05) if prophet_cps is not None else None
                 ),
                 interval_width=as_float(prophet_iw, 0.8) if prophet_iw is not None else 0.8,
+                metric_weights=_metric_weights(opts, profile),
             )
         )
 

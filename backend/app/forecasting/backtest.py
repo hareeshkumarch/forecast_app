@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from statistics import NormalDist
 
 import numpy as np
 import numpy.typing as npt
@@ -21,11 +22,31 @@ FloatArray = npt.NDArray[np.float64]
 
 logger = get_logger(__name__)
 
-NORMAL_QUANTILE = {0.5: 0.6745, 0.8: 1.2816, 0.9: 1.6449, 0.95: 1.9600, 0.99: 2.5758}
+
+def normal_quantile(confidence_level: float) -> float:
+    """The two-sided z for this confidence level, computed rather than looked up.
+
+    A five-entry table answered anything not in it with the 80% z. Ask for a
+    92% interval and the cost of the bands was scored as though they were 80%
+    ones — quietly, and only for the levels nobody had thought to tabulate.
+    """
+    level = min(max(float(confidence_level), 0.0), 1.0)
+    if level <= 0.0:
+        return 0.0
+    if level >= 1.0:
+        return float("inf")
+    return float(NormalDist().inv_cdf(0.5 + level / 2.0))
+
 
 MIN_FOLDS = 1
 MAX_FOLDS_CEILING = 12
 ROLLING_WINDOW_SEASONS = 4
+
+#: How much of the plan a candidate has to survive to be scored at all. Below
+#: it there is too little left to compare fairly against a model that fitted
+#: everywhere — a model that only works on the two easiest folds should not be
+#: ranked on those two alone.
+MIN_FOLD_SHARE = 0.5
 
 
 @dataclass(slots=True)
@@ -55,6 +76,10 @@ class BacktestResult:
     params: dict[str, object] = field(default_factory=dict)
     failed: bool = False
     failure_reason: str | None = None
+    #: Folds the model could not produce a forecast for. A candidate scored on
+    #: fewer folds than it was offered has been measured over less evidence,
+    #: and the count is carried so that is visible rather than implied.
+    folds_failed: int = 0
 
     @property
     def n_folds(self) -> int:
@@ -245,10 +270,15 @@ def run_backtest(
             predictions = model.predict(y_test.size, forecast_periods)
             last_params = dict(model.params)
         except Exception as exc:
-            result.failed = True
-            result.failure_reason = f"{type(exc).__name__}: {exc}"
-            logger.debug("Backtest fold failed for %s: %s", model_kind, exc)
-            return result
+            # One fold is not the verdict. SARIMAX fails to converge on the
+            # shortest early window and fits every later one; discarding the
+            # candidate outright threw away the model that would have won, and
+            # reported the reason as though it were the whole story.
+            result.folds_failed += 1
+            if result.failure_reason is None:
+                result.failure_reason = f"{type(exc).__name__}: {exc}"
+            logger.debug("Backtest fold %d failed for %s: %s", fold_index, model_kind, exc)
+            continue
 
         predictions = np.asarray(predictions, dtype=float).ravel()[: y_test.size]
         if predictions.size < y_test.size:
@@ -259,10 +289,11 @@ def run_backtest(
 
         diverged = _diverged(predictions, y_train)
         if diverged is not None:
-            result.failed = True
-            result.failure_reason = diverged
-            logger.debug("Backtest fold diverged for %s: %s", model_kind, diverged)
-            return result
+            result.folds_failed += 1
+            if result.failure_reason is None:
+                result.failure_reason = diverged
+            logger.debug("Backtest fold %d diverged for %s: %s", fold_index, model_kind, diverged)
+            continue
 
         scored_true = y_test[observed]
         scored_pred = predictions[observed]
@@ -289,7 +320,16 @@ def run_backtest(
 
     if not result.folds:
         result.failed = True
-        result.failure_reason = "No fold produced a usable forecast."
+        result.failure_reason = result.failure_reason or "No fold produced a usable forecast."
+        return result
+
+    if len(result.folds) < MIN_FOLD_SHARE * plan.n_folds:
+        result.failed = True
+        result.failure_reason = (
+            f"Only {len(result.folds)} of {plan.n_folds} validation folds could be fitted"
+            + (f" ({result.failure_reason})" if result.failure_reason else "")
+            + ", which is too little to compare against models that fitted throughout."
+        )
         return result
 
     scores = evaluate(
@@ -315,7 +355,7 @@ def interval_cost(result: BacktestResult, confidence_level: float) -> float:
     if len(result.folds) < 2:
         return float("nan")
 
-    z = float(NORMAL_QUANTILE.get(round(confidence_level, 2), 1.2816))
+    z = normal_quantile(confidence_level)
     costs: list[float] = []
 
     for held_out in result.folds:

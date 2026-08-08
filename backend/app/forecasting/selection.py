@@ -140,6 +140,23 @@ def _normalise(values: list[float]) -> list[float]:
     return [min(max((v - low) / span, 0.0), 1.0) if math.isfinite(v) else 1.0 for v in values]
 
 
+def _scoreable(result: BacktestResult, weights: dict[str, float]) -> bool:
+    """Whether this candidate can be scored by the metrics the run is using.
+
+    The gate used to be wMAPE alone, whatever the run was scoring by. On
+    intermittent demand the validation windows can total zero, wMAPE is then
+    undefined, and Croston — the model that exists for exactly that series —
+    was dropped before selection began, by a metric the run had already
+    decided not to use. Every weighted metric being unusable is a real reason
+    to drop a candidate; one unused metric is not.
+    """
+    return any(
+        math.isfinite(float(getattr(result, metric, float("nan"))))
+        for metric in weights
+        if weights[metric] > 0.0
+    )
+
+
 def select_model(
     results: list[BacktestResult],
     metric_weights: dict[str, float] | None = None,
@@ -154,7 +171,7 @@ def select_model(
 
     rule_str = scoring_rule(weights, interval_weight)
 
-    usable = [r for r in results if not r.failed and math.isfinite(r.wmape)]
+    usable = [r for r in results if not r.failed and _scoreable(r, weights)]
 
     if not usable:
         ran = [r for r in results if not r.failed]
@@ -211,11 +228,25 @@ def select_model(
     )
 
 
+def _headline(result: BacktestResult) -> str:
+    """How wrong this candidate was, in whichever measure it actually has.
+
+    A percentage is the natural thing to say and it is not always available:
+    an intermittent series whose validation windows total zero has no wMAPE,
+    and "off by nan%" is worse than saying it in absolute terms.
+    """
+    if math.isfinite(result.wmape):
+        return f"off by {result.wmape:.1f}% on average"
+    if math.isfinite(result.mae):
+        return f"off by {result.mae:,.3g} on average"
+    return "the only candidate that could be scored"
+
+
 def _rationale(winner: ScoredCandidate, scored: list[ScoredCandidate]) -> str:
     name = winner.result.model.value.replace("_", " ").capitalize()
     folds = winner.result.n_folds
     parts = [
-        f"{name} was off by {winner.result.wmape:.1f}% on average when tested against "
+        f"{name} was {_headline(winner.result)} when tested against "
         f"{folds} stretch{'' if folds == 1 else 'es'} of history it had not seen."
     ]
 

@@ -180,6 +180,9 @@ def _header_offset(sample: str, delimiter: str) -> int:
     return 0
 
 
+NULL_TOKENS = ["", "NA", "N/A", "null", "NULL", "#N/A", "-"]
+
+
 def _read_csv_text(text: str, delimiter: str, skip: int) -> pl.DataFrame:
     return pl.read_csv(
         io.StringIO(text),
@@ -189,20 +192,97 @@ def _read_csv_text(text: str, delimiter: str, skip: int) -> pl.DataFrame:
         infer_schema_length=10_000,
         ignore_errors=False,
         truncate_ragged_lines=True,
-        null_values=["", "NA", "N/A", "null", "NULL", "#N/A", "-"],
+        null_values=NULL_TOKENS,
     )
 
 
+def _ragged_rows(text: str, delimiter: str, skip: int, width: int) -> int:
+    """Rows carrying more fields than the header has columns.
+
+    Polars is told to truncate them, because refusing the whole file over one
+    stray delimiter helps nobody. But truncation drops real values off the end
+    of a row, and doing that in silence is how a file imports cleanly and
+    forecasts something else. The count is reported instead.
+    """
+    lines = [line for line in text.splitlines()[skip:] if line.strip()]
+    return sum(1 for line in lines[1:] if _fields_outside_quotes(line, delimiter) + 1 > width)
+
+
+#: How many rows of a sheet to look at when deciding whether it holds a table.
+SHEET_PROBE_ROWS = 40
+
+
+def _read_excel(path: Path) -> pl.DataFrame:
+    """The sheet that holds the data, not simply the first one.
+
+    A workbook that opens on a cover sheet, a parameters tab or a chart used to
+    import as whatever that sheet happened to contain. The widest sheet with
+    real rows under its header is the table; ties go to the earliest, which is
+    where the main tab almost always sits.
+    """
+    try:
+        sheets = pl.read_excel(path, sheet_id=0)
+    except Exception:
+        return pl.read_excel(path)
+
+    if isinstance(sheets, pl.DataFrame):
+        return sheets
+    if not sheets:
+        raise ValidationError("The workbook has no sheets to read.")
+
+    def score(frame: pl.DataFrame) -> tuple[int, int]:
+        probe = frame.head(SHEET_PROBE_ROWS)
+        filled = sum(
+            int(probe[name].drop_nulls().len() > 0) for name in probe.columns if probe.height
+        )
+        return filled, frame.height
+
+    ranked = sorted(sheets.items(), key=lambda item: score(item[1]), reverse=True)
+    best = ranked[0][1]
+    if best.height == 0:
+        raise ValidationError("Every sheet in this workbook is empty.")
+    return best
+
+
+def _fill_merged_cells(frame: pl.DataFrame) -> pl.DataFrame:
+    """Carry a merged label down the rows it spans.
+
+    Excel stores a vertical merge as the value in the top cell and nothing
+    underneath. Read literally, a sheet with the region written once per block
+    yields one labelled row and a column of nulls below it — and the rows that
+    lost their label are dropped or pooled later without a word.
+    """
+    label_columns = [
+        name
+        for name in frame.columns
+        if frame[name].dtype == pl.Utf8
+        and 0 < frame[name].null_count() < frame.height
+        and frame[name].drop_nulls().len() < frame.height * MERGED_LABEL_SHARE
+    ]
+    if not label_columns:
+        return frame
+    return frame.with_columns([pl.col(name).forward_fill() for name in label_columns])
+
+
+#: A column filled in less often than this, and only in runs, is a merged
+#: label rather than a column with missing values.
+MERGED_LABEL_SHARE = 0.5
+
+
 def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
+    ragged = 0
+    delimiter = ","
     try:
         if suffix in EXCEL_SUFFIXES:
             _assert_readable_excel(path)
-            frame = pl.read_excel(path)
+            frame = _fill_merged_cells(_read_excel(path))
         else:
             text, _encoding = _decode(path.read_bytes())
             sample = "\n".join(text.splitlines()[:50])
             delimiter = "\t" if suffix == ".tsv" else _sniff_delimiter(sample)
-            frame = _read_csv_text(text, delimiter, _header_offset(sample, delimiter))
+            skip = _header_offset(sample, delimiter)
+            frame = _read_csv_text(text, delimiter, skip)
+            ragged = _ragged_rows(text, delimiter, skip, frame.width)
     except (ValidationError, UnsupportedFileError):
         raise
     except Exception as exc:
@@ -210,6 +290,14 @@ def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
             f"The file couldn't be parsed: {type(exc).__name__}. "
             "Check that it has a single header row and consistent column counts."
         ) from exc
+
+    if ragged:
+        raise ValidationError(
+            f"{ragged} row(s) hold more values than the header has columns, so reading the "
+            "file would drop whatever sits past the last column. Check for an unquoted "
+            f"'{delimiter}' inside a value, or a header that is missing a column.",
+            detail={"ragged_rows": ragged, "columns": frame.width},
+        )
 
     if frame.height == 0:
         raise ValidationError(

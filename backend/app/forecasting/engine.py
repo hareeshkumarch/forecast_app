@@ -12,7 +12,12 @@ from app.core.logging import get_logger
 from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
 from app.forecasting.decomposition import Driver, decompose_drivers
-from app.forecasting.diagnostics import SeriesProfile, minimum_history, profile_series
+from app.forecasting.diagnostics import (
+    SeriesProfile,
+    detect_changepoints,
+    minimum_history,
+    profile_series,
+)
 from app.forecasting.drivers import DriverLink, DriverPanel, DriverSource, describe
 from app.forecasting.frequency import future_periods
 from app.forecasting.hierarchy import (
@@ -358,6 +363,14 @@ def run_forecast(
         final_model = build_candidate(winner_kind, frequency, model_options, profile)
         final_model.fit(values, periods)
 
+    # The backtest recorded whatever the *last* fold happened to configure,
+    # and the model that gets shipped is the one refitted on the whole
+    # history — a different search over more data. Reporting the fold's
+    # settings beside the shipped forecast describes a model nobody has.
+    winner_params = dict(final_model.params)
+    if winner_params:
+        selection.winner.result.params = winner_params
+
     if progress_callback is not None:
         progress_callback("fitting", 1, 1, "Selected model fitted; preparing results...")
 
@@ -402,6 +415,9 @@ def run_forecast(
 
     fitted = _in_sample_fit(values, final_model, winner_kind, profile)
 
+    changepoints = detect_changepoints(values)
+    changepoint_note = _changepoint_note(changepoints, periods, len(values)) if changepoints else ""
+
     drivers = decompose_drivers(
         values,
         point_forecast,
@@ -417,6 +433,7 @@ def run_forecast(
         horizon,
         payload.max_folds,
         payload.confidence_level,
+        payload.preparation,
     )
     categories = _forecast_segments(
         payload.categories,
@@ -426,6 +443,7 @@ def run_forecast(
         horizon,
         payload.max_folds,
         payload.confidence_level,
+        payload.preparation,
     )
 
     if progress_callback is not None:
@@ -438,6 +456,8 @@ def run_forecast(
     lead_sentence = describe(leading, frequency, payload.target_label)
     if lead_sentence:
         rationale = f"{rationale} {lead_sentence}"
+    if changepoint_note:
+        rationale = f"{rationale} {changepoint_note}"
 
     return ForecastOutput(
         leading_columns=leading,
@@ -463,12 +483,37 @@ def run_forecast(
             **profile.as_dict(),
             "backtest_scheme": plan.scheme,
             "folds": plan.n_folds,
+            "changepoints": [periods[index].isoformat() for index in changepoints],
             "quality": payload.quality,
         },
         regions=regions,
         categories=categories,
         drivers=drivers,
     )
+
+
+#: A level shift closer to the end of the history than this leaves too little
+#: of the new regime to fit on, which is worth saying out loud.
+RECENT_CHANGEPOINT_SHARE = 0.25
+
+
+def _changepoint_note(changepoints: list[int], periods: list[date], n: int) -> str:
+    """Say when the series changed level, because the fit cannot show it.
+
+    A model fitted across a step change splits the difference: it sits above
+    the new regime and below the old one, and every metric averages the two.
+    Nothing in the accuracy figure distinguishes that from ordinary noise, so
+    the dates are named and the recent ones are called out.
+    """
+    latest = changepoints[-1]
+    when = ", ".join(periods[index].isoformat() for index in changepoints[-3:])
+    if latest >= n * (1.0 - RECENT_CHANGEPOINT_SHARE):
+        return (
+            f"The series changed level at {when}, with only {n - latest} period(s) since — "
+            "the fit still carries the earlier regime, so treat the forecast as provisional "
+            "until more of the new one has been recorded."
+        )
+    return f"The series changed level at {when}, which the fit spans."
 
 
 def _fallback_reason(
@@ -563,6 +608,7 @@ SEGMENT_CANDIDATES = (
 
 
 TOO_LITTLE_HISTORY = "Too little history to validate a model."
+UNFILLED_GAPS = "This series has periods with no data, and the run was asked not to fill them."
 NO_CANDIDATE_HELD_UP = "No candidate model survived backtesting."
 FINAL_FIT_FAILED = "The winning model could not be fitted over the full history."
 
@@ -638,9 +684,12 @@ def fit_leaf(
     horizon: int,
     max_folds: int | None,
     confidence_level: float,
+    preparation: Preparation | None = None,
 ) -> LeafFit:
     try:
-        return _fit_leaf(label, periods, values, frequency, horizon, max_folds, confidence_level)
+        return _fit_leaf(
+            label, periods, values, frequency, horizon, max_folds, confidence_level, preparation
+        )
     except Exception as exc:
         logger.warning("Series %s failed to fit: %s", label, exc)
         return LeafFit(label=label, blocked_reason=f"{type(exc).__name__}: {exc}")
@@ -654,12 +703,21 @@ def _fit_leaf(
     horizon: int,
     max_folds: int | None,
     confidence_level: float,
+    preparation: Preparation | None = None,
 ) -> LeafFit:
-    history = np.asarray(values, dtype=float)
+    # A grouped series arrives with NaN wherever it has no row for a period,
+    # and is prepared by the same rules as the total — the run asked for one
+    # gap-fill policy, not one for the headline number and a silent zero-fill
+    # for everything under it.
+    prepare = preparation or Preparation()
+    observed = np.asarray(values, dtype=float)
+    history = prepare.apply(observed)
     calendar = list(periods)
 
     if history.size < 2 or history.size != len(calendar) or not np.any(np.isfinite(history)):
         return LeafFit(label=label, blocked_reason=TOO_LITTLE_HISTORY)
+    if not np.all(np.isfinite(history)):
+        return LeafFit(label=label, blocked_reason=UNFILLED_GAPS)
 
     profile = profile_series(history, frequency)
     plan = plan_backtest(
@@ -676,12 +734,13 @@ def _fit_leaf(
         run_backtest(
             _make_factory(kind, frequency, None),
             kind,
-            history,
+            observed,
             calendar,
             plan,
             frequency,
             None,
             confidence_level,
+            prepare=prepare,
         )
         for kind in SEGMENT_CANDIDATES
     ]
@@ -763,17 +822,43 @@ def forecast_grouped(
     horizon: int,
     max_folds: int | None,
     confidence_level: float = 0.8,
+    preparation: Preparation | None = None,
 ) -> list[SeriesResult]:
     if not leaves:
         return []
 
     fits = [
         fit_leaf(
-            leaf.label, leaf.periods, leaf.values, frequency, horizon, max_folds, confidence_level
+            leaf.label,
+            leaf.periods,
+            leaf.values,
+            frequency,
+            horizon,
+            max_folds,
+            confidence_level,
+            preparation,
         )
         for leaf in leaves
     ]
     return assemble_grouped(leaves, fits, group_by, total_path)
+
+
+def _shares(leaves: list[SegmentInput]) -> list[float] | None:
+    """Each leaf's share of the whole, or None when there is no whole to divide.
+
+    Taken from magnitude rather than from the signed total. A margin, a
+    net-of-returns figure or a balance can sum to zero or below while every
+    series under it is real, and dividing by that total gave a share of
+    infinity — so the guard against it discarded the entire breakdown and the
+    run came back with no grouped forecast at all and no reason why.
+    """
+    weights = [abs(leaf.current_total) for leaf in leaves]
+    total = sum(weights)
+    if total <= 0:
+        # Every series is flat at zero over the comparison window. Nothing in
+        # the data says one is bigger than another, so they share equally.
+        return [1.0 / len(leaves)] * len(leaves) if leaves else None
+    return [weight / total for weight in weights]
 
 
 def assemble_grouped(
@@ -785,10 +870,11 @@ def assemble_grouped(
     if not leaves:
         return []
 
-    grand_total = sum(leaf.current_total for leaf in leaves)
-    if grand_total <= 0:
+    shares = _shares(leaves)
+    if shares is None:
         return []
 
+    by_share = dict(zip((leaf.label for leaf in leaves), shares, strict=True))
     by_label = {leaf.label: leaf for leaf in leaves}
     fitted = {fit.label: fit for fit in fits if fit.fitted}
     blocked = {fit.label: fit.blocked_reason for fit in fits if not fit.fitted}
@@ -801,8 +887,8 @@ def assemble_grouped(
                 leaf.label,
                 np.asarray(fitted[leaf.label].forecast, dtype=float)
                 if leaf.label in fitted
-                else total * (leaf.current_total / grand_total),
-                leaf.current_total / grand_total,
+                else total * by_share[leaf.label],
+                by_share[leaf.label],
             )
             for leaf in leaves
         ],
@@ -860,11 +946,27 @@ class _Actuals:
     history: FloatArray
 
 
+#: How far reconciliation may move a series before its interval stops meaning
+#: anything. The band was measured around the series' own forecast; stretched
+#: to fit a path twice the size, or one of the opposite sign, it is no longer
+#: a measurement of anything and showing it as one is worse than showing none.
+MAX_RECONCILIATION_STRETCH = 2.0
+
+
 def _rescale_band(
     bound: list[float] | None,
     fitted: list[float] | None,
     reconciled: FloatArray,
 ) -> list[float]:
+    """Carry a leaf's interval onto its reconciled path.
+
+    Proportional, which is an approximation: the exact answer needs the
+    covariance between the series, and nothing here has it. It holds while the
+    reconciliation is a modest adjustment, which is the case it is for — a
+    coherence correction, not a rewrite. Past that the band is dropped rather
+    than stretched, because an interval nobody measured is not improved by
+    being drawn.
+    """
     if bound is None or fitted is None:
         return []
 
@@ -878,6 +980,12 @@ def _rescale_band(
     reference = float(np.max(np.abs(point))) if point.size else 0.0
     if reference <= 0.0:
         return []
+
+    own, coherent = float(np.sum(point)), float(np.sum(target))
+    if own != 0.0:
+        stretch = coherent / own
+        if stretch <= 0.0 or stretch > MAX_RECONCILIATION_STRETCH:
+            return []
 
     usable = np.abs(point) > reference * SCALABLE_FRACTION
     scale = np.where(usable, np.divide(target, np.where(usable, point, 1.0)), 1.0)
@@ -914,13 +1022,23 @@ def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _
 
 
 def _sum_histories(histories: list[FloatArray]) -> FloatArray:
+    """Roll children up into their parent, over the periods they reported.
+
+    A period no child reported stays unreported rather than becoming a zero —
+    the parent did not observe nothing there, it observed nothing at all.
+    """
     usable = [history for history in histories if history.size]
     if not usable:
         return np.zeros(0)
 
     length = usable[0].size
     aligned = [history for history in usable if history.size == length]
-    return np.sum(aligned, axis=0) if aligned else np.zeros(0)
+    if not aligned:
+        return np.zeros(0)
+
+    stacked = np.vstack(aligned)
+    rolled = np.nansum(stacked, axis=0)
+    return np.where(np.all(np.isnan(stacked), axis=0), np.nan, rolled)
 
 
 def _attach_parents(root: Node, results: list[SeriesResult]) -> None:
@@ -944,19 +1062,28 @@ def _forecast_segments(
     horizon: int,
     max_folds: int | None,
     confidence_level: float,
+    preparation: Preparation | None = None,
 ) -> list[SegmentOutput]:
     if not segments:
         return []
 
-    grand_total = sum(s.current_total for s in segments)
-    if grand_total <= 0:
+    shares = _shares(segments)
+    if shares is None:
         return []
 
     total_forecast = float(np.sum(total_path))
-    shares = [s.current_total / grand_total for s in segments]
 
     attempted = [
-        fit_leaf(s.label, s.periods, s.values, frequency, horizon, max_folds, confidence_level)
+        fit_leaf(
+            s.label,
+            s.periods,
+            s.values,
+            frequency,
+            horizon,
+            max_folds,
+            confidence_level,
+            preparation,
+        )
         for s in segments
     ]
     fits = {fit.label: fit for fit in attempted if fit.fitted}

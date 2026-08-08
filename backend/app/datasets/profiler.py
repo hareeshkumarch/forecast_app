@@ -9,7 +9,7 @@ import polars as pl
 
 from app.datasets.coercion import coerce_numeric, parse_dates, unpivot_periods
 from app.forecasting.frequency import infer_frequency
-from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
+from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency, MeasureAggregation
 
 CURRENCY_NAME_HINTS = (
     "revenue",
@@ -61,6 +61,50 @@ def is_currency_like(column: str) -> bool:
     if any(word in lowered for word in CURRENCY_NAME_HINTS):
         return True
     return currency_symbol(column) is not None
+
+
+#: Words that say a measure is a level rather than a quantity. Adding up the
+#: rows in a month gives a total for a quantity and nonsense for a level: sum
+#: a conversion rate over thirty rows and you get a number thirty times too
+#: big that grows with the row count and moves with nothing real.
+RATE_NAME_HINTS = (
+    "rate",
+    "ratio",
+    "percent",
+    "pct",
+    "share",
+    "index",
+    "score",
+    "average",
+    "avg",
+    "mean",
+    "median",
+    "price",
+    "temperature",
+    "temp",
+    "utilisation",
+    "utilization",
+    "margin",
+    "yield",
+    "level",
+    "balance",
+    "per_",
+    "_per",
+)
+
+
+def is_rate_like(column: str) -> bool:
+    """Whether this column is a level, and so has to be averaged rather than summed."""
+    lowered = column.lower()
+    if any(word in lowered for word in RATE_NAME_HINTS):
+        # "average selling price" is a level; "sales price total" is not.
+        return not any(word in lowered for word in ("total", "sum", "count"))
+    return False
+
+
+def natural_aggregation(column: str) -> MeasureAggregation:
+    """How this column adds up, from what its name says it holds."""
+    return MeasureAggregation.MEAN if is_rate_like(column) else MeasureAggregation.SUM
 
 
 def currency_symbol(column: str) -> str | None:
@@ -249,6 +293,11 @@ class ColumnProfile:
     min_value: str | None
     max_value: str | None
     mean_value: float | None
+    #: Values that were present in the file and could not be read as whatever
+    #: the column turned out to hold. Separate from `null_count`, because a
+    #: blank cell and an unreadable one are different problems: one is missing
+    #: data, the other is a column being read the wrong way.
+    unreadable_count: int = 0
     sample_values: list = field(default_factory=list)
     is_date_candidate: bool = False
     is_target_candidate: bool = False
@@ -391,11 +440,11 @@ def profile_frame(
 
     normalised: dict[str, pl.Series] = {}
     ambiguous_dates: list[str] = []
+    unreadable_columns: dict[str, int] = {}
 
     for position, name in enumerate(frame.columns):
         series = frame[name]
         null_count = int(series.null_count())
-        total_missing += null_count
         distinct_count = int(series.n_unique())
 
         # The name only ever gates the readings that would otherwise misfire —
@@ -414,6 +463,17 @@ def profile_frame(
                 ambiguous_dates.append(name)
         elif numeric_parse is not None and not series.dtype.is_numeric():
             normalised[name] = numeric_parse.values
+
+        # A value that arrived and could not be read is missing. Counting only
+        # the blanks in the raw column reported a date column where a third of
+        # the rows failed to parse as complete, and the rows vanished later
+        # with nothing pointing back to why.
+        unreadable = 0
+        if name in normalised:
+            unreadable = max(0, int(normalised[name].null_count()) - null_count)
+        total_missing += null_count + unreadable
+        if unreadable:
+            unreadable_columns[name] = unreadable
 
         kind = _classify(
             series,
@@ -459,6 +519,7 @@ def profile_frame(
             max_value=max_value,
             mean_value=mean_value,
             sample_values=[_stringify(v) for v in non_null.head(5).to_list()],
+            unreadable_count=unreadable,
         )
 
         if date_parse is not None:
@@ -470,7 +531,7 @@ def profile_frame(
         _score_column(profile, frame.height)
         profiles.append(profile)
 
-    _assign_roles(profiles)
+    guessed_target = _assign_roles(profiles)
 
     date_start: date | None = None
     date_end: date | None = None
@@ -527,6 +588,20 @@ def profile_frame(
         )
     if not any(p.is_target_candidate for p in profiles):
         warnings.append("No numeric column was found to use as a forecast target.")
+
+    if guessed_target:
+        chosen = next((p.name for p in profiles if p.role is ColumnRole.TARGET), None)
+        warnings.append(
+            f"No column read as something a business forecasts, so '{chosen}' was used as the "
+            "target because it is the only number here. Check that is what you meant."
+        )
+
+    for column, count in sorted(unreadable_columns.items(), key=lambda item: -item[1])[:3]:
+        share = count / frame.height * 100.0 if frame.height else 0.0
+        warnings.append(
+            f"{count} value(s) in '{column}' ({share:.0f}%) were present but could not be "
+            "read in the format the rest of the column is in, and are stored as blank."
+        )
 
     preview = frame.head(preview_rows).to_dicts()
     preview = [{k: _stringify(v) for k, v in row.items()} for row in preview]
@@ -672,7 +747,8 @@ def _mixed_measures(frame: pl.DataFrame, target: str, candidates: list[str]) -> 
     return flagged
 
 
-def _assign_roles(profiles: list[ColumnProfile]) -> None:
+def _assign_roles(profiles: list[ColumnProfile]) -> bool:
+    """Give each column its role. Returns True when the target was a fallback."""
     dates = sorted(
         (p for p in profiles if p.is_date_candidate), key=lambda p: p.date_score, reverse=True
     )
@@ -683,19 +759,31 @@ def _assign_roles(profiles: list[ColumnProfile]) -> None:
     if dates:
         dates[0].role = ColumnRole.TIME
 
+    fell_back = False
     if not targets:
         # Nothing cleared the bar, but a column that is flat — a discontinued
         # line, a product that has not launched — is still the thing being
         # forecast when it is the only number in the file. Refusing to name a
         # target here means refusing to run at all.
+        #
+        # It is a guess all the same, and forecasting the wrong column is a
+        # mistake nothing downstream can catch: the run completes, the chart
+        # draws, and the number is of something nobody asked about. So the
+        # caller is told, and says so.
         targets = sorted(
             (p for p in profiles if p.kind is ColumnKind.NUMERIC and p.role is ColumnRole.IGNORED),
             key=lambda p: p.target_score,
             reverse=True,
         )
+        fell_back = bool(targets)
 
     if targets:
         targets[0].role = ColumnRole.TARGET
+        if fell_back:
+            targets[0].reason = (
+                f"{targets[0].reason} No column scored as a forecast target, so the only "
+                "numeric column left was used — check this is what you meant to forecast."
+            ).strip()
 
     for profile in profiles:
         if profile.role is not ColumnRole.IGNORED:
@@ -712,6 +800,8 @@ def _assign_roles(profiles: list[ColumnProfile]) -> None:
                 if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0
                 else ColumnRole.MEASURE
             )
+
+    return fell_back
 
 
 def suggestions(

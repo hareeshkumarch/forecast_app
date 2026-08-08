@@ -138,6 +138,11 @@ and pipes work the same way, and a delimiter inside a quoted value is not
 counted as one. Encoding is detected across UTF-8, UTF-8 with a byte order
 mark, cp1252 and latin-1, so `région` stays `région`. A report title and a
 blank line above the header are skipped, and blank trailing rows are dropped.
+A row holding more values than the header has columns is refused rather than
+truncated, because truncation drops whatever sat past the last column and does
+it in silence. A workbook is opened at the sheet that holds the data rather
+than at whichever one comes first, and a label merged down a block of rows is
+carried down the rows it spans instead of arriving once with nulls beneath it.
 
 **Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
 a German ERP as `1.234,56`, from a French one as `1 234,56`, from an Indian
@@ -170,7 +175,17 @@ fits both readings, no algorithm can do better than guess, so the profile says
 so and `date_order` on the upload settles it by hand.
 
 How each column was read is recorded and shown beside it, because a date read
-in the wrong order is the one mistake nothing downstream can catch.
+in the wrong order is the one mistake nothing downstream can catch. A value
+that was present and could not be read counts as missing and is reported as
+such — a blank cell and an unreadable one are different problems, and only one
+of them is about the data.
+
+A fiscal period label means the company's own year, not January's:
+`FISCAL_YEAR_START_MONTH` moves `FY24-P01` to October for a US federal
+calendar or April for an Indian one. And the calendar step is inferred from
+whether the gaps actually agree on one — five readings a day apart and one a
+year later have a median gap of one day, and calling that daily asks for four
+hundred periods holding six observations.
 
 **Two table shapes are recognised as shapes.** A planning sheet writes its
 periods across the top — `Jan 2024`, `Feb 2024`, … — and those headings are
@@ -246,6 +261,21 @@ producing a forecast nobody can account for. The scoring rule the API reports
 is built from the weights actually in force, so a re-weighted deployment
 describes itself correctly.
 
+### Breakdowns
+
+A grouped run is one question asked at several levels, so everything under the
+headline number is answered by the same settings. A period a series has no row
+for is a gap rather than a zero — a SKU nobody reported and a SKU that sold
+nothing are different facts, and which one it is comes from the run's gap-fill
+setting rather than from a hard-coded zero. The reducer is the run's own, so a
+breakdown of an averaged measure is averaged. A driver, though, adds up the way
+*its* name says it does: summing a price or a conversion rate over the rows in
+a month gives a figure that grows with the row count.
+
+A total that is negative or zero still gets a breakdown. Margin, net-of-returns
+and balance measures go below zero routinely, and dividing by the signed total
+used to discard every series under it and say nothing.
+
 ### What it refuses
 
 A run that reports "completed" has to have done what it was asked, so the
@@ -275,7 +305,10 @@ deviations — and marks the run as drifting when it has missed the same way in
 period after period, which is the kind of error that will not correct itself.
 
 `POST /api/forecasts/{id}/simulate` re-prices a finished run under a different
-assumption. Volume and target shifts scale it directly; a driver multiplier
+assumption. It re-prices — it does not refit, because the history under the new
+assumption does not exist — and it says so, in a `method` field beside the
+numbers. The bands widen with the size of the intervention, because a scenario
+nothing measured is less certain than the forecast it came from. Volume and target shifts scale it directly; a driver multiplier
 moves the total by that driver's own measured share of the movement, so asking
 for 2× on a driver holding 40% of the impact lifts the forecast by 40%, not
 100%. Drivers the run never found are refused rather than silently applied.

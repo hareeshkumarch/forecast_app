@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     #: The band the best/worst case quote, as distinct from the reported interval.
     scenario_confidence: float = Field(default=0.95, gt=0.0, lt=1.0)
 
+    # ---- Calendar ----------------------------------------------------------
+    #: The calendar month a fiscal year starts in. An ERP writing FY24-P01
+    #: means the first period of its own year, not January — a US federal
+    #: calendar starts in October, an Indian one in April, and reading P01 as
+    #: January puts every period of that file three to nine months out.
+    fiscal_year_start_month: int = Field(default=1, ge=1, le=12)
+
     # ---- LLM ---------------------------------------------------------------
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
