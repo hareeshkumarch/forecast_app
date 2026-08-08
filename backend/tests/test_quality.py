@@ -143,11 +143,14 @@ def test_severe_gaps_block_the_run_but_mild_ones_only_warn() -> None:
     assert severe.blocked
 
 
-def test_a_constant_target_is_refused() -> None:
+def test_a_constant_target_is_reported_but_not_refused() -> None:
+    """A discontinued line is the same value in every period, and the flat
+    forecast is the right answer for it. What cannot be done is measure that
+    forecast — every percentage error divides by a total that never moves."""
     report = report_for(months(12), [42.0] * 12)
 
     assert report.constant_target
-    assert report.blocked
+    assert not report.blocked
     assert any(issue.code == "constant_target" for issue in report.issues)
 
 

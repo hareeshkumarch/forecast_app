@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date
 
 import numpy as np
 import numpy.typing as npt
@@ -220,3 +221,59 @@ def build_panel(
         links=[link for link, _ in kept],
         series={link.name: column for link, column in kept},
     )
+
+
+@dataclass(slots=True)
+class DriverSource:
+    """The candidate columns, and the calendar they are aligned to.
+
+    Which column leads the target, and by how many periods, is discovered by
+    correlating them — so discovering it once over the whole history chooses
+    the drivers with the validation target in hand. On a wide panel of
+    candidates that is enough on its own to make a backtest look good: some
+    column always correlates with the periods being scored.
+
+    So discovery is asked for per window. `panel_for` ranks the candidates
+    against the training window alone, then carries the chosen columns past it
+    — a driver that leads the target is by definition observed over the
+    periods being predicted, which is the whole reason it is worth reading.
+    """
+
+    periods: list[date]
+    columns: dict[str, FloatArray]
+    horizon: int
+    frequency: ForecastFrequency
+    _at: dict[date, int] = field(init=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self._at = {period: index for index, period in enumerate(self.periods)}
+
+    def __bool__(self) -> bool:
+        return bool(self.columns)
+
+    def panel_for(self, target: FloatArray, window: list[date]) -> DriverPanel:
+        if not self.columns or not window:
+            return DriverPanel()
+
+        start = self._at.get(window[0])
+        if start is None:
+            return DriverPanel()
+        stop = start + len(window)
+
+        discovered = build_panel(
+            target,
+            {name: column[start:stop] for name, column in self.columns.items()},
+            horizon=self.horizon,
+            frequency=self.frequency,
+        )
+        if not discovered:
+            return DriverPanel()
+
+        # Sliced from the window's own start, so index 0 of the panel is index
+        # 0 of the training data. A rolling fold starts partway through the
+        # history, and a panel indexed from the series start would hand every
+        # model driver values from the wrong periods.
+        return DriverPanel(
+            links=discovered.links,
+            series={link.name: self.columns[link.name][start:] for link in discovered.links},
+        )

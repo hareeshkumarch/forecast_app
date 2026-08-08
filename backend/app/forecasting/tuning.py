@@ -107,11 +107,28 @@ def validation_splits(n_rows: int, horizon: int) -> list[tuple[int, int]]:
     return list(reversed(splits))
 
 
-def cache_key(name: str, matrix: FloatArray, target: FloatArray, space: SearchSpace) -> str:
-    digest = hashlib.blake2s(digest_size=12)
+def cache_key(
+    name: str,
+    matrix: FloatArray,
+    target: FloatArray,
+    space: SearchSpace,
+    horizon: int,
+) -> str:
+    """Everything the answer depends on, and nothing it does not.
+
+    The features have to be hashed by content. Hashing only their shape means
+    two different feature sets over the same target — which is exactly what a
+    driver column being added or dropped produces — collide, and the second
+    one is answered with the first one's hyperparameters. So do the search
+    space's *values*: a space with the same keys and different candidates is a
+    different search.
+    """
+    digest = hashlib.blake2s(digest_size=16)
     digest.update(name.encode())
-    digest.update(str(sorted(space.choices)).encode())
+    digest.update(repr([(key, list(space.choices[key])) for key in sorted(space.choices)]).encode())
+    digest.update(str(horizon).encode())
     digest.update(np.asarray(matrix.shape, dtype=np.int64).tobytes())
+    digest.update(np.ascontiguousarray(matrix, dtype=np.float64).tobytes())
     digest.update(np.ascontiguousarray(target, dtype=np.float64).tobytes())
     return digest.hexdigest()
 
@@ -123,13 +140,70 @@ def tuning_error(actual: FloatArray, predicted: FloatArray) -> float:
     return float(np.sum(np.abs(actual - predicted)) / denominator * 100.0)
 
 
+def blended_error(
+    actual: FloatArray, predicted: FloatArray, weights: dict[str, float] | None
+) -> float:
+    """Score a candidate the way the run will score the model it belongs to.
+
+    Tuning that minimises one error and selection that minimises another will
+    disagree, and the disagreement is silent: the search hands over the
+    hyperparameters that were best at the wrong thing. On an intermittent
+    series it is worse than silent, because a percentage error rewards
+    forecasting zero and that is the whole reason the run stops using one.
+
+    The run's weights come from settings; min-max normalising across
+    candidates the way selection does is not available for a single model, so
+    each metric is put on a comparable percentage scale against the level of
+    the series instead.
+    """
+    if not weights:
+        return tuning_error(actual, predicted)
+
+    from app.forecasting.metrics import evaluate
+
+    scores = evaluate(actual, predicted)
+    scale = float(np.mean(np.abs(actual)))
+    if not np.isfinite(scale) or scale <= 0.0:
+        scale = 1.0
+
+    comparable = {
+        "wmape": scores["wmape"],
+        "smape": scores["smape"],
+        "rmse": scores["rmse"] / scale * 100.0,
+        "mae": scores["mae"] / scale * 100.0,
+    }
+
+    total = sum(weight for metric, weight in weights.items() if metric in comparable)
+    if total <= 0.0:
+        return tuning_error(actual, predicted)
+
+    return (
+        sum(
+            weight * comparable[metric]
+            for metric, weight in weights.items()
+            if metric in comparable
+        )
+        / total
+    )
+
+
+#: Given the parameters and a half-open range of validation rows, train on
+#: everything before `start` and predict rows `[start, end)`. The caller owns
+#: the prediction because only the caller knows how the model will really be
+#: asked for a forecast — reading the answers out of a design matrix built
+#: from the actuals measures one-step-ahead accuracy with the truth in hand,
+#: and a recursive model never has that.
+FitPredict = Callable[[dict[str, object], int, int], FloatArray]
+
+
 def tune(
     name: str,
     matrix: FloatArray,
     target: FloatArray,
     space: SearchSpace,
-    fit_predict: Callable[[dict[str, object], FloatArray, FloatArray, FloatArray], FloatArray],
+    fit_predict: FitPredict,
     horizon: int,
+    metric_weights: dict[str, float] | None = None,
 ) -> TuningResult:
     n_rows = int(matrix.shape[0])
     splits = validation_splits(n_rows, horizon)
@@ -138,7 +212,7 @@ def tune(
     if not splits:
         return TuningResult(defaults, float("nan"), 0, "defaults_short_history", 0)
 
-    key = cache_key(name, matrix, target, space)
+    key = cache_key(name, matrix, target, space, horizon)
     cached = _CACHE.get(key)
     if cached is not None:
         return cached
@@ -164,12 +238,13 @@ def tune(
         method = "random"
 
     best_params, best_score = defaults, float("inf")
+    evaluated = 0
 
     for params in candidates:
         errors: list[float] = []
         for start, end in splits:
             try:
-                predictions = fit_predict(params, matrix[:start], target[:start], matrix[start:end])
+                predictions = fit_predict(params, start, end)
             except Exception:
                 errors = []
                 break
@@ -179,15 +254,20 @@ def tune(
             if predictions.size != actual.size or not np.all(np.isfinite(predictions)):
                 errors = []
                 break
-            errors.append(tuning_error(actual, predictions))
+            errors.append(blended_error(actual, predictions, metric_weights))
 
         if not errors:
             continue
 
+        evaluated += 1
         score = float(np.mean(errors))
         if score < best_score:
             best_params, best_score = params, score
 
-    result = TuningResult(best_params, best_score, len(candidates), method, len(splits))
+    # `evaluations` counts candidates that produced a score. Reporting the
+    # number tried made a search where every fit raised look like a search
+    # that ran, and the defaults it fell back to look like a winner.
+    method = method if evaluated else "defaults_all_candidates_failed"
+    result = TuningResult(best_params, best_score, evaluated, method, len(splits))
     _CACHE.put(key, result)
     return result

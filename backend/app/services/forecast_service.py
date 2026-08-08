@@ -33,6 +33,7 @@ from app.forecasting.engine import (
     SeriesInput,
     run_forecast,
 )
+from app.forecasting.preparation import Preparation
 from app.insights.engine import build_context, generate_insights
 from app.insights.llm import LlmUsageRecord, llm_enabled, rewrite_insights
 from app.models.entities import (
@@ -50,9 +51,11 @@ from app.models.entities import (
     RegionalForecast,
 )
 from app.models.enums import (
+    ColumnKind,
     ColumnRole,
     ForecastFrequency,
     GapFill,
+    IssueSeverity,
     MeasureAggregation,
     ModelKind,
     OutlierTreatment,
@@ -330,7 +333,17 @@ async def create_run(
                 detail={"available_columns": sorted(available)},
             )
 
+    kinds = {column.name: column.kind for column in dataset.columns}
+    _require_kind(kinds, resolved_time, ColumnKind.DATE, "time")
+    _require_kind(kinds, resolved_target, ColumnKind.NUMERIC, "target")
+    _require_kind(kinds, weight_column, ColumnKind.NUMERIC, "weight")
+
     grain = _validated_grain(group_by, available, resolved_time, resolved_target)
+    _validated_drivers(driver_columns, kinds)
+    _validated_models(candidate_models)
+    resolved_horizon = _validated_horizon(
+        resolved_horizon, dataset, resolved_frequency, requested=horizon is not None
+    )
 
     if region_column is None or category_column is None:
         guessed_region, guessed_category = dataset_service.guess_segment_columns(dataset)
@@ -392,6 +405,141 @@ async def create_run(
         )
     )
     return run
+
+
+#: What each role needs the column to actually hold, in the words a customer
+#: would use for it.
+KIND_DESCRIPTION: dict[ColumnKind, str] = {
+    ColumnKind.DATE: "dates",
+    ColumnKind.NUMERIC: "numbers",
+    ColumnKind.CATEGORICAL: "categories",
+    ColumnKind.BOOLEAN: "true/false values",
+    ColumnKind.TEXT: "text",
+}
+
+
+def _require_kind(
+    kinds: dict[str, ColumnKind], column: str | None, expected: ColumnKind, role: str
+) -> None:
+    """Refuse a column that cannot play the part it was given.
+
+    Checking only that the name exists lets a text column be chosen as the
+    target: DuckDB's TRY_CAST turns every row of it into NULL, the series comes
+    back empty, and the run fails somewhere far from the choice that caused it.
+    """
+    if not column:
+        return
+
+    actual = kinds.get(column)
+    if actual is None or actual is expected:
+        return
+
+    raise ValidationError(
+        f"'{column}' holds {KIND_DESCRIPTION.get(actual, actual.value)}, and the {role} "
+        f"column has to hold {KIND_DESCRIPTION[expected]}.",
+        detail={
+            "column": column,
+            "role": role,
+            "found_kind": actual.value,
+            "required_kind": expected.value,
+            "candidates": sorted(name for name, kind in kinds.items() if kind is expected),
+        },
+    )
+
+
+def _validated_drivers(driver_columns: list[str] | None, kinds: dict[str, ColumnKind]) -> None:
+    """A driver that was asked for and cannot be used has to say so.
+
+    The selection used to be filtered down to the numeric columns still going
+    spare, and anything left over was dropped without a word — so a run
+    configured to read three drivers could read none of them and still report
+    success.
+    """
+    if not driver_columns:
+        return
+
+    unknown = [name for name in driver_columns if name not in kinds]
+    if unknown:
+        raise ValidationError(
+            f"{', '.join(repr(name) for name in unknown)} is not a column in this dataset "
+            "(selected as a driver).",
+            detail={"available_columns": sorted(kinds)},
+        )
+
+    not_numeric = [name for name in driver_columns if kinds[name] is not ColumnKind.NUMERIC]
+    if not_numeric:
+        raise ValidationError(
+            f"{', '.join(repr(name) for name in not_numeric)} cannot be a driver: a driver "
+            "has to hold numbers.",
+            detail={
+                "numeric_columns": sorted(
+                    name for name, kind in kinds.items() if kind is ColumnKind.NUMERIC
+                )
+            },
+        )
+
+
+def _validated_models(candidate_models: list[str] | None) -> None:
+    """Refuse a model roster that names something the engine does not have.
+
+    A name that matched nothing used to leave the filter empty, and an empty
+    filter fell back to the full roster — so restricting a run to one model
+    could quietly run all of them.
+    """
+    if not candidate_models:
+        return
+
+    known = {kind.value for kind in ModelKind}
+    unknown = [name for name in candidate_models if str(name).lower() not in known]
+    if unknown:
+        raise ValidationError(
+            f"{', '.join(repr(name) for name in unknown)} is not a model this engine can fit.",
+            detail={"available_models": sorted(known)},
+        )
+
+
+#: A forecast may reach this far past the history it was fitted on. Beyond it
+#: the horizon is longer than the evidence, and no backtest fold can be built
+#: that measures it.
+MAX_HORIZON_SHARE = 0.5
+
+
+def _validated_horizon(
+    horizon: int, dataset: Dataset, frequency: ForecastFrequency, *, requested: bool
+) -> int:
+    """Hold the horizon to what the history can speak to.
+
+    Asking for twenty-four months from twelve months of history is not a hard
+    forecast, it is an unmeasurable one: no backtest fold can hold out a window
+    that long, so the accuracy shown beside it was never tested at that range.
+
+    A horizon somebody chose is refused rather than quietly shortened — a run
+    that answers a different question from the one it was asked is worse than
+    one that does not answer. A horizon nobody chose is the default, and that
+    is clamped, because failing a run over a number the user never typed is
+    just as unhelpful.
+    """
+    if horizon <= 0:
+        raise ValidationError("The forecast horizon has to be at least one period.")
+
+    start, end = dataset.date_range_start, dataset.date_range_end
+    if start is None or end is None:
+        return horizon
+
+    periods = len(quality.expected_periods(start, end, frequency))
+    ceiling = int(periods * MAX_HORIZON_SHARE)
+    if ceiling < 1 or horizon <= ceiling:
+        return horizon
+
+    if not requested:
+        return max(1, ceiling)
+
+    raise ValidationError(
+        f"A {horizon}-period horizon is longer than this dataset can support: it holds "
+        f"{periods} {frequency.value} periods, so at most {ceiling} can be forecast "
+        "and measured.",
+        detail={"periods_available": periods, "max_horizon": ceiling},
+    )
 
 
 def _validated_grain(
@@ -763,18 +911,43 @@ def _build_payload(
         fill=run.gap_fill,
     )
 
-    periods, values, weights, fill_applied, _missing = quality.regularise(
+    # A severe issue is the profiler saying this series cannot be forecast —
+    # no usable rows, too few periods, a target that never changes. Running
+    # anyway produces a number, and a number produced from that is worse than
+    # no answer, because it is indistinguishable from a real one.
+    if report.blocked:
+        severe = [issue for issue in report.issues if issue.severity is IssueSeverity.SEVERE]
+        raise ForecastError(
+            "This series cannot be forecast as configured. "
+            + " ".join(f"{issue.message} {issue.remedy}" for issue in severe),
+            detail={"issues": [issue.as_dict() for issue in severe]},
+        )
+
+    # The calendar is made regular here; the holes in it are left as holes.
+    # Filling them, and clipping the outliers, are modelling decisions the
+    # engine makes fold by fold — done once over the whole history they would
+    # put the validation windows into their own training data.
+    aligned = quality.align_calendar(
         series.periods, series.values, series.weights, run.frequency, run.gap_fill
     )
+    periods, values, weights = aligned.periods, aligned.values, aligned.weights
 
     overrides = RunOverrides.from_stored(run.options)
 
-    if run.outlier_treatment is OutlierTreatment.WINSORISE:
+    preparation = Preparation(
+        fill=run.gap_fill if aligned.missing and aligned.regular else GapFill.NONE,
         # The override is a count of robust deviations, which is what `sigmas` is.
-        values = quality.winsorise(
-            values,
-            sigmas=overrides.outlier_mad_threshold or WINSORISE_SIGMAS,
-        )
+        winsorise_sigmas=(
+            (overrides.outlier_mad_threshold or WINSORISE_SIGMAS)
+            if run.outlier_treatment is OutlierTreatment.WINSORISE
+            else None
+        ),
+    )
+    fill_applied = (
+        quality.resolve_fill(values, run.gap_fill)
+        if preparation.fill is not GapFill.NONE
+        else GapFill.NONE
+    )
 
     regions = _segments(parquet_path, run, run.region_column)
     categories = _segments(parquet_path, run, run.category_column)
@@ -790,6 +963,7 @@ def _build_payload(
 
     return ForecastInput(
         series=SeriesInput(periods=periods, values=values, weights=weights),
+        preparation=preparation,
         drivers=drivers,
         target_label=run.target_column,
         quality={

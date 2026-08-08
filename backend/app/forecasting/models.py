@@ -779,6 +779,9 @@ class GradientBoostingForecaster:
     max_depth: int | None = None
     learning_rate: float | None = None
     drivers: DriverPanel = field(default_factory=DriverPanel)
+    #: The metrics the run scores by, so the hyperparameter search minimises
+    #: the same thing model selection will.
+    metric_weights: dict[str, float] | None = None
     kind: ModelKind = field(default=ModelKind.GRADIENT_BOOSTING, init=False)
     _model: FittedModel = field(default=None, init=False)
     _spec: FeatureSpec | None = field(default=None, init=False)
@@ -830,7 +833,7 @@ class GradientBoostingForecaster:
         spec = build_feature_spec(
             len(y), self.frequency, profile=self.profile, drivers=self.drivers
         )
-        matrix, target, names, _rows = build_design_matrix(y, periods, spec, self.frequency)
+        matrix, target, names, rows = build_design_matrix(y, periods, spec, self.frequency)
 
         min_rows = settings.min_gbm_rows
         if matrix.shape[0] < min_rows:
@@ -856,16 +859,20 @@ class GradientBoostingForecaster:
         if offered:
             space = SearchSpace({**space.choices, "drivers": [True, False]})
 
-        def fit_predict(
-            params: dict[str, object],
-            train_x: FloatArray,
-            train_y: FloatArray,
-            valid_x: FloatArray,
-        ) -> FloatArray:
+        def fit_predict(params: dict[str, object], start: int, end: int) -> FloatArray:
+            """Score these parameters the way the model will really be asked.
+
+            Reading the validation block out of the design matrix hands the
+            model the true lag-1 value at every step — it is being graded on
+            one-step-ahead accuracy with the answers in front of it. Used for
+            real it feeds its own output back, so a candidate that leans hard
+            on the last observation looks superb here and drifts badly there.
+            The search then picks exactly the wrong depth and learning rate.
+            """
             keep = self._kept_columns(params, from_driver)
-            estimator = self._estimator(params, len(train_y))
-            estimator.fit(train_x[:, keep], train_y)
-            return estimator.predict(valid_x[:, keep])
+            estimator = self._estimator(params, start)
+            estimator.fit(matrix[:start][:, keep], target[:start])
+            return self._recursive_predictions(estimator, keep, spec, y, periods, rows, start, end)
 
         horizon = self.profile.seasonal_period if self.profile else 6
         result = tune(
@@ -875,6 +882,7 @@ class GradientBoostingForecaster:
             space,
             fit_predict,
             max(1, min(horizon, 12)),
+            metric_weights=self.metric_weights,
         )
 
         keep = self._kept_columns(result.params, from_driver)
@@ -906,6 +914,34 @@ class GradientBoostingForecaster:
         if params.get("drivers", True):
             return np.ones(from_driver.size, dtype=bool)
         return ~from_driver
+
+    def _recursive_predictions(
+        self,
+        estimator: FittedModel,
+        keep: npt.NDArray[np.bool_],
+        spec: FeatureSpec,
+        y: FloatArray,
+        periods: list[date],
+        rows: list[int],
+        start: int,
+        end: int,
+    ) -> FloatArray:
+        """Walk the validation block forward, feeding each step its own output."""
+        from app.forecasting.features import build_future_row
+
+        first, last = rows[start], rows[end - 1]
+        history = np.asarray(y[:first], dtype=np.float64).copy()
+        seen = list(periods[:first])
+        predicted: dict[int, float] = {}
+
+        for position in range(first, last + 1):
+            row = build_future_row(history, seen, periods[position], spec, self.frequency)
+            value = float(estimator.predict(row[keep].reshape(1, -1))[0])
+            predicted[position] = value
+            history = np.append(history, value)
+            seen.append(periods[position])
+
+        return np.array([predicted[rows[index]] for index in range(start, end)], dtype=np.float64)
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
         if self._model is None or self._spec is None:
@@ -1037,6 +1073,18 @@ def _default_period(frequency: ForecastFrequency) -> int:
     return seasonal_period(frequency)
 
 
+def _metric_weights(
+    options: dict[str, object], profile: SeriesProfile | None
+) -> dict[str, float] | None:
+    """The run's scoring weights, or the ones its profile implies."""
+    from app.forecasting.selection import metric_weights_for
+
+    supplied = options.get("metric_weights")
+    if isinstance(supplied, dict) and supplied:
+        return {str(key): float(value) for key, value in supplied.items()}
+    return metric_weights_for(bool(profile.intermittent)) if profile is not None else None
+
+
 def build_candidates(
     frequency: ForecastFrequency,
     options: dict[str, object] | None = None,
@@ -1071,6 +1119,7 @@ def build_candidates(
             max_depth=as_int(gbm_depth, 3) if gbm_depth is not None else None,
             learning_rate=as_float(gbm_lr, 0.06) if gbm_lr is not None else None,
             drivers=panel,
+            metric_weights=_metric_weights(opts, profile),
         ),
     ]
 
@@ -1090,10 +1139,21 @@ def build_candidates(
         candidates.append(CrostonForecaster(frequency, profile))
 
     if isinstance(allowed_models, list) and allowed_models:
-        allowed_set = {str(m).lower() for m in allowed_models}
+        allowed_set = {str(model).lower() for model in allowed_models}
         filtered = [c for c in candidates if c.kind.value.lower() in allowed_set]
-        if filtered:
-            return filtered
+        if not filtered:
+            # Falling back to the full roster made restricting a run to models
+            # this deployment cannot fit — Prophet without Prophet installed,
+            # Croston on a series that is not intermittent — run everything
+            # instead, and report the winner as though it had been asked for.
+            raise ValueError(
+                "None of the selected models can be fitted here: "
+                + ", ".join(sorted(allowed_set))
+                + ". Available for this series: "
+                + ", ".join(sorted(c.kind.value for c in candidates))
+                + "."
+            )
+        return filtered
 
     return candidates
 

@@ -206,8 +206,24 @@ training size.
 Candidates are backtested over expanding (or rolling, on long histories)
 windows, scored on a weighted blend of wMAPE/sMAPE/RMSE — or absolute error for
 intermittent demand, where percentage metrics reward forecasting zero — and the
-winner refits on the full history. The profile is recomputed inside every fold,
-so nothing leaks backwards from the future.
+winner refits on the full history.
+
+**Nothing leaks backwards from the future.** Every step that looks at the
+values around a point is done inside the fold that is about to be scored, not
+once over the whole history: the series profile, the variance transform, the
+interpolation that fills a missing period, the clip that damps an outlier, and
+the search for which column leads the target and by how many periods. Any one
+of them done up front puts the validation window into its own training data,
+and the only symptom is a reported accuracy better than the real one. A period
+that was never observed is not scored at all — filling a gap invents a number,
+and grading the model against it reports an accuracy nobody measured.
+
+Models that tune their own hyperparameters search against the metrics the run
+is scored by, and are evaluated the way they will really be used. Reading a
+validation block out of a design matrix hands a recursive model the true last
+observation at every step, so it is graded on one-step-ahead accuracy with the
+answers in front of it — and the search then picks the settings that lean
+hardest on the value it will not have.
 
 ### Optional models
 
@@ -229,6 +245,26 @@ outside its range fails the start naming the variable, instead of quietly
 producing a forecast nobody can account for. The scoring rule the API reports
 is built from the weights actually in force, so a re-weighted deployment
 describes itself correctly.
+
+### What it refuses
+
+A run that reports "completed" has to have done what it was asked, so the
+things that cannot be done are refused rather than quietly skipped. A column
+is checked for what it *holds*, not just that it exists — a text column chosen
+as the target casts to a column of nulls and fails somewhere far from the
+choice that caused it. A driver that is not numeric, or not in the dataset, is
+named back rather than filtered out of the list in silence. A model roster
+that matches nothing fails the run instead of falling back to the full roster
+and reporting the winner as though it had been asked for. A horizon longer
+than half the history is refused, because no backtest fold can be built that
+measures a forecast that far out. And a series the profiler marks severe — no
+usable rows, too few periods — stops there, because a number produced from
+that is indistinguishable from a real one.
+
+A target that never moves is not in that list. A discontinued line is the same
+value in every period and the flat forecast is the right answer for it; what
+the report says instead is that its accuracy cannot be measured, because every
+percentage error divides by a total that does not change.
 
 ### After the fact
 

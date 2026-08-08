@@ -95,6 +95,27 @@ def _calendar_features(periods: list[date], frequency: ForecastFrequency) -> dic
     return out
 
 
+def _rolling(lag1: FloatArray, window: int) -> tuple[FloatArray, FloatArray]:
+    """Mean and population standard deviation over each full trailing window.
+
+    A window holding any hole yields NaN, which is what NaN arithmetic does on
+    its own — so this needs no mask and no Python loop. It is worth the stride
+    trick: a recursive forecast rebuilds these columns once per step, and a
+    hyperparameter search does that for every candidate on every split.
+    """
+    n = lag1.size
+    means = np.full(n, np.nan)
+    stds = np.full(n, np.nan)
+    if n <= window:
+        return means, stds
+
+    view = np.lib.stride_tricks.sliding_window_view(lag1, window)
+    with np.errstate(invalid="ignore"):
+        means[window:] = view[1:].mean(axis=1)
+        stds[window:] = view[1:].std(axis=1)
+    return means, stds
+
+
 def _feature_columns(
     values: FloatArray,
     periods: list[date],
@@ -113,20 +134,10 @@ def _feature_columns(
     lag1[1:] = values[:-1]
 
     for window in spec.rolling_windows:
-        means = np.full(n, np.nan)
-        stds = np.full(n, np.nan)
-        for i in range(window, n):
-            chunk = lag1[i - window + 1 : i + 1]
-            if chunk.size == window and not np.isnan(chunk).any():
-                means[i] = float(np.mean(chunk))
-                stds[i] = float(np.std(chunk))
+        means, stds = _rolling(lag1, window)
         columns[f"roll_mean_{window}"] = means
         columns[f"roll_std_{window}"] = stds
-
-        delta = np.full(n, np.nan)
-        valid = ~np.isnan(means) & ~np.isnan(lag1)
-        delta[valid] = lag1[valid] - means[valid]
-        columns[f"roll_delta_{window}"] = delta
+        columns[f"roll_delta_{window}"] = lag1 - means
 
     if spec.use_trend:
         columns["trend"] = np.arange(n, dtype=float)
@@ -137,8 +148,7 @@ def _feature_columns(
     if spec.use_seasonal and 2 * spec.seasonal_period < n:
         p = spec.seasonal_period
         seasonal_delta = np.full(n, np.nan)
-        for i in range(2 * p, n):
-            seasonal_delta[i] = values[i - p] - values[i - 2 * p]
+        seasonal_delta[2 * p :] = values[p : n - p] - values[: n - 2 * p]
         columns["seasonal_delta"] = seasonal_delta
 
     columns.update(spec.drivers.columns(n))
