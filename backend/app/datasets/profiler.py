@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 import polars as pl
 
-from app.datasets.coercion import coerce_numeric, parse_dates
+from app.datasets.coercion import coerce_numeric, parse_dates, unpivot_periods
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
@@ -199,6 +199,17 @@ DIMENSION_NAME_HINTS = (
 WEIGHT_NAME_HINTS = ("weight", "units", "quantity", "qty", "volume")
 
 
+#: Column names that say outright the rows hold different measures.
+MEASURE_NAME_HINTS = ("metric", "kpi", "measure", "indicator", "variable", "series")
+
+#: How far apart two groups' typical magnitudes have to be before they are
+#: different quantities rather than slices of one. Revenue against units is
+#: thousands against tens; two sales regions are the same order of magnitude.
+MIXED_MEASURE_RATIO = 50.0
+
+#: Only worth checking a column that could plausibly be a measure label.
+MAX_MEASURE_LABELS = 20
+
 #: A column with more distinct values than this is an identifier, not a
 #: category, however large the file. Grouping by one asks for a forecast per
 #: customer, and the run cap would pool almost all of it into "Others".
@@ -368,6 +379,16 @@ def profile_frame(
 
     parsed_date_columns: dict[str, pl.Series] = {}
 
+    # A planning sheet writes its periods across the top. Those headings are
+    # data, so the table is turned on its side before anything is read from it.
+    reshaped = unpivot_periods(frame)
+    if reshaped is not None:
+        frame, periods = reshaped
+        warnings.append(
+            f"The {len(periods)} period columns across the top of this file were turned into "
+            "rows, so every one of them can be forecast."
+        )
+
     normalised: dict[str, pl.Series] = {}
     ambiguous_dates: list[str] = []
 
@@ -467,6 +488,20 @@ def profile_frame(
                     f"Couldn't infer a regular frequency from '{time_column.name}'. "
                     "Pick one manually — the data may have irregular gaps."
                 )
+
+    target_column = next((p for p in profiles if p.role is ColumnRole.TARGET), None)
+    if target_column is not None:
+        for column in _mixed_measures(
+            frame,
+            target_column.name,
+            [p.name for p in profiles if p.kind is ColumnKind.CATEGORICAL],
+        ):
+            warnings.append(
+                f"'{column}' looks like it names different measures rather than slices of one — "
+                f"the values in '{target_column.name}' are orders of magnitude apart across it. "
+                f"Group the run by '{column}', or filter to a single measure first; totalling "
+                "them would add quantities that do not belong together."
+            )
 
     for column in ambiguous_dates:
         warnings.append(
@@ -590,6 +625,53 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
     profile.reason = ", ".join(reasons) if reasons else "no strong signal"
 
 
+def _mixed_measures(frame: pl.DataFrame, target: str, candidates: list[str]) -> list[str]:
+    """Categorical columns whose groups hold quantities of different sizes.
+
+    Long-format data — date, metric, value — is the shape this catches. It
+    profiles perfectly well: a date column, a category and a number. But the
+    number means revenue on one row and units on the next, and totalling them
+    produces a figure that is not any quantity at all. Nothing downstream can
+    notice, because by then it is just a column of doubles.
+    """
+    if target not in frame.columns:
+        return []
+
+    values = frame[target]
+    if not values.dtype.is_numeric():
+        return []
+
+    flagged: list[str] = []
+    for name in candidates:
+        if name not in frame.columns:
+            continue
+        if _name_score(name, MEASURE_NAME_HINTS) >= 1.0:
+            flagged.append(name)
+            continue
+
+        labels = frame[name]
+        if not 2 <= labels.n_unique() <= MAX_MEASURE_LABELS:
+            continue
+
+        try:
+            grouped = (
+                frame.select(pl.col(name), pl.col(target).abs().alias("_magnitude"))
+                .drop_nulls()
+                .group_by(name)
+                .agg(pl.col("_magnitude").median())
+            )
+        except Exception:
+            continue
+
+        medians = [float(v) for v in grouped["_magnitude"].drop_nulls() if float(v) > 0]
+        if len(medians) < 2:
+            continue
+        if max(medians) / min(medians) >= MIXED_MEASURE_RATIO:
+            flagged.append(name)
+
+    return flagged
+
+
 def _assign_roles(profiles: list[ColumnProfile]) -> None:
     dates = sorted(
         (p for p in profiles if p.is_date_candidate), key=lambda p: p.date_score, reverse=True
@@ -600,6 +682,18 @@ def _assign_roles(profiles: list[ColumnProfile]) -> None:
 
     if dates:
         dates[0].role = ColumnRole.TIME
+
+    if not targets:
+        # Nothing cleared the bar, but a column that is flat — a discontinued
+        # line, a product that has not launched — is still the thing being
+        # forecast when it is the only number in the file. Refusing to name a
+        # target here means refusing to run at all.
+        targets = sorted(
+            (p for p in profiles if p.kind is ColumnKind.NUMERIC and p.role is ColumnRole.IGNORED),
+            key=lambda p: p.target_score,
+            reverse=True,
+        )
+
     if targets:
         targets[0].role = ColumnRole.TARGET
 

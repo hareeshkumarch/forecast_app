@@ -131,12 +131,21 @@ docker compose up --build
 Uploads and connectors go through the same profiler, which works out what each
 column *is* before anything is forecast from it.
 
+**The file opens first.** The delimiter is sniffed rather than assumed — a
+semicolon CSV is what Excel writes anywhere the comma is the decimal separator,
+and reading it as a comma file yields one column holding the whole line. Tabs
+and pipes work the same way, and a delimiter inside a quoted value is not
+counted as one. Encoding is detected across UTF-8, UTF-8 with a byte order
+mark, cp1252 and latin-1, so `région` stays `région`. A report title and a
+blank line above the header are skipped, and blank trailing rows are dropped.
+
 **Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
-a German ERP as `1.234,56`, from an accounting package as `(890.00)`, and with
-a unit stuck on the end as `1000 kg`. All of those are numbers, and all of them
-are read as numbers. Dates arrive as ISO, as `15.01.2024`, as an ISO timestamp
-with or without milliseconds, as `20240115`, as `2024Q1`, as `2024-W03`, and as
-the Excel serial `45292` that a spreadsheet leaves behind when it loses its
+a German ERP as `1.234,56`, from an accounting package as `(890.00)`, from a
+mainframe as `1000-`, and with a unit stuck on the end as `1000 kg`. All of
+those are numbers, and all of them are read as numbers. Dates arrive as ISO, as
+`15.01.2024`, as an ISO timestamp with or without milliseconds and with or
+without a zone, as `20240115`, as `2024Q1`, as `2024-W03`, as `FY24-P01`, and
+as the Excel serial `45292` that a spreadsheet leaves behind when it loses its
 formatting. A convention is chosen from a sample, applied to the whole column,
 and kept only if it explains nearly every row — so one stray token cannot drag
 a column into the wrong reading.
@@ -157,6 +166,15 @@ so and `date_order` on the upload settles it by hand.
 
 How each column was read is recorded and shown beside it, because a date read
 in the wrong order is the one mistake nothing downstream can catch.
+
+**Two table shapes are recognised as shapes.** A planning sheet writes its
+periods across the top — `Jan 2024`, `Feb 2024`, … — and those headings are
+data, so the table is turned on its side before anything is read from it. Long
+format is the opposite trap: `date, metric, value` profiles perfectly well, and
+means nothing when summed, because the number is revenue on one row and units
+on the next. Where the values under a category are orders of magnitude apart
+the profile says so, because nothing downstream can tell — by then it is a
+column of doubles like any other.
 
 **Roles come from meaning, not position.** `revenue`, `rev`, `umsatz`,
 `ventas`, `chiffre_affaires`, `totalRevenue`, `fct_order__net_rev_usd` and

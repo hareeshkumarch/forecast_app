@@ -197,3 +197,76 @@ def test_how_each_column_was_read_is_recorded() -> None:
 
     assert by_name["order_date"], "a reformatted date column should say how it was read"
     assert by_name["revenue"], "a reformatted number column should say how it was read"
+
+
+def test_a_planning_sheet_is_read_rather_than_refused() -> None:
+    """Periods across the top are data, not fields. Before this the profiler
+    found no time column at all and picked a month as the forecast target."""
+    wide = pl.DataFrame(
+        {
+            "product": ["A", "B", "C"],
+            **{
+                f"{month} 2024": [100.0 + i, 200.0 + i, 300.0 + i]
+                for i, month in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun"])
+            },
+        }
+    )
+
+    profile = profile_frame(wide)
+    time = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
+    target = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
+
+    assert (time, target) == ("period", "value")
+    assert [c.name for c in profile.columns if c.role is ColumnRole.DIMENSION] == ["product"]
+    assert profile.detected_frequency is not None
+    assert any("across the top" in warning for warning in profile.warnings)
+
+
+def test_long_format_says_so_rather_than_totalling_two_measures() -> None:
+    """date/metric/value profiles perfectly well and means nothing when summed.
+
+    Revenue on one row and units on the next add to a figure that is not any
+    quantity at all, and by the time it reaches the engine it is a column of
+    doubles like any other.
+    """
+    months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(12)]
+    tidy = pl.DataFrame(
+        {
+            "date": [m.isoformat() for m in months for _ in range(2)],
+            "metric": ["revenue", "units"] * 12,
+            "value": [10_000.0, 50.0] * 12,
+        }
+    )
+
+    profile = profile_frame(tidy)
+
+    assert any("different measures" in warning for warning in profile.warnings)
+
+
+def test_a_genuine_dimension_is_not_mistaken_for_a_measure_label() -> None:
+    # Four regions of comparable size are slices of one quantity, and summing
+    # them is exactly what the platform is for.
+    months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(12)]
+    normal = pl.DataFrame(
+        {
+            "date": [m.isoformat() for m in months for _ in range(4)],
+            "region": ["North", "South", "East", "West"] * 12,
+            "revenue": [10_000.0, 9_000.0, 11_000.0, 8_000.0] * 12,
+        }
+    )
+
+    profile = profile_frame(normal)
+
+    assert not any("different measures" in warning for warning in profile.warnings)
+
+
+def test_a_flat_series_is_still_the_thing_being_forecast() -> None:
+    """A discontinued line, or one that has not launched, is all zeros — and it
+    is still the only number in the file. Scoring it below the candidate bar
+    means refusing to run at all rather than forecasting a flat line."""
+    months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(36)]
+    flat = pl.DataFrame({"month": [m.isoformat() for m in months], "value": [0.0] * 36})
+
+    profile = profile_frame(flat)
+
+    assert next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None) == "value"

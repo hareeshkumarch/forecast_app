@@ -193,3 +193,74 @@ def test_two_digit_years_land_in_this_century_not_the_first() -> None:
 
 def test_a_column_of_measurements_is_never_mistaken_for_dates() -> None:
     assert parse_dates(pl.Series("revenue", [round(1000 + i * 3.5, 2) for i in range(100)])) is None
+
+
+# ----------------------------------------------------- the shapes found later
+
+
+def test_trailing_minus_negatives_are_negative() -> None:
+    # SAP and most mainframe exports write a loss as 1000-, not -1000.
+    parsed = coerce_numeric(pl.Series("revenue", ["1000-", "1001", "1002-", "1003"]))
+
+    assert parsed is not None
+    assert parsed.values.drop_nulls().to_list() == [-1000.0, 1001.0, -1002.0, 1003.0]
+
+
+def test_a_hyphenated_reference_is_still_not_a_number() -> None:
+    assert coerce_numeric(pl.Series("order_id", [f"SO-{i}" for i in range(40)])) is None
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    ["Z", "+02:00", "-0500", ".000Z"],
+)
+def test_a_timestamp_keeps_its_date_whatever_zone_it_carries(suffix: str) -> None:
+    values = [f"{d.isoformat()}T09:30:00{suffix}" for d in DAYS[:60]]
+
+    assert _dates(values)[0] == date(2024, 1, 1)
+
+
+def test_fiscal_period_labels_are_periods() -> None:
+    assert _dates([f"FY24-P{(i % 12) + 1:02d}" for i in range(60)])[0] == date(2024, 1, 1)
+    assert _dates([f"FY2024 M{(i % 12) + 1}" for i in range(60)])[0] == date(2024, 1, 1)
+
+
+def test_a_planning_sheet_with_periods_across_the_top_is_turned_on_its_side() -> None:
+    from app.datasets.coercion import unpivot_periods
+
+    wide = pl.DataFrame(
+        {
+            "product": ["A", "B", "C"],
+            "Jan 2024": [100.0, 200.0, 300.0],
+            "Feb 2024": [110.0, 210.0, 310.0],
+            "Mar 2024": [120.0, 220.0, 320.0],
+        }
+    )
+
+    reshaped = unpivot_periods(wide)
+
+    assert reshaped is not None
+    long, periods = reshaped
+    assert len(periods) == 3
+    assert long.height == 9
+    assert set(long.columns) == {"product", "period", "value"}
+    assert long["period"].dtype == pl.Date
+
+
+def test_a_table_that_is_already_long_is_left_alone() -> None:
+    from app.datasets.coercion import unpivot_periods
+
+    narrow = pl.DataFrame({"date": ["2024-01-01", "2024-02-01"], "revenue": [1.0, 2.0]})
+
+    assert unpivot_periods(narrow) is None
+
+
+def test_two_date_columns_are_not_a_planning_sheet() -> None:
+    from app.datasets.coercion import unpivot_periods
+
+    # order_date and ship_date are fields, not periods across the top.
+    frame = pl.DataFrame(
+        {"order_date": ["2024-01-01"], "ship_date": ["2024-01-04"], "revenue": [10.0]}
+    )
+
+    assert unpivot_periods(frame) is None

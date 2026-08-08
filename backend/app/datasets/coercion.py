@@ -91,6 +91,10 @@ def _strip_symbols(token: str) -> tuple[str, bool, bool]:
     if text.startswith("(") and text.endswith(")"):
         negative = True
         text = text[1:-1].strip()
+    elif text.endswith("-") and len(text) > 1:
+        # 1000- is how SAP and most mainframe exports write a negative.
+        negative = True
+        text = text[:-1].strip()
 
     percent = text.endswith("%")
     if percent:
@@ -187,11 +191,14 @@ def coerce_numeric(series: pl.Series) -> NumericParse | None:
     group = "." if decimal == "," else ","
 
     cleaned = text.str.strip_chars(_STRIP_EDGES)
-    negatives = cleaned.str.starts_with("(") & cleaned.str.ends_with(")")
+    negatives = (cleaned.str.starts_with("(") & cleaned.str.ends_with(")")) | (
+        cleaned.str.ends_with("-") & (cleaned.str.len_chars() > 1)
+    )
 
     cleaned = (
         cleaned.str.replace_all(r"^\(", "")
         .str.replace_all(r"\)$", "")
+        .str.replace_all(r"-$", "")
         .str.replace_all(f"[{_GROUPING_SPACES}]", "")
         .str.replace_all(f"[{re.escape(_CURRENCY)}]", "")
         .str.replace_all(r"%$", "")
@@ -267,6 +274,12 @@ _TWO_PART = re.compile(r"^\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})
 _QUARTER = re.compile(r"^\s*(\d{4})\s*[-/ ]?\s*[Qq]\s*([1-4])\s*$")
 _QUARTER_FIRST = re.compile(r"^\s*[Qq]\s*([1-4])\s*[-/ ]?\s*(\d{4})\s*$")
 _ISO_WEEK = re.compile(r"^\s*(\d{4})\s*[-/ ]?[Ww]\s*(\d{1,2})\s*$")
+#: A trailing Z or ±HH:MM on an ISO timestamp. Only the calendar day survives
+#: into a forecast, so the zone is dropped rather than shifted — moving a
+#: day-grain series across a zone is how a Monday becomes the Sunday before it.
+_ZONE_SUFFIX = r"(?:[Zz]|[+-]\d{2}:?\d{2})$"
+#: FY24-P01, FY2024 P3, FY24 M06 — fiscal labels an ERP writes.
+_FISCAL = re.compile(r"^\s*FY\s*(\d{2}|\d{4})\s*[-/ ]?\s*[PM]\s*(\d{1,2})\s*$", re.IGNORECASE)
 
 
 def _plausible(parsed: pl.Series) -> bool:
@@ -410,7 +423,30 @@ def _period_dates(text: pl.Series, total: int) -> DateParse | None:
     if sample.len() == 0:
         return None
 
-    for reader, label in ((quarter, "YYYYQn"), (iso_week, "ISO week")):
+    def fiscal(value: str | None) -> date | None:
+        """FY24-P01 becomes the first of that fiscal period's month.
+
+        The fiscal year is assumed to start in January. Where it does not, the
+        periods still come out evenly spaced and in the right order, which is
+        what a forecast needs — the labels shown against them are the caller's
+        to translate.
+        """
+        if value is None:
+            return None
+        match = _FISCAL.match(value)
+        if not match:
+            return None
+        year_text, period = match.group(1), int(match.group(2))
+        if not 1 <= period <= 12:
+            return None
+        year = int(year_text)
+        if len(year_text) == 2:
+            year += 2000
+        if not MIN_YEAR <= year <= MAX_YEAR:
+            return None
+        return date(year, period, 1)
+
+    for reader, label in ((quarter, "YYYYQn"), (iso_week, "ISO week"), (fiscal, "fiscal period")):
         probe = sample.map_elements(reader, return_dtype=pl.Date)
         if _rate(probe, sample.len()) < AGREEMENT:
             continue
@@ -451,6 +487,8 @@ def parse_dates(
         return _numeric_dates(series, name_suggests_date=name_suggests_date)
 
     text = series.cast(pl.Utf8, strict=False)
+    # An offset or a Z would defeat every %H:%M:%S format below.
+    text = text.str.replace(_ZONE_SUFFIX, "")
     sample = text.drop_nulls().head(SAMPLE_ROWS)
     sample_list = [str(v) for v in sample.to_list()]
     sample_count = sample.len()
@@ -495,3 +533,70 @@ def parse_dates(
                 )
 
     return _period_dates(text, non_null_count)
+
+
+# ------------------------------------------------------------------- reshaping
+
+#: How many column *names* have to read as dates before a table is treated as
+#: wide. Two could be an order date and a ship date; three or more across is a
+#: planning sheet with periods along the top.
+MIN_WIDE_PERIODS = 3
+
+
+def period_columns(names: list[str]) -> dict[str, date]:
+    """Which of these column names are themselves periods.
+
+    A planning sheet writes "Jan 2024", "Feb 2024", … across the top rather
+    than down a date column, and every one of them is data, not a field.
+    """
+    found: dict[str, date] = {}
+    for name in names:
+        parsed = parse_dates(pl.Series("header", [str(name)]), name_suggests_date=False)
+        if parsed is None:
+            continue
+        values = parsed.values.drop_nulls()
+        if values.len():
+            found[name] = values[0]
+    return found
+
+
+def unpivot_periods(
+    frame: pl.DataFrame, *, period_name: str = "period", value_name: str = "value"
+) -> tuple[pl.DataFrame, dict[str, date]] | None:
+    """Turn periods-across-the-top into a column of periods, or None if it is
+    not that shape.
+
+    The period columns become rows, everything else is carried along as an
+    identifier, so a sheet of product-by-month arrives as the long table the
+    rest of the platform expects.
+    """
+    periods = period_columns(list(frame.columns))
+    if len(periods) < MIN_WIDE_PERIODS:
+        return None
+
+    identifiers = [name for name in frame.columns if name not in periods]
+
+    # Every period column has to hold a measure; a wall of text under date
+    # headings is a different problem and not one to guess at.
+    measures: list[str] = []
+    for name in periods:
+        numeric = coerce_numeric(frame[name])
+        if numeric is None:
+            return None
+        measures.append(name)
+
+    long = frame.unpivot(
+        index=identifiers or None,
+        on=measures,
+        variable_name=period_name,
+        value_name=value_name,
+    )
+    long = long.with_columns(
+        pl.col(period_name).replace_strict(
+            {name: periods[name] for name in measures}, return_dtype=pl.Date
+        ),
+        coerce_numeric(long[value_name]).values.alias(value_name)  # type: ignore[union-attr]
+        if coerce_numeric(long[value_name]) is not None
+        else pl.col(value_name),
+    )
+    return long, periods
