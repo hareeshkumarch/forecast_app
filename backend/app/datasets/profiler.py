@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 import polars as pl
 
+from app.datasets.coercion import coerce_numeric, parse_dates
 from app.forecasting.frequency import infer_frequency
 from app.models.enums import ColumnKind, ColumnRole, ForecastFrequency
 
@@ -85,13 +86,39 @@ DATE_NAME_HINTS = (
     "year_month",
     "fiscal",
 )
-TARGET_NAME_HINTS = (
+#: What a company is actually forecasting. Split by how much the word tells
+#: you: "revenue" names the measure, "total" only says it is a sum of
+#: something, and an invoice line total is not the run's target.
+STRONG_TARGET_HINTS = (
     "revenue",
     "sales",
+    "demand",
+    "bookings",
+    "gmv",
+    "turnover",
+    "billings",
+    # The same word in the languages this is most often deployed in, so a
+    # non-English schema is read rather than fallen back on.
+    "umsatz",
+    "erlos",
+    "ventas",
+    "vendas",
+    "facturacion",
+    "ricavi",
+    "fatturato",
+    "omzet",
+    "chiffre",
+    "affaires",
+    "receita",
+    "salg",
+    "myynti",
+)
+
+#: Real signals, but generic enough that a stronger word should win.
+WEAK_TARGET_HINTS = (
     "amount",
     "value",
     "total",
-    "demand",
     "volume",
     "quantity",
     "qty",
@@ -99,14 +126,58 @@ TARGET_NAME_HINTS = (
     "count",
     "spend",
     "cost",
-    "gmv",
-    "bookings",
     "target",
-    "y",
     "actual",
     "net",
     "gross",
+    "y",
+    "menge",
+    "cantidad",
+    "quantite",
+    "betrag",
+    "wert",
 )
+
+TARGET_NAME_HINTS = STRONG_TARGET_HINTS + WEAK_TARGET_HINTS
+
+#: Shortenings that appear in warehouse and ERP schemas and match no hint on
+#: their own. Mapped rather than guessed, because "amt" is not a prefix of
+#: "amount" and no amount of substring matching will find it.
+NAME_ABBREVIATIONS: dict[str, str] = {
+    "rev": "revenue",
+    "revs": "revenue",
+    "amt": "amount",
+    "amnt": "amount",
+    "qty": "quantity",
+    "qnty": "quantity",
+    "vol": "volume",
+    "cnt": "count",
+    "sls": "sales",
+    "sl": "sales",
+    "val": "value",
+    "tot": "total",
+    "net": "net",
+    "gr": "gross",
+    "dmd": "demand",
+    "dt": "date",
+    "dte": "date",
+    "ts": "timestamp",
+    "prd": "period",
+    "per": "period",
+    "yr": "year",
+    "mth": "month",
+    "wk": "week",
+    "cust": "customer",
+    "prod": "product",
+    "cat": "category",
+    "rgn": "region",
+    "ctry": "country",
+    "chan": "channel",
+    "whs": "warehouse",
+    "str": "store",
+    "seg": "segment",
+}
+
 DIMENSION_NAME_HINTS = (
     "region",
     "country",
@@ -127,6 +198,15 @@ DIMENSION_NAME_HINTS = (
 )
 WEIGHT_NAME_HINTS = ("weight", "units", "quantity", "qty", "volume")
 
+
+#: A column with more distinct values than this is an identifier, not a
+#: category, however large the file. Grouping by one asks for a forecast per
+#: customer, and the run cap would pool almost all of it into "Others".
+MAX_CATEGORICAL_VALUES = 200
+
+#: Above this many distinct values a categorical column stays selectable but is
+#: no longer auto-assigned as a dimension.
+MAX_AUTO_DIMENSION_VALUES = 60
 
 DATE_FORMATS = (
     "%Y-%m-%d",
@@ -166,6 +246,13 @@ class ColumnProfile:
     target_score: float = 0.0
     reason: str = ""
 
+    #: How the raw text was read, when it was not already the right type —
+    #: "currency", "european", "Excel serial", "MM/DD/YYYY" and so on. Shown to
+    #: whoever uploaded the file so a wrong reading is visible before a run.
+    parsed_as: str = ""
+    #: Set when day/month order was guessed because the data could not settle it.
+    order_ambiguous: bool = False
+
 
 @dataclass(slots=True)
 class DatasetProfileResult:
@@ -178,58 +265,72 @@ class DatasetProfileResult:
     detected_frequency: ForecastFrequency | None
     preview_rows: list[dict]
     warnings: list[str] = field(default_factory=list)
+    #: The frame with formatted columns replaced by real dates and numbers.
+    #: This is what gets written to Parquet: DuckDB reads that file with
+    #: TRY_CAST, and "$1,234.56" casts to NULL.
+    normalised: pl.DataFrame | None = field(default=None, repr=False)
+
+
+def _tokens(name: str) -> set[str]:
+    """The words in a column name, with known shortenings spelled out.
+
+    Warehouse names arrive as fct_order__net_rev_usd, ERPs as NETWR, and a
+    hand-made export as "Net Revenue". All three reduce to the same words.
+    """
+    lowered = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
+    lowered = re.sub(r"[^a-z0-9]+", " ", lowered.lower()).strip()
+    words = {word for word in lowered.split() if word}
+    return words | {NAME_ABBREVIATIONS[word] for word in words if word in NAME_ABBREVIATIONS}
 
 
 def _name_score(name: str, hints: tuple[str, ...]) -> float:
-    lowered = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
-    tokens = set(lowered.split())
+    tokens = _tokens(name)
+    if tokens & set(hints):
+        return 1.0
 
-    for hint in hints:
-        if hint in tokens:
-            return 1.0
-    for hint in hints:
-        if hint in lowered:
-            return 0.6
+    # A prefix of at least three letters, so "revenu" finds "revenue" but "y"
+    # does not find everything.
+    for token in tokens:
+        if len(token) >= 3 and any(hint.startswith(token) for hint in hints):
+            return 0.8
+
+    lowered = " ".join(sorted(tokens))
+    if any(hint in lowered for hint in hints):
+        return 0.6
     return 0.0
 
 
-def _try_parse_dates(series: pl.Series) -> pl.Series | None:
-    non_null = series.drop_nulls()
-    if non_null.len() == 0:
-        return None
-
-    if series.dtype in (pl.Date, pl.Datetime):
-        return series.cast(pl.Date, strict=False)
-
-    as_string = non_null.cast(pl.Utf8, strict=False)
-    if as_string is None:
-        return None
-
-    for fmt in DATE_FORMATS:
-        try:
-            parsed = as_string.str.strptime(pl.Date, format=fmt, strict=False)
-        except Exception:
-            continue
-        matched = parsed.drop_nulls().len()
-        if matched >= 0.8 * non_null.len():
-            return series.cast(pl.Utf8, strict=False).str.strptime(
-                pl.Date, format=fmt, strict=False
-            )
-
-    return None
+def _try_parse_dates(series: pl.Series, *, name_suggests_date: bool = False) -> pl.Series | None:
+    """Back-compat shim: the values only, no parse story."""
+    parsed = parse_dates(series, name_suggests_date=name_suggests_date)
+    return None if parsed is None else parsed.values
 
 
-def _classify(series: pl.Series, parsed_dates: pl.Series | None) -> ColumnKind:
+def _classify(
+    series: pl.Series,
+    parsed_dates: pl.Series | None,
+    numeric: pl.Series | None = None,
+    *,
+    distinct_count: int | None = None,
+) -> ColumnKind:
     if parsed_dates is not None:
         return ColumnKind.DATE
     dtype = series.dtype
     if dtype == pl.Boolean:
         return ColumnKind.BOOLEAN
-    if dtype.is_numeric():
+    if dtype.is_numeric() or numeric is not None:
         return ColumnKind.NUMERIC
 
     non_null = series.drop_nulls()
-    if non_null.len() and series.n_unique() <= max(50, non_null.len() * 0.2):
+    if non_null.len() == 0:
+        return ColumnKind.TEXT
+
+    distinct = series.n_unique() if distinct_count is None else distinct_count
+    # A share of row count alone makes the ceiling grow with the file: on 200k
+    # rows a fifth is 40,000, which called customer_id a category. The absolute
+    # cap is what stops an identifier being offered as something to group by.
+    ceiling = min(max(50, non_null.len() * 0.2), MAX_CATEGORICAL_VALUES)
+    if distinct <= ceiling:
         return ColumnKind.CATEGORICAL
     return ColumnKind.TEXT
 
@@ -249,23 +350,59 @@ def _as_date(value: object) -> date | None:
     return value if isinstance(value, date) else None
 
 
-def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfileResult:
+def profile_frame(
+    frame: pl.DataFrame,
+    *,
+    preview_rows: int = 8,
+    day_first: bool | None = None,
+) -> DatasetProfileResult:
+    """Read a frame's schema.
+
+    `day_first` settles slash dates a customer knows the order of and the data
+    does not — pass True for 15/01/2024, False for 01/15/2024. Left as None
+    every column decides for itself and says when it could not.
+    """
     profiles: list[ColumnProfile] = []
     warnings: list[str] = []
     total_missing = 0
 
     parsed_date_columns: dict[str, pl.Series] = {}
 
+    normalised: dict[str, pl.Series] = {}
+    ambiguous_dates: list[str] = []
+
     for position, name in enumerate(frame.columns):
         series = frame[name]
         null_count = int(series.null_count())
         total_missing += null_count
+        distinct_count = int(series.n_unique())
 
-        parsed = _try_parse_dates(series)
+        # The name only ever gates the readings that would otherwise misfire —
+        # a bare 45000 is a date if the column says "date", and a number if it
+        # says "revenue".
+        name_suggests_date = _name_score(name, DATE_NAME_HINTS) > 0.0
+        date_parse = parse_dates(series, day_first=day_first, name_suggests_date=name_suggests_date)
+        numeric_parse = None if date_parse is not None else coerce_numeric(series)
+
+        parsed = None if date_parse is None else date_parse.values
         if parsed is not None:
             parsed_date_columns[name] = parsed
+            if series.dtype not in (pl.Date, pl.Datetime):
+                normalised[name] = parsed
+            if date_parse is not None and date_parse.ambiguous:
+                ambiguous_dates.append(name)
+        elif numeric_parse is not None and not series.dtype.is_numeric():
+            normalised[name] = numeric_parse.values
 
-        kind = _classify(series, parsed)
+        kind = _classify(
+            series,
+            parsed,
+            None if numeric_parse is None else numeric_parse.values,
+            distinct_count=distinct_count,
+        )
+        # Statistics belong to the values, not to the text that encoded them.
+        if name in normalised:
+            series = normalised[name]
         non_null = series.drop_nulls()
 
         min_value = max_value = None
@@ -296,12 +433,18 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
             role=ColumnRole.IGNORED,
             dtype=str(series.dtype),
             null_count=null_count,
-            distinct_count=int(series.n_unique()),
+            distinct_count=distinct_count,
             min_value=min_value,
             max_value=max_value,
             mean_value=mean_value,
             sample_values=[_stringify(v) for v in non_null.head(5).to_list()],
         )
+
+        if date_parse is not None:
+            profile.parsed_as = date_parse.layout
+            profile.order_ambiguous = date_parse.ambiguous
+        elif numeric_parse is not None and numeric_parse.style != "plain":
+            profile.parsed_as = numeric_parse.style
 
         _score_column(profile, frame.height)
         profiles.append(profile)
@@ -324,6 +467,13 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
                     f"Couldn't infer a regular frequency from '{time_column.name}'. "
                     "Pick one manually — the data may have irregular gaps."
                 )
+
+    for column in ambiguous_dates:
+        warnings.append(
+            f"Every value in '{column}' fits both day/month and month/day order, so the "
+            "data cannot say which it is. It has been read as day/month — check the date "
+            "range below, and set the order explicitly if it is wrong."
+        )
 
     if frame.height < 12:
         warnings.append(
@@ -356,6 +506,7 @@ def profile_frame(frame: pl.DataFrame, *, preview_rows: int = 8) -> DatasetProfi
         detected_frequency=detected_frequency,
         preview_rows=preview,
         warnings=warnings,
+        normalised=frame.with_columns(**normalised) if normalised else frame,
     )
 
 
@@ -387,24 +538,33 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
         profile.is_date_candidate = profile.date_score >= 0.5
 
     if profile.kind is ColumnKind.NUMERIC:
-        score = 0.45
+        score = 0.40
         reasons.append("numeric")
 
-        name_signal = _name_score(profile.name, TARGET_NAME_HINTS)
-        score += 0.35 * name_signal
-        if name_signal >= 1.0:
-            reasons.append("name matches a common measure")
-        elif name_signal:
+        strong = _name_score(profile.name, STRONG_TARGET_HINTS)
+        weak = _name_score(profile.name, WEAK_TARGET_HINTS)
+
+        # A word that names the measure beats one that only says it is a sum,
+        # so order_revenue wins over line_total instead of losing on file order.
+        if strong:
+            score += 0.40 * strong
+            reasons.append("name states what is being measured")
+        elif weak:
+            score += 0.18 * weak
             reasons.append("name hints at a measure")
 
-        if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0:
+        if is_currency_like(profile.name):
+            score += 0.08
+            reasons.append("reads as money")
+
+        if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0 and not strong:
             score -= 0.12
             reasons.append("more likely a weight than a target")
 
         if (
             row_count
             and profile.distinct_count / row_count > 0.98
-            and _name_score(profile.name, ("id", "key", "index", "row", "number"))
+            and _name_score(profile.name, ("id", "key", "index", "row", "number", "code"))
         ):
             score -= 0.5
             reasons.append("looks like an identifier")
@@ -416,6 +576,13 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
         if row_count and profile.null_count / row_count > 0.3:
             score -= 0.2
             reasons.append("sparsely populated")
+
+        # Last resort when everything above ties — which is what happens on a
+        # schema in a language none of the hints cover. A measure moves; a
+        # status flag or a small integer code does not. Deliberately tiny, so
+        # it only ever separates columns nothing else could.
+        if row_count and profile.distinct_count > 1:
+            score += 0.02 * min(1.0, profile.distinct_count / max(row_count, 1) * 4)
 
         profile.target_score = max(0.0, min(1.0, score))
         profile.is_target_candidate = profile.target_score >= 0.4
@@ -440,7 +607,11 @@ def _assign_roles(profiles: list[ColumnProfile]) -> None:
         if profile.role is not ColumnRole.IGNORED:
             continue
         if profile.kind is ColumnKind.CATEGORICAL:
-            profile.role = ColumnRole.DIMENSION
+            # Still offered in the grain picker, but not assigned by default:
+            # a column with hundreds of values is a key, and grouping by it
+            # would pool almost every series into "Others".
+            if profile.distinct_count <= MAX_AUTO_DIMENSION_VALUES:
+                profile.role = ColumnRole.DIMENSION
         elif profile.kind is ColumnKind.NUMERIC:
             profile.role = (
                 ColumnRole.WEIGHT

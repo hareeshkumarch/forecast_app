@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
@@ -60,7 +61,15 @@ async def upload_dataset(
     session: SessionDep,
     file: UploadFile = File(..., description="CSV or XLSX, 20 MB maximum."),
     name: str | None = Form(default=None),
+    date_order: Literal["auto", "day_first", "month_first"] = Form(default="auto"),
 ) -> DatasetUploadResponse:
+    """Upload a file and read its schema.
+
+    `date_order` settles slash dates the data cannot settle itself: 01/02/2024
+    is the first of February in most of the world and the second of January in
+    the United States. Left on "auto" the column decides, and the profile says
+    so when it had to guess.
+    """
     if not file.filename:
         raise ValidationError("The upload is missing a filename.")
 
@@ -80,7 +89,11 @@ async def upload_dataset(
     content = b"".join(chunks)
 
     dataset, profile = await dataset_service.create_from_upload(
-        session, content, file.filename, name=name
+        session,
+        content,
+        file.filename,
+        name=name,
+        day_first={"day_first": True, "month_first": False}.get(date_order),
     )
 
     return DatasetUploadResponse(

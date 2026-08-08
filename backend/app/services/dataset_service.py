@@ -117,14 +117,30 @@ async def get_dataset(session: AsyncSession, dataset_id: uuid.UUID) -> Dataset:
     return dataset
 
 
+def _profile(frame: pl.DataFrame, day_first: bool | None = None) -> DatasetProfileResult:
+    return profile_frame(frame, day_first=day_first)
+
+
 async def create_from_upload(
-    session: AsyncSession, content: bytes, filename: str, *, name: str | None = None
+    session: AsyncSession,
+    content: bytes,
+    filename: str,
+    *,
+    name: str | None = None,
+    day_first: bool | None = None,
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
     ingested = await asyncio.to_thread(persist_upload, content, filename, str(dataset_id))
-    profile = await asyncio.to_thread(profile_frame, ingested.frame)
-    parquet_path = await asyncio.to_thread(write_parquet, ingested.frame, str(dataset_id))
+    profile = await asyncio.to_thread(_profile, ingested.frame, day_first)
+    # The normalised frame, not the raw one: everything downstream reads this
+    # Parquet through DuckDB's TRY_CAST, and "$1,234.56" casts to NULL. The
+    # original upload is still on disk untouched at ingested.raw_path.
+    parquet_path = await asyncio.to_thread(
+        write_parquet,
+        profile.normalised if profile.normalised is not None else ingested.frame,
+        str(dataset_id),
+    )
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -168,6 +184,7 @@ async def create_from_frame(
     dataset_id = uuid.uuid4()
 
     profile = await asyncio.to_thread(profile_frame, frame)
+    frame = profile.normalised if profile.normalised is not None else frame
     parquet_path = await asyncio.to_thread(write_parquet, frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
@@ -228,6 +245,7 @@ def _attach_columns(session: AsyncSession, dataset: Dataset, profile: DatasetPro
                 sample_values=column.sample_values,
                 is_date_candidate=column.is_date_candidate,
                 is_target_candidate=column.is_target_candidate,
+                parsed_as=column.parsed_as or None,
             )
         )
 

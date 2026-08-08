@@ -141,6 +141,8 @@ export interface DatasetColumn {
   sample_values: unknown[];
   is_date_candidate: boolean;
   is_target_candidate: boolean;
+  /** How the raw text was read when it was not already the right type. */
+  parsed_as?: string | null;
   reason?: string;
 }
 

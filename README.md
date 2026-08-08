@@ -126,6 +126,50 @@ docker compose up --build
 
 ---
 
+## Reading a customer's file
+
+Uploads and connectors go through the same profiler, which works out what each
+column *is* before anything is forecast from it.
+
+**Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
+a German ERP as `1.234,56`, from an accounting package as `(890.00)`, and with
+a unit stuck on the end as `1000 kg`. All of those are numbers, and all of them
+are read as numbers. Dates arrive as ISO, as `15.01.2024`, as an ISO timestamp
+with or without milliseconds, as `20240115`, as `2024Q1`, as `2024-W03`, and as
+the Excel serial `45292` that a spreadsheet leaves behind when it loses its
+formatting. A convention is chosen from a sample, applied to the whole column,
+and kept only if it explains nearly every row — so one stray token cannot drag
+a column into the wrong reading.
+
+The values that come out are what gets stored. Everything downstream reads the
+Parquet through DuckDB's `TRY_CAST`, and `"$1,234.56"` casts to `NULL`, so a
+column detected but not converted would be a column silently full of nothing.
+The original upload is kept untouched alongside it.
+
+**Day/month order is the one guess worth arguing about.** `01/02/2024` is the
+first of February in most of the world and the second of January in the United
+States. Where a value passes the twelfth the data settles it outright. Where a
+monthly file holds its day-of-month fixed, the position that never moves is the
+day — which is how `01/01, 02/01, 03/01` stays January, February, March instead
+of collapsing into the first three days of January. Where every value genuinely
+fits both readings, no algorithm can do better than guess, so the profile says
+so and `date_order` on the upload settles it by hand.
+
+How each column was read is recorded and shown beside it, because a date read
+in the wrong order is the one mistake nothing downstream can catch.
+
+**Roles come from meaning, not position.** `revenue`, `rev`, `umsatz`,
+`ventas`, `chiffre_affaires`, `totalRevenue`, `fct_order__net_rev_usd` and
+`Net Revenue` all name the same thing, and reordering the columns does not
+change which one is the target. A word that names the measure beats one that
+only says it is a sum, so `order_revenue` wins over `line_total`. A column with
+more distinct values than a category plausibly has is treated as an identifier:
+it stays available to group by, but is not offered by default, because
+grouping by `customer_id` asks for a forecast per customer and pools almost all
+of them into "Others".
+
+---
+
 ## How a forecast is produced
 
 Nothing about the fit is fixed in advance. Each series is profiled first

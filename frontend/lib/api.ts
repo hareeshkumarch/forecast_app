@@ -224,10 +224,20 @@ export const getDatasetQuality = (
 export const getDatasetProfile = (id: string) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`);
 
-export async function uploadDataset(file: File, name?: string): Promise<DatasetUploadResponse> {
+export type DateOrder = "auto" | "day_first" | "month_first";
+
+export async function uploadDataset(
+  file: File,
+  name?: string,
+  dateOrder: DateOrder = "auto",
+): Promise<DatasetUploadResponse> {
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
+  // 01/02/2024 is the first of February in most of the world and the second of
+  // January in the United States, and a file where no day passes the 12th
+  // cannot settle it. "auto" lets the column decide and say when it could not.
+  form.append("date_order", dateOrder);
 
   return request<DatasetUploadResponse>("/api/datasets/upload", {
     method: "POST",
