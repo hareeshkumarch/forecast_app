@@ -35,9 +35,13 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: `npx next dev -p ${PORT}`,
+        // A production build rather than `next dev`. Fast Refresh recompiles a
+        // route on first navigation and the rebuild lands mid-click, so the
+        // navigation is dropped — a property of the dev server, not of the
+        // page, and it failed the phone project every run.
+        command: `npx next build && npx next start -p ${PORT}`,
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
+        timeout: 240_000,
       },
 });

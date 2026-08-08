@@ -5,7 +5,7 @@ from datetime import date
 import numpy as np
 
 from app.forecasting.backtest import BacktestResult, FoldResult, _diverged, plan_backtest
-from app.forecasting.diagnostics import minimum_history, profile_series
+from app.forecasting.diagnostics import detect_changepoints, minimum_history, profile_series
 from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
 from app.forecasting.frequency import add_periods
 from app.forecasting.models import build_candidates
@@ -270,3 +270,40 @@ def test_divergence_ceiling_scales_with_volatility_not_a_fixed_multiple() -> Non
 
     assert _divergence_ceiling(wild) > _divergence_ceiling(calm)
     assert _divergence_ceiling(calm) >= float(np.max(calm))
+
+
+def test_a_history_that_holds_its_level_has_no_changepoint() -> None:
+    assert detect_changepoints(np.full(24, 100.0)) == []
+
+
+def test_noise_around_one_level_is_not_a_changepoint() -> None:
+    wobble = 100 + np.random.default_rng(3).normal(0, 5, 40)
+
+    assert detect_changepoints(wobble) == []
+
+
+def test_a_step_is_found_where_the_level_actually_moved() -> None:
+    stepped = np.concatenate([np.full(12, 100.0), np.full(12, 180.0)])
+
+    assert detect_changepoints(stepped) == [12]
+
+
+def test_a_larger_step_is_no_harder_to_find_than_a_small_one() -> None:
+    # Scoring against the spread of the whole series made this the failure case:
+    # the break inflated the yardstick it was measured with, so the bigger the
+    # step the better it hid.
+    small = np.concatenate([np.full(12, 100.0), np.full(12, 180.0)])
+    large = np.concatenate([np.full(12, 100.0), np.full(12, 900.0)])
+
+    assert detect_changepoints(small) == detect_changepoints(large) == [12]
+
+
+def test_a_gap_in_the_history_does_not_hide_the_step() -> None:
+    gapped = np.concatenate([np.full(6, 100.0), [np.nan], np.full(6, 100.0), np.full(12, 180.0)])
+
+    assert detect_changepoints(gapped) == [12]
+
+
+def test_too_little_history_to_judge_reports_nothing() -> None:
+    for size in (0, 1, 8, 15):
+        assert detect_changepoints(np.arange(size, dtype=float)) == []

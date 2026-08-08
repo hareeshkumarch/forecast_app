@@ -4,15 +4,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from app.core.config import settings
 from app.forecasting.backtest import BacktestResult, FoldResult, interval_cost
 from app.forecasting.frequency import seasonal_period
 from app.forecasting.metrics import evaluate, mase
 from app.models.enums import ForecastFrequency, ModelKind
 
-MAX_MEMBERS = 4
 MIN_MEMBERS = 2
-
-WORTH_THE_COMPLICATION = 0.02
 
 
 @dataclass(slots=True)
@@ -29,6 +27,7 @@ class _Aligned:
     predictions: list[list[list[float]]] = field(default_factory=list)
     truth: list[list[float]] = field(default_factory=list)
     fold_ids: list[int] = field(default_factory=list)
+    weights: list[list[float] | None] = field(default_factory=list)
 
 
 def _usable(results: list[BacktestResult]) -> list[BacktestResult]:
@@ -65,6 +64,7 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
     for fold_id in order:
         fold = next(f for f in reference.folds if f.fold == fold_id)
         aligned.truth.append(list(fold.y_true))
+        aligned.weights.append(list(fold.y_weight) if fold.y_weight is not None else None)
 
     for result in results:
         by_id = {fold.fold: fold for fold in result.folds}
@@ -90,12 +90,11 @@ def blend(
     *,
     frequency: ForecastFrequency,
     confidence_level: float = 0.8,
-    weights: np.ndarray | None = None,
     max_members: int | None = None,
 ) -> Blend | None:
-    from app.core.config import settings
-
-    effective_max_members = max_members if max_members is not None else settings.ensemble_max_members
+    effective_max_members = (
+        max_members if max_members is not None else settings.ensemble_max_members
+    )
     usable = sorted(_usable(results), key=lambda result: result.mae)
     if len(usable) < MIN_MEMBERS:
         return None
@@ -110,6 +109,7 @@ def blend(
     folds: list[FoldResult] = []
     all_true: list[float] = []
     all_pred: list[float] = []
+    all_weights: list[float] = []
 
     for index, fold_id in enumerate(aligned.fold_ids):
         truth = aligned.truth[index]
@@ -117,6 +117,7 @@ def blend(
             [np.asarray(member[index], dtype=float) for member in aligned.predictions]
         )
         combined = np.average(stacked, axis=0, weights=share)
+        fold_weights = aligned.weights[index]
 
         folds.append(
             FoldResult(
@@ -125,16 +126,23 @@ def blend(
                 test_size=len(truth),
                 y_true=list(truth),
                 y_pred=[float(value) for value in combined],
+                y_weight=list(fold_weights) if fold_weights is not None else None,
             )
         )
         all_true.extend(truth)
         all_pred.extend(float(value) for value in combined)
+        if fold_weights is not None:
+            all_weights.extend(fold_weights)
 
     if not all_true:
         return None
 
     result = BacktestResult(model=ModelKind.ENSEMBLE, folds=folds)
-    scores = evaluate(np.array(all_true), np.array(all_pred), weights)
+    # The members were scored over these same test windows, so the blend has to
+    # be weighed over them too. The run's whole-series weight column is a
+    # different length entirely and used to raise here.
+    fold_weight_array = np.array(all_weights) if len(all_weights) == len(all_true) else None
+    scores = evaluate(np.array(all_true), np.array(all_pred), fold_weight_array)
     result.mae = scores["mae"]
     result.rmse = scores["rmse"]
     result.smape = scores["smape"]

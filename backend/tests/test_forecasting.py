@@ -418,3 +418,60 @@ def test_driver_panel_project_future() -> None:
     assert "price" in projected.series
     assert projected.series["price"].size == 8
     assert projected.series["price"][-1] > projected.series["price"][-2]
+
+
+def test_a_weighted_run_can_reach_the_ensemble() -> None:
+    # The blend scored itself with the run's whole-series weight column against
+    # the concatenated fold windows, which are a different length. Any weighted
+    # run that got as far as the ensemble died on it — including the seed the
+    # e2e job builds its dashboard from.
+    periods, values = make_series(60)
+    rng = np.random.default_rng(11)
+    weights = list(rng.uniform(0.5, 1.5, size=len(values)))
+
+    output = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=values, weights=weights),
+            frequency=MONTHLY,
+            horizon=6,
+            max_folds=3,
+        )
+    )
+
+    assert len(output.point_forecast) == 6
+    assert all(math.isfinite(value) for value in output.point_forecast)
+
+
+def test_the_ensemble_is_weighed_over_the_windows_it_was_tested_on() -> None:
+    from app.forecasting.combination import blend
+
+    def result(model: ModelKind, error: float) -> BacktestResult:
+        truth = [10.0, 12.0, 14.0, 16.0]
+        built = BacktestResult(
+            model=model,
+            folds=[
+                FoldResult(
+                    fold=0,
+                    train_size=20,
+                    test_size=4,
+                    y_true=truth,
+                    y_pred=[value + error for value in truth],
+                    # Four weights for four test points, not one per period of a
+                    # 24-month history.
+                    y_weight=[1.0, 2.0, 3.0, 4.0],
+                )
+            ],
+        )
+        built.mae = abs(error)
+        built.wmape = abs(error)
+        return built
+
+    combined = blend(
+        [result(ModelKind.NAIVE, 1.0), result(ModelKind.THETA, -1.0)],
+        frequency=MONTHLY,
+    )
+
+    assert combined is not None, "two offsetting members should blend to something better"
+    assert math.isfinite(combined.result.wmape)
+    # The blend carries the fold weights on, so a later reader can weigh it too.
+    assert combined.result.folds[0].y_weight == [1.0, 2.0, 3.0, 4.0]

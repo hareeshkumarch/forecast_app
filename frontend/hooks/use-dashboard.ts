@@ -417,7 +417,15 @@ export function useImportFromConnector() {
 export function useUploadDataset() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, name }: { file: File; name?: string }) => api.uploadDataset(file, name),
+    mutationFn: ({
+      file,
+      name,
+      dateOrder,
+    }: {
+      file: File;
+      name?: string;
+      dateOrder?: api.DateOrder;
+    }) => api.uploadDataset(file, name, dateOrder),
     onSuccess: (response) => {
       toast.success(
         "Dataset profiled",

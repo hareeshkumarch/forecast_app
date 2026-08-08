@@ -141,6 +141,8 @@ export interface DatasetColumn {
   sample_values: unknown[];
   is_date_candidate: boolean;
   is_target_candidate: boolean;
+  /** How the raw text was read when it was not already the right type. */
+  parsed_as?: string | null;
   reason?: string;
 }
 
@@ -446,6 +448,11 @@ export interface Scorecard {
   accuracy: number | null;
 
   intervals_held: boolean | null;
+
+  /** Cumulative error in mean absolute deviations: near zero the misses cancel out. */
+  tracking_signal: number | null;
+  /** True when the run missed the same way every period, or simply missed badly. */
+  drifted: boolean;
 }
 
 export interface ForecastProgressEvent {

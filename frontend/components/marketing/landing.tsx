@@ -235,12 +235,14 @@ function SiteNav() {
           <span className="text-title font-semibold tracking-[-0.01em]">Forecast Hub</span>
         </a>
 
-        <nav aria-label="Sections" className="ml-1 hidden gap-6 md:flex">
+        {/* From lg, not md: at 768 the four labels and the CTA together leave the
+            links no room and each one wraps onto two lines. */}
+        <nav aria-label="Sections" className="ml-1 hidden gap-6 lg:flex">
           {NAV_LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary"
+              className="whitespace-nowrap text-subhead text-text-secondary transition-colors duration-fast hover:text-text-primary"
             >
               {link.label}
             </a>
@@ -256,8 +258,16 @@ function SiteNav() {
           >
             Docs
           </a>
-          <Link href="/dashboard" className={cn(PRIMARY_CTA, "h-[34px] px-4 text-subhead")}>
-            Open the dashboard
+          {/* The full label wraps to two lines below ~360px and spills out of a
+              fixed-height pill, so the narrowest phones get the short form. The
+              accessible name stays the same at every width. */}
+          <Link
+            href="/dashboard"
+            aria-label="Open the dashboard"
+            className={cn(PRIMARY_CTA, "h-[34px] shrink-0 whitespace-nowrap px-4 text-subhead")}
+          >
+            <span className="sm:hidden">Dashboard</span>
+            <span className="hidden sm:inline">Open the dashboard</span>
           </Link>
         </div>
       </div>

@@ -166,4 +166,3 @@ def connect_args(target: DatabaseTarget) -> dict[str, object]:
         args["prepared_statement_cache_size"] = 0
         args["prepared_statement_name_func"] = lambda: ""
     return args
-

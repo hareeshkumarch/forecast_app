@@ -189,6 +189,11 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mean_value: Mapped[float | None] = mapped_column(Float)
     sample_values: Mapped[list] = mapped_column(JSONType, default=list)
 
+    #: How the raw text was read when it was not already the right type —
+    #: "currency", "european", "MM/DD/YYYY", "Excel serial". Stored so the
+    #: reading a run was built on stays visible after the upload screen.
+    parsed_as: Mapped[str | None] = mapped_column(String(40))
+
     is_date_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
     is_target_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
 

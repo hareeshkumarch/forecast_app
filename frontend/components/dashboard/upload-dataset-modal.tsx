@@ -8,12 +8,19 @@ import { Modal } from "@/components/ui/modal";
 import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
 import { useConfigureDataset, useUploadDataset } from "@/hooks/use-dashboard";
+import type { DateOrder } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatBytes, formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { DatasetUploadResponse, ForecastFrequency } from "@/types/api";
+
+const DATE_ORDERS = [
+  { value: "auto", label: "Detect from the data" },
+  { value: "day_first", label: "Day first — 15/01/2024" },
+  { value: "month_first", label: "Month first — 01/15/2024" },
+];
 
 const FREQUENCIES: { value: ForecastFrequency; label: string }[] = [
   { value: "daily", label: "Daily" },
@@ -40,6 +47,10 @@ export function UploadDatasetModal() {
   const [frequency, setFrequency] = useState<ForecastFrequency>("monthly");
   const [horizon, setHorizon] = useState(6);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Kept so the file can be re-read in the other order without asking for it
+  // again, which is the whole point of offering the choice.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [dateOrder, setDateOrder] = useState<DateOrder>("auto");
   const [activeTab, setActiveTab] = useState<"mapping" | "profiling" | "preview">("mapping");
 
   useEffect(() => {
@@ -64,8 +75,9 @@ export function UploadDatasetModal() {
     }
 
     setLocalError(null);
+    setPendingFile(file);
     uploadMutation.mutate(
-      { file },
+      { file, dateOrder },
       {
         onSuccess: (response) => {
           setResult(response);
@@ -117,6 +129,11 @@ export function UploadDatasetModal() {
   }
 
   const profile = result?.profile;
+  // The backend warns when every value in a date column fits both readings, so
+  // the control below explains itself rather than sitting there unexplained.
+  const ambiguousDates = Boolean(
+    profile?.warnings.some((warning) => warning.includes("day/month")),
+  );
   const failure = localError ?? (uploadMutation.error ? errorMessage(uploadMutation.error) : null);
 
   return (
@@ -288,6 +305,35 @@ export function UploadDatasetModal() {
                 <Select value={frequency} onChange={setFrequency} options={FREQUENCIES} />
               </Field>
 
+              <Field
+                label="Date order"
+                hint={
+                  ambiguousDates
+                    ? "This file reads the same either way — pick the one it was written in."
+                    : "Read from the data."
+                }
+              >
+                <Select
+                  value={dateOrder}
+                  onChange={(next) => {
+                    const order = next as DateOrder;
+                    setDateOrder(order);
+                    if (pendingFile) {
+                      uploadMutation.mutate(
+                        { file: pendingFile, dateOrder: order },
+                        {
+                          onSuccess: (response) => {
+                            setResult(response);
+                            setFrequency(response.profile.detected_frequency ?? frequency);
+                          },
+                        },
+                      );
+                    }
+                  }}
+                  options={DATE_ORDERS}
+                />
+              </Field>
+
               <Field label="Horizon (periods)" required>
                 <Input
                   type="number"
@@ -341,6 +387,17 @@ export function UploadDatasetModal() {
                             <span className="capitalize text-text-secondary font-mono text-micro bg-surface-muted border border-border px-1.5 py-0.5 rounded">
                               {col.kind} · {col.role}
                             </span>
+                            {/* How the raw text was read. A date read in the
+                                wrong order is the one mistake nothing
+                                downstream can catch, so it is stated here. */}
+                            {col.parsed_as ? (
+                              <span
+                                className="ml-1.5 font-mono text-micro text-accent bg-accent-soft border border-accent-border px-1.5 py-0.5 rounded"
+                                title={`Read as ${col.parsed_as}`}
+                              >
+                                {col.parsed_as}
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-2.5 py-1.5 whitespace-nowrap text-text-muted">
                             {col.null_count > 0 ? (

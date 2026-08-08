@@ -6,14 +6,10 @@ import numpy as np
 import numpy.typing as npt
 from scipy import stats
 
+from app.core.config import settings
 from app.forecasting.backtest import BacktestResult
 
 FloatArray = npt.NDArray[np.float64]
-
-def get_scenario_confidence() -> float:
-    from app.core.config import settings
-
-    return settings.scenario_confidence
 
 
 MIN_EMPIRICAL_RESIDUALS = 8
@@ -144,7 +140,7 @@ def build_intervals(
 
     sigmas, method = _sigma_by_step(backtest, horizon, past)
 
-    scenario_confidence = get_scenario_confidence()
+    scenario_confidence = settings.scenario_confidence
     empirical = _quantile_offsets(backtest, horizon, confidence_level)
     scenario = _quantile_offsets(backtest, horizon, scenario_confidence)
 

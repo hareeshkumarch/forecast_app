@@ -643,6 +643,11 @@ async def test_the_endpoint_scores_and_then_reports_what_it_stored(
     assert body["source_dataset_name"] == "The whole panel"
     assert body["accuracy"] == pytest.approx(round(max(0.0, 100.0 - body["wmape"]), 2))
     assert body["currency"] is True, "revenue is money"
+
+    # The drift verdict travels with the card rather than being recomputed by
+    # every reader from wmape and bias.
+    assert isinstance(body["drifted"], bool)
+    assert body["tracking_signal"] is None or isinstance(body["tracking_signal"], int | float)
     assert body["series"], "the tree comes back worst first"
 
     ranked = [row["wmape"] for row in body["series"] if row["wmape"] is not None]
@@ -872,3 +877,53 @@ async def test_the_dashboard_stops_showing_a_backtest_number_once_it_knows_bette
     # A percentage's move is in points; the percent change of a percentage is
     # both true and useless — 2.8% to 18.3% is not "+543%" to anyone.
     assert graded.delta_display.endswith(" pts")  # type: ignore[attr-defined]
+
+
+def _card(**kwargs: object) -> scoring_service.Scorecard:
+    defaults: dict[str, object] = {
+        "run_id": uuid.uuid4(),
+        "scored_periods": 6,
+        "forecast_total": 1000.0,
+        "actual_total": 1000.0,
+        "mae": 50.0,
+        "wmape": 5.0,
+    }
+    return scoring_service.Scorecard(**{**defaults, **kwargs})  # type: ignore[arg-type]
+
+
+def test_a_run_whose_misses_cancel_out_is_not_drifting() -> None:
+    # Same absolute error, but landing either side of the truth: noise, not drift.
+    card = _card(forecast_total=1000.0, actual_total=1000.0, mae=50.0, wmape=5.0)
+
+    assert card.tracking_signal == 0.0
+    assert card.is_drifted is False
+
+
+def test_a_run_that_missed_the_same_way_every_period_is_drifting() -> None:
+    # Cumulative error of 300 against a MAD of 50 is six deviations of one-sided
+    # bias, well past the Trigg limit of four.
+    card = _card(forecast_total=1300.0, actual_total=1000.0, mae=50.0, wmape=5.0)
+
+    assert card.tracking_signal == 6.0
+    assert card.is_drifted is True
+
+
+def test_under_forecasting_drifts_the_same_as_over_forecasting() -> None:
+    card = _card(forecast_total=700.0, actual_total=1000.0, mae=50.0, wmape=5.0)
+
+    assert card.tracking_signal == -6.0
+    assert card.is_drifted is True
+
+
+def test_a_run_simply_far_out_drifts_even_without_a_one_sided_bias() -> None:
+    card = _card(forecast_total=1000.0, actual_total=1000.0, mae=50.0, wmape=80.0)
+
+    assert card.tracking_signal == 0.0
+    assert card.is_drifted is True
+
+
+def test_an_unscored_run_has_no_tracking_signal_to_report() -> None:
+    assert _card(scored_periods=0).tracking_signal is None
+    # A zero MAD would make the ratio undefined rather than infinite.
+    assert _card(mae=0.0).tracking_signal is None
+    assert _card(mae=None).tracking_signal is None

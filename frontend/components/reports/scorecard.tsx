@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Gauge, Target } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Gauge, Target, TrendingDown } from "lucide-react";
 
 import { Badge, Button, InlineError } from "@/components/ui/primitives";
 import { useForecastMetrics, useScoreForecast, useScorecard } from "@/hooks/use-dashboard";
@@ -42,6 +42,12 @@ export function Scorecard({ run }: { run: ForecastRun }) {
           {graded && card ? (
             <Badge tone={verdictTone(card)}>
               {card.scored_periods} of {card.horizon} periods checked
+            </Badge>
+          ) : null}
+          {graded && card?.drifted ? (
+            <Badge tone="negative">
+              <TrendingDown aria-hidden className="size-3" />
+              Drifting
             </Badge>
           ) : null}
         </div>
@@ -161,15 +167,20 @@ function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
           label={
             card.confidence_level === null
               ? "Landed in range"
-              : `Landed in the expected range`
+              : `Landed in the ${Math.round(card.confidence_level * 100)}% range`
           }
           value={card.coverage === null ? "—" : formatPercent(card.coverage, 0)}
+          note={
+            card.confidence_level === null
+              ? undefined
+              : `${Math.round(card.confidence_level * 100)}% was promised`
+          }
           tone={card.intervals_held === null ? undefined : card.intervals_held ? "good" : "bad"}
         />
       </dl>
 
       <p className="mt-3 flex items-start gap-1.5 text-caption text-text-muted">
-        {card.intervals_held === false || card.pending_periods > 0 ? (
+        {card.drifted || card.intervals_held === false || card.pending_periods > 0 ? (
           <AlertTriangle aria-hidden className="mt-px size-3 shrink-0 text-warning" />
         ) : (
           <CheckCircle2 aria-hidden className="mt-px size-3 shrink-0 text-positive" />
@@ -236,8 +247,34 @@ function summary(card: ScorecardData): string {
         "single row below.",
     );
   }
+  if (card.drifted) {
+    parts.push(drift(card));
+  }
 
   return parts.join(" ");
+}
+
+/**
+ * The badge says a run has drifted; this says what that means for the reader.
+ * A one-sided miss is worth refitting over, because it will keep happening —
+ * unlike an equally large error that lands on both sides of the truth.
+ */
+function drift(card: ScorecardData): string {
+  const signal = card.tracking_signal;
+
+  if (signal !== null && Math.abs(signal) > 1) {
+    const direction = signal > 0 ? "above" : "below";
+    return (
+      `It missed the same way in period after period — consistently ${direction} what ` +
+      "happened, rather than scattering either side of it. That is drift, and it will not " +
+      "correct itself: re-run on history that includes these periods."
+    );
+  }
+
+  return (
+    "The error is large enough that this run no longer describes the data it was fitted " +
+    "on. Re-run it on history that includes these periods."
+  );
 }
 
 function accuracyTone(

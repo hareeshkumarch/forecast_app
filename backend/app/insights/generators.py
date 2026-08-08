@@ -6,6 +6,7 @@ from datetime import datetime
 
 import numpy as np
 
+from app.core.config import settings
 from app.core.numbers import compact
 from app.database.base import utcnow
 from app.models.enums import InsightSeverity, InsightType
@@ -75,8 +76,6 @@ def accuracy_change(ctx: InsightContext) -> GeneratedInsight | None:
         return None
 
     if ctx.previous_accuracy is None or not np.isfinite(ctx.previous_accuracy):
-        from app.core.config import settings
-
         threshold = settings.insight_accuracy_warning
         if ctx.accuracy < threshold:
             return GeneratedInsight(
@@ -202,8 +201,6 @@ def worst_case_risk(ctx: InsightContext) -> GeneratedInsight | None:
     if downside_pct < 3.0:
         return None
 
-    from app.core.config import settings
-
     severe = downside_pct >= settings.insight_downside_severe_pct
     return GeneratedInsight(
         type=InsightType.WORST_CASE_RISK,
@@ -290,8 +287,6 @@ def anomaly(ctx: InsightContext) -> GeneratedInsight | None:
         tail, key=lambda item: abs(item[1] - item[2]) / sigma
     )
     z = (worst_actual - worst_fit) / sigma
-    from app.core.config import settings
-
     if abs(z) < settings.insight_anomaly_z_threshold:
         return None
 
@@ -447,8 +442,6 @@ def recommendation(ctx: InsightContext) -> GeneratedInsight | None:
 
     total = float(np.sum(ctx.point_forecast))
     top_region = max(ctx.regions, key=lambda r: r.forecast_value) if ctx.regions else None
-
-    from app.core.config import settings
 
     plannable_threshold = settings.insight_accuracy_plannable
     if np.isfinite(ctx.accuracy) and ctx.accuracy < plannable_threshold:

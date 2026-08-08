@@ -17,6 +17,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
 from app.core.numbers import finite
@@ -80,19 +81,23 @@ class Scorecard:
 
     @property
     def tracking_signal(self) -> float | None:
-        """Calculate Trigg's Tracking Signal: cumulative error / MAD."""
-        if not self.scored_periods or not self.mae or self.mae == 0:
+        """Trigg's tracking signal: cumulative error expressed in MADs.
+
+        Near zero the misses cancel out, which is what an unbiased forecast
+        looks like. A large positive or negative value means the run has been
+        wrong the same way every period, which is drift rather than noise.
+        """
+        if not self.scored_periods or not self.mae:
             return None
-        cum_error = self.forecast_total - self.actual_total
-        return round(cum_error / self.mae, 2)
+        return round((self.forecast_total - self.actual_total) / self.mae, 2)
 
     @property
     def is_drifted(self) -> bool:
-        """Return True if systematic bias or severe error indicates forecast model drift."""
-        ts = self.tracking_signal
-        if ts is not None and abs(ts) > 4.0:
+        """Whether the run is consistently biased, or simply far enough out."""
+        signal = self.tracking_signal
+        if signal is not None and abs(signal) > settings.drift_tracking_signal_limit:
             return True
-        return self.wmape is not None and self.wmape > 50.0
+        return self.wmape is not None and self.wmape > settings.drift_wmape_limit
 
     @property
     def accuracy_percent(self) -> float | None:

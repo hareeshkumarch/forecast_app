@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote, urlparse
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,55 +52,100 @@ class Settings(BaseSettings):
     forecast_task_time_limit: int = 1_800
     forecast_task_max_retries: int = 2
 
-    forecast_max_folds: int = 5
-    metric_weight_wmape: float = 0.50
-    metric_weight_smape: float = 0.30
-    metric_weight_rmse: float = 0.20
-    interval_weight: float = 0.15
-    sarimax_order_p: int = 1
-    sarimax_order_d: int = 1
-    sarimax_order_q: int = 1
-    gbm_max_depth: int = 3
-    gbm_learning_rate: float = 0.06
+    # ---- Model selection -------------------------------------------------
+    # How many backtest folds a run gets, and how the metrics it measures are
+    # weighed against each other when the winner is picked. The three metric
+    # weights are relative, not required to sum to 1, but they cannot all be 0
+    # or there would be nothing left to rank candidates on.
+    forecast_max_folds: int = Field(default=5, ge=1, le=20)
+    metric_weight_wmape: float = Field(default=0.50, ge=0.0, le=1.0)
+    metric_weight_smape: float = Field(default=0.30, ge=0.0, le=1.0)
+    metric_weight_rmse: float = Field(default=0.20, ge=0.0, le=1.0)
+    #: What a candidate's interval quality (Winkler) is worth beside its point error.
+    interval_weight: float = Field(default=0.15, ge=0.0, le=1.0)
 
-    default_horizon_daily: int = 30
-    default_horizon_weekly: int = 13
-    default_horizon_monthly: int = 6
-    default_horizon_quarterly: int = 4
+    # ---- Model hyperparameters -------------------------------------------
+    sarimax_order_p: int = Field(default=1, ge=0, le=5)
+    sarimax_order_d: int = Field(default=1, ge=0, le=2)
+    sarimax_order_q: int = Field(default=1, ge=0, le=5)
+    gbm_max_depth: int = Field(default=3, ge=1, le=10)
+    gbm_learning_rate: float = Field(default=0.06, gt=0.0, le=1.0)
+    #: Rows a design matrix needs after lag construction before GBM is worth trying.
+    min_gbm_rows: int = Field(default=8, ge=2)
 
-    scenario_confidence: float = 0.95
+    # ---- Search and ensembling -------------------------------------------
+    tuning_max_evaluations: int = Field(default=24, ge=1, le=500)
+    tuning_min_validation_rows: int = Field(default=6, ge=2)
+    ensemble_max_members: int = Field(default=4, ge=2, le=10)
+    #: How much better than its best member a blend must be to be worth the complication.
+    ensemble_min_improvement: float = Field(default=0.02, ge=0.0, lt=1.0)
+    #: How far a backtest prediction may wander from the training level before it
+    #: is called divergent and thrown away.
+    divergence_sigmas: float = Field(default=12.0, gt=0.0)
 
+    # ---- Forecast defaults -----------------------------------------------
+    #: The horizon a dataset gets when nobody picks one, per detected frequency.
+    default_horizon_daily: int = Field(default=30, ge=1, le=365)
+    default_horizon_weekly: int = Field(default=13, ge=1, le=365)
+    default_horizon_monthly: int = Field(default=6, ge=1, le=365)
+    default_horizon_quarterly: int = Field(default=4, ge=1, le=365)
+    #: The band the best/worst case quote, as distinct from the reported interval.
+    scenario_confidence: float = Field(default=0.95, gt=0.0, lt=1.0)
+
+    # ---- LLM ---------------------------------------------------------------
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
     llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
-    llm_max_tokens: int = 400
-    llm_timeout_seconds: float = 10.0
-    llm_temperature: float = 0.2
-    llm_max_concurrent_rewrites: int = 8
+    llm_max_tokens: int = Field(default=400, ge=1, le=8192)
+    llm_timeout_seconds: float = Field(default=10.0, gt=0.0)
+    llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    llm_max_concurrent_rewrites: int = Field(default=8, ge=1, le=64)
 
     anthropic_api_key: str | None = None
     insight_llm_model: str = "claude-3-5-sonnet-20241022"
 
-    insight_accuracy_warning: float = 80.0
-    insight_accuracy_plannable: float = 75.0
-    insight_anomaly_z_threshold: float = 2.5
-    insight_downside_severe_pct: float = 15.0
+    # ---- Insight thresholds ------------------------------------------------
+    #: Below this backtested accuracy an insight warns the figures are directional.
+    insight_accuracy_warning: float = Field(default=80.0, ge=0.0, le=100.0)
+    #: Below this the recommendation stops treating the forecast as plannable.
+    insight_accuracy_plannable: float = Field(default=75.0, ge=0.0, le=100.0)
+    #: Standard deviations from fit before a period is called an anomaly.
+    insight_anomaly_z_threshold: float = Field(default=2.5, gt=0.0)
+    #: Downside percentage at which worst-case risk is raised to critical.
+    insight_downside_severe_pct: float = Field(default=15.0, ge=0.0, le=100.0)
 
-    divergence_sigmas: float = 12.0
-    tuning_max_evaluations: int = 24
-    tuning_min_validation_rows: int = 6
-    ensemble_max_members: int = 4
-    ensemble_min_improvement: float = 0.02
+    # ---- Drift ------------------------------------------------------------
+    #: Tracking signal (cumulative error over MAD) past which a scored run is
+    #: called drifted — the classic Trigg limit is 4 mean absolute deviations.
+    drift_tracking_signal_limit: float = Field(default=4.0, gt=0.0)
+    #: Realized wMAPE past which a run is called drifted whatever its bias.
+    drift_wmape_limit: float = Field(default=50.0, gt=0.0, le=100.0)
 
-    min_gbm_rows: int = 8
-    observations_per_parameter: int = 3
-    max_state_space_period: int = 24
+    # ---- API and fan-out ---------------------------------------------------
+    #: Leaves dispatched per chunk when a grouped run is fanned out to workers.
+    series_fan_out_chunk: int = Field(default=10, ge=1, le=1000)
+    usage_events_limit: int = Field(default=5000, ge=1)
+    api_max_page_size: int = Field(default=200, ge=1, le=1000)
 
-    series_fan_out_chunk: int = 10
-    usage_events_limit: int = 5000
+    @model_validator(mode="after")
+    def _metric_weights_rank_something(self) -> Settings:
+        total = self.metric_weight_wmape + self.metric_weight_smape + self.metric_weight_rmse
+        if total <= 0.0:
+            raise ValueError(
+                "METRIC_WEIGHT_WMAPE, METRIC_WEIGHT_SMAPE and METRIC_WEIGHT_RMSE cannot all be "
+                "zero: model selection would have nothing left to rank candidates on."
+            )
+        return self
 
-    api_max_page_size: int = 200
+    @property
+    def metric_weights(self) -> dict[str, float]:
+        """The scoring weights for a series that is not intermittent."""
+        return {
+            "wmape": self.metric_weight_wmape,
+            "smape": self.metric_weight_smape,
+            "rmse": self.metric_weight_rmse,
+        }
 
     @property
     def supabase_project_ref(self) -> str:

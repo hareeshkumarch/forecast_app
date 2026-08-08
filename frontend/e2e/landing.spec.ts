@@ -69,3 +69,30 @@ test("with reduced motion the page is composed from the first paint", async ({ b
 
   await context.close();
 });
+
+test("the header call to action fits its pill on the narrowest phones", async ({ page }) => {
+  // The full label wrapped to two lines and spilled out of a fixed-height pill
+  // below roughly 360px, which is where the older Android widths sit.
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/");
+
+  const cta = page.locator("header").getByRole("link", { name: "Open the dashboard" });
+  await expect(cta).toBeVisible();
+
+  const fits = await cta.evaluate((node) => node.scrollHeight <= node.clientHeight);
+  expect(fits).toBe(true);
+});
+
+test("the section nav only appears once it has room for one line", async ({ page }) => {
+  await page.goto("/");
+
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  if (!(await nav.isVisible())) return;
+
+  for (const link of await nav.getByRole("link").all()) {
+    const box = await link.boundingBox();
+    expect(box, "every section link has a box").not.toBeNull();
+    // One line of text at this size is ~20px; two would clear 30.
+    expect(box!.height).toBeLessThan(30);
+  }
+});

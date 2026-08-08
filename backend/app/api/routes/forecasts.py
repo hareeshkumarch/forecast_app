@@ -21,7 +21,7 @@ from app.api.deps import SessionDep
 from app.core.logging import get_logger
 from app.database.session import session_scope
 from app.datasets.profiler import is_currency_like
-from app.forecasting.selection import SCORING_RULE
+from app.forecasting.selection import scoring_rule
 from app.models.entities import ForecastRun, ModelCandidate
 from app.models.enums import PointKind, RunStatus
 from app.schemas.forecast import (
@@ -114,6 +114,7 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         metric_weights=payload.metric_weights,
         sarimax_order=payload.sarimax_order,
         gbm_max_depth=payload.gbm_max_depth,
+        gbm_learning_rate=payload.gbm_learning_rate,
         candidate_models=[m.value for m in payload.candidate_models]
         if payload.candidate_models
         else None,
@@ -197,7 +198,7 @@ async def get_metrics(run_id: uuid.UUID, session: SessionDep) -> ForecastMetrics
         selection_rationale=run.selection_rationale,
         leading_columns=list(run.leading_columns or []),
         frequency=run.frequency,
-        scoring_rule=SCORING_RULE,
+        scoring_rule=scoring_rule(),
         metrics=[ForecastMetricRead.model_validate(m) for m in run.metrics],
         candidates=[ModelCandidateRead.model_validate(c) for c in candidates.scalars().all()],
     )
@@ -314,6 +315,8 @@ def _scorecard(
         unforecast_keys=card.unforecast_keys,
         currency=is_currency_like(target_column),
         blocked_reason=card.blocked_reason,
+        tracking_signal=card.tracking_signal,
+        drifted=card.is_drifted,
         series=[SeriesScoreRow.model_validate(row, from_attributes=True) for row in ranked[:limit]],
     )
 

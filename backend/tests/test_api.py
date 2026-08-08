@@ -464,6 +464,31 @@ async def test_dashboard_summary_returns_six_kpis(client: AsyncClient) -> None:
     assert all(kpi["display_value"] != "" for kpi in body["kpis"])
 
 
+async def test_a_first_run_does_not_caption_a_comparison_it_never_made(
+    client: AsyncClient,
+) -> None:
+    """A caption naming a comparison with no number beside it reads as a broken card.
+
+    On a first run there is no previous run, so three of the six cards used to
+    print a bare "vs previous run" under the value and nothing else.
+    """
+    await _seed_and_run(client)
+
+    body = (await client.get("/api/dashboard/summary")).json()
+
+    for kpi in body["kpis"]:
+        label = kpi["comparison_label"]
+        if label is None or not label.startswith("vs "):
+            continue
+        assert (
+            kpi["delta_display"] is not None
+        ), f"{kpi['key']} says {label!r} with nothing to compare against"
+
+    # The window caption under Actual YTD is not a comparison and stands alone.
+    actual = next(kpi for kpi in body["kpis"] if kpi["key"] == "actual_ytd")
+    assert actual["comparison_label"], "the actual window is worth stating on its own"
+
+
 async def test_dashboard_is_empty_before_any_run(client: AsyncClient) -> None:
     response = await client.get("/api/dashboard/summary")
     body = response.json()

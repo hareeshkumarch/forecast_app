@@ -37,6 +37,7 @@ class DatasetColumnRead(ORMModel):
     sample_values: list[object]
     is_date_candidate: bool
     is_target_candidate: bool
+    parsed_as: str | None = None
 
 
 class DatasetRead(ORMModel):

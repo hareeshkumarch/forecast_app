@@ -8,6 +8,7 @@ from datetime import date
 import numpy as np
 import numpy.typing as npt
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.forecasting.frequency import future_periods as make_future_periods
 from app.forecasting.frequency import seasonal_period
@@ -33,6 +34,10 @@ class FoldResult:
     test_size: int
     y_true: list[float]
     y_pred: list[float]
+    #: The run's observation weights over this fold's test window, when it has
+    #: any. Kept per fold so anything rebuilding a score out of these folds —
+    #: the ensemble does — can weigh it the way the members were weighed.
+    y_weight: list[float] | None = None
 
 
 @dataclass(slots=True)
@@ -125,8 +130,6 @@ def plan_backtest(
 
 
 def _adaptive_fold_limit(affordable: int) -> int:
-    from app.core.config import settings
-
     if affordable <= 0:
         return MIN_FOLDS
     return int(np.clip(affordable, MIN_FOLDS, max(settings.forecast_max_folds, MIN_FOLDS)))
@@ -140,9 +143,8 @@ def _season(frequency: ForecastFrequency) -> int:
 
 ModelFactory = Callable[[FloatArray, list[date]], Forecaster]
 
-def _divergence_ceiling(y_train: FloatArray) -> float:
-    from app.core.config import settings
 
+def _divergence_ceiling(y_train: FloatArray) -> float:
     finite = y_train[np.isfinite(y_train)]
     if finite.size == 0:
         return float("inf")
@@ -243,6 +245,7 @@ def run_backtest(
             logger.debug("Backtest fold diverged for %s: %s", model_kind, diverged)
             return result
 
+        fold_weights = [float(v) for v in weights[cut:test_end]] if weights is not None else None
         result.folds.append(
             FoldResult(
                 fold=fold_index,
@@ -250,12 +253,13 @@ def run_backtest(
                 test_size=int(y_test.size),
                 y_true=[float(v) for v in y_test],
                 y_pred=[float(v) for v in predictions],
+                y_weight=fold_weights,
             )
         )
         all_true.extend(float(v) for v in y_test)
         all_pred.extend(float(v) for v in predictions)
-        if weights is not None:
-            all_weights.extend(float(v) for v in weights[cut:test_end])
+        if fold_weights is not None:
+            all_weights.extend(fold_weights)
 
     result.fit_seconds = time.perf_counter() - started
     result.params = last_params

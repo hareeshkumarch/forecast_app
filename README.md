@@ -126,6 +126,68 @@ docker compose up --build
 
 ---
 
+## Reading a customer's file
+
+Uploads and connectors go through the same profiler, which works out what each
+column *is* before anything is forecast from it.
+
+**The file opens first.** The delimiter is sniffed rather than assumed — a
+semicolon CSV is what Excel writes anywhere the comma is the decimal separator,
+and reading it as a comma file yields one column holding the whole line. Tabs
+and pipes work the same way, and a delimiter inside a quoted value is not
+counted as one. Encoding is detected across UTF-8, UTF-8 with a byte order
+mark, cp1252 and latin-1, so `région` stays `région`. A report title and a
+blank line above the header are skipped, and blank trailing rows are dropped.
+
+**Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
+a German ERP as `1.234,56`, from an accounting package as `(890.00)`, from a
+mainframe as `1000-`, and with a unit stuck on the end as `1000 kg`. All of
+those are numbers, and all of them are read as numbers. Dates arrive as ISO, as
+`15.01.2024`, as an ISO timestamp with or without milliseconds and with or
+without a zone, as `20240115`, as `2024Q1`, as `2024-W03`, as `FY24-P01`, and
+as the Excel serial `45292` that a spreadsheet leaves behind when it loses its
+formatting. A convention is chosen from a sample, applied to the whole column,
+and kept only if it explains nearly every row — so one stray token cannot drag
+a column into the wrong reading.
+
+The values that come out are what gets stored. Everything downstream reads the
+Parquet through DuckDB's `TRY_CAST`, and `"$1,234.56"` casts to `NULL`, so a
+column detected but not converted would be a column silently full of nothing.
+The original upload is kept untouched alongside it.
+
+**Day/month order is the one guess worth arguing about.** `01/02/2024` is the
+first of February in most of the world and the second of January in the United
+States. Where a value passes the twelfth the data settles it outright. Where a
+monthly file holds its day-of-month fixed, the position that never moves is the
+day — which is how `01/01, 02/01, 03/01` stays January, February, March instead
+of collapsing into the first three days of January. Where every value genuinely
+fits both readings, no algorithm can do better than guess, so the profile says
+so and `date_order` on the upload settles it by hand.
+
+How each column was read is recorded and shown beside it, because a date read
+in the wrong order is the one mistake nothing downstream can catch.
+
+**Two table shapes are recognised as shapes.** A planning sheet writes its
+periods across the top — `Jan 2024`, `Feb 2024`, … — and those headings are
+data, so the table is turned on its side before anything is read from it. Long
+format is the opposite trap: `date, metric, value` profiles perfectly well, and
+means nothing when summed, because the number is revenue on one row and units
+on the next. Where the values under a category are orders of magnitude apart
+the profile says so, because nothing downstream can tell — by then it is a
+column of doubles like any other.
+
+**Roles come from meaning, not position.** `revenue`, `rev`, `umsatz`,
+`ventas`, `chiffre_affaires`, `totalRevenue`, `fct_order__net_rev_usd` and
+`Net Revenue` all name the same thing, and reordering the columns does not
+change which one is the target. A word that names the measure beats one that
+only says it is a sum, so `order_revenue` wins over `line_total`. A column with
+more distinct values than a category plausibly has is treated as an identifier:
+it stays available to group by, but is not offered by default, because
+grouping by `customer_id` asks for a forecast per customer and pools almost all
+of them into "Others".
+
+---
+
 ## How a forecast is produced
 
 Nothing about the fit is fixed in advance. Each series is profiled first
@@ -152,6 +214,31 @@ rather than failing:
 pip install -r backend/requirements-optional.txt
 ```
 
+### Tuning what it decides
+
+The numbers behind those decisions — metric weights, the interval weight, the
+divergence ceiling, ensemble limits, search budgets, insight thresholds and the
+drift limits — are settings rather than constants, and every one is documented
+with its default in `.env.example`. They are range-checked at boot: a value
+outside its range fails the start naming the variable, instead of quietly
+producing a forecast nobody can account for. The scoring rule the API reports
+is built from the weights actually in force, so a re-weighted deployment
+describes itself correctly.
+
+### After the fact
+
+A finished run can be graded against data that arrived later
+(`POST /api/forecasts/{id}/score`). Alongside accuracy and interval coverage the
+scorecard reports a tracking signal — cumulative error in mean absolute
+deviations — and marks the run as drifting when it has missed the same way in
+period after period, which is the kind of error that will not correct itself.
+
+`POST /api/forecasts/{id}/simulate` re-prices a finished run under a different
+assumption. Volume and target shifts scale it directly; a driver multiplier
+moves the total by that driver's own measured share of the movement, so asking
+for 2× on a driver holding 40% of the impact lifts the forecast by 40%, not
+100%. Drivers the run never found are refused rather than silently applied.
+
 ---
 
 ## Keyboard
@@ -171,5 +258,8 @@ pip install -r backend/requirements-optional.txt
 
 - **Backend tests**: `pytest` inside `backend/`
 - **Frontend unit tests**: `npm test` inside `frontend/`
-- **Frontend layout tests**: `npm run test:e2e` inside `frontend/` — starts its
-  own dev server and asserts the responsive contract at four viewports
+- **Frontend layout tests**: `npm run test:e2e` inside `frontend/` — builds and
+  serves the app, then asserts the responsive contract at four viewports. It is
+  a production build rather than `next dev` because Fast Refresh recompiles a
+  route on first navigation and the rebuild lands mid-click, dropping it. Point
+  the tests at a server you are already running with `E2E_BASE_URL`.
