@@ -432,7 +432,7 @@ def test_an_identifier_is_never_mistaken_for_a_number(values: list[str], why: st
     ("text", "expected"),
     [
         ("$1,200", 1200.0),
-        ("€1.200,50".replace(".", "").replace(",", "."), 1200.50),
+        ("€1.200,50", 1200.50),
         ("£950", 950.0),
         ("¥12,000", 12000.0),
         # Indian grouping, and a symbol no hand-written list would have had.
@@ -450,3 +450,30 @@ def test_a_decorated_number_is_still_a_number(text: str, expected: float) -> Non
 
     assert coerced["amount"].dtype == pl.Float64
     assert coerced["amount"][0] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("label", "csv", "expected"),
+    [
+        ("US grouped", 'period,revenue\n2024-01-01,"1,234.56"\n2024-02-01,"2,345.67"\n', 1234.56),
+        ("EU grouped", "period;revenue\n2024-01-01;1.234,56\n2024-02-01;2.345,67\n", 1234.56),
+        ("EU decimal", "period;revenue\n2024-01-01;1234,56\n2024-02-01;2345,67\n", 1234.56),
+        ("FR spaced", "period;revenue\n2024-01-01;1 234,56\n2024-02-01;2 345,67\n", 1234.56),
+        ("IN lakhs", 'period,revenue\n2024-01-01,"1,00,000"\n2024-02-01,"2,50,000"\n', 100_000.0),
+    ],
+)
+def test_the_decimal_comma_survives_the_upload_itself(
+    label: str, csv: str, expected: float
+) -> None:
+    """The one that mattered, and the one no unit test could see.
+
+    Coercion lived in two places: a locale-aware reader, and a naive one that
+    stripped every comma as decoration before the locale-aware one was ever
+    asked. The naive one ran first, at ingestion — so a German file's 1.234,56
+    was stored as 1.23456, every target in it a thousandfold small, and every
+    test of the good reader still passed because none of them went through the
+    door the file actually comes in.
+    """
+    frame = persist_upload(csv.encode(), f"{label}.csv", f"locale-{label}").frame
+
+    assert frame["revenue"][0] == pytest.approx(expected), label

@@ -140,15 +140,20 @@ mark, cp1252 and latin-1, so `région` stays `région`. A report title and a
 blank line above the header are skipped, and blank trailing rows are dropped.
 
 **Values are read, not assumed.** Money arrives from Excel as `$1,234.56`, from
-a German ERP as `1.234,56`, from an accounting package as `(890.00)`, from a
+a German ERP as `1.234,56`, from a French one as `1 234,56`, from an Indian
+ledger as `₹1,00,000`, from an accounting package as `(890.00)`, from a
 mainframe as `1000-`, and with a unit stuck on the end as `1000 kg`. All of
-those are numbers, and all of them are read as numbers. Dates arrive as ISO, as
-`15.01.2024`, as an ISO timestamp with or without milliseconds and with or
-without a zone, as `20240115`, as `2024Q1`, as `2024-W03`, as `FY24-P01`, and
-as the Excel serial `45292` that a spreadsheet leaves behind when it loses its
-formatting. A convention is chosen from a sample, applied to the whole column,
-and kept only if it explains nearly every row — so one stray token cannot drag
-a column into the wrong reading.
+those are numbers, and all of them are read as numbers — by one reader, which
+works out what the separators mean before removing them. Stripping the commas
+as decoration first is how `1.234,56` becomes 1.23456, and a target a
+thousandfold small is a file that looks like it imported cleanly.
+
+Dates arrive as ISO, as `15.01.2024`, as an ISO timestamp with or without
+milliseconds and with or without a zone, as `20240115`, as `2024Q1`, as
+`2024-W03`, as `FY24-P01`, and as the Excel serial `45292` that a spreadsheet
+leaves behind when it loses its formatting. A convention is chosen from a
+sample, applied to the whole column, and kept only if it explains nearly every
+row — so one stray token cannot drag a column into the wrong reading.
 
 The values that come out are what gets stored. Everything downstream reads the
 Parquet through DuckDB's `TRY_CAST`, and `"$1,234.56"` casts to `NULL`, so a

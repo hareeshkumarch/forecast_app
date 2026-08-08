@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import re
-import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +9,7 @@ import polars as pl
 
 from app.core.config import settings
 from app.core.errors import PayloadTooLargeError, UnsupportedFileError, ValidationError
+from app.datasets.coercion import coerce_numeric
 
 CSV_SUFFIXES = {".csv", ".tsv", ".txt"}
 EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
@@ -249,50 +248,25 @@ def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.rename(renames) if renames else frame
 
 
-def _currency_symbols() -> str:
-    symbols = (chr(code) for code in range(0xFFFF) if unicodedata.category(chr(code)) == "Sc")
-    return "".join(re.escape(symbol) for symbol in symbols)
-
-
-NUMERIC_DECORATION_PATTERN = rf"[\s,_%{_currency_symbols()}]"
-NUMERIC_COERCION_RATIO = 0.9
-NUMERIC_SAMPLE_ROWS = 500
-
-
 def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
-    converted: list[pl.Expr] = []
+    """Read the numbers a spreadsheet wrote as text.
 
-    for name, dtype in zip(frame.columns, frame.dtypes, strict=True):
-        if dtype != pl.Utf8:
+    There is one coercion path and it is the locale-aware one in
+    `app.datasets.coercion`. Stripping every comma as decoration before asking
+    what the comma *meant* reads the German ``1.234,56`` as 1.23456 — a
+    thousandfold error in the forecast target, on a file that looked like it
+    imported cleanly, in the half of the world that writes its decimals that
+    way. Two coercions cannot both be right, so there is no longer a second.
+    """
+    converted: list[pl.Series] = []
+
+    for name in frame.columns:
+        column = frame[name]
+        if column.dtype != pl.Utf8:
             continue
-
-        column = frame[name].drop_nulls()
-        if column.len() == 0:
-            continue
-
-        sample = column.head(NUMERIC_SAMPLE_ROWS)
-        text = sample.str.strip_chars()
-        text = text.str.replace_all(r"^\((.*)\)$", "-${1}")
-        stripped = text.str.replace_all(NUMERIC_DECORATION_PATTERN, "")
-
-        parsed = stripped.cast(pl.Float64, strict=False)
-        usable = parsed.drop_nulls().len()
-        if usable == 0 or usable < NUMERIC_COERCION_RATIO * sample.len():
-            continue
-
-        if stripped.str.len_chars().max() == 4 and parsed.min() is not None:
-            low, high = float(parsed.min()), float(parsed.max())  # type: ignore[arg-type]
-            if 1800 <= low <= 2200 and 1800 <= high <= 2200:
-                continue
-
-        converted.append(
-            pl.col(name)
-            .str.strip_chars()
-            .str.replace_all(r"^\((.*)\)$", "-${1}")
-            .str.replace_all(NUMERIC_DECORATION_PATTERN, "")
-            .cast(pl.Float64, strict=False)
-            .alias(name)
-        )
+        parsed = coerce_numeric(column)
+        if parsed is not None:
+            converted.append(parsed.values.rename(name))
 
     return frame.with_columns(converted) if converted else frame
 

@@ -71,15 +71,31 @@ class DateParse:
 # --------------------------------------------------------------------- numbers
 
 _CURRENCY = "".join(chr(c) for c in range(0x20A0, 0x20C0)) + "$£€¥₹¢₩₽"
-_STRIP_EDGES = " \t\r\n\"'` "
-#: The spaces locales group digits with: non-breaking, narrow, thin.
-_GROUPING_SPACES = "\u00a0\u202f\u2009"
+#: The spaces locales group digits with: non-breaking, narrow, thin, and plain.
+#: A French or Nordic export writes 1 350, and Excel writes the non-breaking one.
+_GROUPING_SPACES = "\u00a0\u202f\u2009 "
+_STRIP_EDGES = " \t\r\n\"'`" + _GROUPING_SPACES
 #: A trailing unit — "kg", "units", "pcs" — after the digits. Written as a
 #: keep-the-front rewrite rather than a look-behind, because the regex engine
 #: polars uses supports no look-around at all.
 _TRAILING_UNIT_KEEP = r"^(.*\d[\d.,]*)\s*[A-Za-z_/]+\.?$"
 _TRAILING_UNIT = re.compile(_TRAILING_UNIT_KEEP)
-_LEADING_SIGN_WORD = re.compile(r"^(?:approx|about|ca)\.?\s*", re.IGNORECASE)
+_LEADING_SIGN_WORD_KEEP = r"^(?:approx|about|ca)\.?\s*"
+_LEADING_SIGN_WORD = re.compile(_LEADING_SIGN_WORD_KEEP, re.IGNORECASE)
+#: A space between two digits is a group separator and nothing else. Real
+#: separators sit three digits apart, so a single pass can never straddle two
+#: of them and 1 234 567 collapses whole.
+_SPACE_GROUP_KEEP = rf"(\d)[{_GROUPING_SPACES}](\d)"
+_SPACE_GROUP = re.compile(_SPACE_GROUP_KEEP)
+#: 1.2e3, which is what a scientific instrument writes and what pandas leaves
+#: behind when a float column round-trips through CSV.
+_EXPONENT = re.compile(r"[eE][+-]?\d+$")
+#: A column whose name says its four-digit numbers are a year.
+_YEAR_NAME = re.compile(
+    r"(?:^|[^a-z])(?:year|yr|fy|jahr|ann[eé]e|anno|a[nñ]o|ejercicio)s?(?:[^a-z]|$)",
+    re.IGNORECASE,
+)
+_BARE_YEAR = re.compile(r"^(?:19|20)\d{2}$")
 
 
 def _strip_symbols(token: str) -> tuple[str, bool, bool]:
@@ -102,13 +118,11 @@ def _strip_symbols(token: str) -> tuple[str, bool, bool]:
 
     text = _TRAILING_UNIT.sub(r"\1", text).strip()
     text = "".join(ch for ch in text if ch not in _CURRENCY and unicodedata.category(ch) != "Sc")
-    # Non-breaking and thin spaces are group separators in several locales.
-    for space in _GROUPING_SPACES:
-        text = text.replace(space, "")
-    return text.strip(), negative, percent
+    text = _SPACE_GROUP.sub(r"\1\2", text.strip(_STRIP_EDGES))
+    return text.strip(_STRIP_EDGES), negative, percent
 
 
-_NUMERIC_CORE = re.compile(r"^[+-]?\d[\d.,]*$")
+_NUMERIC_CORE = re.compile(r"^[+-]?\d[\d.,]*(?:[eE][+-]?\d+)?$")
 
 
 def _decimal_separator(cores: list[str]) -> str:
@@ -135,14 +149,23 @@ def _decimal_separator(cores: list[str]) -> str:
         return "," if comma_last > dot_last else "."
 
     def looks_grouped(tokens: list[str], separator: str) -> bool:
-        """1,234,567 is grouping; 1,23 is a decimal comma."""
+        """1,234,567 is grouping; 1,23 is a decimal comma.
+
+        India groups the other way — 1,00,000 is a lakh, three digits at the
+        end and pairs above it — and that is a whole subcontinent of exports
+        whose totals come out a hundredfold small when the comma is read as a
+        decimal point.
+        """
         if not tokens:
             return False
         grouped = 0
         for token in tokens:
             parts = token.lstrip("+-").split(separator)
-            if (len(parts) > 2 and all(len(p) == 3 for p in parts[1:])) or (
-                len(parts) == 2 and len(parts[1]) == 3 and len(parts[0]) <= 3
+            head, tail = parts[0], parts[1:]
+            if not tail or not head or len(head) > 3:
+                continue
+            if all(len(part) == 3 for part in tail) or (
+                len(tail) > 1 and len(tail[-1]) == 3 and all(len(part) == 2 for part in tail[:-1])
             ):
                 grouped += 1
         return grouped >= AGREEMENT * len(tokens)
@@ -153,6 +176,19 @@ def _decimal_separator(cores: list[str]) -> str:
         # A dot is the decimal point unless every value is grouped like 1.234.567.
         return "," if looks_grouped(dot_only, ".") else "."
     return "."
+
+
+def _is_year_label(name: str, cores: list[str]) -> bool:
+    """A column named for a year, holding nothing but years, is a label.
+
+    The guard is deliberately narrow. Read a fiscal year as a measure and it
+    becomes a candidate to forecast and stops being available to break the
+    forecast down by, which is a nuisance; refuse a genuine measure because
+    its values happened to land between 1900 and 2100 and there is nothing to
+    forecast at all. So the name has to say year before the values are even
+    looked at, and `revenue` never does.
+    """
+    return bool(_YEAR_NAME.search(name)) and all(_BARE_YEAR.match(core) for core in cores)
 
 
 def coerce_numeric(series: pl.Series) -> NumericParse | None:
@@ -186,8 +222,13 @@ def coerce_numeric(series: pl.Series) -> NumericParse | None:
 
     if len(cores) < AGREEMENT * len(sample):
         return None
+    if _is_year_label(series.name, cores):
+        return None
 
-    decimal = _decimal_separator(cores)
+    # An exponent carries no separator of its own, and 1.2e3 would otherwise
+    # vote for the dot as a group separator on the strength of its three
+    # trailing digits.
+    decimal = _decimal_separator([_EXPONENT.sub("", core) for core in cores])
     group = "." if decimal == "," else ","
 
     cleaned = text.str.strip_chars(_STRIP_EDGES)
@@ -196,13 +237,15 @@ def coerce_numeric(series: pl.Series) -> NumericParse | None:
     )
 
     cleaned = (
-        cleaned.str.replace_all(r"^\(", "")
+        cleaned.str.replace_all(rf"(?i){_LEADING_SIGN_WORD_KEEP}", "")
+        .str.replace_all(r"^\(", "")
         .str.replace_all(r"\)$", "")
         .str.replace_all(r"-$", "")
-        .str.replace_all(f"[{_GROUPING_SPACES}]", "")
         .str.replace_all(f"[{re.escape(_CURRENCY)}]", "")
         .str.replace_all(r"%$", "")
         .str.replace_all(_TRAILING_UNIT_KEEP, "$1")
+        .str.strip_chars(_STRIP_EDGES)
+        .str.replace_all(_SPACE_GROUP_KEEP, "${1}${2}")
         .str.replace_all(re.escape(group), "")
     )
     if decimal == ",":
