@@ -585,6 +585,90 @@ svg[role="img"]:focus-visible {
   border-width: 0;
 }
 
+/* ----------------------------------------------------------- app motion */
+
+/*
+ * One entrance, reused. The product borrows the landing page's language —
+ * a short rise and fade on transform and opacity only — so moving between
+ * the two does not feel like moving between two products.
+ */
+@keyframes app-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes app-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.rise-in {
+  animation: app-rise 260ms var(--ease-out) both;
+  animation-delay: var(--rise-delay, 0ms);
+}
+
+.fade-in {
+  animation: app-fade 200ms var(--ease-out) both;
+  animation-delay: var(--rise-delay, 0ms);
+}
+
+/* A list that arrives together reads as one thing; a stagger reads as an
+ * order. Capped so a long list does not keep the reader waiting. */
+.stagger > * {
+  animation: app-rise 260ms var(--ease-out) both;
+}
+
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* The rails change width, and their contents should not smear while it
+ * happens: the label fades on its own clock rather than being scaled. */
+[data-collapsed] .rail-label {
+  opacity: 0;
+}
+
+.rail-label {
+  transition: opacity 140ms var(--ease-out);
+}
+
+.press {
+  transition:
+    transform 120ms var(--ease-out),
+    background-color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+
+.press:active {
+  transform: translate3d(0, 1px, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .fade-in,
+  .stagger > * {
+    animation: none;
+  }
+
+  .press:active {
+    transform: none;
+  }
+}
+
 /* -------------------------------------------------------------- skeleton */
 
 @keyframes shimmer {

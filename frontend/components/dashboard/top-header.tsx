@@ -11,6 +11,7 @@ import {
   Settings,
   Sparkles,
   Sun,
+  PanelLeft,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -77,14 +78,17 @@ export function TopHeader({ section }: { section: AppSection }) {
             aria-expanded={isDesktop ? !sidebarCollapsed : false}
             aria-controls="app-navigation"
             className={cn(
-              "group -mx-1 flex min-h-11 items-center gap-2.5 rounded-input px-1",
-              "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:py-1",
+              "flex min-h-11 w-9 shrink-0 items-center justify-center",
+              "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:h-8",
             )}
           >
-            <Mark size={28} />
-            <span className="hidden truncate text-subhead font-bold tracking-[-0.035em] text-text-primary sm:block sm:text-title">
-              Forecast Hub
-            </span>
+            <PanelLeft
+              className={cn(
+                "h-4 w-4 text-text-muted transition-transform duration-200 ease-out motion-reduce:transition-none",
+                isDesktop && sidebarCollapsed && "rotate-180",
+              )}
+              aria-hidden
+            />
           </button>
         </Tooltip.Trigger>
         <Tooltip.Portal>
@@ -99,6 +103,20 @@ export function TopHeader({ section }: { section: AppSection }) {
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>
+
+      <Link
+        href="/"
+        aria-label="Forecast Hub, back to the home page"
+        className={cn(
+          "group -ml-0.5 flex min-h-11 items-center gap-2.5 px-1",
+          "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:py-1",
+        )}
+      >
+        <Mark size={24} />
+        <span className="hidden truncate text-subhead font-bold tracking-[-0.035em] text-text-primary sm:block sm:text-title">
+          Forecast Hub
+        </span>
+      </Link>
 
       <span className="hidden h-5 w-px bg-border sm:block" aria-hidden />
       <span className="hidden truncate text-meta font-medium text-text-secondary sm:block">
@@ -125,15 +143,6 @@ export function TopHeader({ section }: { section: AppSection }) {
           <StatusControl />
         </div>
         {isDashboard ? <ExportControl /> : null}
-
-        <Link
-          href="/"
-          aria-label="Back to landing page"
-          title="Back to landing page"
-          className={cn(ICON_BUTTON, "hidden sm:inline-flex")}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-        </Link>
 
         <IconButton
           label={`Theme: ${theme}. Switch to ${resolvedTheme === "dark" ? "light" : "dark"}`}

@@ -46,7 +46,7 @@ export function KpiCards() {
 
   if (isLoading) {
     return (
-      <div className="grid-kpi">
+      <div className="grid-kpi stagger">
         {Array.from({ length: 6 }).map((_, index) => (
           <Card key={index} className="p-3">
             <Skeleton className="h-6 w-6 " />
@@ -85,7 +85,7 @@ export function KpiCards() {
   }
 
   return (
-    <div className="grid-kpi">
+    <div className="grid-kpi stagger">
       {data.kpis.map((kpi) => (
         <KpiTile key={kpi.key} kpi={kpi} />
       ))}

@@ -13,6 +13,8 @@ import {
   TrendingUp,
   Waves,
   type LucideIcon,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -30,6 +32,7 @@ import { usePlainInsights, useInsights, useRewriteInsights } from "@/hooks/use-d
 import { formatMetric } from "@/lib/format";
 import { PROVIDERS, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
+import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { Insight, InsightSeverity, InsightType } from "@/types/api";
 
@@ -76,13 +79,41 @@ const SEVERITY_STYLES: Record<
   },
 };
 
+const INSIGHTS_WIDTH = { expanded: "w-insights", collapsed: "w-[46px]" } as const;
+
 export function InsightsRail() {
+  const collapsed = usePrefsStore((state) => state.insightsCollapsed);
+  const toggle = usePrefsStore((state) => state.toggleInsights);
+  const { data } = useInsights();
+  const count = data?.items.length ?? 0;
+
   return (
     <aside
-   aria-label="Forecast insights"
-   className="hidden w-insights shrink-0 flex-col border-l border-border bg-surface min-[1440px]:flex"
+      id="app-insights"
+      aria-label="Forecast insights"
+      data-collapsed={collapsed ? "" : undefined}
+      className={cn(
+        "hidden shrink-0 flex-col overflow-hidden border-l border-border bg-surface min-[1440px]:flex",
+        "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        collapsed ? INSIGHTS_WIDTH.collapsed : INSIGHTS_WIDTH.expanded,
+      )}
     >
-      <InsightsRailBody />
+      {collapsed ? (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Expand forecast insights"
+          aria-expanded={false}
+          aria-controls="app-insights"
+          className="flex w-[46px] flex-1 flex-col items-center gap-2 py-4 text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary"
+        >
+          <PanelRightOpen className="h-4 w-4" aria-hidden />
+          <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
+          {count > 0 ? <span className="text-caption num">{count}</span> : null}
+        </button>
+      ) : (
+        <InsightsRailBody onCollapse={toggle} />
+      )}
     </aside>
   );
 }
@@ -100,7 +131,7 @@ function useConfiguredProvider(): { id: string; label: string } | null {
   return provider;
 }
 
-export function InsightsRailBody() {
+export function InsightsRailBody({ onCollapse }: { onCollapse?: () => void } = {}) {
   const { data, isLoading, isError, error, refetch } = useInsights();
   const openInsight = useUiStore((state) => state.openInsight);
   const openModal = useUiStore((state) => state.openModal);
@@ -120,6 +151,22 @@ export function InsightsRailBody() {
           <h2 className="text-subhead font-semibold text-text-primary">Forecast Insights</h2>
           {items.length > 0 ? (
             <span className="ml-auto text-caption text-text-muted num">{items.length}</span>
+          ) : null}
+          {onCollapse ? (
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="Collapse forecast insights"
+              aria-expanded
+              aria-controls="app-insights"
+              className={cn(
+                items.length > 0 ? "" : "ml-auto",
+                "flex h-7 w-7 items-center justify-center text-text-muted",
+                "transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary",
+              )}
+            >
+              <PanelRightClose className="h-4 w-4" aria-hidden />
+            </button>
           ) : null}
 
           <DropdownMenu.Root>
@@ -186,7 +233,7 @@ export function InsightsRailBody() {
         <div className="mt-2.5 h-px w-full bg-gradient-to-r from-accent-border to-transparent" />
       </div>
 
-      <div className="scroll-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3">
+      <div className="scroll-thin stagger min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3">
         {isLoading ? (
           Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="rounded-card border border-border p-3" aria-hidden>

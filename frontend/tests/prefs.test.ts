@@ -22,6 +22,7 @@ beforeEach(() => {
     theme: "system",
     density: "comfortable",
     sidebarCollapsed: false,
+    insightsCollapsed: false,
     resolvedTheme: "light",
     revision: 0,
   });
@@ -33,6 +34,7 @@ describe("stored preferences", () => {
       theme: "system",
       density: "comfortable",
       sidebarCollapsed: false,
+      insightsCollapsed: false,
     });
   });
 
@@ -53,7 +55,31 @@ describe("stored preferences", () => {
       theme: "dark",
       density: "compact",
       sidebarCollapsed: true,
+      insightsCollapsed: false,
     });
+  });
+});
+
+describe("the insights rail", () => {
+  it("starts open and remembers being closed", () => {
+    expect(usePrefsStore.getState().insightsCollapsed).toBe(false);
+
+    usePrefsStore.getState().toggleInsights();
+
+    expect(usePrefsStore.getState().insightsCollapsed).toBe(true);
+    expect(readPrefs().insightsCollapsed).toBe(true);
+  });
+
+  it("closes and opens independently of the navigation rail", () => {
+    usePrefsStore.getState().toggleInsights();
+
+    expect(usePrefsStore.getState().insightsCollapsed).toBe(true);
+    expect(usePrefsStore.getState().sidebarCollapsed).toBe(false);
+
+    usePrefsStore.getState().toggleSidebar();
+
+    expect(readPrefs().insightsCollapsed).toBe(true);
+    expect(readPrefs().sidebarCollapsed).toBe(true);
   });
 });
 

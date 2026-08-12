@@ -58,8 +58,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || (loading && !turning)}
       aria-busy={loading || undefined}
       className={cn(
-        "inline-flex items-center justify-center rounded-input font-medium",
-        "transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-70",
+        "press inline-flex items-center justify-center rounded-input font-medium",
+        "disabled:cursor-not-allowed disabled:opacity-70",
         BUTTON_SIZES[size],
         BUTTON_VARIANTS[variant],
         className,

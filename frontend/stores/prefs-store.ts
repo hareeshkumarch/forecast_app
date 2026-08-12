@@ -12,9 +12,15 @@ interface StoredPrefs {
   theme: ThemeChoice;
   density: Density;
   sidebarCollapsed: boolean;
+  insightsCollapsed: boolean;
 }
 
-const DEFAULTS: StoredPrefs = { theme: "system", density: "comfortable", sidebarCollapsed: false };
+const DEFAULTS: StoredPrefs = {
+  theme: "system",
+  density: "comfortable",
+  sidebarCollapsed: false,
+  insightsCollapsed: false,
+};
 
 export function readPrefs(): StoredPrefs {
   if (typeof window === "undefined") return DEFAULTS;
@@ -31,6 +37,7 @@ export function readPrefs(): StoredPrefs {
           : DEFAULTS.theme,
       density: parsed.density === "compact" ? "compact" : DEFAULTS.density,
       sidebarCollapsed: parsed.sidebarCollapsed === true,
+      insightsCollapsed: parsed.insightsCollapsed === true,
     };
   } catch {
     return DEFAULTS;
@@ -67,6 +74,7 @@ interface PrefsState {
   theme: ThemeChoice;
   density: Density;
   sidebarCollapsed: boolean;
+  insightsCollapsed: boolean;
   resolvedTheme: ResolvedTheme;
 
   revision: number;
@@ -75,6 +83,7 @@ interface PrefsState {
   setDensity: (density: Density) => void;
   toggleTheme: () => void;
   toggleSidebar: () => void;
+  toggleInsights: () => void;
   hydrate: () => void;
   syncSystemTheme: () => void;
 }
@@ -83,20 +92,21 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
   theme: DEFAULTS.theme,
   density: DEFAULTS.density,
   sidebarCollapsed: DEFAULTS.sidebarCollapsed,
+  insightsCollapsed: DEFAULTS.insightsCollapsed,
   resolvedTheme: "light",
   revision: 0,
 
   setTheme: (theme) => {
-    const { density, sidebarCollapsed } = get();
+    const { density, sidebarCollapsed, insightsCollapsed } = get();
     const resolvedTheme = applyPrefs(theme, density);
-    writePrefs({ theme, density, sidebarCollapsed });
+    writePrefs({ theme, density, sidebarCollapsed, insightsCollapsed });
     set((state) => ({ theme, resolvedTheme, revision: state.revision + 1 }));
   },
 
   setDensity: (density) => {
-    const { theme, sidebarCollapsed } = get();
+    const { theme, sidebarCollapsed, insightsCollapsed } = get();
     const resolvedTheme = applyPrefs(theme, density);
-    writePrefs({ theme, density, sidebarCollapsed });
+    writePrefs({ theme, density, sidebarCollapsed, insightsCollapsed });
     set((state) => ({ density, resolvedTheme, revision: state.revision + 1 }));
   },
 
@@ -106,11 +116,17 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
   },
 
   toggleSidebar: () => {
-    const { theme, density, sidebarCollapsed } = get();
+    const { theme, density, sidebarCollapsed, insightsCollapsed } = get();
     const next = !sidebarCollapsed;
-    writePrefs({ theme, density, sidebarCollapsed: next });
-
+    writePrefs({ theme, density, sidebarCollapsed: next, insightsCollapsed });
     set((state) => ({ sidebarCollapsed: next, revision: state.revision + 1 }));
+  },
+
+  toggleInsights: () => {
+    const { theme, density, sidebarCollapsed, insightsCollapsed } = get();
+    const next = !insightsCollapsed;
+    writePrefs({ theme, density, sidebarCollapsed, insightsCollapsed: next });
+    set((state) => ({ insightsCollapsed: next, revision: state.revision + 1 }));
   },
 
   hydrate: () => {

@@ -108,7 +108,7 @@ export function Workspace() {
 
           <ModelHealthStrip />
 
-          <div className="grid-charts mt-3">
+          <div className="grid-charts stagger mt-3">
             <ForecastVsActual />
             {breakdowns[0] ? (
               <BreakdownPanel key={breakdowns[0].column} breakdown={breakdowns[0]} />
@@ -118,7 +118,7 @@ export function Workspace() {
           </div>
 
           {breakdowns.length > 0 ? (
-            <div className="grid-panels mt-3">
+            <div className="grid-panels stagger mt-3">
               {breakdowns.slice(1).map((breakdown) => (
                 <BreakdownPanel key={breakdown.column} breakdown={breakdown} />
               ))}
