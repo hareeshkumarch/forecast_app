@@ -48,3 +48,6 @@ npm-debug.log*
 
 # Stray archives
 *.zip
+
+# Screenshots written by the browser audits.
+frontend/audits/out-*.png

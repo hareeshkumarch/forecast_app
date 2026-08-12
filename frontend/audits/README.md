@@ -1,10 +1,10 @@
-# Landing-page acceptance audits
+# Browser acceptance audits
 
-Four harnesses that measure the landing page in a real browser rather than
-asserting on the code that draws it. Each one corresponds to acceptance
-criteria that cannot be checked from unit tests: whether ink from two lines of
-text touches, where an anchor actually lands, whether a bar overshoots its
-value mid-animation.
+Harnesses that measure the running app in a real browser rather than asserting
+on the code that draws it. Each one corresponds to acceptance criteria that
+cannot be checked from unit tests: whether ink from two lines of text touches,
+where an anchor actually lands, whether a bar overshoots its value mid-animation,
+which focus ring a click actually produces.
 
 Start the app first — they drive whatever is at `BASE` (default
 `http://localhost:3000`):
@@ -15,6 +15,13 @@ node audits/a1.mjs         # no two lines of text touch, 320px to 2560px
 node audits/track-a.mjs    # anchors, card measure, hero fold
 node audits/a5.mjs         # chart geometry and captions stay inside the frame
 node audits/track-b.mjs    # motion: budget, overshoot, reduced motion, frame cost
+node audits/scale.mjs      # shell, nav and chart bounds at ten viewports
+node audits/edges.mjs      # chart sequence, nav indicator, touch, keyboard, a11y
+node audits/product.mjs    # wordmark, rails, motion inside the dashboard
+node audits/header.mjs     # the collapse control at each breakpoint
+node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
+node audits/reveal.mjs     # every section reveals when actually scrolled to
+node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
 `BASE=https://… node audits/a1.mjs` points them at a deploy instead.
@@ -37,6 +44,20 @@ the animation overstates it by roughly an order of magnitude.
 can sit inside the frame while the glyphs it anchors run outside it, and only
 the browser knows how wide a word is once the mono face has loaded. The
 geometry itself is covered at n = 8, 35 and 120 by `tests/demand-scape.test.ts`.
+
+**bluebox.mjs** reports `:focus` and `:focus-visible` separately, because they
+disagree exactly where the bug lived. An element with `tabindex` matches
+`:focus` on a mouse click but not `:focus-visible`, so styling only the latter
+leaves the click falling through to the browser's own ring.
+
+**reveal.mjs** scrolls to each section before measuring. A full-page screenshot
+resizes the viewport instead of scrolling, so `IntersectionObserver` never
+fires and every revealed section photographs blank — an artifact that looks
+exactly like content failing to appear.
+
+**header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
+portal, not as the inline `#app-navigation`. Below the rail breakpoint the two
+are different elements.
 
 ## Known shortfall
 

@@ -8,6 +8,7 @@ import { CheckDiagram } from "@/components/marketing/check-diagram";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
+import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils";
 
@@ -195,18 +196,21 @@ function Features() {
 function Compare() {
   return (
     <section id="compare" className="section-pad border-t border-[#d8ddd7]">
-      <div className={cn(SHELL, "grid items-end gap-10 lg:grid-cols-2 lg:gap-16")}>
+      <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal>
           <Eyebrow>Built for a real decision</Eyebrow>
           <h2 className="mt-4 max-w-[24ch] text-balance text-site-h2 font-bold">
             A range tells you more than a perfect-looking line.
           </h2>
-        </Reveal>
-        <Reveal delay={100} className="border-l-2 border-[#287b59] pl-8">
-          <p className="max-w-[46ch] text-site-lead text-[#3f463f]">
+          <p className="mt-5 max-w-[46ch] text-site-lead text-[#3f463f]">
             Forecast Hub shows what is most likely, how far it could move, and what changed since the last run.
           </p>
-          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-[#747b74]">One answer, with the uncertainty left in</p>
+          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-[#747b74]">
+            One answer, with the uncertainty left in
+          </p>
+        </Reveal>
+        <Reveal delay={100}>
+          <RangeVsLine />
         </Reveal>
       </div>
     </section>

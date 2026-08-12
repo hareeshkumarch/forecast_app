@@ -177,6 +177,10 @@ body {
   background-size: 48px 48px;
 }
 
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -566,6 +570,15 @@ body {
 .scape-marker {
   fill: rgba(17, 21, 18, 0.055);
   pointer-events: none;
+}
+
+.scape-frame svg[role="img"] {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+svg[role="img"]:focus:not(:focus-visible) {
+  outline: none;
 }
 
 svg[role="img"]:focus-visible {

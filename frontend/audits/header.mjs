@@ -1,0 +1,82 @@
+import { chromium } from "@playwright/test";
+
+const BASE = process.env.BASE ?? "http://localhost:3000";
+const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+
+const browser = await chromium.launch({ executablePath: CHROME });
+const fail = [];
+const note = (ok, label, detail = "") => {
+  console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${detail ? `  — ${detail}` : ""}`);
+  if (!ok) fail.push(label);
+};
+
+const visible = (page) =>
+  page.evaluate(() => {
+    const button = document.querySelector('header button[aria-label="Open navigation"]');
+    if (!button) return { present: false, shown: false };
+    const box = button.getBoundingClientRect();
+    return { present: true, shown: box.width > 0 && box.height > 0 };
+  });
+
+console.log("\ndesktop");
+{
+  const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+
+  const state = await visible(page);
+  note(!state.shown, "the collapse symbol is hidden beside the wordmark", JSON.stringify(state));
+  note(
+    (await page.locator('header a[href="/"]').count()) === 1,
+    "the wordmark still goes home",
+  );
+  note(
+    (await page.evaluate(() => document.querySelector("#app-navigation")?.getBoundingClientRect().width ?? 0)) > 100,
+    "the navigation rail is on screen, so nothing needs opening",
+  );
+  await page.screenshot({ path: "audits/out-dashboard-header.png", clip: { x: 0, y: 0, width: 620, height: 60 } });
+  await page.close();
+}
+
+console.log("\nmobile");
+{
+  const page = await browser.newPage({ viewport: { width: 430, height: 900 }, hasTouch: true, isMobile: true });
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+
+  const state = await visible(page);
+  note(state.shown, "the button is there, because the rail is not", JSON.stringify(state));
+
+  // The mobile rail is a Radix dialog in a portal, not the inline #app-navigation.
+  await page.click('header button[aria-label="Open navigation"]');
+  await page.waitForTimeout(500);
+  const opened = await page.evaluate(() => {
+    const drawer = document.querySelector('[role="dialog"]');
+    if (!drawer) return { width: 0, title: "none", links: 0 };
+    return {
+      width: Math.round(drawer.getBoundingClientRect().width),
+      title: drawer.textContent?.trim().slice(0, 20) ?? "",
+      links: drawer.querySelectorAll("a").length,
+    };
+  });
+  note(opened.width > 100 && opened.links > 0, "tapping it opens the navigation", JSON.stringify(opened));
+  await page.close();
+}
+
+console.log("\nkeyboard route is still there on desktop");
+{
+  const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+  const before = await page.evaluate(() => document.querySelector("#app-navigation")?.getBoundingClientRect().width ?? 0);
+  await page.keyboard.press("[");
+  await page.waitForTimeout(450);
+  const after = await page.evaluate(() => document.querySelector("#app-navigation")?.getBoundingClientRect().width ?? 0);
+  note(after < before, "the [ shortcut still collapses the rail", `${Math.round(before)} -> ${Math.round(after)}`);
+  await page.close();
+}
+
+console.log(fail.length === 0 ? "\nHEADER GATE: PASS" : `\nHEADER GATE: ${fail.length} FAILURES`);
+fail.forEach((f) => console.log(`  - ${f}`));
+await browser.close();
+process.exit(fail.length === 0 ? 0 : 1);
