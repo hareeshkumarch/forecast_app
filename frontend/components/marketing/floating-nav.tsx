@@ -18,6 +18,7 @@ export function FloatingNav() {
   const [pastHero, setPastHero] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const placed = useRef(false);
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export function FloatingNav() {
         ? list.querySelector<HTMLElement>(`[data-section="${active}"]`)
         : null;
       if (!current) {
+        placed.current = false;
         setIndicator(null);
         return;
       }
@@ -36,9 +38,25 @@ export function FloatingNav() {
     };
 
     place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    // The list's own width is content-driven and constant, so watching it
+    // alone never fires. The nav around it is what changes with the viewport.
+    const observer = new ResizeObserver(place);
+    observer.observe(list);
+    if (list.parentElement) observer.observe(list.parentElement);
+    document.fonts?.ready.then(place).catch(() => undefined);
+    return () => observer.disconnect();
   }, [active]);
+
+  useEffect(() => {
+    if (indicator) {
+      const frame = requestAnimationFrame(() => {
+        placed.current = true;
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    placed.current = false;
+    return undefined;
+  }, [indicator]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -90,6 +108,7 @@ export function FloatingNav() {
               a position, not a quantity, so it is allowed to overshoot. */}
           <span
             aria-hidden
+            data-placing={placed.current ? undefined : "true"}
             className="nav-indicator pointer-events-none absolute inset-y-1 left-0 bg-[#e6e9e4]"
             style={{
               width: indicator?.width ?? 0,

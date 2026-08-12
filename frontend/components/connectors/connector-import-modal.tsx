@@ -149,7 +149,7 @@ export function ConnectorImportModal() {
                   type="button"
                   onClick={() => setMode(value)}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1.5 text-meta font-medium",
+                    "flex flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-meta font-medium",
                     "transition-colors duration-fast",
                     mode === value
                       ? "bg-surface text-text-primary shadow-card"

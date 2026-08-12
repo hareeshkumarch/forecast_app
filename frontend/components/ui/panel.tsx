@@ -101,7 +101,7 @@ function DefaultSkeleton() {
   return (
     <div className="space-y-2 px-1 pt-2" aria-hidden>
       <Skeleton className="h-3 w-40" />
-      <Skeleton className="chart-box w-full rounded-[9px]" />
+      <Skeleton className="chart-box w-full " />
     </div>
   );
 }

@@ -333,7 +333,7 @@ function FormFieldInput({
           type="checkbox"
           checked={Boolean(value)}
           onChange={(event) => onChange(event.target.checked)}
-          className="h-3.5 w-3.5 rounded-[3px] border-border accent-[color:var(--accent)]"
+          className="h-3.5 w-3.5 border-border accent-[color:var(--accent)]"
         />
         <span className="text-meta text-text-secondary">{field.label}</span>
       </label>

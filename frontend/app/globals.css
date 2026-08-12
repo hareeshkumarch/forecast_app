@@ -180,7 +180,6 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* --------------------------------------------------------------- scrolls */
@@ -197,7 +196,6 @@ body {
 
 .scroll-thin::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 4px;
 }
 
 .scroll-thin::-webkit-scrollbar-track {
@@ -216,16 +214,16 @@ body {
   }
 
   .eyebrow {
-    @apply text-micro font-semibold uppercase tracking-[0.08em] text-text-muted;
+    @apply font-mono text-micro font-medium uppercase tracking-[0.14em] text-text-muted;
   }
 
   .kbd {
-    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-border
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center border border-border
            bg-surface-muted px-1 text-micro font-medium text-text-muted;
   }
 
   .table-header {
-    @apply text-caption font-medium uppercase tracking-[0.045em] text-text-muted;
+    @apply font-mono text-caption font-medium uppercase tracking-[0.09em] text-text-muted;
   }
 
   .num {
@@ -541,6 +539,10 @@ body {
     opacity 140ms linear;
 }
 
+.nav-indicator[data-placing="true"] {
+  transition: opacity 140ms linear;
+}
+
 .cta-nudge {
   transition:
     transform 140ms var(--ease-out),
@@ -561,6 +563,28 @@ body {
   transition: opacity 120ms var(--ease-out);
 }
 
+.scape-marker {
+  fill: rgba(17, 21, 18, 0.055);
+  pointer-events: none;
+}
+
+svg[role="img"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* -------------------------------------------------------------- skeleton */
 
 @keyframes shimmer {
@@ -573,7 +597,6 @@ body {
   position: relative;
   overflow: hidden;
   background: var(--surface-muted);
-  border-radius: 6px;
 }
 
 .skeleton::after {

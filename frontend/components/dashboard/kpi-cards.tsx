@@ -49,7 +49,7 @@ export function KpiCards() {
       <div className="grid-kpi">
         {Array.from({ length: 6 }).map((_, index) => (
           <Card key={index} className="p-3">
-            <Skeleton className="h-6 w-6 rounded-[7px]" />
+            <Skeleton className="h-6 w-6 " />
             <Skeleton className="mt-2.5 h-3 w-20" />
             <Skeleton className="mt-2 h-6 w-24" />
             <Skeleton className="mt-2 h-3 w-16" />
@@ -101,7 +101,7 @@ function KpiTile({ kpi }: { kpi: KpiCardModel }) {
     <Card className="flex flex-col p-2.5">
       <span
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-[7px] border border-border",
+          "flex h-6 w-6 items-center justify-center  border border-border",
           TONE_BG[kpi.tone],
         )}
         aria-hidden

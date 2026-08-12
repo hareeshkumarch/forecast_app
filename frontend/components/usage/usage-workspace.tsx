@@ -36,7 +36,7 @@ function latency(value: number | null): string {
 function MetricCard({ label, value, hint, icon: Icon }: { label: string; value: string; hint: string; icon: typeof Activity }) {
   return (
     <Card className="p-3.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-surface-muted">
+      <span className="flex h-7 w-7 items-center justify-center bg-surface-muted">
         <Icon className="h-3.5 w-3.5 text-text-muted" aria-hidden />
       </span>
       <p className="mt-3 text-caption text-text-muted">{label}</p>

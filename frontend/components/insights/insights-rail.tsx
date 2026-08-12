@@ -236,7 +236,7 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
       <div className="flex items-start gap-2">
         <span
           className={cn(
-            "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px]",
+            "mt-px flex h-5 w-5 shrink-0 items-center justify-center",
             style.iconBg,
           )}
           aria-hidden

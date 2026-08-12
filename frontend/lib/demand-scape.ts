@@ -27,6 +27,8 @@ export type Label = {
 
 export type Boundary = { x1: number; y1: number; x2: number; y2: number };
 
+export type Column = { step: number; x: number; y1: number; y2: number; width: number };
+
 export type Scape = {
   viewBox: string;
   width: number;
@@ -35,6 +37,7 @@ export type Scape = {
   guides: Guide[];
   labels: Label[];
   boundary: Boundary;
+  columns: Column[];
   rows: number;
   steps: number;
 };
@@ -216,6 +219,18 @@ export function buildScape(history: number[], future: number[]): Scape {
     },
   ];
 
+  const columns: Column[] = Array.from({ length: steps }, (_, step) => {
+    const front = step * dx;
+    const back = front + (rows - 1) * ROW_DX + width + extrudeX;
+    return {
+      step,
+      x: front,
+      width: back - front,
+      y1: minY,
+      y2: step * dy,
+    };
+  });
+
   return {
     viewBox: `${round(left)} ${round(top)} ${round(boxWidth)} ${round(boxHeight)}`,
     width: round(boxWidth),
@@ -224,6 +239,7 @@ export function buildScape(history: number[], future: number[]): Scape {
     guides,
     labels,
     boundary,
+    columns,
     rows,
     steps,
   };

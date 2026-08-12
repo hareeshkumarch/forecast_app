@@ -46,11 +46,10 @@ const config: Config = {
         overlay: "var(--overlay)",
       },
       borderRadius: {
-        
-        card: "2px",
-        panel: "2px",
-        input: "2px",
-        chip: "1px",
+        card: "0px",
+        panel: "0px",
+        input: "0px",
+        chip: "0px",
       },
       spacing: {
         // Driven by the CSS variables in globals.css so these track the

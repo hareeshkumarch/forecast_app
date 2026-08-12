@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { buildScape, prismFaces, rangeLift, type Prism, type Tone } from "@/lib/demand-scape";
@@ -80,6 +80,7 @@ function Bar({ prism, onEnter }: { prism: Prism; onEnter: () => void }) {
 
 export function DemandScape() {
   const [hovered, setHovered] = useState<number | null>(null);
+  const [keyed, setKeyed] = useState(false);
   const [running, setRunning] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const motionReady = useMotionReady();
@@ -106,6 +107,33 @@ export function DemandScape() {
 
   const stage = motionReady ? (running ? "scape-running" : "scape-armed") : "";
   const readout = hovered === null ? null : readoutFor(hovered);
+  const marked = hovered === null ? null : scape.columns[hovered];
+
+  const step = (delta: number) => {
+    setKeyed(true);
+    setHovered((current) => {
+      const next = (current ?? -1) + delta;
+      return Math.max(0, Math.min(scape.steps - 1, next < 0 ? 0 : next));
+    });
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
+    const jump: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
+    if (event.key in jump) {
+      event.preventDefault();
+      step(jump[event.key] ?? 0);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setKeyed(true);
+      setHovered(event.key === "Home" ? 0 : scape.steps - 1);
+      return;
+    }
+    if (event.key === "Escape") {
+      setHovered(null);
+    }
+  };
 
   return (
     <div className="scape-frame" ref={ref}>
@@ -115,6 +143,11 @@ export function DemandScape() {
           className={stage}
           role="img"
           aria-label={`${HISTORY.length} weeks of historical demand followed by a ${FUTURE.length}-week forecast and its possible range`}
+          tabIndex={0}
+          onKeyDown={onKeyDown}
+          onFocus={() => setKeyed(true)}
+          onBlur={() => setHovered(null)}
+          onMouseMove={() => setKeyed(false)}
           onMouseLeave={() => setHovered(null)}
         >
           <g stroke="#cfd6cf" strokeWidth="1" opacity=".95">
@@ -122,6 +155,17 @@ export function DemandScape() {
               <line key={guide.key} x1={guide.x1} y1={guide.y1} x2={guide.x2} y2={guide.y2} />
             ))}
           </g>
+
+          {marked ? (
+            <rect
+              className="scape-marker"
+              x={marked.x}
+              y={marked.y1}
+              width={marked.width}
+              height={marked.y2 - marked.y1}
+              aria-hidden
+            />
+          ) : null}
 
           {scape.prisms.map((prism) => (
             <Bar key={prism.key} prism={prism} onEnter={() => setHovered(prism.step)} />
@@ -153,7 +197,7 @@ export function DemandScape() {
 
       {/* Fixed height, so the readout appearing cannot move the page. */}
       <div className="mt-1 flex h-[26px] items-center justify-center">
-        <p className="scape-readout font-mono text-site-caption" aria-live="polite">
+        <p className="scape-readout font-mono text-site-caption" aria-hidden>
           {readout ? (
             <>
               <span className="text-[#111512]">{readout.label}</span>
@@ -163,10 +207,16 @@ export function DemandScape() {
               </span>
             </>
           ) : (
-            <span className="text-[#858b85]">Hover any week to read it</span>
+            <span className="text-[#858b85]">Hover any week, or focus the chart and use the arrow keys</span>
           )}
         </p>
       </div>
+
+      <p className="sr-only" aria-live="polite">
+        {keyed && readout
+          ? `${readout.label}, ${readout.point}${readout.range === "actual" ? "" : `, range ${readout.range}`}`
+          : ""}
+      </p>
 
       <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-[#656b65]">
         <span className="flex items-center gap-2.5"><span className="size-3 bg-[#151a16]" />What you sold</span>
