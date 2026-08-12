@@ -168,7 +168,7 @@ def blended_error(
 
     comparable = {
         "wmape": scores["wmape"],
-        "smape": scores["smape"],
+        "mase": scores["mae"] / scale * 100.0,
         "rmse": scores["rmse"] / scale * 100.0,
         "mae": scores["mae"] / scale * 100.0,
     }

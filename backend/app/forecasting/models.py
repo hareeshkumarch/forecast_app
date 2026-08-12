@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
+from app.forecasting.routing import route
 from app.forecasting.tuning import (
     MIN_VALIDATION_ROWS,
     SearchSpace,
@@ -1163,6 +1164,16 @@ def build_candidates(
 
     if profile is None or profile.intermittent:
         candidates.append(CrostonForecaster(frequency, profile))
+
+    # The demand class is a gate, not a hint. Offering Croston alongside the
+    # smooth-demand models leaves the selector free to pick one of them on an
+    # intermittent series whenever the zeros happen to line up over a fold,
+    # which is the confident-nonsense case the classification exists to
+    # prevent. Baselines survive every class — they are the floor.
+    routing = route(profile)
+    routed = [candidate for candidate in candidates if routing.permits(candidate.kind)]
+    if routed:
+        candidates = routed
 
     if isinstance(allowed_models, list) and allowed_models:
         allowed_set = {str(model).lower() for model in allowed_models}

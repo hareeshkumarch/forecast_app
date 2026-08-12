@@ -28,7 +28,7 @@ from app.forecasting.hierarchy import (
     reconcile_tree,
     walk,
 )
-from app.forecasting.metrics import accuracy_from_wmape
+from app.forecasting.metrics import accuracy_from_wmape, forecast_value_add
 from app.forecasting.models import (
     EnsembleForecaster,
     Forecaster,
@@ -37,6 +37,7 @@ from app.forecasting.models import (
     unavailable_models,
 )
 from app.forecasting.preparation import Preparation
+from app.forecasting.routing import BASELINE_MODELS, route
 from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
@@ -411,6 +412,10 @@ def run_forecast(
         "backtest_folds": float(winner_result.n_folds),
         "seasonal_period": float(profile.seasonal_period),
         "seasonal_strength": round(profile.seasonal_strength * 100.0, 2),
+        # What the chosen model was worth over the best baseline that ran
+        # beside it. Negative means the baseline should have shipped, which is
+        # the answer this exists to be able to give.
+        "forecast_value_add": _value_add(results, winner_result),
     }
 
     fitted = _in_sample_fit(values, final_model, winner_kind, profile)
@@ -485,11 +490,42 @@ def run_forecast(
             "folds": plan.n_folds,
             "changepoints": [periods[index].isoformat() for index in changepoints],
             "quality": payload.quality,
+            # Which models this series was allowed to reach, and whether a
+            # single number is a defensible thing to show for it. A lumpy
+            # series gets quantiles and no point-accuracy claim, and the UI
+            # needs to be told that rather than inferring it.
+            "routing": route(profile).as_dict(),
         },
         regions=regions,
         categories=categories,
         drivers=drivers,
     )
+
+
+def _value_add(results: list[BacktestResult], winner: BacktestResult) -> float:
+    """The winner's improvement over the strongest baseline, in percent.
+
+    Measured on wMAPE where both have one, and on MAE otherwise so that a
+    series whose validation windows total zero still gets an answer. Returns
+    NaN when no baseline was scoreable — an unmeasured comparison is not a
+    zero-value one.
+    """
+    baselines = [
+        result
+        for result in results
+        if result.model in BASELINE_MODELS and result is not winner and not result.failed
+    ]
+    if not baselines:
+        return float("nan")
+
+    for metric in ("wmape", "mase", "mae"):
+        model_error = float(getattr(winner, metric, float("nan")))
+        candidates = [float(getattr(base, metric, float("nan"))) for base in baselines]
+        usable = [value for value in candidates if np.isfinite(value)]
+        if np.isfinite(model_error) and usable:
+            return forecast_value_add(model_error, min(usable))
+
+    return float("nan")
 
 
 #: A level shift closer to the end of the history than this leaves too little

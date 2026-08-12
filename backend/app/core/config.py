@@ -59,7 +59,12 @@ class Settings(BaseSettings):
     # or there would be nothing left to rank candidates on.
     forecast_max_folds: int = Field(default=5, ge=1, le=20)
     metric_weight_wmape: float = Field(default=0.50, ge=0.0, le=1.0)
-    metric_weight_smape: float = Field(default=0.30, ge=0.0, le=1.0)
+    #: MASE, not sMAPE. sMAPE is undefined wherever an actual and its forecast
+    #: are both zero, so on intermittent demand it scores only the weeks that
+    #: happened to have sales and ranks candidates on that unrepresentative
+    #: slice. MASE divides by the in-sample naive error, which is defined on
+    #: series full of zeros and puts every series on one scale.
+    metric_weight_mase: float = Field(default=0.30, ge=0.0, le=1.0)
     metric_weight_rmse: float = Field(default=0.20, ge=0.0, le=1.0)
     #: What a candidate's interval quality (Winkler) is worth beside its point error.
     interval_weight: float = Field(default=0.15, ge=0.0, le=1.0)
@@ -137,10 +142,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _metric_weights_rank_something(self) -> Settings:
-        total = self.metric_weight_wmape + self.metric_weight_smape + self.metric_weight_rmse
+        total = self.metric_weight_wmape + self.metric_weight_mase + self.metric_weight_rmse
         if total <= 0.0:
             raise ValueError(
-                "METRIC_WEIGHT_WMAPE, METRIC_WEIGHT_SMAPE and METRIC_WEIGHT_RMSE cannot all be "
+                "METRIC_WEIGHT_WMAPE, METRIC_WEIGHT_MASE and METRIC_WEIGHT_RMSE cannot all be "
                 "zero: model selection would have nothing left to rank candidates on."
             )
         return self
@@ -150,7 +155,7 @@ class Settings(BaseSettings):
         """The scoring weights for a series that is not intermittent."""
         return {
             "wmape": self.metric_weight_wmape,
-            "smape": self.metric_weight_smape,
+            "mase": self.metric_weight_mase,
             "rmse": self.metric_weight_rmse,
         }
 

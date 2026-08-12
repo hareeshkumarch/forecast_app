@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.database.target import connect_args, resolve_target
+from app.models.append_only import install as install_append_only_guard
 
 # Supabase when it is configured and reachable, the local PostgreSQL otherwise.
 # Resolved once per process: a request must not discover halfway through that it
@@ -35,6 +36,10 @@ engine = create_async_engine(
 
 
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+# Issued forecasts are a record of what was claimed and when. Nothing that goes
+# through this factory can rewrite one; a re-run has to make a new run_id.
+install_append_only_guard()
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

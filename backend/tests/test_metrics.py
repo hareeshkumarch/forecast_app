@@ -93,7 +93,7 @@ def test_evaluate_returns_all_metrics() -> None:
     predicted = np.array([11.0, 19.0, 31.0])
     scores = evaluate(actual, predicted)
 
-    assert set(scores) == {"mae", "rmse", "smape", "wmape"}
+    assert set(scores) == {"mae", "rmse", "smape", "wmape", "bias", "relative_bias"}
     assert all(math.isfinite(value) for value in scores.values())
 
 

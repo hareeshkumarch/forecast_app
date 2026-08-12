@@ -65,7 +65,7 @@ def test_the_forecasting_knobs_are_all_documented() -> None:
     decisive = {
         "FORECAST_MAX_FOLDS",
         "METRIC_WEIGHT_WMAPE",
-        "METRIC_WEIGHT_SMAPE",
+        "METRIC_WEIGHT_MASE",
         "METRIC_WEIGHT_RMSE",
         "INTERVAL_WEIGHT",
         "SCENARIO_CONFIDENCE",
@@ -88,7 +88,7 @@ def test_metric_weights_that_rank_nothing_are_refused() -> None:
     with pytest.raises(ValidationError, match="cannot all be zero"):
         Settings(
             metric_weight_wmape=0.0,
-            metric_weight_smape=0.0,
+            metric_weight_mase=0.0,
             metric_weight_rmse=0.0,
         )
 
@@ -125,7 +125,7 @@ def test_the_defaults_are_the_ones_the_platform_shipped_with() -> None:
     settings = Settings()
 
     assert settings.metric_weight_wmape == 0.50
-    assert settings.metric_weight_smape == 0.30
+    assert settings.metric_weight_mase == 0.30
     assert settings.metric_weight_rmse == 0.20
     assert settings.interval_weight == 0.15
     assert settings.scenario_confidence == 0.95
@@ -139,9 +139,9 @@ def test_the_defaults_are_the_ones_the_platform_shipped_with() -> None:
 
 
 def test_the_metric_weights_property_matches_its_fields() -> None:
-    settings = Settings(metric_weight_wmape=0.6, metric_weight_smape=0.3, metric_weight_rmse=0.1)
+    settings = Settings(metric_weight_wmape=0.6, metric_weight_mase=0.3, metric_weight_rmse=0.1)
 
-    assert settings.metric_weights == {"wmape": 0.6, "smape": 0.3, "rmse": 0.1}
+    assert settings.metric_weights == {"wmape": 0.6, "mase": 0.3, "rmse": 0.1}
 
 
 def test_the_scoring_rule_quotes_the_weights_actually_in_force() -> None:
@@ -159,6 +159,9 @@ def test_the_scoring_rule_spells_each_metric_the_way_it_is_written() -> None:
     from app.forecasting.selection import scoring_rule
 
     assert "norm(wMAPE)" in scoring_rule()
-    assert "norm(sMAPE)" in scoring_rule()
+    assert "norm(MASE)" in scoring_rule()
     assert "norm(RMSE)" in scoring_rule()
+    # sMAPE is still displayed beside the others; it just never carries weight.
+    assert "norm(sMAPE)" not in scoring_rule()
+    assert "norm(sMAPE)" in scoring_rule({"smape": 1.0})
     assert "norm(MAE)" in scoring_rule({"mae": 1.0})

@@ -159,22 +159,28 @@ def test_the_same_search_is_the_same_key() -> None:
 
 
 def test_the_search_scores_by_the_metrics_the_run_scores_by() -> None:
-    """A percentage error rewards forecasting zero on an intermittent series,
-    which is exactly why the run stops scoring one that way. Tuning that keeps
-    using it hands over the parameters that were best at the wrong thing.
+    """The tuner cannot be steered onto a percentage error any more.
 
-    sMAPE puts the all-zero forecast ahead of the honest one here — it scores a
-    zero against a zero as perfect and a small number against a zero as 200%
-    wrong. The absolute metrics an intermittent run actually uses do not.
+    sMAPE rewards forecasting zero on an intermittent series: it scores a zero
+    against a zero as perfect and a small number against a zero as 200% wrong,
+    so the all-zero forecast wins. It is no longer a metric anything can be
+    scored by, and asking for it does not quietly hand back the parameters that
+    were best at the wrong thing — it falls through to the plain error, which
+    ranks these two the right way round.
     """
     actual = np.array([0.0, 0.0, 10.0, 0.0, 0.0, 8.0])
     all_zeros = np.zeros(6)
     honest = np.array([1.0, 1.0, 7.0, 1.0, 1.0, 6.0])
 
-    percentage = {"smape": 1.0}
+    unavailable = {"smape": 1.0}
     absolute = dict(INTERMITTENT_METRIC_WEIGHTS)
 
-    assert blended_error(actual, all_zeros, percentage) < blended_error(actual, honest, percentage)
+    assert blended_error(actual, honest, unavailable) < blended_error(
+        actual, all_zeros, unavailable
+    )
+    assert blended_error(actual, honest, unavailable) == pytest.approx(
+        blended_error(actual, honest, None)
+    )
     assert blended_error(actual, honest, absolute) < blended_error(actual, all_zeros, absolute)
 
 

@@ -28,7 +28,11 @@ from app.schemas.common import (
     StrictModel,
 )
 
-SCORABLE_METRICS = frozenset({"wmape", "smape", "rmse", "mae"})
+#: What a caller may weigh model selection by. sMAPE is deliberately absent:
+#: it is undefined wherever an actual and its forecast are both zero, so on
+#: intermittent demand it scores only the weeks that had sales and ranks
+#: candidates on that slice. It is still reported; it just cannot decide.
+SCORABLE_METRICS = frozenset({"wmape", "mase", "rmse", "mae"})
 
 
 def _accuracy(wmape: float | None) -> float | None:
