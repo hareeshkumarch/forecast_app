@@ -111,7 +111,7 @@ export function GettingStarted() {
               </div>
 
               <p className="mt-2 text-body font-medium text-text-primary">{step.title}</p>
-              <p className="mt-1 flex-1 text-caption leading-[16px] text-text-secondary">
+              <p className="mt-1 flex-1 text-caption text-text-secondary">
                 {step.description}
               </p>
 

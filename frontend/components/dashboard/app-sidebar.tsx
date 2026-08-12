@@ -137,7 +137,7 @@ function NavLink({
       <span
         aria-hidden={collapsed || undefined}
         className={cn(
-          "absolute left-[34px] right-2.5 truncate text-meta font-medium leading-none",
+          "absolute left-[34px] right-2.5 truncate text-meta-tight font-medium",
           labelFade(collapsed),
         )}
       >

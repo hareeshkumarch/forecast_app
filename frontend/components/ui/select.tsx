@@ -75,7 +75,7 @@ function Option<T extends string>({ option }: { option: SelectOption<T> }) {
           <span className="block truncate text-meta text-text-primary">{option.label}</span>
         </RadixSelect.ItemText>
         {option.hint ? (
-          <span className="mt-0.5 block text-caption leading-[15px] text-text-muted">
+          <span className="mt-0.5 block text-caption text-text-muted">
             {option.hint}
           </span>
         ) : null}

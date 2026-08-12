@@ -51,7 +51,7 @@ export function ModelDetailModal() {
               <span className="text-caption text-text-muted">Scored by {data.scoring_rule}</span>
             </div>
             {data.selection_rationale ? (
-              <p className="mt-1.5 text-caption leading-[16px] text-text-primary">
+              <p className="mt-1.5 text-caption text-text-primary">
                 {data.selection_rationale}
               </p>
             ) : null}

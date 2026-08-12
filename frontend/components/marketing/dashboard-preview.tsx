@@ -120,7 +120,7 @@ function ForecastRunway() {
         <div>
           <div className="text-caption font-medium text-text-muted">Next 12 months</div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-text-primary num sm:text-[34px]">
+            <span className="text-stat font-semibold text-text-primary num">
               $5.08M
             </span>
             <span className="inline-flex items-center gap-1 text-caption font-semibold text-positive">
@@ -250,7 +250,7 @@ function DecisionQueue() {
                 {item.label}
               </div>
               <div className="mt-0.5 text-subhead font-semibold text-text-primary">{item.title}</div>
-              <div className="mt-0.5 text-caption leading-[1.45] text-text-secondary">{item.detail}</div>
+              <div className="mt-0.5 text-caption text-text-secondary">{item.detail}</div>
             </div>
           </div>
         ))}

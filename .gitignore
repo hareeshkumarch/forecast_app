@@ -45,3 +45,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 *.log
+
+# Local audit harnesses for the landing-page acceptance criteria
+frontend/audit-*.mjs

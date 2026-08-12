@@ -58,6 +58,23 @@
   --rail-width: 224px;
   --insights-width: 320px;
   --workspace-padding: 16px;
+
+  /* The marketing nav floats: an inset from the top of the viewport plus its
+   * own height. `--nav-total` is how far down the page the first pixel of
+   * content can sit and still be seen, and it is the single source for the
+   * nav's own offset, the hero's height budget, and the scroll padding that
+   * keeps anchor targets out from under it. */
+  --nav-inset: 12px;
+  --nav-height: 74px;
+  --nav-total: calc(var(--nav-inset) + var(--nav-height));
+  --nav-clearance: 16px;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --nav-inset: 24px;
+    --nav-height: 88px;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -127,6 +144,14 @@ body {
   height: 100%;
 }
 
+/* Anchors land below the floating nav rather than behind it. `scroll-padding`
+ * covers the cold load that arrives with a hash already in the URL; the
+ * matching `scroll-margin` on each target covers `scrollIntoView`, which reads
+ * the target's margin and not the scroller's padding. */
+html {
+  scroll-padding-top: calc(var(--nav-total) + var(--nav-clearance));
+}
+
 body {
   /* Panels manage their own horizontal scrolling; the page itself never
    * scrolls sideways, at any width. */
@@ -136,7 +161,11 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, sans-serif;
   font-size: 13px;
-  line-height: 18px;
+  /* Unitless, so it inherits as a ratio rather than as 18 fixed pixels. The
+   * product's 13px body still computes to 18px; a 25px heading that states no
+   * leading of its own now gets 34.6px instead of the 18px that stacked its
+   * second line on top of its first. */
+  line-height: 1.3846;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Tabular figures keep numeric columns aligned without a monospace font. */
@@ -195,7 +224,7 @@ body {
 
   .kbd {
     @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-border
-           bg-surface-muted px-1 text-micro font-medium leading-none text-text-muted;
+           bg-surface-muted px-1 text-micro font-medium text-text-muted;
   }
 
   .table-header {
@@ -344,8 +373,10 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
-.forecast-landing section {
-  scroll-margin-top: 116px;
+/* Every anchorable element, not only the sections — the skip link targets
+ * `#main-content`, which used to land underneath the nav. */
+.forecast-landing [id] {
+  scroll-margin-top: calc(var(--nav-total) + var(--nav-clearance));
 }
 
 .demand-prism {

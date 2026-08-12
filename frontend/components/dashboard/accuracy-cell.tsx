@@ -38,7 +38,7 @@ export function AccuracyCell({
         </span>
         <span
           aria-label="Compared with repeating last season"
-          className="rounded-[3px] border border-border px-1 text-[9px] font-medium uppercase leading-[13px] tracking-[0.04em] text-text-muted"
+          className="rounded-[3px] border border-border px-1 text-tag font-medium uppercase tracking-[0.04em] text-text-muted"
         >
           vs naive
         </span>
@@ -58,7 +58,7 @@ export function AccuracyCell({
       {measured ? null : (
         <span
           aria-label="Estimated"
-          className="rounded-[3px] border border-border px-1 text-[9px] font-medium uppercase leading-[13px] tracking-[0.04em] text-text-muted"
+          className="rounded-[3px] border border-border px-1 text-tag font-medium uppercase tracking-[0.04em] text-text-muted"
         >
           est
         </span>

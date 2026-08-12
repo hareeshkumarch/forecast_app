@@ -48,11 +48,11 @@ export function FloatingNav() {
   }, []);
 
   return (
-    <div className="fixed inset-x-0 top-3 z-50 px-4 sm:top-6 sm:px-8 lg:px-[4.3vw]">
+    <div className="fixed inset-x-0 top-[var(--nav-inset)] z-50 px-4 sm:px-8 lg:px-[4.3vw]">
       <nav
         aria-label="Sections"
         className={cn(
-          "mx-auto flex h-[74px] w-full max-w-[1816px] items-center border border-[#d8ddd7] bg-[#fafbf9]/95 px-5 backdrop-blur-xl transition-shadow duration-300 sm:h-[88px] sm:px-7",
+          "mx-auto flex h-[var(--nav-height)] w-full max-w-[1816px] items-center border border-[#d8ddd7] bg-[#fafbf9]/95 px-5 backdrop-blur-xl transition-shadow duration-300 sm:px-7",
           lifted
             ? "shadow-[0_18px_38px_-22px_rgba(17,22,18,.4),0_1px_2px_rgba(17,22,18,.08)]"
             : "shadow-[0_4px_14px_-10px_rgba(17,22,18,.25)]",
@@ -60,9 +60,7 @@ export function FloatingNav() {
       >
         <Link href="#top" aria-label="Forecast Hub, back to top" className="flex shrink-0 items-center gap-3">
           <Mark size={31} />
-          <span className="text-[19px] font-bold tracking-[-0.04em] text-[#111512] sm:text-[24px]">
-            Forecast Hub
-          </span>
+          <span className="text-site-h3 font-bold text-[#111512]">Forecast Hub</span>
         </Link>
 
         <ul className="mx-auto hidden items-center gap-1 md:flex">
@@ -72,7 +70,7 @@ export function FloatingNav() {
                 href={`#${section.id}`}
                 aria-current={active === section.id ? "page" : undefined}
                 className={cn(
-                  "inline-flex px-5 py-3 text-[16px] text-[#3f443f] transition-colors hover:text-[#111512] lg:text-[18px]",
+                  "inline-flex px-5 py-3 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
                   active === section.id && "bg-[#e6e9e4] text-[#111512]",
                 )}
               >
@@ -88,7 +86,7 @@ export function FloatingNav() {
           aria-hidden={!pastHero}
           tabIndex={pastHero ? 0 : -1}
           className={cn(
-            "group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 bg-[#111512] px-5 text-[15px] font-medium text-white transition-all duration-300 sm:h-[56px] sm:px-6 sm:text-[17px]",
+            "group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 bg-[#111512] px-5 text-site-body font-medium text-white transition-all duration-300 sm:h-[56px] sm:px-6",
             pastHero ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0",
           )}
         >

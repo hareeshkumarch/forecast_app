@@ -73,14 +73,14 @@ export function InsightDrawer() {
               <div className="scroll-thin flex-1 space-y-5 overflow-y-auto px-5 py-4">
                 <section>
                   <h3 className="eyebrow">What we found</h3>
-                  <p className="mt-1.5 text-body leading-[19px] text-text-secondary">
+                  <p className="mt-1.5 text-body text-text-secondary">
                     {insight.explanation}
                   </p>
                 </section>
 
                 <section>
                   <h3 className="eyebrow">Suggested action</h3>
-                  <p className="mt-1.5 rounded-card border border-accent-border bg-accent-soft px-3 py-2.5 text-body leading-[19px] text-text-primary">
+                  <p className="mt-1.5 rounded-card border border-accent-border bg-accent-soft px-3 py-2.5 text-body text-text-primary">
                     {insight.suggested_action}
                   </p>
                 </section>

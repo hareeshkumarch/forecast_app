@@ -14,7 +14,7 @@ export function CheckDiagram() {
     <div className="w-full" aria-label="How forecast accuracy is checked against hidden sales history">
       {ROWS.map((row) => (
         <div key={row.label} className="mb-8 last:mb-0">
-          <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.17em] text-[#7f8580] sm:text-[13px]">
+          <p className="mb-4 font-mono text-site-caption uppercase tracking-[0.17em] text-[#7f8580]">
             {row.label}
           </p>
 
@@ -58,7 +58,7 @@ export function CheckDiagram() {
         </div>
       ))}
 
-      <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-white/10 pt-5 text-[13px] text-[#9ca19d] sm:text-[15px]">
+      <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-white/10 pt-5 text-site-body text-[#9ca19d]">
         <span className="flex items-center gap-2.5">
           <span className="inline-block size-3 bg-[#d7d8d6]" aria-hidden />
           Real sales

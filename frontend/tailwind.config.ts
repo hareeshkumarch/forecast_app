@@ -69,21 +69,55 @@ const config: Config = {
         mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       fontSize: {
+        // Every token carries its own line-height. A size is never applied
+        // without one, so nothing can inherit a leading that belongs to a
+        // different size — which is what put two lines of the same paragraph
+        // on top of each other.
+        //
         // Floor raised from 10px — `micro` carries the eyebrow and the kbd,
         // both uppercase and tracked, which is where 10px stopped being
         // readable rather than merely small.
         micro: ["11px", { lineHeight: "15px", letterSpacing: "0.05em" }],
+        tag: ["9px", { lineHeight: "13px" }],
         caption: ["11.5px", { lineHeight: "16px" }],
         meta: ["12px", { lineHeight: "16px" }],
+        "meta-tight": ["12px", { lineHeight: "1" }],
         body: ["13px", { lineHeight: "18px" }],
         subhead: ["14px", { lineHeight: "20px" }],
         title: ["16px", { lineHeight: "22px" }],
         heading: ["20px", { lineHeight: "26px" }],
         kpi: ["24px", { lineHeight: "30px" }],
+        stat: ["clamp(1.75rem, 5.3vw, 2.125rem)", { lineHeight: "1.1", letterSpacing: "-0.03em" }],
         // The marketing page needs sizes the product never does. Kept as its
-        // own `display-*` run so nothing in the app can reach for them by
-        // accident.
+        // own `display-*` / `site-*` run so nothing in the app can reach for
+        // them by accident.
+        //
+        // The `site-*` fluid sizes interpolate between the width the page was
+        // drawn at on a phone and the width it was drawn at on a laptop, so
+        // both ends land on the size the design already used: `site-display`
+        // is 56px at 320px and 96px at 1512px, `site-h2` is 46px and 60px.
+        // Body and caption take no viewport term at all — a measure that
+        // grows with the window is what collapsed the card copy.
         lead: ["17px", { lineHeight: "1.62" }],
+        // 1.0 rather than 0.95: Inter's ascender-to-descender runs about
+        // 0.98em, so at 0.95 a four-line wrap on a 320px phone leaves a single
+        // pixel between a descender and the ascender below it. The deployed
+        // build used 0.99, so this is also the nearer of the two to it.
+        "site-display": [
+          "clamp(3.5rem, calc(2.829rem + 3.356vw), 6rem)",
+          { lineHeight: "1", letterSpacing: "-0.03em" },
+        ],
+        "site-h2": [
+          "clamp(2.875rem, calc(2.64rem + 1.174vw), 3.875rem)",
+          { lineHeight: "1.1", letterSpacing: "-0.02em" },
+        ],
+        "site-h3": ["1.5625rem", { lineHeight: "1.25", letterSpacing: "-0.035em" }],
+        "site-lead": [
+          "clamp(1.1875rem, calc(1.104rem + 0.42vw), 1.5rem)",
+          { lineHeight: "1.5" },
+        ],
+        "site-body": ["1.125rem", { lineHeight: "1.55" }],
+        "site-caption": ["0.8125rem", { lineHeight: "1.4", letterSpacing: "0.08em" }],
         "display-xs": ["27px", { lineHeight: "1.16", letterSpacing: "-0.015em" }],
         "display-sm": ["33px", { lineHeight: "1.14", letterSpacing: "-0.015em" }],
         "display-md": ["40px", { lineHeight: "1.12", letterSpacing: "-0.018em" }],

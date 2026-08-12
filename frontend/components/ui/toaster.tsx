@@ -41,7 +41,7 @@ export function Toaster() {
             <div className="min-w-0 flex-1">
               <p className="text-body font-medium text-text-primary">{item.title}</p>
               {item.description ? (
-                <p className="mt-0.5 text-caption leading-[16px] text-text-secondary">
+                <p className="mt-0.5 text-caption text-text-secondary">
                   {item.description}
                 </p>
               ) : null}

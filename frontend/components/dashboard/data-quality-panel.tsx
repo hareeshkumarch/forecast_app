@@ -143,7 +143,7 @@ export function DataQualityPanel({
                 <Icon className={cn("mt-px h-3 w-3 shrink-0", style.text)} aria-hidden />
                 <div className="min-w-0">
                   <p className="text-caption font-medium text-text-primary">{issue.message}</p>
-                  <p className="text-caption leading-[15px] text-text-muted">{issue.remedy}</p>
+                  <p className="text-caption text-text-muted">{issue.remedy}</p>
                 </div>
               </li>
             );

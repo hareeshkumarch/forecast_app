@@ -77,7 +77,7 @@ export function Landing() {
 
 function Eyebrow({ children, light = false }: { children: ReactNode; light?: boolean }) {
   return (
-    <div className={cn("font-mono text-[12px] uppercase tracking-[0.22em] sm:text-[14px]", light ? "text-[#858b86]" : "text-[#626862]")}>
+    <div className={cn("font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-[#858b86]" : "text-[#626862]")}>
       {children}
     </div>
   );
@@ -85,8 +85,8 @@ function Eyebrow({ children, light = false }: { children: ReactNode; light?: boo
 
 function Hero() {
   return (
-    <section id="top" className="pb-24 pt-[155px] sm:pb-28 sm:pt-[125px]">
-      <div className="mx-auto px-5 text-center sm:px-8">
+    <section id="top" className="pb-24 pt-[var(--nav-total)] sm:pb-28">
+      <div className="mx-auto flex min-h-[calc(100svh-var(--nav-total))] flex-col justify-center px-5 text-center sm:px-8">
         <Reveal className="flex items-center justify-center gap-3">
           <span className="size-2 bg-[#287b59]" aria-hidden />
           <Eyebrow>Demand forecasting for planning teams</Eyebrow>
@@ -95,14 +95,12 @@ function Hero() {
         <Reveal
           as="h1"
           delay={70}
-          className="mx-auto mt-9 max-w-[940px] text-[56px] font-bold leading-[0.99] tracking-[-0.065em] sm:mt-10 sm:text-[74px] lg:text-[96px]"
+          className="mx-auto mt-9 max-w-[940px] text-balance text-site-display font-bold sm:mt-10"
         >
-          See your demand
-          <br />
-          before it arrives.
+          See your demand before it arrives.
         </Reveal>
 
-        <Reveal as="p" delay={140} className="mx-auto mt-9 max-w-[820px] text-[19px] leading-[1.55] text-[#3f463f] sm:text-[24px]">
+        <Reveal as="p" delay={140} className="mx-auto mt-9 max-w-[820px] text-site-lead text-[#3f463f]">
           Connect your sales history and see how much you will sell, week by week, with an honest
           range around every number.
         </Reveal>
@@ -110,7 +108,7 @@ function Hero() {
         <Reveal delay={210} className="mt-9 sm:mt-10">
           <Link
             href="/dashboard"
-            className="group inline-flex h-[80px] items-center gap-5 bg-[#111512] px-10 text-[19px] font-medium text-white transition-colors hover:bg-[#242a25] sm:h-[82px] sm:px-11 sm:text-[21px]"
+            className="group inline-flex h-[80px] items-center gap-5 bg-[#111512] px-10 text-site-lead font-medium text-white transition-colors hover:bg-[#242a25] sm:h-[82px] sm:px-11"
           >
             Open the dashboard
             <Arrow />
@@ -131,13 +129,13 @@ function HowItWorks() {
       <div className={cn(SHELL, "grid gap-14 lg:grid-cols-[minmax(360px,.75fr)_minmax(0,1.55fr)] lg:gap-20")}>
         <Reveal>
           <Eyebrow>01 — Getting started</Eyebrow>
-          <h2 className="mt-7 max-w-[540px] text-[46px] font-bold leading-[1.02] tracking-[-0.055em] sm:text-[58px]">
+          <h2 className="mt-7 max-w-[540px] text-balance text-site-h2 font-bold">
             From a spreadsheet to a plan in three steps.
           </h2>
-          <p className="mt-8 text-[20px] text-[#4e554e] sm:text-[24px]">Nothing to configure. Nothing to maintain.</p>
+          <p className="mt-8 text-site-lead text-[#4e554e]">Nothing to configure. Nothing to maintain.</p>
         </Reveal>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           {STEPS.map((step, index) => (
             <Reveal
               key={step.title}
@@ -153,9 +151,9 @@ function HowItWorks() {
                 </span>
                 <step.icon className="size-5 text-[#59605a]" strokeWidth={1.8} aria-hidden />
               </div>
-              <h3 className="mt-7 text-[25px] font-bold tracking-[-0.035em]">{step.title}</h3>
-              <p className="mt-3 text-[18px] leading-[1.65] text-[#495049]">{step.body}</p>
-              <p className="mt-auto pt-8 font-mono text-[13px] leading-[1.6] text-[#626862]">{step.foot}</p>
+              <h3 className="mt-7 text-site-h3 font-bold">{step.title}</h3>
+              <p className="mt-3 max-w-[48ch] text-site-body text-[#495049]">{step.body}</p>
+              <p className="mt-auto pt-8 font-mono text-site-caption text-[#626862]">{step.foot}</p>
             </Reveal>
           ))}
         </div>
@@ -170,20 +168,20 @@ function Features() {
       <div className={SHELL}>
         <Reveal>
           <Eyebrow>What you get</Eyebrow>
-          <h2 className="mt-7 max-w-[850px] text-[46px] font-bold leading-[1.02] tracking-[-0.055em] sm:text-[62px]">
+          <h2 className="mt-7 max-w-[850px] text-balance text-site-h2 font-bold">
             Everything a planner needs, and nothing they do not.
           </h2>
         </Reveal>
 
-        <div className="mt-16 grid border-l border-t border-[#cfd5cf] md:grid-cols-3">
+        <div className="mt-16 grid border-l border-t border-[#cfd5cf] md:grid-cols-2 2xl:grid-cols-3">
           {FEATURES.map((feature, index) => (
             <Reveal key={feature.title} delay={index * 80} className="min-h-[330px] border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-8 sm:p-10">
-              <div className="flex items-center justify-between font-mono text-[12px] uppercase tracking-[0.16em] text-[#697069]">
+              <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-[#697069]">
                 {feature.number}
                 <feature.icon className="size-5" strokeWidth={1.6} aria-hidden />
               </div>
-              <h3 className="mt-16 text-[27px] font-bold tracking-[-0.04em]">{feature.title}</h3>
-              <p className="mt-4 text-[18px] leading-[1.65] text-[#4c534d]">{feature.body}</p>
+              <h3 className="mt-16 text-site-h3 font-bold">{feature.title}</h3>
+              <p className="mt-4 max-w-[48ch] text-site-body text-[#4c534d]">{feature.body}</p>
             </Reveal>
           ))}
         </div>
@@ -198,15 +196,15 @@ function Compare() {
       <div className={cn(SHELL, "grid items-end gap-14 lg:grid-cols-2 lg:gap-24")}>
         <Reveal>
           <Eyebrow>Built for a real decision</Eyebrow>
-          <h2 className="mt-7 max-w-[720px] text-[46px] font-bold leading-[1.02] tracking-[-0.055em] sm:text-[62px]">
+          <h2 className="mt-7 max-w-[720px] text-balance text-site-h2 font-bold">
             A range tells you more than a perfect-looking line.
           </h2>
         </Reveal>
         <Reveal delay={100} className="border-l-2 border-[#287b59] pl-8">
-          <p className="text-[22px] leading-[1.6] text-[#3f463f] sm:text-[27px]">
+          <p className="max-w-[46ch] text-site-lead text-[#3f463f]">
             Forecast Hub shows what is most likely, how far it could move, and what changed since the last run.
           </p>
-          <p className="mt-7 font-mono text-[13px] uppercase tracking-[0.14em] text-[#747b74]">One answer, with the uncertainty left in</p>
+          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-[#747b74]">One answer, with the uncertainty left in</p>
         </Reveal>
       </div>
     </section>
@@ -219,10 +217,10 @@ function Accuracy() {
       <div className={cn(SHELL, "grid gap-20 lg:grid-cols-[minmax(0,.9fr)_minmax(520px,1.12fr)] lg:gap-28")}>
         <Reveal>
           <Eyebrow light>Accuracy</Eyebrow>
-          <h2 className="mt-7 max-w-[700px] text-[45px] font-bold leading-[1.03] tracking-[-0.055em] sm:text-[60px]">
+          <h2 className="mt-7 max-w-[700px] text-balance text-site-h2 font-bold">
             Right about <span className="text-[#287b59]">94%</span> of the sales it had never seen.
           </h2>
-          <p className="mt-9 max-w-[700px] text-[20px] leading-[1.7] text-[#b9bdb9] sm:text-[24px]">
+          <p className="mt-9 max-w-[700px] text-site-lead text-[#b9bdb9]">
             That figure comes from your own history, not a benchmark. You can see it for any product,
             any region, any week — and watch it change as your sales change.
           </p>
@@ -232,14 +230,14 @@ function Accuracy() {
           <CheckDiagram />
           <div className="mt-14 border border-white/20">
             <div className="p-7 sm:p-8">
-              <h3 className="text-[22px] font-bold tracking-[-0.03em]">It is measured, not claimed</h3>
-              <p className="mt-3 text-[17px] leading-[1.65] text-[#afb4af]">
+              <h3 className="text-site-h3 font-bold">It is measured, not claimed</h3>
+              <p className="mt-3 max-w-[62ch] text-site-body text-[#afb4af]">
                 Before you ever see a number, we hide part of your own sales history and check whether the forecast would have got it right.
               </p>
             </div>
             <div className="border-t border-white/15 p-7 sm:p-8">
-              <h3 className="text-[22px] font-bold tracking-[-0.03em]">It keeps being checked</h3>
-              <p className="mt-3 text-[17px] leading-[1.65] text-[#afb4af]">Every new run adds another real result to the score.</p>
+              <h3 className="text-site-h3 font-bold">It keeps being checked</h3>
+              <p className="mt-3 max-w-[62ch] text-site-body text-[#afb4af]">Every new run adds another real result to the score.</p>
             </div>
           </div>
         </Reveal>
@@ -253,8 +251,8 @@ function Closing() {
     <section className="py-28 sm:py-36">
       <Reveal className="mx-auto max-w-[980px] px-6 text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
-        <h2 className="mt-7 text-[48px] font-bold leading-[1.02] tracking-[-0.06em] sm:text-[70px]">See what is coming next.</h2>
-        <Link href="/dashboard" className="group mt-10 inline-flex h-[76px] items-center gap-5 bg-[#111512] px-10 text-[19px] font-medium text-white hover:bg-[#242a25]">
+        <h2 className="mt-7 text-balance text-site-h2 font-bold">See what is coming next.</h2>
+        <Link href="/dashboard" className="group mt-10 inline-flex h-[76px] items-center gap-5 bg-[#111512] px-10 text-site-lead font-medium text-white hover:bg-[#242a25]">
           Open the dashboard
           <Arrow />
         </Link>
@@ -269,10 +267,10 @@ function Footer() {
       <div className={cn(SHELL, "flex flex-col gap-8 py-10 sm:flex-row sm:items-center")}>
         <div className="flex items-center gap-3">
           <Mark size={28} />
-          <span className="text-[18px] font-bold tracking-[-0.035em]">Forecast Hub</span>
+          <span className="text-site-h3 font-bold">Forecast Hub</span>
         </div>
-        <p className="text-[14px] text-[#737a73] sm:ml-auto">Demand forecasting for planning teams.</p>
-        <Link href="/dashboard" className="font-mono text-[13px] uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Open dashboard →</Link>
+        <p className="text-site-body text-[#737a73] sm:ml-auto">Demand forecasting for planning teams.</p>
+        <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Open dashboard →</Link>
       </div>
     </footer>
   );

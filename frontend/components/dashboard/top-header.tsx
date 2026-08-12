@@ -206,7 +206,7 @@ export function TopHeader({ section }: { section: AppSection }) {
           >
             <Sparkles className="h-4 w-4 text-accent" aria-hidden />
             {insightCount > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-on-accent num">
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-tag font-semibold text-on-accent num">
                 {insightCount > 9 ? "9+" : insightCount}
               </span>
             ) : null}

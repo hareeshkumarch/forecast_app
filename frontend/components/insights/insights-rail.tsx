@@ -243,12 +243,12 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
         >
           <Icon className={cn("h-3 w-3", style.iconText)} />
         </span>
-        <h3 className={cn("text-body font-semibold leading-[17px]", style.title)}>
+        <h3 className={cn("text-body font-semibold", style.title)}>
           {insight.title}
         </h3>
       </div>
 
-      <p className="mt-1.5 line-clamp-3 text-caption leading-[16px] text-text-secondary">
+      <p className="mt-1.5 line-clamp-3 text-caption text-text-secondary">
         {insight.explanation}
       </p>
 
