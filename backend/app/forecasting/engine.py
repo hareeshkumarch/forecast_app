@@ -17,6 +17,8 @@ from app.forecasting.calibration import (
     HeldOutPoint,
     Interval,
     calibrate,
+    conformal_halfwidths,
+    measure_coverage,
     realised_coverage,
 )
 from app.forecasting.decomposition import Driver, decompose_drivers
@@ -30,6 +32,7 @@ from app.forecasting.drivers import DriverLink, DriverPanel, DriverSource, descr
 from app.forecasting.frequency import future_periods
 from app.forecasting.hierarchy import (
     Node,
+    all_non_negative,
     build_tree,
     coherence_gap,
     reconcile_to_total,
@@ -511,6 +514,8 @@ def run_forecast(
             **profile.as_dict(),
             "backtest_scheme": plan.scheme,
             "folds": plan.n_folds,
+            "requested_horizon": horizon,
+            "validated_horizon": plan.horizon,
             "changepoints": [periods[index].isoformat() for index in changepoints],
             "quality": payload.quality,
             # Which models this series was allowed to reach, and whether a
@@ -532,8 +537,8 @@ def _held_out(winner: BacktestResult) -> list[HeldOutPoint]:
     return [
         HeldOutPoint(horizon=step, actual=float(actual), predicted=float(predicted))
         for fold in winner.folds
-        for step, (actual, predicted) in enumerate(
-            zip(fold.y_true, fold.y_pred, strict=False), start=1
+        for step, actual, predicted in zip(
+            fold.steps(), fold.y_true, fold.y_pred, strict=False
         )
         if np.isfinite(actual) and np.isfinite(predicted)
     ]
@@ -567,19 +572,38 @@ def _interval_check(
         for point in points
         if not clipped[min(point.horizon, reach) - 1]
     ]
-    served = realised_coverage(
+    transferred = [
+        Interval(
+            horizon=point.horizon,
+            actual=point.actual,
+            lower=point.predicted + float(below[step]),
+            upper=point.predicted + float(above[step]),
+        )
+        for point, step in transferable
+    ]
+    served = realised_coverage(transferred, confidence_level)
+    # A run affords a handful of origins, so no single horizon reaches the
+    # sample floor and every per-horizon share reads as unmeasurable. Pooling
+    # the steps gives one figure the evidence does support, which is the
+    # difference between reporting nothing and reporting what is known.
+    pooled = realised_coverage(
         (
-            Interval(
-                horizon=point.horizon,
-                actual=point.actual,
-                lower=point.predicted + float(below[step]),
-                upper=point.predicted + float(above[step]),
-            )
-            for point, step in transferable
+            Interval(horizon=1, actual=one.actual, lower=one.lower, upper=one.upper)
+            for one in transferred
         ),
         confidence_level,
     )
     repaired = calibrate(points, confidence_level)
+    # Pooled conformal is fitted on the pooled residuals, not handed the widest
+    # per-horizon width: that width was chosen to cover the longest step and
+    # over-covers everything shorter, so quoting it as an overall figure
+    # reports the band as far safer than it is.
+    flattened = [HeldOutPoint(horizon=1, actual=p.actual, predicted=p.predicted) for p in points]
+    repaired_pooled = measure_coverage(
+        flattened, conformal_halfwidths(flattened, confidence_level), confidence_level
+    )
+
+    at_all = pooled.points[0] if pooled.points else None
 
     return {
         "measured": True,
@@ -588,10 +612,15 @@ def _interval_check(
         "served": served.as_dict(),
         "served_holds": served.holds,
         "served_worst_gap_pp": _finite_or_none(served.worst_gap_pp),
+        "served_pooled": round(at_all.observed, 4) if at_all else None,
+        "served_pooled_observations": at_all.n_observations if at_all else 0,
+        "served_pooled_holds": pooled.holds,
+        "served_pooled_gap_pp": _finite_or_none(pooled.worst_gap_pp),
         "conformal_halfwidths": {
             str(h): round(w, 6) for h, w in sorted(repaired.halfwidths.items())
         },
         "conformal_worst_gap_pp": _finite_or_none(repaired.after.worst_gap_pp),
+        "conformal_pooled_gap_pp": _finite_or_none(repaired_pooled.worst_gap_pp),
     }
 
 
@@ -1027,7 +1056,7 @@ def assemble_grouped(
         ],
         group_by,
     )
-    reconcile_tree(root, total)
+    reconcile_tree(root, total, non_negative=all_non_negative([leaf.values for leaf in leaves]))
 
     actuals = _roll_up_actuals(root, by_label)
     total_sum = float(np.sum(total))
@@ -1227,7 +1256,12 @@ def _forecast_segments(
         else np.asarray(total_path, dtype=float) * share
         for segment, share in zip(segments, shares, strict=True)
     ]
-    reconciled = reconcile_to_total(paths, np.asarray(total_path, dtype=float), shares)
+    reconciled = reconcile_to_total(
+        paths,
+        np.asarray(total_path, dtype=float),
+        shares,
+        non_negative=all_non_negative([segment.values for segment in segments]),
+    )
 
     if fits:
         gap = coherence_gap(

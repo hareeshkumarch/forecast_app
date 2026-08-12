@@ -33,11 +33,13 @@ class IntervalBands:
 def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]]:
     buckets: list[list[float]] = [[] for _ in range(horizon)]
     for fold in result.folds:
-        for step, (actual, predicted) in enumerate(zip(fold.y_true, fold.y_pred, strict=False)):
-            if step >= horizon:
-                break
+        for step, actual, predicted in zip(
+            fold.steps(), fold.y_true, fold.y_pred, strict=False
+        ):
+            if step > horizon:
+                continue
             if np.isfinite(actual) and np.isfinite(predicted):
-                buckets[step].append(actual - predicted)
+                buckets[step - 1].append(actual - predicted)
     return buckets
 
 

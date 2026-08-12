@@ -187,18 +187,39 @@ def mase(
         return float("nan")
 
     history = np.asarray(insample, dtype=float).ravel()
-    history = history[np.isfinite(history)]
     lag = max(1, int(seasonal_period))
     if history.size <= lag:
         lag = 1
     if history.size <= lag:
         return float("nan")
 
-    scale = float(np.mean(np.abs(history[lag:] - history[:-lag])))
+    scale = _seasonal_step(history, lag)
+    if not np.isfinite(scale) and lag != 1:
+        scale = _seasonal_step(history, 1)
     if not np.isfinite(scale) or scale == 0.0:
         return float("nan")
 
     return float(np.mean(np.abs(t - p)) / scale)
+
+
+def _seasonal_step(history: FloatArray, lag: int) -> float:
+    """How far the series moves in one season, over pairs it actually observed.
+
+    Compacting the finite values first and differencing those is what makes a
+    gap invisible: the survivors close up, `history[lag:] - history[:-lag]`
+    stops comparing periods a season apart, and the scale drifts. It drifts
+    upward on a trending series, which divides the error by too much and
+    reports a model as more skilful than it was.
+    """
+    if history.size <= lag:
+        return float("nan")
+
+    ahead, behind = history[lag:], history[:-lag]
+    pairs = np.isfinite(ahead) & np.isfinite(behind)
+    if not pairs.any():
+        return float("nan")
+
+    return float(np.mean(np.abs(ahead[pairs] - behind[pairs])))
 
 
 def winkler(

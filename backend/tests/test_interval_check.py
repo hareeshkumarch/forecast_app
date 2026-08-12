@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import numpy as np
 import pytest
 
-from app.forecasting.calibration import COVERAGE_TOLERANCE_PP
+from app.forecasting.calibration import COVERAGE_TOLERANCE_PP, MIN_COVERAGE_SAMPLE
 from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
 from app.models.enums import ForecastFrequency
 
@@ -26,12 +26,29 @@ def seasonal(count: int = WEEKS, noise: float = 20.0, seed: int = 41) -> list[fl
     return list(level + season + rng.normal(0.0, noise, size=count))
 
 
-@pytest.fixture(scope="module")
-def check() -> dict[str, object]:
+DAYS = 200
+DAILY = ForecastFrequency.DAILY
+
+
+def days(count: int = DAYS, start: date = date(2023, 1, 2)) -> list[date]:
+    return [start + timedelta(days=index) for index in range(count)]
+
+
+def weekly_shape(count: int = DAYS, noise: float = 12.0, seed: int = 19) -> list[float]:
+    rng = np.random.default_rng(seed)
+    index = np.arange(count)
+    level = 400.0 + 0.8 * index
+    season = 70.0 * np.sin(index * 2.0 * np.pi / 7.0)
+    return list(level + season + rng.normal(0.0, noise, size=count))
+
+
+def _check(
+    periods: list[date], values: list[float], frequency: ForecastFrequency
+) -> dict[str, object]:
     output = run_forecast(
         ForecastInput(
-            series=SeriesInput(periods=weeks(), values=seasonal()),
-            frequency=WEEKLY,
+            series=SeriesInput(periods=periods, values=values),
+            frequency=frequency,
             horizon=HORIZON,
             confidence_level=0.8,
         )
@@ -39,6 +56,11 @@ def check() -> dict[str, object]:
     result = output.diagnostics["interval_check"]
     assert isinstance(result, dict)
     return result
+
+
+@pytest.fixture(scope="module")
+def check() -> dict[str, object]:
+    return _check(days(), weekly_shape(), DAILY)
 
 
 class TestEveryRunChecksTheRangeItIsAboutToPublish:
@@ -81,13 +103,32 @@ class TestEveryRunChecksTheRangeItIsAboutToPublish:
         widths = [halfwidths[key] for key in sorted(halfwidths, key=int)]
         assert widths == sorted(widths), "conformal widths never narrow with the horizon"
 
-    def test_the_conformal_band_holds_on_the_folds_it_was_built_from(
+    def test_the_conformal_band_holds_on_the_residuals_it_was_built_from(
         self, check: dict[str, object]
     ) -> None:
-        gap = check["conformal_worst_gap_pp"]
+        gap = check["conformal_pooled_gap_pp"]
 
-        assert gap is not None
+        assert gap is not None, "pooling the steps clears the sample floor"
         assert abs(float(gap)) <= COVERAGE_TOLERANCE_PP
+
+    def test_a_single_horizon_has_too_few_origins_to_speak_for_itself(
+        self, check: dict[str, object]
+    ) -> None:
+        # A run affords a handful of origins, so one horizon never reaches the
+        # sample floor on its own. The widths are still computed per horizon;
+        # it is the coverage share that is withheld.
+        assert check["conformal_halfwidths"]
+        assert check["conformal_worst_gap_pp"] is None
+
+    def test_the_pooled_figure_says_how_much_evidence_is_behind_it(
+        self, check: dict[str, object]
+    ) -> None:
+        seen = check["served_pooled_observations"]
+
+        assert isinstance(seen, int) and seen >= MIN_COVERAGE_SAMPLE
+        assert check["served_pooled"] is not None
+        assert 0.0 <= float(check["served_pooled"]) <= 1.0  # type: ignore[arg-type]
+        assert isinstance(check["served_pooled_holds"], bool)
 
 
 class TestTheCheckDoesNotInventAnAnswer:

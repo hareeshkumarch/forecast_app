@@ -334,6 +334,7 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
             "scheme": diagnostics.get("backtest_scheme", "expanding"),
             "origins": max((c.folds for c in candidates), default=0),
             "horizon": run.horizon,
+            "validated_horizon": diagnostics.get("validated_horizon"),
             "confidence_level": run.confidence_level,
         },
         by_horizon=horizon_accuracy(points),
@@ -349,6 +350,14 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
         )
     if not report.by_horizon:
         report.caveats.append("No period of this run has finished yet, so nothing is scored.")
+
+    validated = diagnostics.get("validated_horizon")
+    if isinstance(validated, int) and validated < run.horizon:
+        report.caveats.append(
+            f"There was only enough history to validate {validated} step(s) ahead, so the "
+            f"backtest figures do not cover the full {run.horizon} this run forecast. "
+            "Error at the later steps is likely to be worse than shown."
+        )
 
     report.caveats.extend(_coverage_caveats(measured, run.confidence_level))
     report.caveats.extend(_backtest_interval_caveats(diagnostics, run.confidence_level))
@@ -385,15 +394,20 @@ def _backtest_interval_caveats(
     check = diagnostics.get("interval_check")
     if nominal is None or not isinstance(check, dict) or not check.get("measured"):
         return []
-    if check.get("served_holds"):
+
+    # Per-horizon shares rest on a handful of origins each; the pooled one is
+    # the figure with enough behind it to say out loud.
+    if check.get("served_pooled_holds"):
         return []
 
-    gap = check.get("served_worst_gap_pp")
+    gap = check.get("served_pooled_gap_pp")
     if not isinstance(gap, int | float):
         return []
 
     direction = "narrower" if gap < 0 else "wider"
+    seen = check.get("served_pooled_observations")
+    evidence = f" over {seen} held-out period(s)" if isinstance(seen, int) and seen else ""
     return [
         f"On held-out stretches of your own history the {nominal * 100:.0f}% range came out "
-        f"{abs(gap):.0f} points {direction} than it promises at its worst horizon."
+        f"{abs(gap):.0f} points {direction} than it promises{evidence}."
     ]

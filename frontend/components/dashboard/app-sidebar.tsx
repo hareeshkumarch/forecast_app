@@ -3,6 +3,7 @@
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   Activity,
+  ChevronRight,
   Database,
   FileBarChart2,
   FileSpreadsheet,
@@ -81,6 +82,7 @@ function useSidebarShortcut(): void {
 
 export function AppSidebar() {
   const collapsed = usePrefsStore((state) => state.sidebarCollapsed);
+  const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
   useSidebarShortcut();
 
   return (
@@ -94,7 +96,7 @@ export function AppSidebar() {
         collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded,
       )}
     >
-      <AppSidebarBody collapsed={collapsed} />
+      <AppSidebarBody collapsed={collapsed} onToggle={toggleSidebar} />
     </aside>
   );
 }
@@ -168,15 +170,54 @@ function NavLink({
   );
 }
 
-export function AppSidebarBody({ collapsed = false }: { collapsed?: boolean }) {
+export function AppSidebarBody({
+  collapsed = false,
+  onToggle,
+}: {
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
   const pathname = usePathname();
   const closeRail = useUiStore((state) => state.closeRail);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-3">
 
-      <div className="flex h-11 shrink-0 items-end px-3 pb-1.5">
-        <p className={cn("eyebrow truncate", labelFade(collapsed))}>Workspace</p>
+      <div className="relative flex h-11 shrink-0 items-end px-3 pb-1.5">
+        <p
+          aria-hidden={collapsed || undefined}
+          className={cn(
+            "absolute bottom-1.5 left-3 right-10 truncate",
+            "eyebrow",
+            labelFade(collapsed),
+          )}
+        >
+          Workspace
+        </p>
+
+        {onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!collapsed}
+            aria-controls="app-navigation"
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center text-text-muted",
+              "transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary",
+              collapsed ? "mx-auto" : "ml-auto",
+            )}
+          >
+            <ChevronRight
+              className={cn(
+                "h-4 w-4 transition-transform duration-200 ease-out",
+                "motion-reduce:transition-none",
+                collapsed ? "" : "rotate-180",
+              )}
+              aria-hidden
+            />
+          </button>
+        ) : null}
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3" aria-label="Application sections">

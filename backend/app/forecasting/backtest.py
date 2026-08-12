@@ -60,6 +60,15 @@ class FoldResult:
     #: any. Kept per fold so anything rebuilding a score out of these folds —
     #: the ensemble does — can weigh it the way the members were weighed.
     y_weight: list[float] | None = None
+    #: How many steps ahead each scored point actually was, counting from the
+    #: cut. Only observed periods are kept, so a hole in the window makes
+    #: position-in-list stop meaning horizon: drop one period and every error
+    #: after it is attributed a step early. Anything that buckets residuals by
+    #: horizon reads this rather than enumerating.
+    y_step: list[int] = field(default_factory=list)
+
+    def steps(self) -> list[int]:
+        return self.y_step or list(range(1, len(self.y_true) + 1))
 
 
 @dataclass(slots=True)
@@ -249,11 +258,25 @@ def run_backtest(
         y_test = y[cut:test_end]
         test_periods = periods[cut:test_end]
 
-        if y_test.size == 0 or y_train.size == 0 or not np.all(np.isfinite(y_train)):
+        if y_test.size == 0 or y_train.size == 0:
+            continue
+
+        if not np.all(np.isfinite(y_train)):
+            result.folds_failed += 1
+            if result.failure_reason is None:
+                result.failure_reason = (
+                    "The training window for this fold has periods the data never "
+                    "recorded, and this run was asked not to fill them."
+                )
             continue
 
         observed = np.isfinite(y_test)
         if not np.any(observed):
+            result.folds_failed += 1
+            if result.failure_reason is None:
+                result.failure_reason = (
+                    "No period in this fold's validation window was ever recorded."
+                )
             continue
 
         try:
@@ -282,10 +305,23 @@ def run_backtest(
 
         predictions = np.asarray(predictions, dtype=float).ravel()[: y_test.size]
         if predictions.size < y_test.size:
-            pad = predictions[-1] if predictions.size else float("nan")
-            predictions = np.concatenate(
-                [predictions, np.full(y_test.size - predictions.size, pad)]
+            # Padding the tail with the last value scores a forecast the model
+            # never made, and it lands on the longest horizons — the ones the
+            # intervals most depend on getting right.
+            result.folds_failed += 1
+            if result.failure_reason is None:
+                result.failure_reason = (
+                    f"The model returned {predictions.size} of the {y_test.size} step(s) "
+                    "this fold asked for."
+                )
+            logger.debug(
+                "Backtest fold %d returned %d of %d steps for %s",
+                fold_index,
+                predictions.size,
+                y_test.size,
+                model_kind,
             )
+            continue
 
         diverged = _diverged(predictions, y_train)
         if diverged is not None:
@@ -308,6 +344,7 @@ def run_backtest(
                 y_true=[float(v) for v in scored_true],
                 y_pred=[float(v) for v in scored_pred],
                 y_weight=fold_weights,
+                y_step=[int(step) + 1 for step in np.flatnonzero(observed)],
             )
         )
         all_true.extend(float(v) for v in scored_true)

@@ -63,6 +63,62 @@ console.log("\nmobile");
   await page.close();
 }
 
+console.log("\nthe chevron in the left rail");
+{
+  const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+
+  const read = () =>
+    page.evaluate(() => {
+      const rail = document.querySelector("#app-navigation");
+      const button = rail?.querySelector("button[aria-controls='app-navigation']");
+      if (!rail || !button) return null;
+      const icon = button.querySelector("svg");
+      const railBox = rail.getBoundingClientRect();
+      const box = button.getBoundingClientRect();
+      return {
+        railWidth: Math.round(railBox.width),
+        label: button.getAttribute("aria-label"),
+        expanded: button.getAttribute("aria-expanded"),
+        rotated: Math.round(new DOMMatrixReadOnly(getComputedStyle(icon).transform).a),
+        offCentre: Math.round(box.x + box.width / 2 - (railBox.x + railBox.width / 2)),
+      };
+    });
+
+  const open = await read();
+  note(open !== null, "the rail carries its own collapse control", JSON.stringify(open));
+  note(open?.label === "Collapse navigation", "it says what it does when open");
+  note(open?.rotated === -1, "the chevron points back at the rail when open", `scaleX ${open?.rotated}`);
+
+  await page.click("#app-navigation button[aria-controls='app-navigation']");
+  await page.waitForTimeout(400);
+  const shut = await read();
+  note(shut?.railWidth !== undefined && shut.railWidth < 80, "clicking it collapses the rail", `${shut?.railWidth}px`);
+  note(shut?.label === "Expand navigation", "it offers the way back");
+  note(shut?.rotated === 1, "and the chevron flips to point out", `scaleX ${shut?.rotated}`);
+  note(Math.abs(shut?.offCentre ?? 99) <= 1, "it sits centred in the collapsed strip", `${shut?.offCentre}px off`);
+
+  await page.click("#app-navigation button[aria-controls='app-navigation']");
+  await page.waitForTimeout(400);
+  note((await read())?.railWidth === open?.railWidth, "and it reopens to where it was");
+  await page.close();
+}
+
+console.log("\nthe mobile drawer has no collapse control");
+{
+  const page = await browser.newPage({ viewport: { width: 430, height: 900 }, hasTouch: true, isMobile: true });
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(900);
+  await page.click('header button[aria-label="Open navigation"]');
+  await page.waitForTimeout(500);
+  const inDrawer = await page.evaluate(
+    () => document.querySelectorAll('[role="dialog"] button[aria-controls="app-navigation"]').length,
+  );
+  note(inDrawer === 0, "collapsing makes no sense in a drawer, so it is not offered", `${inDrawer} found`);
+  await page.close();
+}
+
 console.log("\nkeyboard route is still there on desktop");
 {
   const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });

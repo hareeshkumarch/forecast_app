@@ -28,6 +28,7 @@ class _Aligned:
     truth: list[list[float]] = field(default_factory=list)
     fold_ids: list[int] = field(default_factory=list)
     weights: list[list[float] | None] = field(default_factory=list)
+    steps: list[list[int]] = field(default_factory=list)
 
 
 def _usable(results: list[BacktestResult]) -> list[BacktestResult]:
@@ -65,6 +66,7 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
         fold = next(f for f in reference.folds if f.fold == fold_id)
         aligned.truth.append(list(fold.y_true))
         aligned.weights.append(list(fold.y_weight) if fold.y_weight is not None else None)
+        aligned.steps.append(fold.steps())
 
     for result in results:
         by_id = {fold.fold: fold for fold in result.folds}
@@ -153,6 +155,7 @@ def blend(
                 y_true=list(truth),
                 y_pred=[float(value) for value in combined],
                 y_weight=list(fold_weights) if fold_weights is not None else None,
+                y_step=list(aligned.steps[index]),
             )
         )
         all_true.extend(truth)

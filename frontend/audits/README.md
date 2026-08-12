@@ -19,6 +19,7 @@ node audits/scale.mjs      # shell, nav and chart bounds at ten viewports
 node audits/edges.mjs      # chart sequence, nav indicator, touch, keyboard, a11y
 node audits/product.mjs    # wordmark, rails, motion inside the dashboard
 node audits/header.mjs     # the collapse control at each breakpoint
+node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
@@ -57,7 +58,9 @@ exactly like content failing to appear.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two
-are different elements.
+are different elements. It reads the chevron's direction off the computed
+transform rather than the icon name, because the same icon is used for both
+directions and only the rotation distinguishes them.
 
 ## Known shortfall
 
