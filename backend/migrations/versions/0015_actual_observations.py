@@ -1,9 +1,3 @@
-"""Actuals kept as a revision history rather than a single current value.
-
-Revision ID: 0015
-Revises: 0014
-"""
-
 from __future__ import annotations
 
 import sqlalchemy as sa

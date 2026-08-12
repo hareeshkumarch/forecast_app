@@ -1,18 +1,3 @@
-"""Which models a series is allowed to be forecast with.
-
-The Syntetos-Boylan quadrant, applied as a gate rather than as a hint. A
-spreadsheet from a real business contains intermittent series — a part that
-sells eleven times a year, a size that moves in one region only — and a
-smooth-demand model fitted to one of those produces a confident number with no
-support under it. Exponential smoothing on demand that is zero four weeks in
-five will happily report 0.7 units a week and a tight interval around it.
-
-Adding Croston to the roster is not enough on its own: if the smooth models
-stay in the roster beside it, the selector can still pick one of them on a
-fold where the zeros happened to line up. The classification has to remove
-them.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,8 +9,6 @@ from app.forecasting.diagnostics import (
 )
 from app.models.enums import ModelKind
 
-#: Baselines. These run for every series whatever its class — they are the
-#: floor the chosen model has to beat, and they are defined on any history.
 BASELINE_MODELS: frozenset[ModelKind] = frozenset(
     {
         ModelKind.NAIVE,
@@ -33,8 +16,6 @@ BASELINE_MODELS: frozenset[ModelKind] = frozenset(
     }
 )
 
-#: Models that assume demand arrives every period. On intermittent demand they
-#: fit the zeros as though they were observations of a level.
 SMOOTH_DEMAND_MODELS: frozenset[ModelKind] = frozenset(
     {
         ModelKind.HOLT_WINTERS,
@@ -46,7 +27,6 @@ SMOOTH_DEMAND_MODELS: frozenset[ModelKind] = frozenset(
     }
 )
 
-#: Models built for demand that arrives in gaps.
 INTERMITTENT_MODELS: frozenset[ModelKind] = frozenset({ModelKind.CROSTON})
 
 SMOOTH = "smooth"
@@ -60,10 +40,7 @@ NO_DEMAND = "no_demand"
 class Routing:
     demand_class: str
     allowed: frozenset[ModelKind]
-    #: Whether a single number is a defensible thing to show for this series.
     point_forecast_is_meaningful: bool
-    #: Whether the intervals should be widened beyond what the fold residuals
-    #: alone suggest.
     widen_intervals: bool
     reason: str
 
@@ -81,7 +58,6 @@ class Routing:
 
 
 def classify(demand_interval: float, demand_cv2: float) -> str:
-    """The SBC quadrant for an average inter-demand interval and a size CV squared."""
     if demand_interval != demand_interval or demand_interval == float("inf"):
         return NO_DEMAND
     lumpy_interval = demand_interval >= SYNTETOS_BOYLAN_ADI
@@ -96,7 +72,6 @@ def classify(demand_interval: float, demand_cv2: float) -> str:
 
 
 def route(profile: SeriesProfile | None) -> Routing:
-    """The models this series may be forecast with, and what may be claimed."""
     if profile is None:
         return Routing(
             demand_class=SMOOTH,

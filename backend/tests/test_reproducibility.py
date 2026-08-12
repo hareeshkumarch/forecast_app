@@ -1,11 +1,3 @@
-"""A number this product printed must be reproducible on demand.
-
-A customer will challenge a figure, and "that is what the model said in March"
-is not an answer. Same inputs, same code, same settings — same number, to the
-last decimal. Anything less and the accuracy story cannot be audited, only
-believed.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -91,7 +83,6 @@ class TestReplayIsExact:
 
     @pytest.mark.slow
     def test_a_different_history_gives_a_different_answer(self) -> None:
-        """The replay assertions must not pass because nothing depends on the data."""
         periods = weeks(104)
 
         first = forecast(series(seed=1), periods)

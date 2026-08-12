@@ -1,12 +1,3 @@
-"""A corpus of spreadsheets that are wrong in the ways real ones are wrong.
-
-Every case here is a file somebody has actually uploaded to a forecasting tool:
-a UK export read as American dates, a join that doubled every row, a tab with
-three weeks in it, a column of Excel serials that lost its formatting. The
-requirement is not that the product survives them. It is that each one produces
-a specific, actionable message and never a silent partial forecast.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -36,9 +27,6 @@ def judge(frame: pl.DataFrame, **kwargs: object) -> object:
 
 def codes(verdict: object) -> set[str]:
     return {question.code for question in verdict.questions}  # type: ignore[attr-defined]
-
-
-# --------------------------------------------------------------- the corpus
 
 
 class TestFilesThatAreRefused:
@@ -79,13 +67,11 @@ class TestFilesThatAreRefused:
         verdict = judge(pl.DataFrame({"week": weekly(40)}))
 
         assert verdict.verdict is Verdict.REFUSE
-        # It may report what it found, but it has not decided anything.
         assert verdict.questions == []
 
 
 class TestFilesThatAreQueried:
     def test_uk_dates_that_could_be_either_are_asked_about_with_examples(self) -> None:
-        # Every value fits both readings: no day passes 12.
         frame = pl.DataFrame(
             {
                 "date": [f"{d:02d}/0{m}/2024" for m in (1, 2, 3) for d in (3, 5, 7, 9, 11)],
@@ -102,7 +88,6 @@ class TestFilesThatAreQueried:
         assert len(question.options) == 2
 
     def test_unambiguous_uk_dates_are_read_without_asking(self) -> None:
-        # 15 passes 12, so the file settles its own order.
         frame = pl.DataFrame(
             {
                 "date": [f"{d}/03/2024" for d in (13, 14, 15, 16, 17, 18, 19, 20)],
@@ -127,7 +112,6 @@ class TestFilesThatAreQueried:
         question = next(q for q in verdict.questions if q.code == "duplicate_keys")
         assert "20 row(s)" in question.question
         assert question.evidence
-        # "keep the last one" is never on the menu.
         assert not any("last" in option for option in question.options)
 
     def test_two_equally_good_target_columns_are_a_question_not_a_coin_toss(self) -> None:
@@ -170,7 +154,6 @@ class TestFilesThatAreQueried:
 
 class TestFilesThatRunButAreReportedOn:
     def test_an_excel_serial_column_is_read_as_dates(self) -> None:
-        # 45292 is 2024-01-01. The column name has to vouch for it.
         frame = pl.DataFrame(
             {"order_date": [45292 + 7 * i for i in range(30)], "units": list(range(30))}
         )
@@ -229,7 +212,6 @@ class TestMixedDateFormatsWithinOneColumn:
         verdict = assess(result, frame=frame)
 
         assert verdict.verdict is not Verdict.REFUSE
-        # The unreadable values are reported rather than counted as missing.
         held = [q for q in verdict.quarantined if q.code == "unreadable_values"]
         if held:
             assert held[0].count > 0

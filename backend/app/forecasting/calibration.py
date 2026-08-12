@@ -1,17 +1,3 @@
-"""Whether the intervals hold, and what to do when they do not.
-
-"An honest range around every number" is printed on the homepage, and it is a
-claim about coverage rather than about emitting quantiles. Emitting an 80%
-interval costs nothing; the claim is that the actual lands inside it four times
-in five. This module measures that against backtest folds, reports the gap when
-it misses, and rescales the intervals off the held-out residuals so that it
-stops missing.
-
-Nothing here trusts the model's own variance estimate. A model that is
-overconfident reports a small sigma and a narrow interval, and scoring its
-intervals against its own sigma would agree with it.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -23,13 +9,8 @@ import numpy.typing as npt
 
 FloatArray = npt.NDArray[np.float64]
 
-#: How far the observed coverage may sit from the nominal level before the
-#: homepage's claim is false. Five points on an 80% interval means anything
-#: from 75% to 85% of actuals landing inside it.
 COVERAGE_TOLERANCE_PP = 5.0
 
-#: Below this many held-out points a coverage figure is noise. An 80% interval
-#: measured on four observations can only read 0, 25, 50, 75 or 100.
 MIN_COVERAGE_SAMPLE = 8
 
 
@@ -42,7 +23,6 @@ class CoveragePoint:
 
     @property
     def gap_pp(self) -> float:
-        """Observed minus nominal, in percentage points. Negative is too narrow."""
         return (self.observed - self.nominal) * 100.0
 
     @property
@@ -71,7 +51,6 @@ class CoverageReport:
 
     @property
     def holds(self) -> bool:
-        """True when every level this run can measure lands inside tolerance."""
         measurable = self.measurable_points
         return bool(measurable) and all(point.holds for point in measurable)
 
@@ -98,7 +77,6 @@ class CoverageReport:
 
 @dataclass(slots=True, frozen=True)
 class HeldOutPoint:
-    """One backtest observation, with the horizon it was forecast at."""
 
     horizon: int
     actual: float
@@ -110,11 +88,6 @@ def measure_coverage(
     halfwidths: dict[int, float],
     nominal: float,
 ) -> CoverageReport:
-    """Empirical coverage per horizon for one nominal level.
-
-    `halfwidths` is what the served interval would have been at each horizon,
-    so this measures the interval the customer would actually have seen.
-    """
     grouped: dict[int, list[HeldOutPoint]] = {}
     for point in points:
         grouped.setdefault(point.horizon, []).append(point)
@@ -145,18 +118,6 @@ def conformal_halfwidths(
     *,
     enforce_monotone: bool = True,
 ) -> dict[int, float]:
-    """Interval half-widths taken from held-out residuals, per horizon.
-
-    Split conformal: the (1-alpha) empirical quantile of absolute residuals is
-    the half-width that covers that share of them, with no distributional
-    assumption. The rank used is ceil((n+1)(1-alpha))/n rather than the plain
-    quantile — the finite-sample correction that makes the guarantee hold at
-    small n instead of approximately.
-
-    A horizon with too few residuals to place that rank inherits the widest
-    half-width from the horizons before it, which is conservative in the
-    direction that keeps the claim true.
-    """
     level = min(max(float(nominal), 0.0), 1.0)
 
     grouped: dict[int, list[float]] = {}
@@ -173,8 +134,6 @@ def conformal_halfwidths(
             continue
         rank = int(np.ceil((n + 1) * level))
         if rank > n:
-            # Not enough residuals to place the quantile: the largest one is
-            # the most this sample can honestly support.
             halfwidths[horizon] = float(residuals[-1])
         else:
             halfwidths[horizon] = float(residuals[rank - 1])
@@ -183,12 +142,6 @@ def conformal_halfwidths(
 
 
 def widen_with_horizon(halfwidths: dict[int, float]) -> dict[int, float]:
-    """Force the intervals to be non-decreasing in horizon.
-
-    Further out is less certain. A sample that says otherwise is saying it
-    about a handful of residuals, not about the world, so the running maximum
-    is carried forward rather than believed.
-    """
     widened: dict[int, float] = {}
     running = float("-inf")
     for horizon in sorted(halfwidths):
@@ -207,7 +160,6 @@ def apply_halfwidths(
     horizons: Sequence[int],
     halfwidths: dict[int, float],
 ) -> tuple[list[float], list[float]]:
-    """Turn point forecasts into calibrated bounds."""
     if len(predictions) != len(horizons):
         raise ValueError("predictions and horizons must be the same length")
 
@@ -227,7 +179,6 @@ def apply_halfwidths(
 
 @dataclass(slots=True)
 class Calibration:
-    """The calibration decided for one level, and the evidence for it."""
 
     nominal: float
     halfwidths: dict[int, float]
@@ -261,13 +212,6 @@ def calibrate(
     nominal: float,
     model_halfwidths: dict[int, float] | None = None,
 ) -> Calibration:
-    """Measure what the model's own intervals covered, then fix them.
-
-    `model_halfwidths` is what the model would have served unaided. Passing it
-    is what makes the "before" figure meaningful — the gap between what was
-    promised and what happened is the number that has to be visible internally
-    before a customer sees the claim.
-    """
     conformal = conformal_halfwidths(points, nominal)
     before = (
         measure_coverage(points, model_halfwidths, nominal)
@@ -286,7 +230,6 @@ def gaussian_halfwidths(
     sigma_by_horizon: dict[int, float],
     nominal: float,
 ) -> dict[int, float]:
-    """What a normal-errors model would serve, for comparison against conformal."""
     from app.forecasting.backtest import normal_quantile
 
     z = normal_quantile(nominal)

@@ -1,11 +1,3 @@
-/*
- * The build sequence for the hero chart, as numbers rather than as prose.
- *
- * The order carries the product's claim: what happened is known, there is a
- * boundary at today, what comes after is a forecast, and the range around it
- * widens the further out it goes. The 160ms hold is the boundary — it is the
- * only pause in the sequence and it is there to be noticed.
- */
 export const BAR_RISE = 260;
 export const HISTORY_STAGGER = 14;
 export const TODAY_HOLD = 160;
@@ -36,14 +28,12 @@ export function scapeTiming(historyLength: number, futureLength: number): ScapeT
   };
 }
 
-/** When a given bar starts rising, measured from the first frame. */
 export function barDelay(step: number, historyLength: number, timing: ScapeTiming): number {
   return step < historyLength
     ? step * HISTORY_STAGGER
     : timing.forecastStart + (step - historyLength) * FORECAST_STAGGER;
 }
 
-/** When a forecast bar's uncertainty shell starts expanding. */
 export function shellDelay(step: number, historyLength: number, timing: ScapeTiming): number {
   return barDelay(step, historyLength, timing) + SHELL_FOLLOW;
 }

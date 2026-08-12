@@ -1,11 +1,3 @@
-"""A restated actual never changes what a model was scored against.
-
-Late invoices, processed returns and corrected counts all move a number for a
-week that closed weeks ago. If the correction overwrites the old reading then
-every accuracy figure computed before it moves too, quietly, and a model that
-was not touched looks worse than it did yesterday.
-"""
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime

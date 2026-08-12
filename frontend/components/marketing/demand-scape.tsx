@@ -104,9 +104,6 @@ export function DemandScape() {
     return () => observer.disconnect();
   }, []);
 
-  // Armed only while motion is available and the sequence has not started, so
-  // a server render, a no-JS render and a reduced-motion render all paint the
-  // finished chart rather than an empty frame waiting to be filled.
   const stage = motionReady ? (running ? "scape-running" : "scape-armed") : "";
   const readout = hovered === null ? null : readoutFor(hovered);
 

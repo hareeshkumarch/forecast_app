@@ -1,20 +1,3 @@
-"""What a spreadsheet has to answer before it is allowed to become a forecast.
-
-The only input is a file somebody exported, so this is the highest-volume
-failure surface in the product and the one where a quiet guess costs the most.
-Every failure here has the same shape: the run completes, the chart draws, and
-the number is of something nobody asked about.
-
-So this layer refuses to guess about the things that cannot be recovered from
-later. It returns one of three answers — go ahead, ask the user this specific
-question, or refuse and say why — and it never returns a partial forecast.
-
-The profiler already scores each column and the coercion layer already reports
-when it could not settle day-versus-month order. What was missing is the step
-that treats a low score or an unsettled order as a question rather than as a
-decision.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -33,27 +16,13 @@ from app.datasets.profiler import (
 from app.forecasting.frequency import seasonal_period
 from app.models.enums import ColumnKind, ForecastFrequency
 
-#: Whether a column is a plausible reading of a role at all is the profiler's
-#: judgement, and it is imported rather than restated. A second threshold here
-#: would disagree with it eventually: `units_sold` scores 0.465 on that scale
-#: and is a perfectly good target, while an opaque `col3` scores 0.405, so any
-#: round number picked independently either queries clean files or waves
-#: through unreadable ones.
 MIN_DATE_CONFIDENCE = DATE_CANDIDATE_FLOOR
 MIN_TARGET_CONFIDENCE = TARGET_CANDIDATE_FLOOR
 
-#: What this layer adds is the runner-up. A column that clears the profiler's
-#: bar with nothing close behind it is a reading; two columns a hair apart are
-#: a question about which one the customer meant, however high they both
-#: scored.
 MIN_MARGIN = 0.12
 
-#: How many conflicting rows to show when asking. Enough to recognise the
-#: file, few enough to read.
 EVIDENCE_ROWS = 5
 
-#: Seasonal cycles a series needs before it is modelled rather than routed to a
-#: baseline. Two is the floor at which a season can be estimated at all.
 REQUIRED_SEASONS = 2
 
 
@@ -65,7 +34,6 @@ class Verdict(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class Question:
-    """Something the data cannot settle, phrased as a question with evidence."""
 
     code: str
     column: str | None
@@ -85,7 +53,6 @@ class Question:
 
 @dataclass(slots=True, frozen=True)
 class Quarantine:
-    """Rows set aside, with the reason and a sample. Never dropped silently."""
 
     code: str
     reason: str
@@ -103,14 +70,12 @@ class Quarantine:
 
 @dataclass(slots=True, frozen=True)
 class ColumnChoice:
-    """Which column was picked for a role, how sure, and what came second."""
 
     role: str
     chosen: str | None
     confidence: float
     runner_up: str | None
     runner_up_confidence: float
-    #: Whether the profiler judged the chosen column a plausible reading at all.
     plausible: bool = True
 
     @property
@@ -138,7 +103,6 @@ class ColumnChoice:
 
 @dataclass(slots=True)
 class SeriesGate:
-    """A series held back from modelling, and what it was routed to instead."""
 
     label: str
     observations: int
@@ -203,12 +167,6 @@ def _choice(profiles: Sequence[ColumnProfile], role: str) -> ColumnChoice:
 
 
 def _conflicting_dates(frame: pl.DataFrame | None, column: str | None) -> tuple[str, ...]:
-    """Rows where day-first and month-first would give different months.
-
-    Only values whose two leading numbers differ and are both under thirteen
-    are evidence: 03/07/2024 reads as two different months, 15/07/2024 reads
-    as one.
-    """
     if frame is None or column is None or column not in frame.columns:
         return ()
 
@@ -232,7 +190,6 @@ def _conflicting_dates(frame: pl.DataFrame | None, column: str | None) -> tuple[
 
 
 def _unreadable(profiles: Sequence[ColumnProfile], role_column: str | None) -> Quarantine | None:
-    """Values in the chosen column that could not be read as what it holds."""
     if role_column is None:
         return None
     profile = next((p for p in profiles if p.name == role_column), None)
@@ -254,12 +211,6 @@ def duplicate_keys(
     time_column: str,
     dimensions: Sequence[str] = (),
 ) -> tuple[int, tuple[str, ...]]:
-    """Rows sharing a period and a series key, with a sample of which.
-
-    Transactional exports have these legitimately and want summing. A join gone
-    wrong has them too and wants rejecting. Either way the count is reported —
-    what must not happen is one row silently winning.
-    """
     keys = [time_column, *[d for d in dimensions if d in frame.columns]]
     if time_column not in frame.columns:
         return 0, ()
@@ -280,11 +231,6 @@ def history_gate(
     series_lengths: dict[str, int],
     frequency: ForecastFrequency,
 ) -> list[SeriesGate]:
-    """Series with too little history to model, named individually.
-
-    Telling a planner that "some series were excluded" is not telling them
-    anything. Which ones, how much history each had, and how much it needed.
-    """
     period = seasonal_period(frequency)
     required = max(REQUIRED_SEASONS * period, 4) if period > 1 else 6
 
@@ -311,14 +257,12 @@ def assess(
     dimensions: Sequence[str] = (),
     series_lengths: dict[str, int] | None = None,
 ) -> IngestVerdict:
-    """Decide whether this file can be forecast, or what to ask about it first."""
     profiles = profile.columns
     time_choice = _choice(profiles, "time")
     target_choice = _choice(profiles, "target")
 
     verdict = IngestVerdict(verdict=Verdict.PROCEED, choices=[time_choice, target_choice])
 
-    # ---- refusals: nothing a confirmation could fix ------------------------
     if len(profiles) < 2:
         verdict.refusals.append(
             f"This file has {len(profiles)} column(s). A forecast needs at least a column of "
@@ -341,7 +285,6 @@ def assess(
         verdict.verdict = Verdict.REFUSE
         return verdict
 
-    # ---- questions: answerable, so worth asking ----------------------------
     for choice in (time_choice, target_choice):
         if choice.confident:
             continue
@@ -408,7 +351,6 @@ def assess(
             )
         )
 
-    # ---- reported either way ----------------------------------------------
     for column in (time_choice.chosen, target_choice.chosen):
         held = _unreadable(profiles, column)
         if held is not None:
@@ -427,7 +369,6 @@ def series_lengths_from(
     time_column: str,
     dimensions: Sequence[str] = (),
 ) -> dict[str, int]:
-    """Distinct periods per series, for the history gate."""
     if time_column not in frame.columns:
         return {}
 

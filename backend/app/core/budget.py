@@ -1,16 +1,3 @@
-"""The latency budget behind "about a minute".
-
-That phrase is on the homepage above the third step, so it is an SLO and not a
-turn of phrase. A budget that is written down but never measured degrades one
-model at a time: a slightly better candidate here, one more fold there, and
-nine months later the promise reads four minutes and nobody decided that.
-
-So every stage is timed, the timings are persisted with the run, and the total
-is asserted in CI against a reference dataset. When the work is genuinely too
-big for a minute the answer is to say so up front — a queue with progress, or a
-refusal naming the ceiling — rather than to take four minutes quietly.
-"""
-
 from __future__ import annotations
 
 import time
@@ -31,13 +18,8 @@ class Stage(StrEnum):
     PERSIST = "persist"
 
 
-#: What "about a minute" is allowed to mean, end to end.
 TOTAL_BUDGET_SECONDS = 60.0
 
-#: Per stage, in seconds. These sum to less than the total on purpose — the
-#: slack absorbs the parts of a request that belong to no stage, and a stage
-#: that overruns is reported even when the total still fits, because that is
-#: where the next regression will come from.
 STAGE_BUDGET_SECONDS: dict[Stage, float] = {
     Stage.PARSE: 6.0,
     Stage.VALIDATE: 3.0,
@@ -49,14 +31,8 @@ STAGE_BUDGET_SECONDS: dict[Stage, float] = {
     Stage.PERSIST: 4.0,
 }
 
-#: The series count at which the one-minute promise still holds. Above it the
-#: run is queued with progress rather than served inline; the number is
-#: enforced in `admission` rather than left as a comment.
 SERIES_CEILING = 500
 
-#: And the count above which the work is refused outright rather than queued.
-#: A quarter of a million series from one spreadsheet is a mistake in the
-#: grain, not a large customer.
 SERIES_HARD_LIMIT = 20_000
 
 
@@ -84,7 +60,6 @@ class StageTiming:
 
 @dataclass(slots=True)
 class RunTimings:
-    """Every stage of one run, with what each was allowed to cost."""
 
     stages: list[StageTiming] = field(default_factory=list)
 
@@ -108,12 +83,6 @@ class RunTimings:
 
     @contextmanager
     def measure(self, stage: Stage) -> Iterator[None]:
-        """Time a stage. Records even when the body raises.
-
-        A run that failed after forty seconds of fitting is exactly the run
-        whose timings someone will want, so they are not conditional on
-        success.
-        """
         started = time.perf_counter()
         try:
             yield
@@ -157,11 +126,6 @@ class AdmissionDecision:
 
 
 def admission(series_count: int) -> AdmissionDecision:
-    """Whether this many series can be forecast inline, queued, or not at all.
-
-    The ceiling is a promise about latency, so crossing it changes what the
-    user is told rather than how long they wait without being told anything.
-    """
     if series_count > SERIES_HARD_LIMIT:
         return AdmissionDecision(
             admission=Admission.REFUSE,
@@ -189,7 +153,6 @@ def admission(series_count: int) -> AdmissionDecision:
 
 
 def percentile(values: list[float], fraction: float) -> float:
-    """Nearest-rank percentile. Used by the CI assertion, so it is explicit."""
     if not values:
         return float("nan")
     ordered = sorted(values)

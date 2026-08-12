@@ -1,10 +1,3 @@
-"""The endpoint the homepage's accuracy section should be reading.
-
-Today that section is static copy claiming 94%. Whatever number it shows has to
-come from somewhere a customer can interrogate: which run, over which backtest,
-at which horizon, and against a baseline that did what.
-"""
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -51,7 +44,6 @@ async def _run(session: AsyncSession, *, scored: bool = True) -> ForecastRun:
     await session.flush()
 
     start = date(2026, 1, 5)
-    # A forecast that runs progressively high the further out it goes.
     for step in range(4):
         session.add(
             ForecastPoint(
@@ -336,7 +328,6 @@ class TestTheHeadlineFigure:
 
         headline = await accuracy_service.headline(session)
 
-        # Volume-weighted: (4*90 + 40*10) / 100 = 7.6 -> 92.4
         assert headline.accuracy_pct == 92.4
 
     async def test_the_figure_carries_what_stands_behind_it(

@@ -59,18 +59,11 @@
   --insights-width: 320px;
   --workspace-padding: 16px;
 
-  /* The marketing nav floats: an inset from the top of the viewport plus its
-   * own height. `--nav-total` is how far down the page the first pixel of
-   * content can sit and still be seen, and it is the single source for the
-   * nav's own offset, the hero's height budget, and the scroll padding that
-   * keeps anchor targets out from under it. */
   --nav-inset: 12px;
   --nav-height: 74px;
   --nav-total: calc(var(--nav-inset) + var(--nav-height));
   --nav-clearance: 16px;
 
-  /* Monotone to its target and never past it. Everything that encodes a
-   * quantity eases with this and nothing else. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -148,10 +141,6 @@ body {
   height: 100%;
 }
 
-/* Anchors land below the floating nav rather than behind it. `scroll-padding`
- * covers the cold load that arrives with a hash already in the URL; the
- * matching `scroll-margin` on each target covers `scrollIntoView`, which reads
- * the target's margin and not the scroller's padding. */
 html {
   scroll-padding-top: calc(var(--nav-total) + var(--nav-clearance));
 }
@@ -165,10 +154,6 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     Roboto, sans-serif;
   font-size: 13px;
-  /* Unitless, so it inherits as a ratio rather than as 18 fixed pixels. The
-   * product's 13px body still computes to 18px; a 25px heading that states no
-   * leading of its own now gets 34.6px instead of the 18px that stacked its
-   * second line on top of its first. */
   line-height: 1.3846;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -377,8 +362,6 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Every anchorable element, not only the sections — the skip link targets
- * `#main-content`, which used to land underneath the nav. */
 .forecast-landing [id] {
   scroll-margin-top: calc(var(--nav-total) + var(--nav-clearance));
 }
@@ -441,8 +424,6 @@ body {
  * budget, or a slow observer all render the same finished page rather than a
  * blank one waiting to be revealed.
  */
-/* One reveal, used by every section. A different entrance per section is a
- * page full of effects rather than a page with a rhythm. */
 .motion-ready .reveal {
   opacity: 0;
   transform: translate3d(0, 12px, 0);
@@ -468,15 +449,6 @@ body {
   animation-delay: var(--grow-delay, 0ms);
 }
 
-/* ---------------------------------------------------- hero build sequence */
-
-/*
- * Bars rise in place: they are already at their final position and only their
- * height animates, as `scaleY` about the bar's own base. Nothing here uses a
- * spring or a back-ease. A bar that overshoots its height is a bar that shows
- * a number the data does not contain, for as long as the overshoot lasts, and
- * every mark in this chart encodes a quantity.
- */
 @keyframes scape-rise {
   from {
     transform: scaleY(0);
@@ -486,10 +458,6 @@ body {
   }
 }
 
-/* The shell starts at the height of the bar it belongs to and expands out to
- * the top of its range. `--shell-floor` is that ratio, and it differs per
- * week — nearer weeks start closer to their final height, so the range visibly
- * widens with the horizon instead of only ending up wider. */
 @keyframes scape-expand {
   from {
     transform: scaleY(var(--shell-floor, 0));
@@ -520,7 +488,6 @@ body {
   animation: scape-expand var(--expand, 340ms) var(--ease-out) var(--delay, 0ms) both;
 }
 
-
 .motion-ready .scape-armed .scape-caption {
   opacity: 0;
 }
@@ -538,9 +505,6 @@ body {
   }
 }
 
-/* ------------------------------------------------------- micro-interaction */
-
-/* The nav indicator encodes nothing, so it is allowed to overshoot. */
 .nav-indicator {
   transition:
     transform 200ms cubic-bezier(0.34, 1.4, 0.64, 1),

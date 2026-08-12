@@ -1,11 +1,3 @@
-"""Whether "about a minute" is still true.
-
-The phrase sits on the homepage under the third step, so it is an SLO. The
-failure mode it guards against is not a sudden one — it is a slightly better
-candidate model, one more backtest fold, a richer feature set, each defensible
-on its own, until the promise reads four minutes and nobody decided that.
-"""
-
 from __future__ import annotations
 
 import time
@@ -30,8 +22,6 @@ from app.models.enums import ForecastFrequency
 
 WEEKLY = ForecastFrequency.WEEKLY
 
-#: The dataset the promise is made about: two years of weekly history, one
-#: series, a nine-week horizon. Bigger than this is what the ceiling is for.
 REFERENCE_WEEKS = 104
 REFERENCE_HORIZON = 9
 REFERENCE_RUNS = 5
@@ -133,11 +123,6 @@ class TestPercentile:
 
 
 class TestTheReferenceRunFitsTheBudget:
-    """The assertion the SLO actually rests on.
-
-    Marked slow because it fits real models five times. It is the only test
-    here that would catch a model roster that quietly doubled the fit time.
-    """
 
     @pytest.mark.slow
     def test_p95_of_the_reference_dataset_is_under_a_minute(self) -> None:
@@ -183,7 +168,6 @@ class TestTheReferenceRunFitsTheBudget:
 
         assert {Stage.CLASSIFY, Stage.FIT, Stage.PREDICT, Stage.CALIBRATE} <= recorded
         assert output.timings.total > 0
-        # And it travels with the run rather than only being logged.
         assert output.diagnostics["timings"] == output.timings.as_dict()
 
     @pytest.mark.slow

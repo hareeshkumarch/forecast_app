@@ -1,18 +1,3 @@
-"""The invariants that decide whether this is a forecasting product or a chart.
-
-Each test here corresponds to a claim the product makes to a customer:
-
-  * a forecast that was issued is never quietly rewritten
-  * no metric that is undefined on zeros gets to pick the model
-  * the backtest is a rolling origin that refits, not a split of shuffled rows
-  * the range widens with the horizon and holds at the level it advertises
-
-They are written to fail loudly if someone reintroduces the shortcut, which is
-the point of them: every one of these is a mistake that makes the reported
-accuracy better than the real accuracy, and that is the direction nobody goes
-looking.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,13 +28,6 @@ def weeks(count: int, start: date = date(2023, 1, 2)) -> list[date]:
 
 @dataclass
 class MeanOfTraining:
-    """Forecasts the mean of whatever it was last fitted on.
-
-    Deliberately transparent: its output is a function of its training window
-    alone, so what it predicts on a fold tells you exactly which rows it was
-    trained on. That makes refit-per-origin observable from the output rather
-    than by counting calls.
-    """
 
     level: float = float("nan")
 
@@ -85,11 +63,7 @@ class TestNoMapeFamilyMetricDecidesAnything:
         zeros = np.zeros(12)
         history = np.array([0.0, 0.0, 3.0, 0.0, 0.0, 4.0, 0.0, 0.0, 2.0, 0.0])
 
-        # sMAPE returns a number here, and it is a meaningless one: every
-        # period where actual and forecast are both zero is scored as a
-        # perfect hit, so an all-zero forecast looks flawless.
         assert smape(zeros, zeros) == 0.0
-        # MASE divides by the in-sample naive error, which this history has.
         assert np.isfinite(mase(zeros, zeros, history, seasonal_period=1))
 
     def test_weights_cannot_all_be_zero(self) -> None:
@@ -118,9 +92,6 @@ class TestBacktestIsARollingOrigin:
         assert len(set(plan.cut_points)) == len(plan.cut_points)
 
     def test_the_model_is_refitted_at_each_origin(self) -> None:
-        # A rising series: the mean of an expanding window rises with it, so
-        # the same fitted model reused across folds would be visible as a
-        # constant prediction.
         y = np.arange(1.0, 201.0)
         plan = plan_backtest(len(y), horizon=8, frequency=WEEKLY)
 
@@ -138,14 +109,11 @@ class TestBacktestIsARollingOrigin:
         assert levels == sorted(levels)
         assert len(set(levels)) == len(levels), "the model was not refitted per origin"
 
-        # And each level is the mean of exactly that origin's training window.
         for fold, cut in zip(result.folds, plan.cut_points, strict=True):
             expected = float(np.mean(y[:cut]))
             assert fold.y_pred[0] == pytest.approx(expected)
 
     def test_a_random_split_of_the_rows_fails_the_ordering_invariant(self) -> None:
-        # The canary: this is what a shuffled split looks like, and the
-        # invariant above has to reject it or it is not testing anything.
         rng = np.random.default_rng(11)
         shuffled = rng.permutation(120)
         train, test = shuffled[:96], shuffled[96:]
@@ -158,18 +126,9 @@ class TestBacktestIsARollingOrigin:
         plan = BacktestPlan(scheme="expanding", horizon=8, cut_points=[96], initial_train=96)
 
         assert plan.n_folds == 1
-        # plan_backtest is what production calls, and on this much history it
-        # never returns a single origin.
         assert plan_backtest(200, horizon=8, frequency=WEEKLY).n_folds > 1
 
     def test_five_origins_need_two_seasons_plus_five_horizons_of_history(self) -> None:
-        """What "at least five origins" costs in weeks, stated rather than assumed.
-
-        The initial training window is two seasonal cycles, and each further
-        origin costs one horizon on top. Below that the harness returns fewer
-        origins — correctly, because the history is not there — so a caller
-        asking for five has to bring 144 weeks, not 120.
-        """
         horizon = 8
         two_seasons = 104
 

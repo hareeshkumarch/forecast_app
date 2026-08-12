@@ -1,11 +1,3 @@
-"""A forecast that was issued is never quietly rewritten.
-
-Without this the accuracy story is uncomputable: scoring a forecast against
-what happened after it was issued only means anything if the row still says
-what it said at the time. An upsert on a re-run makes the numbers look better
-and leaves nothing behind to show that it happened.
-"""
-
 from __future__ import annotations
 
 import uuid

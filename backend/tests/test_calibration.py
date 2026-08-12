@@ -1,9 +1,3 @@
-"""Whether the range on the homepage is honest.
-
-The claim is not that the product emits an 80% interval. It is that the actual
-lands inside it 80% of the time. These tests are about the difference.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -31,7 +25,6 @@ def points_with_spread(
     spread: np.ndarray | float,
     seed: int = 7,
 ) -> list[HeldOutPoint]:
-    """Held-out points whose error grows with the horizon."""
     rng = np.random.default_rng(seed)
     out: list[HeldOutPoint] = []
     for horizon in range(1, horizons + 1):
@@ -51,7 +44,6 @@ def points_with_spread(
 class TestCoverageIsMeasured:
     def test_a_too_narrow_interval_is_reported_as_too_narrow(self) -> None:
         points = points_with_spread(horizons=3, per_horizon=200, spread=10.0)
-        # Half the width a normal 80% interval needs: coverage must come in low.
         starved = {horizon: 0.5 * 1.2816 * 10.0 * horizon for horizon in (1, 2, 3)}
 
         report = measure_coverage(points, starved, nominal=0.8)
@@ -101,7 +93,6 @@ class TestConformalRepairsCoverage:
 
     def test_it_repairs_an_overconfident_model_and_shows_the_gap_it_closed(self) -> None:
         points = points_with_spread(horizons=4, per_horizon=200, spread=9.0)
-        # The model believes its error is a third of what it is.
         overconfident = gaussian_halfwidths({h: 9.0 * h / 3.0 for h in (1, 2, 3, 4)}, 0.8)
 
         result = calibrate(points, 0.8, model_halfwidths=overconfident)
@@ -112,8 +103,6 @@ class TestConformalRepairsCoverage:
         assert result.improved
 
     def test_conformal_does_not_assume_normal_errors(self) -> None:
-        # Heavy-tailed residuals: a normal interval sized off the standard
-        # deviation over-covers in the middle and under-covers in the tail.
         rng = np.random.default_rng(3)
         points = [
             HeldOutPoint(horizon=1, predicted=50.0, actual=50.0 + float(rng.standard_t(2.5)) * 4.0)
@@ -135,7 +124,6 @@ class TestIntervalsWidenWithHorizon:
         assert halfwidths[6] > halfwidths[1]
 
     def test_a_sample_that_narrows_is_carried_forward_instead_of_believed(self) -> None:
-        # Horizon 3 happens to have drawn quieter residuals than horizon 2.
         noisy = np.array([2.0, 9.0, 3.0, 4.0])
         points = points_with_spread(horizons=4, per_horizon=120, spread=noisy)
 
@@ -181,6 +169,5 @@ class TestReportIsTraceable:
         before = payload["coverage_before"]
         assert isinstance(before, list)
         assert all({"observed", "gap_pp", "n_observations"} <= set(row) for row in before)
-        # A one-unit interval on a seven-unit spread cannot have held.
         assert payload["worst_gap_before_pp"] is not None
         assert payload["worst_gap_before_pp"] < payload["worst_gap_after_pp"]

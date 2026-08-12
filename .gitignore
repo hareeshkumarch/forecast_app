@@ -45,3 +45,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 *.log
+
+# Stray archives
+*.zip

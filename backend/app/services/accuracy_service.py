@@ -1,15 +1,3 @@
-"""The numbers behind the homepage's accuracy section.
-
-That section currently reads as static copy. It says the forecast was right
-about 94% of the time and that the figure comes from your own history — which
-is a claim this has to be able to substantiate on demand, per horizon, per
-series class, with the run it came from named.
-
-Every figure here carries the run that produced it and the backtest
-configuration it was measured under. A number without those is not an accuracy
-figure, it is a marketing one.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,7 +16,6 @@ from app.forecasting.routing import BASELINE_MODELS
 from app.models.entities import ForecastPoint, ForecastRun, ForecastSeries, ModelCandidate
 from app.models.enums import PointKind
 
-#: Below these there is not enough evidence to put a percentage on a homepage.
 MIN_RUNS_FOR_HEADLINE = 3
 MIN_PERIODS_FOR_HEADLINE = 26
 
@@ -55,7 +42,6 @@ class ClassAccuracy:
     wape: float | None
     bias_pct: float | None
     series: int
-    #: False for lumpy demand, where a point forecast is not claimed at all.
     point_forecast_claimed: bool = True
 
     def as_dict(self) -> dict[str, object]:
@@ -102,9 +88,6 @@ class AccuracyReport:
     by_class: list[ClassAccuracy] = field(default_factory=list)
     coverage: list[dict[str, object]] = field(default_factory=list)
     value_add: ValueAdd | None = None
-    #: Empty when the run has been scored against real outcomes. Otherwise it
-    #: names what is still backtest-only, so the caller does not present a
-    #: held-out number as a realised one.
     caveats: list[str] = field(default_factory=list)
 
     @property
@@ -135,13 +118,6 @@ def _round(value: float | None) -> float | None:
 
 
 def horizon_accuracy(points: list[ForecastPoint]) -> list[HorizonAccuracy]:
-    """WAPE and signed bias by how far ahead the forecast was made.
-
-    Scored at the horizon the planner actually plans on rather than only at
-    lag one: a forecast that is excellent one week out and useless nine weeks
-    out is useless to somebody ordering nine weeks of stock, and an aggregate
-    hides exactly that.
-    """
     scored = [p for p in points if p.actual is not None and p.forecast is not None]
     if not scored:
         return []
@@ -168,11 +144,6 @@ def horizon_accuracy(points: list[ForecastPoint]) -> list[HorizonAccuracy]:
 
 
 def class_accuracy(series: list[ForecastSeries]) -> list[ClassAccuracy]:
-    """The same figures split by what kind of demand the series turned out to be.
-
-    A single headline accuracy across a catalogue that is half intermittent is
-    an average of two different things.
-    """
     grouped: dict[str, list[ForecastSeries]] = {}
     for row in series:
         demand_class = _demand_class_of(row)
@@ -201,7 +172,6 @@ def _demand_class_of(row: ForecastSeries) -> str:
 
 
 def value_add(candidates: list[ModelCandidate]) -> ValueAdd | None:
-    """The winner against the best baseline that ran beside it."""
     winner = next((c for c in candidates if c.selected), None)
     if winner is None:
         return None
@@ -236,13 +206,6 @@ def _finite(value: float) -> float | None:
 
 @dataclass(slots=True)
 class Headline:
-    """One accuracy figure across every run that has been scored.
-
-    The homepage's accuracy section states a percentage. Whatever it states
-    has to come from here rather than from a copywriter, and it has to carry
-    how many runs and how many periods stand behind it — a 94% measured on one
-    week of one series is not the same claim as the same number over a year.
-    """
 
     accuracy_pct: float | None
     runs_scored: int
@@ -251,7 +214,6 @@ class Headline:
 
     @property
     def publishable(self) -> bool:
-        """Whether there is enough behind this to put a number in front of anyone."""
         return (
             self.accuracy_pct is not None
             and self.runs_scored >= MIN_RUNS_FOR_HEADLINE
@@ -273,12 +235,6 @@ class Headline:
 
 
 async def headline(session: AsyncSession) -> Headline:
-    """The volume-weighted accuracy across every scored run.
-
-    Weighted by periods rather than averaged across runs: a run that scored
-    fifty weeks says more about the product than one that scored two, and a
-    plain mean would let the small one drag the headline either way.
-    """
     runs = list(
         (
             await session.execute(
@@ -310,7 +266,6 @@ async def headline(session: AsyncSession) -> Headline:
 
 
 async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
-    """Assemble the accuracy report for one run, or None if there is no such run."""
     run = (
         await session.execute(select(ForecastRun).where(ForecastRun.id == run_id))
     ).scalar_one_or_none()

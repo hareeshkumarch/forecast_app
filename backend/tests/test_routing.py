@@ -1,11 +1,3 @@
-"""Which models a series is allowed to reach.
-
-A spreadsheet from a real business contains intermittent series. Exponential
-smoothing fitted to demand that is zero four weeks in five reports a small
-steady level with a tight interval, and it is wrong in the way that is hardest
-to notice: it looks like a forecast.
-"""
-
 from __future__ import annotations
 
 import numpy as np

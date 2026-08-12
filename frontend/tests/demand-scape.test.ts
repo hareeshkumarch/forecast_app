@@ -22,7 +22,6 @@ const parseViewBox = (viewBox: string) => {
 
 const LENGTHS = [8, 35, 120];
 
-
 describe("demand scape geometry", () => {
   it.each(LENGTHS)("keeps every vertex inside the viewBox at n = %i", (n) => {
     const historyLength = Math.max(1, n - Math.min(9, Math.floor(n / 2)));

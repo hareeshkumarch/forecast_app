@@ -4,7 +4,6 @@ export type Prism = {
   key: string;
   row: number;
   step: number;
-  /** 1-based weeks beyond today; 0 for anything already observed. */
   horizon: number;
   tone: Tone;
   x: number;
@@ -13,7 +12,6 @@ export type Prism = {
   height: number;
   extrudeX: number;
   extrudeY: number;
-  /** Height as a fraction of the shell around it, for the expand animation. */
   shellFloor: number;
 };
 
@@ -41,12 +39,6 @@ export type Scape = {
   steps: number;
 };
 
-/*
- * Total drift budgets, not per-bar offsets. A per-bar offset multiplies by the
- * number of bars, so a longer series walks further; twenty-six weeks fitted
- * the frame and anything longer left it. These are the distance the whole
- * series travels, however many bars it is divided into.
- */
 const DEPTH_X = 940;
 const DEPTH_Y = 190;
 const PLOT_HEIGHT = 208;
@@ -60,12 +52,6 @@ const BAR_FILL = 0.78;
 const EXTRUDE_X_RATIO = 0.48;
 const EXTRUDE_Y_RATIO = 0.24;
 
-/*
- * A shell is the range around a forecast, and a range that is the same width
- * nine weeks out as it is one week out is not a forecast's range — it is a
- * decoration. The lift grows with the horizon, so the shells widen across the
- * projected span the way the page says they do.
- */
 const RANGE_BASE = 1.05;
 const RANGE_GROWTH = 0.055;
 
@@ -73,10 +59,6 @@ export function rangeLift(horizon: number): number {
   return RANGE_BASE + RANGE_GROWTH * horizon;
 }
 
-/* Named bands around the plot. Nothing but labels is drawn in them, and every
- * label is drawn in one of them — which is what keeps captions off the bars.
- * The side bands are sized to hold their longest caption at the longest series
- * this chart is built for: "120 weeks ago" and "+111 weeks". */
 const LABEL_ADVANCE = 10.2;
 const LABEL_PAD = 10;
 const LONGEST_LEFT = "120 weeks ago".length;
@@ -102,11 +84,6 @@ export function buildScape(history: number[], future: number[]): Scape {
 
   const span = Math.max(steps - 1, 1);
 
-  // A bar is as wide as the space between two of them, so the width has to be
-  // known before the spacing can be, and the spacing before the width. One
-  // pass over a provisional spacing settles it: the bar's own width and
-  // extrusion come out of the drift budget rather than being added on top of
-  // it, so the last bar's far corner lands on DEPTH_X at every series length.
   const provisional = DEPTH_X / span;
   const width = Math.min(provisional * BAR_FILL, MAX_BAR);
   const extrudeX = width * EXTRUDE_X_RATIO;
@@ -115,9 +92,6 @@ export function buildScape(history: number[], future: number[]): Scape {
   const dx = (DEPTH_X - ROW_DX - width - extrudeX) / span;
   const dy = (DEPTH_Y - ROW_DY) / span;
 
-  // The extrusion sits above the bar's top face, so it comes out of the height
-  // budget too — otherwise a short series with fat bars is taller than a long
-  // one with thin bars, and the frame changes shape with the data.
   const tallestRow = Math.max(...ROW_SCALE);
   const scale =
     (PLOT_HEIGHT - extrudeY) /
@@ -129,8 +103,6 @@ export function buildScape(history: number[], future: number[]): Scape {
 
   const prisms: Prism[] = [];
 
-  // Back row first: a painter's-algorithm ordering, so the row nearer the
-  // viewer overlaps the one behind it rather than the other way round.
   for (let row = rows - 1; row >= 0; row--) {
     const rowScale = ROW_SCALE[row] ?? 1;
     for (let step = 0; step < steps; step++) {
@@ -175,9 +147,6 @@ export function buildScape(history: number[], future: number[]): Scape {
     }
   }
 
-  // The frame is measured off the geometry rather than guessed at: every
-  // vertex a prism puts on the canvas is considered, so nothing drawn can fall
-  // outside the box derived from it.
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -190,12 +159,6 @@ export function buildScape(history: number[], future: number[]): Scape {
     maxY = Math.max(maxY, prism.baseY);
   }
 
-  // Then widened to the envelope the budgets allow. Measuring only what this
-  // week's numbers happen to reach makes the frame a function of the data: a
-  // tall bar early in the series reaches higher than the same bar late,
-  // because the drift has not yet carried it down. The chart would change
-  // shape when one week spiked, which is the same defect as changing shape
-  // when the series got longer.
   minX = Math.min(minX, 0);
   maxX = Math.max(maxX, DEPTH_X);
   minY = Math.min(minY, -(rows - 1) * ROW_DY - PLOT_HEIGHT);
@@ -216,11 +179,6 @@ export function buildScape(history: number[], future: number[]): Scape {
     y2: todayY + ROW_DY,
   };
 
-  // Floor lines running along the series, spaced across the vertical range the
-  // bars actually occupy and terminated on the geometry's own corners. A guide
-  // that carries on past the frame reads as a rendering failure rather than as
-  // perspective, so both of its endpoints are points the frame already
-  // contains.
   const run = maxX - minX - ROW_DX - width - extrudeX;
   const guides: Guide[] = [];
   for (let index = 0; index < GUIDE_COUNT; index++) {
@@ -234,10 +192,6 @@ export function buildScape(history: number[], future: number[]): Scape {
     });
   }
 
-  // Anchored to the frame's own edges, so each label's text grows inward into
-  // its gutter. Anchoring to the plot edge instead lets the glyphs run the
-  // other way and off the canvas — the anchor point sits inside the box while
-  // half the word is outside it.
   const labels: Label[] = [
     {
       key: "past",
@@ -293,7 +247,6 @@ export function prismFaces(prism: Prism): {
   };
 }
 
-/** Rendered width of a caption in the mono face the chart draws it in. */
 export function labelWidth(text: string): number {
   return text.length * LABEL_ADVANCE;
 }

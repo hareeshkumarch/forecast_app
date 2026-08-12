@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 
-
 const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
@@ -69,14 +68,6 @@ const config: Config = {
         mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       fontSize: {
-        // Every token carries its own line-height. A size is never applied
-        // without one, so nothing can inherit a leading that belongs to a
-        // different size — which is what put two lines of the same paragraph
-        // on top of each other.
-        //
-        // Floor raised from 10px — `micro` carries the eyebrow and the kbd,
-        // both uppercase and tracked, which is where 10px stopped being
-        // readable rather than merely small.
         micro: ["11px", { lineHeight: "15px", letterSpacing: "0.05em" }],
         tag: ["9px", { lineHeight: "13px" }],
         caption: ["11.5px", { lineHeight: "16px" }],
@@ -99,10 +90,6 @@ const config: Config = {
         // Body and caption take no viewport term at all — a measure that
         // grows with the window is what collapsed the card copy.
         lead: ["17px", { lineHeight: "1.62" }],
-        // 1.0 rather than 0.95: Inter's ascender-to-descender runs about
-        // 0.98em, so at 0.95 a four-line wrap on a 320px phone leaves a single
-        // pixel between a descender and the ascender below it. The deployed
-        // build used 0.99, so this is also the nearer of the two to it.
         "site-display": [
           "clamp(3.5rem, calc(2.829rem + 3.356vw), 6rem)",
           { lineHeight: "1", letterSpacing: "-0.03em" },
