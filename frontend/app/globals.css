@@ -68,6 +68,10 @@
   --nav-height: 74px;
   --nav-total: calc(var(--nav-inset) + var(--nav-height));
   --nav-clearance: 16px;
+
+  /* Monotone to its target and never past it. Everything that encodes a
+   * quantity eases with this and nothing else. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (min-width: 640px) {
@@ -437,14 +441,20 @@ body {
  * budget, or a slow observer all render the same finished page rather than a
  * blank one waiting to be revealed.
  */
+/* One reveal, used by every section. A different entrance per section is a
+ * page full of effects rather than a page with a rhythm. */
 .motion-ready .reveal {
   opacity: 0;
-  transition: opacity 360ms ease-out;
+  transform: translate3d(0, 12px, 0);
+  transition:
+    opacity 320ms var(--ease-out),
+    transform 320ms var(--ease-out);
   transition-delay: var(--reveal-delay, 0ms);
 }
 
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 /* The rolling-test bars are the only spatial entrance motion on the page. */
@@ -454,8 +464,108 @@ body {
 }
 
 .motion-ready [data-shown="true"] .grow-x {
-  animation: grow-x 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: grow-x 420ms var(--ease-out) forwards;
   animation-delay: var(--grow-delay, 0ms);
+}
+
+/* ---------------------------------------------------- hero build sequence */
+
+/*
+ * Bars rise in place: they are already at their final position and only their
+ * height animates, as `scaleY` about the bar's own base. Nothing here uses a
+ * spring or a back-ease. A bar that overshoots its height is a bar that shows
+ * a number the data does not contain, for as long as the overshoot lasts, and
+ * every mark in this chart encodes a quantity.
+ */
+@keyframes scape-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* The shell starts at the height of the bar it belongs to and expands out to
+ * the top of its range. `--shell-floor` is that ratio, and it differs per
+ * week — nearer weeks start closer to their final height, so the range visibly
+ * widens with the horizon instead of only ending up wider. */
+@keyframes scape-expand {
+  from {
+    transform: scaleY(var(--shell-floor, 0));
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.scape-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.motion-ready .scape-armed .scape-bar {
+  transform: scaleY(0);
+}
+
+.motion-ready .scape-armed .scape-shell {
+  transform: scaleY(var(--shell-floor, 0));
+}
+
+.motion-ready .scape-running .scape-bar {
+  animation: scape-rise var(--rise, 260ms) var(--ease-out) var(--delay, 0ms) both;
+}
+
+.motion-ready .scape-running .scape-shell {
+  animation: scape-expand var(--expand, 340ms) var(--ease-out) var(--delay, 0ms) both;
+}
+
+
+.motion-ready .scape-armed .scape-caption {
+  opacity: 0;
+}
+
+.motion-ready .scape-running .scape-caption {
+  animation: scape-fade var(--caption-fade, 200ms) var(--ease-out) var(--delay, 0ms) both;
+}
+
+@keyframes scape-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------- micro-interaction */
+
+/* The nav indicator encodes nothing, so it is allowed to overshoot. */
+.nav-indicator {
+  transition:
+    transform 200ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    width 200ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    opacity 140ms linear;
+}
+
+.cta-nudge {
+  transition:
+    transform 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    background-color 140ms var(--ease-out),
+    opacity 300ms var(--ease-out);
+}
+
+.cta-nudge:hover {
+  transform: translate3d(0, -1px, 0);
+}
+
+.card-hover {
+  transition: border-color 140ms var(--ease-out);
+}
+
+.scape-readout {
+  transition: opacity 120ms var(--ease-out);
 }
 
 /* -------------------------------------------------------------- skeleton */

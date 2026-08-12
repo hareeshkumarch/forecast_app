@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Mark } from "@/components/marketing/mark";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,28 @@ export function FloatingNav() {
   const [lifted, setLifted] = useState(false);
   const [pastHero, setPastHero] = useState(false);
   const [active, setActive] = useState<string | null>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const place = () => {
+      const current = active
+        ? list.querySelector<HTMLElement>(`[data-section="${active}"]`)
+        : null;
+      if (!current) {
+        setIndicator(null);
+        return;
+      }
+      setIndicator({ left: current.offsetLeft, width: current.offsetWidth });
+    };
+
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [active]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -63,15 +85,27 @@ export function FloatingNav() {
           <span className="text-site-h3 font-bold text-[#111512]">Forecast Hub</span>
         </Link>
 
-        <ul className="mx-auto hidden items-center gap-1 md:flex">
+        <ul ref={listRef} className="relative mx-auto hidden items-center gap-1 md:flex">
+          {/* The indicator slides between items rather than cutting. It marks
+              a position, not a quantity, so it is allowed to overshoot. */}
+          <span
+            aria-hidden
+            className="nav-indicator pointer-events-none absolute inset-y-1 left-0 bg-[#e6e9e4]"
+            style={{
+              width: indicator?.width ?? 0,
+              transform: `translate3d(${indicator?.left ?? 0}px, 0, 0)`,
+              opacity: indicator ? 1 : 0,
+            }}
+          />
           {SECTIONS.map((section) => (
             <li key={section.id}>
               <Link
                 href={`#${section.id}`}
+                data-section={section.id}
                 aria-current={active === section.id ? "page" : undefined}
                 className={cn(
-                  "inline-flex px-5 py-3 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
-                  active === section.id && "bg-[#e6e9e4] text-[#111512]",
+                  "relative inline-flex px-5 py-3 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
+                  active === section.id && "text-[#111512]",
                 )}
               >
                 {section.label}
@@ -86,7 +120,7 @@ export function FloatingNav() {
           aria-hidden={!pastHero}
           tabIndex={pastHero ? 0 : -1}
           className={cn(
-            "group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 bg-[#111512] px-5 text-site-body font-medium text-white transition-all duration-300 sm:h-[56px] sm:px-6",
+            "cta-nudge group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 border-2 border-[#111512] bg-[#111512] px-5 text-site-body font-medium text-white hover:border-[#287b59] sm:h-[56px] sm:px-6",
             pastHero ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0",
           )}
         >

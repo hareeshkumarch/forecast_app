@@ -4,6 +4,8 @@ export type Prism = {
   key: string;
   row: number;
   step: number;
+  /** 1-based weeks beyond today; 0 for anything already observed. */
+  horizon: number;
   tone: Tone;
   x: number;
   baseY: number;
@@ -11,6 +13,8 @@ export type Prism = {
   height: number;
   extrudeX: number;
   extrudeY: number;
+  /** Height as a fraction of the shell around it, for the expand animation. */
+  shellFloor: number;
 };
 
 export type Guide = { key: string; x1: number; y1: number; x2: number; y2: number };
@@ -56,7 +60,18 @@ const BAR_FILL = 0.78;
 const EXTRUDE_X_RATIO = 0.48;
 const EXTRUDE_Y_RATIO = 0.24;
 
-const RANGE_LIFT = 1.42;
+/*
+ * A shell is the range around a forecast, and a range that is the same width
+ * nine weeks out as it is one week out is not a forecast's range — it is a
+ * decoration. The lift grows with the horizon, so the shells widen across the
+ * projected span the way the page says they do.
+ */
+const RANGE_BASE = 1.05;
+const RANGE_GROWTH = 0.055;
+
+export function rangeLift(horizon: number): number {
+  return RANGE_BASE + RANGE_GROWTH * horizon;
+}
 
 /* Named bands around the plot. Nothing but labels is drawn in them, and every
  * label is drawn in one of them — which is what keeps captions off the bars.
@@ -106,7 +121,11 @@ export function buildScape(history: number[], future: number[]): Scape {
   const tallestRow = Math.max(...ROW_SCALE);
   const scale =
     (PLOT_HEIGHT - extrudeY) /
-    (extent([...history, ...future.map((v) => v * RANGE_LIFT)]) * tallestRow);
+    (extent([
+      ...history,
+      ...future.map((value, index) => value * rangeLift(index + 1)),
+    ]) *
+      tallestRow);
 
   const prisms: Prism[] = [];
 
@@ -118,20 +137,24 @@ export function buildScape(history: number[], future: number[]): Scape {
       const x = step * dx + row * ROW_DX;
       const baseY = step * dy - row * ROW_DY;
       const historical = step < history.length;
+      const horizon = historical ? 0 : step - history.length + 1;
       const value = (historical ? history[step] : future[step - history.length]) ?? 0;
+      const lift = historical ? 1 : rangeLift(horizon);
 
       if (!historical) {
         prisms.push({
           key: `range-${row}-${step}`,
           row,
           step,
+          horizon,
           tone: "range",
           x,
           baseY,
           width,
-          height: value * RANGE_LIFT * scale * rowScale,
+          height: value * lift * scale * rowScale,
           extrudeX,
           extrudeY,
+          shellFloor: 1 / lift,
         });
       }
 
@@ -139,6 +162,7 @@ export function buildScape(history: number[], future: number[]): Scape {
         key: `${historical ? "history" : "future"}-${row}-${step}`,
         row,
         step,
+        horizon,
         tone: historical ? "history" : "future",
         x,
         baseY,
@@ -146,6 +170,7 @@ export function buildScape(history: number[], future: number[]): Scape {
         height: value * scale * rowScale,
         extrudeX,
         extrudeY,
+        shellFloor: 0,
       });
     }
   }

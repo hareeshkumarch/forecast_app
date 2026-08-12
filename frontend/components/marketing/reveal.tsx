@@ -44,7 +44,7 @@ export type RevealProps = {
 export function Reveal({
   as: Tag = "div",
   delay = 0,
-  amount = 0.15,
+  amount = 0.2,
   className,
   style,
   children,
@@ -58,7 +58,7 @@ export function Reveal({
     const node = ref.current;
     if (!node) return;
 
-    // Anything taller than the viewport can never reach a 15% threshold from
+    // Anything taller than the viewport can never reach a 20% threshold from
     // the top, so clamp what we ask for against the element's own height.
     const ratio = Math.min(amount, (window.innerHeight * 0.6) / Math.max(node.offsetHeight, 1));
 

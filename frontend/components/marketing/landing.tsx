@@ -108,7 +108,7 @@ function Hero() {
         <Reveal delay={210} className="mt-9 sm:mt-10">
           <Link
             href="/dashboard"
-            className="group inline-flex h-[80px] items-center gap-5 bg-[#111512] px-10 text-site-lead font-medium text-white transition-colors hover:bg-[#242a25] sm:h-[82px] sm:px-11"
+            className="cta-nudge group inline-flex h-[80px] items-center gap-5 border-2 border-[#111512] bg-[#111512] px-10 text-site-lead font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[82px] sm:px-11"
           >
             Open the dashboard
             <Arrow />
@@ -141,8 +141,8 @@ function HowItWorks() {
               key={step.title}
               delay={index * 90}
               className={cn(
-                "flex min-h-[415px] flex-col border bg-[#fafbf9] p-8",
-                step.active ? "border-[#111512] bg-[#e5e8e3]" : "border-[#cfd5cf]",
+                "card-hover flex min-h-[415px] flex-col border bg-[#fafbf9] p-8",
+                step.active ? "border-[#111512] bg-[#e5e8e3]" : "border-[#cfd5cf] hover:border-[#8f9a90]",
               )}
             >
               <div className="flex items-center justify-between">
@@ -175,7 +175,7 @@ function Features() {
 
         <div className="mt-16 grid border-l border-t border-[#cfd5cf] md:grid-cols-2 2xl:grid-cols-3">
           {FEATURES.map((feature, index) => (
-            <Reveal key={feature.title} delay={index * 80} className="min-h-[330px] border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-8 sm:p-10">
+            <Reveal key={feature.title} delay={index * 80} className="card-hover min-h-[330px] border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-8 hover:border-[#8f9a90] sm:p-10">
               <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-[#697069]">
                 {feature.number}
                 <feature.icon className="size-5" strokeWidth={1.6} aria-hidden />
@@ -252,7 +252,7 @@ function Closing() {
       <Reveal className="mx-auto max-w-[980px] px-6 text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
         <h2 className="mt-7 text-balance text-site-h2 font-bold">See what is coming next.</h2>
-        <Link href="/dashboard" className="group mt-10 inline-flex h-[76px] items-center gap-5 bg-[#111512] px-10 text-site-lead font-medium text-white hover:bg-[#242a25]">
+        <Link href="/dashboard" className="cta-nudge group mt-10 inline-flex h-[76px] items-center gap-5 border-2 border-[#111512] bg-[#111512] px-10 text-site-lead font-medium text-white hover:border-[#287b59] hover:bg-[#242a25]">
           Open the dashboard
           <Arrow />
         </Link>
