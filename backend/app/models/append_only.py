@@ -61,6 +61,10 @@ FROZEN_COLUMNS: dict[str, frozenset[str]] = {
     # should: they are the backtest as it stood when the winner was picked.
     "model_candidates": frozenset({"*"}),
     "forecast_metrics": frozenset({"*"}),
+    # A reading of what a period turned out to be, as at a moment. A
+    # restatement is a new row with a later `revised_at`, never an edit to this
+    # one — that is the whole point of the table.
+    "actual_observations": frozenset({"*"}),
 }
 
 #: Tables whose rows may not be deleted individually. A whole run going away

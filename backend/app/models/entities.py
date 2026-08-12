@@ -436,6 +436,50 @@ class ForecastPoint(UUIDPrimaryKeyMixin, Base):
     )
 
 
+class ActualObservation(UUIDPrimaryKeyMixin, Base):
+    """What a period turned out to be, as read on a particular day.
+
+    A restatement does not overwrite the earlier reading — it adds a row with a
+    later `revised_at`. Both survive, so "what did the model know when it was
+    scored" and "what do we believe now" stay separable questions. Overwriting
+    makes a forecast look better or worse than it was against a number that did
+    not exist when it was issued, and leaves nothing behind to show it.
+
+    Keyed on the series rather than on a run: an actual is a fact about the
+    world, and every run over the same grain is scored against the same one.
+    """
+
+    __tablename__ = "actual_observations"
+
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The grain this observation belongs to, canonicalised. Empty for the
+    #: whole-business total.
+    series_key: Mapped[str] = mapped_column(String(600), nullable=False, default="")
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    revised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: The upload this reading came out of, when it came from one.
+    source_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("datasets.id", ondelete="SET NULL")
+    )
+
+    dataset: Mapped[Dataset] = relationship(foreign_keys=[dataset_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_id",
+            "series_key",
+            "target_date",
+            "revised_at",
+            name="uq_actual_observations_reading",
+        ),
+        Index("ix_actual_observations_lookup", "dataset_id", "series_key", "target_date"),
+        Index("ix_actual_observations_revised", "dataset_id", "revised_at"),
+    )
+
+
 class RegionalForecast(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "regional_forecasts"
 

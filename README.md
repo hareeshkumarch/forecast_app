@@ -313,6 +313,40 @@ moves the total by that driver's own measured share of the movement, so asking
 for 2× on a driver holding 40% of the impact lifts the forecast by 40%, not
 100%. Drivers the run never found are refused rather than silently applied.
 
+### About a minute
+
+The third step on the landing page says a forecast takes about a minute, which
+makes it an SLO rather than a turn of phrase. Every stage of a run is timed
+against its own budget — parse, validate, classify, features, fit, predict,
+calibrate, persist — and the timings are persisted with the run in
+`diagnostics.timings`. `tests/test_latency_budget.py` asserts the p95 of five
+real runs over a reference dataset (104 weekly periods, one series, a nine-week
+horizon) against the 60-second total.
+
+The promise holds up to **500 series in one run**. Past that the run is queued
+and reports progress instead of being served inline, and past 20,000 it is
+refused with a message saying so — a count that high is almost always a grain
+that accidentally includes an order or transaction reference. Both numbers live
+in `app/core/budget.py` and are enforced by `admission()`, not left as a note.
+
+### Where an accuracy figure comes from
+
+`GET /api/forecasts/{id}/accuracy` returns WAPE and signed bias by horizon and
+by series class, the value the chosen model added over the best baseline that
+ran beside it, and the provenance behind every figure: the commit, the model
+and feature versions, and a hash of the settings that change what a forecast
+decides. It says plainly whether the numbers are measured against outcomes that
+have since arrived or against held-out stretches of the customer's own history,
+because those are different claims.
+
+`GET /api/forecasts/accuracy/headline` aggregates that into the single
+percentage an accuracy section would print, weighted by periods scored rather
+than averaged across runs. It returns `publishable: false` until at least three
+runs over twenty-six periods stand behind it. The landing page's accuracy
+section is still static copy — pointing it at a live figure is a decision about
+exposing one deployment's numbers publicly, and the endpoint is ready for
+whoever makes it.
+
 ---
 
 ## Keyboard

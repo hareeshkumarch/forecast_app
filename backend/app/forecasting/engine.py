@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -8,6 +9,7 @@ from typing import Any, TypedDict
 import numpy as np
 import numpy.typing as npt
 
+from app.core.budget import RunTimings, Stage
 from app.core.logging import get_logger
 from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
@@ -125,6 +127,8 @@ class ForecastOutput:
     candidates: list[CandidateRow]
     interval_method: str
     diagnostics: dict[str, object] = field(default_factory=dict)
+    #: What each stage of this run cost, against what it was allowed to cost.
+    timings: RunTimings = field(default_factory=RunTimings)
 
     regions: list[SegmentOutput] = field(default_factory=list)
     categories: list[SegmentOutput] = field(default_factory=list)
@@ -227,7 +231,9 @@ def run_forecast(
     frequency = payload.frequency
     horizon = payload.horizon
 
-    profile = profile_series(values, frequency)
+    timings = RunTimings()
+    with timings.measure(Stage.CLASSIFY):
+        profile = profile_series(values, frequency)
     floor = minimum_history(profile)
 
     # Every model that tunes its own hyperparameters searches against the
@@ -246,7 +252,8 @@ def run_forecast(
     # worth offering a driver-using variant at all — so it is made from the
     # whole history, which is also what the final model is fitted on. What
     # each fold *fits* is discovered inside that fold.
-    panel = source.panel_for(values, periods)
+    with timings.measure(Stage.FEATURES):
+        panel = source.panel_for(values, periods)
 
     used_fallback = False
     fallback_reason: str | None = None
@@ -276,6 +283,7 @@ def run_forecast(
 
     results: list[BacktestResult] = []
     candidate_total = len(candidates)
+    fit_started = time.perf_counter()
     for candidate_index, candidate in enumerate(candidates, start=1):
         kind = candidate.kind
         if progress_callback is not None:
@@ -313,6 +321,7 @@ def run_forecast(
     )
     if combined is not None:
         results.append(combined.result)
+    timings.record(Stage.FIT, time.perf_counter() - fit_started)
 
     for kind, reason in unavailable_models().items():
         results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
@@ -379,9 +388,10 @@ def run_forecast(
         progress_callback("building_outputs", 0, 1, "Building intervals and segment forecasts...")
 
     forecast_index = future_periods(periods[-1], horizon, frequency)
-    point_forecast = np.asarray(final_model.predict(horizon, forecast_index), dtype=float).ravel()[
-        :horizon
-    ]
+    with timings.measure(Stage.PREDICT):
+        point_forecast = np.asarray(
+            final_model.predict(horizon, forecast_index), dtype=float
+        ).ravel()[:horizon]
 
     if not np.all(np.isfinite(point_forecast)):
         last_finite = values[np.isfinite(values)]
@@ -390,13 +400,14 @@ def run_forecast(
 
     winner_result = selection.winner.result
     non_negative = bool(np.all(values[np.isfinite(values)] >= 0))
-    bands: IntervalBands = build_intervals(
-        point_forecast,
-        winner_result,
-        confidence_level=payload.confidence_level,
-        history=values,
-        non_negative=non_negative,
-    )
+    with timings.measure(Stage.CALIBRATE):
+        bands: IntervalBands = build_intervals(
+            point_forecast,
+            winner_result,
+            confidence_level=payload.confidence_level,
+            history=values,
+            non_negative=non_negative,
+        )
 
     metrics = {
         "mae": winner_result.mae,
@@ -495,10 +506,12 @@ def run_forecast(
             # series gets quantiles and no point-accuracy claim, and the UI
             # needs to be told that rather than inferring it.
             "routing": route(profile).as_dict(),
+            "timings": timings.as_dict(),
         },
         regions=regions,
         categories=categories,
         drivers=drivers,
+        timings=timings,
     )
 
 

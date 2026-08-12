@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from app.api.deps import SessionDep
+from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.database.session import session_scope
 from app.datasets.profiler import is_currency_like
@@ -44,7 +45,7 @@ from app.schemas.forecast import (
     WhatIfSimulationRequest,
     WhatIfSimulationResponse,
 )
-from app.services import forecast_service, scoring_service, series_service
+from app.services import accuracy_service, forecast_service, scoring_service, series_service
 from app.services.job_runner import ProgressEvent, progress_bus
 from app.services.progress_relay import latest_from_store
 
@@ -168,6 +169,37 @@ async def get_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunDetail:
     detail.error_message = current.error or detail.error_message
     detail.progress_updated_at = current.updated_at
     return detail
+
+
+@router.get(
+    "/accuracy/headline",
+    summary="One accuracy figure across every scored run, with its evidence",
+)
+async def get_headline_accuracy(session: SessionDep) -> dict:
+    """What the accuracy section is entitled to claim, and on what basis.
+
+    `publishable` is false until enough runs over enough periods have been
+    scored. A percentage with nothing behind it is the thing this exists to
+    stop being printed.
+    """
+    return (await accuracy_service.headline(session)).as_dict()
+
+
+@router.get(
+    "/{run_id}/accuracy",
+    summary="How accurate this run turned out to be, and against what",
+)
+async def get_accuracy(run_id: uuid.UUID, session: SessionDep) -> dict:
+    """WAPE and bias by horizon and series class, coverage, and value over baseline.
+
+    Every figure carries the run and the backtest configuration behind it, and
+    the response says plainly whether it is measured against outcomes that have
+    since arrived or against held-out stretches of the customer's own history.
+    """
+    report = await accuracy_service.build(session, run_id)
+    if report is None:
+        raise NotFoundError(f"No forecast run with id {run_id}.")
+    return report.as_dict()
 
 
 @router.get(

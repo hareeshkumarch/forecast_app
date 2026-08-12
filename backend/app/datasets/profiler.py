@@ -620,6 +620,14 @@ def profile_frame(
     )
 
 
+#: The score at which a column is a plausible reading of a role rather than a
+#: guess at one. Not a probability — it is the scale `_score_column` builds, and
+#: it is named here so the refusal layer can defer to it instead of inventing a
+#: second threshold that disagrees.
+DATE_CANDIDATE_FLOOR = 0.5
+TARGET_CANDIDATE_FLOOR = 0.4
+
+
 def _score_column(profile: ColumnProfile, row_count: int) -> None:
     reasons: list[str] = []
 
@@ -645,7 +653,7 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
             reasons.append(f"{profile.null_count} missing dates")
 
         profile.date_score = max(0.0, min(1.0, score))
-        profile.is_date_candidate = profile.date_score >= 0.5
+        profile.is_date_candidate = profile.date_score >= DATE_CANDIDATE_FLOOR
 
     if profile.kind is ColumnKind.NUMERIC:
         score = 0.40
@@ -695,7 +703,7 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
             score += 0.02 * min(1.0, profile.distinct_count / max(row_count, 1) * 4)
 
         profile.target_score = max(0.0, min(1.0, score))
-        profile.is_target_candidate = profile.target_score >= 0.4
+        profile.is_target_candidate = profile.target_score >= TARGET_CANDIDATE_FLOOR
 
     profile.reason = ", ".join(reasons) if reasons else "no strong signal"
 
