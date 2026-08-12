@@ -108,11 +108,11 @@ export function DemandScape() {
   const readout = hovered === null ? null : readoutFor(hovered);
 
   return (
-    <div className="mx-auto w-full max-w-[1420px]" ref={ref}>
+    <div className="scape-frame" ref={ref}>
       <div className="relative">
         <svg
           viewBox={scape.viewBox}
-          className={`block h-auto w-full ${stage}`}
+          className={stage}
           role="img"
           aria-label={`${HISTORY.length} weeks of historical demand followed by a ${FUTURE.length}-week forecast and its possible range`}
           onMouseLeave={() => setHovered(null)}

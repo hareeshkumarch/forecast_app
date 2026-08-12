@@ -70,22 +70,22 @@ export function FloatingNav() {
   }, []);
 
   return (
-    <div className="fixed inset-x-0 top-[var(--nav-inset)] z-50 px-4 sm:px-8 lg:px-[4.3vw]">
+    <div className="fixed inset-x-0 top-[var(--nav-inset)] z-50">
       <nav
         aria-label="Sections"
         className={cn(
-          "mx-auto flex h-[var(--nav-height)] w-full max-w-[1816px] items-center border border-[#d8ddd7] bg-[#fafbf9]/95 px-5 backdrop-blur-xl transition-shadow duration-300 sm:px-7",
+          "page-shell flex h-[var(--nav-height)] items-center border border-[#d8ddd7] bg-[#fafbf9]/95 px-4 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
           lifted
             ? "shadow-[0_18px_38px_-22px_rgba(17,22,18,.4),0_1px_2px_rgba(17,22,18,.08)]"
             : "shadow-[0_4px_14px_-10px_rgba(17,22,18,.25)]",
         )}
       >
-        <Link href="#top" aria-label="Forecast Hub, back to top" className="flex shrink-0 items-center gap-3">
-          <Mark size={31} />
+        <Link href="#top" aria-label="Forecast Hub, back to top" className="flex shrink-0 items-center gap-2.5">
+          <Mark size={24} />
           <span className="text-site-h3 font-bold text-[#111512]">Forecast Hub</span>
         </Link>
 
-        <ul ref={listRef} className="relative mx-auto hidden items-center gap-1 md:flex">
+        <ul ref={listRef} className="relative mx-auto hidden items-center gap-0.5 md:flex">
           {/* The indicator slides between items rather than cutting. It marks
               a position, not a quantity, so it is allowed to overshoot. */}
           <span
@@ -104,7 +104,7 @@ export function FloatingNav() {
                 data-section={section.id}
                 aria-current={active === section.id ? "page" : undefined}
                 className={cn(
-                  "relative inline-flex px-5 py-3 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
+                  "relative inline-flex px-3.5 py-2 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
                   active === section.id && "text-[#111512]",
                 )}
               >
@@ -120,7 +120,7 @@ export function FloatingNav() {
           aria-hidden={!pastHero}
           tabIndex={pastHero ? 0 : -1}
           className={cn(
-            "cta-nudge group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 border-2 border-[#111512] bg-[#111512] px-5 text-site-body font-medium text-white hover:border-[#287b59] sm:h-[56px] sm:px-6",
+            "cta-nudge group ml-auto inline-flex h-[38px] shrink-0 items-center gap-2 border-2 border-[#111512] bg-[#111512] px-3.5 text-site-body font-medium text-white hover:border-[#287b59] sm:h-[42px] sm:px-4",
             pastHero ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0",
           )}
         >

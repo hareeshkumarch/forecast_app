@@ -79,32 +79,22 @@ const config: Config = {
         heading: ["20px", { lineHeight: "26px" }],
         kpi: ["24px", { lineHeight: "30px" }],
         stat: ["clamp(1.75rem, 5.3vw, 2.125rem)", { lineHeight: "1.1", letterSpacing: "-0.03em" }],
-        // The marketing page needs sizes the product never does. Kept as its
-        // own `display-*` / `site-*` run so nothing in the app can reach for
-        // them by accident.
-        //
-        // The `site-*` fluid sizes interpolate between the width the page was
-        // drawn at on a phone and the width it was drawn at on a laptop, so
-        // both ends land on the size the design already used: `site-display`
-        // is 56px at 320px and 96px at 1512px, `site-h2` is 46px and 60px.
-        // Body and caption take no viewport term at all — a measure that
-        // grows with the window is what collapsed the card copy.
         lead: ["17px", { lineHeight: "1.62" }],
         "site-display": [
-          "clamp(3.5rem, calc(2.829rem + 3.356vw), 6rem)",
-          { lineHeight: "1", letterSpacing: "-0.03em" },
+          "clamp(2.625rem, calc(1.85rem + 3.4vw), 4.5rem)",
+          { lineHeight: "1.04", letterSpacing: "-0.032em" },
         ],
         "site-h2": [
-          "clamp(2.875rem, calc(2.64rem + 1.174vw), 3.875rem)",
-          { lineHeight: "1.1", letterSpacing: "-0.02em" },
+          "clamp(1.875rem, calc(1.45rem + 1.9vw), 2.75rem)",
+          { lineHeight: "1.12", letterSpacing: "-0.025em" },
         ],
-        "site-h3": ["1.5625rem", { lineHeight: "1.25", letterSpacing: "-0.035em" }],
+        "site-h3": ["clamp(1.125rem, calc(1rem + 0.4vw), 1.3125rem)", { lineHeight: "1.3", letterSpacing: "-0.02em" }],
         "site-lead": [
-          "clamp(1.1875rem, calc(1.104rem + 0.42vw), 1.5rem)",
-          { lineHeight: "1.5" },
+          "clamp(1.0625rem, calc(0.98rem + 0.36vw), 1.1875rem)",
+          { lineHeight: "1.55" },
         ],
-        "site-body": ["1.125rem", { lineHeight: "1.55" }],
-        "site-caption": ["0.8125rem", { lineHeight: "1.4", letterSpacing: "0.08em" }],
+        "site-body": ["clamp(0.9375rem, calc(0.9rem + 0.2vw), 1.0625rem)", { lineHeight: "1.6" }],
+        "site-caption": ["0.75rem", { lineHeight: "1.45", letterSpacing: "0.07em" }],
         "display-xs": ["27px", { lineHeight: "1.16", letterSpacing: "-0.015em" }],
         "display-sm": ["33px", { lineHeight: "1.14", letterSpacing: "-0.015em" }],
         "display-md": ["40px", { lineHeight: "1.12", letterSpacing: "-0.018em" }],

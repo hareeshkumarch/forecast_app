@@ -59,23 +59,31 @@
   --insights-width: 320px;
   --workspace-padding: 16px;
 
-  --nav-inset: 12px;
-  --nav-height: 74px;
+  --nav-inset: 10px;
+  --nav-height: 60px;
   --nav-total: calc(var(--nav-inset) + var(--nav-height));
   --nav-clearance: 16px;
+
+  --shell-max: 1340px;
+  --shell-gutter: 20px;
+  --section-gap: clamp(3.25rem, 5.5vw, 5.5rem);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (min-width: 640px) {
   :root {
-    --nav-inset: 24px;
-    --nav-height: 88px;
+    --nav-inset: 14px;
+    --nav-height: 68px;
+    --shell-gutter: 32px;
   }
 }
 
 @media (min-width: 1024px) {
   :root {
+    --nav-inset: 16px;
+    --nav-height: 72px;
+    --shell-gutter: 40px;
     --header-height: 74px;
     --workspace-padding: 24px;
   }
@@ -364,6 +372,27 @@ body {
 
 .forecast-landing [id] {
   scroll-margin-top: calc(var(--nav-total) + var(--nav-clearance));
+}
+
+.page-shell {
+  width: min(100% - 2 * var(--shell-gutter), var(--shell-max));
+  margin-inline: auto;
+}
+
+.section-pad {
+  padding-block: var(--section-gap);
+}
+
+.scape-frame {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+}
+
+.scape-frame > svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .demand-prism {
