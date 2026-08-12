@@ -350,6 +350,25 @@ def column_names(
         return [str(description[0]) for description in cursor.description or []]
 
 
+def distinct_series_count(
+    parquet_path: Path,
+    group_columns: list[str],
+    connection: duckdb.DuckDBPyConnection | None = None,
+) -> int:
+    if not group_columns:
+        return 1
+
+    keys = ", ".join(
+        f"COALESCE(CAST({_quote(column)} AS VARCHAR), '{MISSING_KEY}')"
+        for column in group_columns
+    )
+    with _using(connection) as db:
+        row = db.execute(
+            f"SELECT COUNT(*) FROM (SELECT DISTINCT {keys} FROM {_source(parquet_path)})"
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 @dataclass(slots=True)
 class ObservedWindow:
     covered_through: date | None

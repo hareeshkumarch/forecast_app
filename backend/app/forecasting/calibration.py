@@ -112,6 +112,43 @@ def measure_coverage(
     return report
 
 
+@dataclass(slots=True, frozen=True)
+class Interval:
+
+    horizon: int
+    actual: float
+    lower: float
+    upper: float
+
+    @property
+    def usable(self) -> bool:
+        return bool(np.isfinite([self.actual, self.lower, self.upper]).all())
+
+    @property
+    def contains(self) -> bool:
+        return self.lower - 1e-9 <= self.actual <= self.upper + 1e-9
+
+
+def realised_coverage(intervals: Iterable[Interval], nominal: float) -> CoverageReport:
+    grouped: dict[int, list[Interval]] = {}
+    for interval in intervals:
+        if interval.usable:
+            grouped.setdefault(interval.horizon, []).append(interval)
+
+    report = CoverageReport()
+    for horizon in sorted(grouped):
+        members = grouped[horizon]
+        report.points.append(
+            CoveragePoint(
+                nominal=nominal,
+                horizon=horizon,
+                observed=sum(1 for member in members if member.contains) / len(members),
+                n_observations=len(members),
+            )
+        )
+    return report
+
+
 def conformal_halfwidths(
     points: Iterable[HeldOutPoint],
     nominal: float,

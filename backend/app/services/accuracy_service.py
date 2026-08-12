@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.provenance import Provenance
 from app.core.provenance import current as current_provenance
-from app.forecasting.calibration import COVERAGE_TOLERANCE_PP, CoverageReport
+from app.forecasting.calibration import (
+    COVERAGE_TOLERANCE_PP,
+    MIN_COVERAGE_SAMPLE,
+    CoverageReport,
+    Interval,
+    realised_coverage,
+)
 from app.forecasting.metrics import forecast_value_add, relative_bias, wmape
 from app.forecasting.routing import BASELINE_MODELS
 from app.models.entities import ForecastPoint, ForecastRun, ForecastSeries, ModelCandidate
@@ -122,10 +128,10 @@ def horizon_accuracy(points: list[ForecastPoint]) -> list[HorizonAccuracy]:
     if not scored:
         return []
 
-    ordered = sorted(scored, key=lambda p: p.period)
+    step_of = {period: step for step, period in enumerate(sorted({p.period for p in scored}), 1)}
     by_step: dict[int, list[ForecastPoint]] = {}
-    for step, point in enumerate(ordered, start=1):
-        by_step.setdefault(step, []).append(point)
+    for point in scored:
+        by_step.setdefault(step_of[point.period], []).append(point)
 
     rows: list[HorizonAccuracy] = []
     for step in sorted(by_step):
@@ -198,6 +204,28 @@ def value_add(candidates: list[ModelCandidate]) -> ValueAdd | None:
 
 def coverage_rows(report: CoverageReport) -> list[dict[str, object]]:
     return report.as_dict()
+
+
+def interval_coverage(points: list[ForecastPoint], nominal: float | None) -> CoverageReport:
+    if nominal is None:
+        return CoverageReport()
+
+    banded = [
+        (p.period, p.actual, p.lower_bound, p.upper_bound)
+        for p in points
+        if p.actual is not None and p.lower_bound is not None and p.upper_bound is not None
+    ]
+    if not banded:
+        return CoverageReport()
+
+    step_of = {period: step for step, period in enumerate(sorted({b[0] for b in banded}), 1)}
+    return realised_coverage(
+        (
+            Interval(horizon=step_of[period], actual=actual, lower=lower, upper=upper)
+            for period, actual, lower, upper in banded
+        ),
+        nominal,
+    )
 
 
 def _finite(value: float) -> float | None:
@@ -296,6 +324,7 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
     )
 
     diagnostics = run.options if isinstance(run.options, dict) else {}
+    measured = interval_coverage(points, run.confidence_level)
     report = AccuracyReport(
         run_id=run.id,
         dataset_id=run.dataset_id,
@@ -309,6 +338,7 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
         },
         by_horizon=horizon_accuracy(points),
         by_class=class_accuracy(series),
+        coverage=coverage_rows(measured),
         value_add=value_add(candidates),
     )
 
@@ -320,4 +350,50 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
     if not report.by_horizon:
         report.caveats.append("No period of this run has finished yet, so nothing is scored.")
 
+    report.caveats.extend(_coverage_caveats(measured, run.confidence_level))
+    report.caveats.extend(_backtest_interval_caveats(diagnostics, run.confidence_level))
+
     return report
+
+
+def _coverage_caveats(report: CoverageReport, nominal: float | None) -> list[str]:
+    if nominal is None or not report.points:
+        return []
+
+    stated = f"{nominal * 100:.0f}%"
+    if not report.measurable_points:
+        seen = sum(point.n_observations for point in report.points)
+        return [
+            f"Too few finished periods ({seen}) to say whether the {stated} range is honest. "
+            f"{MIN_COVERAGE_SAMPLE} per horizon are needed before the share means anything."
+        ]
+
+    if report.holds:
+        return []
+
+    gap = report.worst_gap_pp
+    direction = "narrower" if gap < 0 else "wider"
+    return [
+        f"The {stated} range held {abs(gap):.0f} points off its promise at its worst horizon, "
+        f"so it is {direction} than it claims. Treat the range as indicative, not as a bound."
+    ]
+
+
+def _backtest_interval_caveats(
+    diagnostics: dict[str, object], nominal: float | None
+) -> list[str]:
+    check = diagnostics.get("interval_check")
+    if nominal is None or not isinstance(check, dict) or not check.get("measured"):
+        return []
+    if check.get("served_holds"):
+        return []
+
+    gap = check.get("served_worst_gap_pp")
+    if not isinstance(gap, int | float):
+        return []
+
+    direction = "narrower" if gap < 0 else "wider"
+    return [
+        f"On held-out stretches of your own history the {nominal * 100:.0f}% range came out "
+        f"{abs(gap):.0f} points {direction} than it promises at its worst horizon."
+    ]

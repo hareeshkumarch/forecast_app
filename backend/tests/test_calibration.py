@@ -7,12 +7,14 @@ from app.forecasting.calibration import (
     COVERAGE_TOLERANCE_PP,
     MIN_COVERAGE_SAMPLE,
     HeldOutPoint,
+    Interval,
     apply_halfwidths,
     calibrate,
     conformal_halfwidths,
     gaussian_halfwidths,
     is_monotone_in_horizon,
     measure_coverage,
+    realised_coverage,
     widen_with_horizon,
 )
 
@@ -75,6 +77,65 @@ class TestCoverageIsMeasured:
         assert report.measurable_points == []
         assert not report.holds
         assert np.isnan(report.worst_gap_pp)
+
+
+class TestCoverageOfIntervalsThatWereActuallyServed:
+    def test_it_counts_what_landed_inside_the_published_band(self) -> None:
+        intervals = [
+            Interval(horizon=1, actual=value, lower=90.0, upper=110.0)
+            for value in [*([100.0] * 8), *([200.0] * 2)]
+        ]
+
+        report = realised_coverage(intervals, nominal=0.8)
+
+        assert [point.observed for point in report.points] == [0.8]
+        assert report.points[0].n_observations == 10
+        assert report.holds
+
+    def test_a_band_that_is_not_centred_is_still_measured_honestly(self) -> None:
+        inside = Interval(horizon=1, actual=118.0, lower=95.0, upper=120.0)
+        outside = Interval(horizon=1, actual=94.0, lower=95.0, upper=120.0)
+
+        report = realised_coverage([inside] * 9 + [outside], nominal=0.9)
+
+        assert report.points[0].observed == pytest.approx(0.9)
+        assert report.holds
+
+    def test_an_endpoint_counts_as_inside(self) -> None:
+        report = realised_coverage(
+            [Interval(horizon=1, actual=110.0, lower=90.0, upper=110.0)], nominal=0.8
+        )
+
+        assert report.points[0].observed == 1.0
+
+    def test_a_missing_bound_is_dropped_rather_than_counted_as_a_miss(self) -> None:
+        usable = [Interval(horizon=1, actual=100.0, lower=90.0, upper=110.0)] * 4
+        broken = [Interval(horizon=1, actual=100.0, lower=float("nan"), upper=110.0)] * 4
+
+        report = realised_coverage([*usable, *broken], nominal=0.8)
+
+        assert report.points[0].n_observations == 4
+        assert report.points[0].observed == 1.0
+
+    def test_horizons_are_reported_separately_and_in_order(self) -> None:
+        intervals = [
+            Interval(horizon=horizon, actual=100.0, lower=99.0, upper=101.0)
+            for horizon in (3, 1, 2, 1)
+        ]
+
+        report = realised_coverage(intervals, nominal=0.8)
+
+        assert [point.horizon for point in report.points] == [1, 2, 3]
+        assert [point.n_observations for point in report.points] == [2, 1, 1]
+
+    def test_a_band_narrower_than_it_claims_fails_the_promise(self) -> None:
+        misses = [Interval(horizon=1, actual=500.0, lower=90.0, upper=110.0)] * 5
+        hits = [Interval(horizon=1, actual=100.0, lower=90.0, upper=110.0)] * 5
+
+        report = realised_coverage([*misses, *hits], nominal=0.8)
+
+        assert not report.holds
+        assert report.worst_gap_pp == pytest.approx(-30.0)
 
 
 class TestConformalRepairsCoverage:

@@ -13,6 +13,12 @@ from app.core.budget import RunTimings, Stage
 from app.core.logging import get_logger
 from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
+from app.forecasting.calibration import (
+    HeldOutPoint,
+    Interval,
+    calibrate,
+    realised_coverage,
+)
 from app.forecasting.decomposition import Driver, decompose_drivers
 from app.forecasting.diagnostics import (
     SeriesProfile,
@@ -408,6 +414,12 @@ def run_forecast(
             history=values,
             non_negative=non_negative,
         )
+        interval_check = _interval_check(
+            winner_result,
+            point_forecast,
+            bands,
+            payload.confidence_level,
+        )
 
     metrics = {
         "mae": winner_result.mae,
@@ -507,12 +519,84 @@ def run_forecast(
             # needs to be told that rather than inferring it.
             "routing": route(profile).as_dict(),
             "timings": timings.as_dict(),
+            "interval_check": interval_check,
         },
         regions=regions,
         categories=categories,
         drivers=drivers,
         timings=timings,
     )
+
+
+def _held_out(winner: BacktestResult) -> list[HeldOutPoint]:
+    return [
+        HeldOutPoint(horizon=step, actual=float(actual), predicted=float(predicted))
+        for fold in winner.folds
+        for step, (actual, predicted) in enumerate(
+            zip(fold.y_true, fold.y_pred, strict=False), start=1
+        )
+        if np.isfinite(actual) and np.isfinite(predicted)
+    ]
+
+
+def _interval_check(
+    winner: BacktestResult,
+    point_forecast: FloatArray,
+    bands: IntervalBands,
+    confidence_level: float,
+) -> dict[str, object]:
+    points = _held_out(winner)
+    if not points:
+        return {"measured": False, "reason": "No held-out fold produced a comparable pair."}
+
+    lower = np.asarray(bands.lower, dtype=float)
+    upper = np.asarray(bands.upper, dtype=float)
+    reach = lower.size
+    if reach == 0:
+        return {"measured": False, "reason": "This run published no interval to check."}
+
+    # A band floored at zero no longer carries an offset that means anything
+    # away from its own point forecast, so those steps are skipped rather than
+    # transferred onto a fold and counted as a miss.
+    clipped = (lower <= 0.0) & (point_forecast > 0.0)
+    below = lower - point_forecast
+    above = upper - point_forecast
+
+    transferable = [
+        (point, min(point.horizon, reach) - 1)
+        for point in points
+        if not clipped[min(point.horizon, reach) - 1]
+    ]
+    served = realised_coverage(
+        (
+            Interval(
+                horizon=point.horizon,
+                actual=point.actual,
+                lower=point.predicted + float(below[step]),
+                upper=point.predicted + float(above[step]),
+            )
+            for point, step in transferable
+        ),
+        confidence_level,
+    )
+    repaired = calibrate(points, confidence_level)
+
+    return {
+        "measured": True,
+        "nominal": round(confidence_level, 4),
+        "steps_skipped_at_zero": int(clipped.sum()),
+        "served": served.as_dict(),
+        "served_holds": served.holds,
+        "served_worst_gap_pp": _finite_or_none(served.worst_gap_pp),
+        "conformal_halfwidths": {
+            str(h): round(w, 6) for h, w in sorted(repaired.halfwidths.items())
+        },
+        "conformal_worst_gap_pp": _finite_or_none(repaired.after.worst_gap_pp),
+    }
+
+
+def _finite_or_none(value: float) -> float | None:
+    return None if not np.isfinite(value) else round(float(value), 2)
 
 
 def _value_add(results: list[BacktestResult], winner: BacktestResult) -> float:

@@ -11,6 +11,7 @@ from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core import budget
 from app.core.config import settings
 from app.core.errors import ForecastError, NotFoundError, ValidationError
 from app.core.logging import get_logger, request_id
@@ -357,6 +358,10 @@ async def create_run(
         region_column = region_column or guessed_region
         category_column = category_column or guessed_category
 
+    decision = await _admission_for(dataset, grain)
+    if not decision.accepted:
+        raise ValidationError(decision.message, detail=decision.as_dict())
+
     run = ForecastRun(
         dataset_id=dataset.id,
         name=name or f"{dataset.name} forecast",
@@ -399,7 +404,7 @@ async def create_run(
         llm_input_cost_per_million=llm_input_cost_per_million,
         llm_output_cost_per_million=llm_output_cost_per_million,
     )
-    run.options = overrides.to_stored()
+    run.options = {**overrides.to_stored(), "admission": decision.as_dict()}
     await session.flush()
 
     publish_progress(
@@ -562,6 +567,16 @@ def _validated_horizon(
         f"{periods} {frequency.value} periods, so at most {ceiling} can be forecast "
         "and measured.",
         detail={"periods_available": periods, "max_horizon": ceiling},
+    )
+
+
+async def _admission_for(dataset: Dataset, grain: list[str]) -> budget.AdmissionDecision:
+    if not grain:
+        return budget.admission(1)
+    return budget.admission(
+        await asyncio.to_thread(
+            queries.distinct_series_count, Path(dataset.parquet_path or ""), grain
+        )
     )
 
 
@@ -1063,6 +1078,7 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
     run.history_end = output.history_periods[-1] if output.history_periods else None
     run.forecast_start = output.forecast_periods[0] if output.forecast_periods else None
     run.forecast_end = output.forecast_periods[-1] if output.forecast_periods else None
+    run.options = {**(run.options or {}), **storable(output.diagnostics)}
 
     for candidate in output.candidates:
         session.add(

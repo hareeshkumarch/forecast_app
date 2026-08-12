@@ -190,8 +190,55 @@ export interface DatasetPage {
   rows: Dataset[];
 }
 
+export type IntakeVerdict = "proceed" | "confirm" | "refuse";
+
+export interface IntakeColumnChoice {
+  role: "time" | "target";
+  chosen: string | null;
+  confidence: number;
+  runner_up: string | null;
+  runner_up_confidence: number;
+  margin: number;
+  plausible: boolean;
+  confident: boolean;
+}
+
+export interface IntakeQuestion {
+  code: string;
+  column: string | null;
+  question: string;
+  options: string[];
+  evidence: string[];
+}
+
+export interface IntakeQuarantine {
+  code: string;
+  reason: string;
+  count: number;
+  examples: string[];
+}
+
+export interface IntakeGatedSeries {
+  series: string;
+  observations: number;
+  required: number;
+  reason: string;
+}
+
+export interface Intake {
+  verdict: IntakeVerdict;
+  columns: IntakeColumnChoice[];
+  questions: IntakeQuestion[];
+  quarantined: IntakeQuarantine[];
+  rows_quarantined: number;
+  gated_series: IntakeGatedSeries[];
+  gated_series_count: number;
+  refusals: string[];
+}
+
 export interface DatasetDetail extends Dataset {
   columns: DatasetColumn[];
+  intake: Intake | Record<string, never>;
 }
 
 export interface ColumnSuggestion {
@@ -223,6 +270,9 @@ export interface DatasetProfile {
 export interface DatasetUploadResponse {
   dataset: DatasetDetail;
   profile: DatasetProfile;
+  ready_to_forecast: boolean;
+  needs_confirmation: boolean;
+  questions: IntakeQuestion[];
 }
 
 export type RunState = "completed" | "active" | "failed";
@@ -443,6 +493,7 @@ export interface Scorecard {
   unforecast_keys: number;
   currency: boolean;
   blocked_reason: string | null;
+  restated_since_scoring: number;
   series: SeriesScoreRow[];
   scored: boolean;
   accuracy: number | null;

@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.core.storage import file_exists, remove_file
-from app.datasets import quality, queries
+from app.datasets import quality, queries, refusal
 from app.datasets.ingest import persist_upload, write_parquet
 from app.datasets.profiler import (
     ColumnProfile,
@@ -121,6 +121,30 @@ def _profile(frame: pl.DataFrame, day_first: bool | None = None) -> DatasetProfi
     return profile_frame(frame, day_first=day_first)
 
 
+GATED_SERIES_SHOWN = 25
+
+
+def _intake(profile: DatasetProfileResult, frame: pl.DataFrame) -> refusal.IngestVerdict:
+    time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
+    dimensions = [c.name for c in profile.columns if c.role is ColumnRole.DIMENSION]
+    lengths = (
+        refusal.series_lengths_from(frame, time_column, dimensions)
+        if time_column is not None
+        else {}
+    )
+    return refusal.assess(
+        profile, frame=frame, dimensions=dimensions, series_lengths=lengths
+    )
+
+
+def intake_payload(verdict: refusal.IngestVerdict) -> dict[str, Any]:
+    payload = verdict.as_dict()
+    gated = verdict.gated_series
+    payload["gated_series_count"] = len(gated)
+    payload["gated_series"] = [gate.as_dict() for gate in gated[:GATED_SERIES_SHOWN]]
+    return payload
+
+
 async def create_from_upload(
     session: AsyncSession,
     content: bytes,
@@ -133,14 +157,16 @@ async def create_from_upload(
 
     ingested = await asyncio.to_thread(persist_upload, content, filename, str(dataset_id))
     profile = await asyncio.to_thread(_profile, ingested.frame, day_first)
-    # The normalised frame, not the raw one: everything downstream reads this
-    # Parquet through DuckDB's TRY_CAST, and "$1,234.56" casts to NULL. The
-    # original upload is still on disk untouched at ingested.raw_path.
-    parquet_path = await asyncio.to_thread(
-        write_parquet,
-        profile.normalised if profile.normalised is not None else ingested.frame,
-        str(dataset_id),
-    )
+    readable = profile.normalised if profile.normalised is not None else ingested.frame
+
+    verdict = await asyncio.to_thread(_intake, profile, readable)
+    if verdict.verdict is refusal.Verdict.REFUSE:
+        await remove_file(ingested.raw_path)
+        raise ValidationError(
+            " ".join(verdict.refusals), detail={"intake": intake_payload(verdict)}
+        )
+
+    parquet_path = await asyncio.to_thread(write_parquet, readable, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
     target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
@@ -163,6 +189,7 @@ async def create_from_upload(
         target_column=target_column,
         frequency=profile.detected_frequency,
         horizon=_default_horizon(profile.detected_frequency),
+        intake=intake_payload(verdict),
     )
     session.add(dataset)
     await session.flush()
@@ -185,6 +212,13 @@ async def create_from_frame(
 
     profile = await asyncio.to_thread(profile_frame, frame)
     frame = profile.normalised if profile.normalised is not None else frame
+
+    verdict = await asyncio.to_thread(_intake, profile, frame)
+    if verdict.verdict is refusal.Verdict.REFUSE:
+        raise ValidationError(
+            " ".join(verdict.refusals), detail={"intake": intake_payload(verdict)}
+        )
+
     parquet_path = await asyncio.to_thread(write_parquet, frame, str(dataset_id))
 
     time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
@@ -195,6 +229,7 @@ async def create_from_frame(
         name=name[:200],
         original_filename=None,
         source_kind=source_kind,
+        intake=intake_payload(verdict),
         connector_id=connector_id,
         status=DatasetStatus.READY,
         file_size_bytes=parquet_path.stat().st_size,

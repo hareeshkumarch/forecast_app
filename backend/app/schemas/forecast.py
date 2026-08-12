@@ -294,6 +294,9 @@ class ScorecardResponse(BaseModel):
     unforecast_keys: NonNegativeInt
     currency: bool
     blocked_reason: str | None
+    #: Readings this run was scored against that have since been restated. The
+    #: score stands as measured; this says the world moved under it.
+    restated_since_scoring: NonNegativeInt = 0
     #: Cumulative error in mean absolute deviations. Near zero the misses cancel;
     #: a large value means the run missed the same way every period.
     tracking_signal: float | None = None

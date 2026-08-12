@@ -77,6 +77,7 @@ class DatasetPage(BaseModel):
 
 class DatasetDetail(DatasetRead):
     columns: list[DatasetColumnRead] = Field(default_factory=list)
+    intake: dict = Field(default_factory=dict)
 
 
 class ColumnSuggestion(BaseModel):
@@ -132,6 +133,17 @@ class DatasetUploadResponse(BaseModel):
     @property
     def ready_to_forecast(self) -> bool:
         return bool(self.dataset.time_column and self.dataset.target_column)
+
+    @computed_field
+    @property
+    def questions(self) -> list[dict]:
+        asked = self.dataset.intake.get("questions", [])
+        return list(asked) if isinstance(asked, list) else []
+
+    @computed_field
+    @property
+    def needs_confirmation(self) -> bool:
+        return bool(self.questions)
 
 
 class QualityIssueRead(BaseModel):

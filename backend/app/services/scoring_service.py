@@ -26,6 +26,7 @@ from app.forecasting.frequency import period_end, period_is_settled
 from app.forecasting.metrics import accuracy_from_wmape, mae, wmape
 from app.models.entities import Dataset, ForecastPoint, ForecastRun, ForecastSeries
 from app.models.enums import ForecastFrequency, MeasureAggregation, PointKind, RunStatus
+from app.services import actuals_service
 
 logger = get_logger(__name__)
 
@@ -71,6 +72,8 @@ class Scorecard:
     confidence_level: float | None = None
 
     unforecast_keys: int = 0
+    readings_recorded: int = 0
+    restated_since_scoring: int = 0
 
     series: list[SeriesScore] = field(default_factory=list)
     blocked_reason: str | None = None
@@ -78,6 +81,10 @@ class Scorecard:
     @property
     def scored(self) -> bool:
         return self.scored_periods > 0
+
+    @property
+    def measured_against_superseded_numbers(self) -> bool:
+        return self.restated_since_scoring > 0
 
     @property
     def tracking_signal(self) -> float | None:
@@ -347,6 +354,10 @@ async def score_run(
     if group_by:
         await _score_series(session, card, run, points, observed, set(settled), group_by)
 
+    card.readings_recorded = await _record_observations(
+        session, run, observed, set(settled), group_by, source.id
+    )
+
     await _store(session, run, card)
     logger.info(
         "Scored run %s over %d of %d period(s) against '%s': wMAPE %s",
@@ -468,6 +479,37 @@ async def _score_series(
         card.series.append(score)
 
 
+async def _record_observations(
+    session: AsyncSession,
+    run: ForecastRun,
+    observed: queries.ObservedWindow,
+    settled: set[date],
+    group_by: list[str],
+    source_dataset_id: uuid.UUID,
+) -> int:
+    readings: list[actuals_service.Reading] = [
+        actuals_service.Reading(actuals_service.TOTAL_KEY, period, float(value))
+        for period, value in observed.totals.items()
+        if period in settled
+    ]
+
+    for key, series in observed.by_key.items():
+        if len(key) != len(group_by):
+            continue
+        resolved = actuals_service.series_key(
+            dict(zip(group_by, (str(part) for part in key), strict=True))
+        )
+        readings.extend(
+            actuals_service.Reading(resolved, period, float(value))
+            for period, value in series.items()
+            if period in settled
+        )
+
+    return await actuals_service.record(
+        session, run.dataset_id, readings, source_dataset_id=source_dataset_id
+    )
+
+
 def _remember(row: ForecastSeries, score: SeriesScore) -> None:
     row.scored_periods = score.scored_periods
     row.realized_wmape = finite(score.wmape)
@@ -555,6 +597,9 @@ async def stored_scorecard(session: AsyncSession, run_id: uuid.UUID) -> Scorecar
 
     if run.scored_at is not None:
         card.series = await _stored_series(session, run_id)
+        card.restated_since_scoring = len(
+            await actuals_service.restated_since(session, run.dataset_id, run.scored_at)
+        )
 
     if run.scored_at is None:
         choice = await choose_source(session, run)

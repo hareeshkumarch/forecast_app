@@ -156,6 +156,7 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     horizon: Mapped[int | None] = mapped_column(Integer)
 
     error_message: Mapped[str | None] = mapped_column(Text)
+    intake: Mapped[dict] = mapped_column(JSONType, default=dict)
 
     connector: Mapped[Connector | None] = relationship(back_populates="datasets")
     columns: Mapped[list[DatasetColumn]] = relationship(

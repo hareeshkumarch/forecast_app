@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entities import (
@@ -95,7 +96,106 @@ async def _run(session: AsyncSession, *, scored: bool = True) -> ForecastRun:
     return run
 
 
+async def _grouped_run(
+    session: AsyncSession,
+    *,
+    combinations: int = 10,
+    band: tuple[float, float] = (80.0, 130.0),
+    outside: int = 0,
+) -> ForecastRun:
+    run = await _run(session)
+    lower, upper = band
+
+    start = date(2026, 1, 5)
+    for index in range(combinations):
+        series = ForecastSeries(
+            run_id=run.id,
+            label=f"Line {index}",
+            key={"demand_class": "smooth", "line": str(index)},
+            status=SeriesStatus.FORECAST,
+        )
+        session.add(series)
+        await session.flush()
+
+        for step in range(4):
+            session.add(
+                ForecastPoint(
+                    run_id=run.id,
+                    series_id=series.id,
+                    period=start + timedelta(weeks=step),
+                    kind=PointKind.FORECAST,
+                    forecast=100.0,
+                    actual=upper + 50.0 if index < outside else 100.0,
+                    lower_bound=lower,
+                    upper_bound=upper,
+                )
+            )
+    await session.commit()
+    return run
+
+
+class TestTheRangeIsHeldToItsPromise:
+    async def test_too_few_finished_periods_says_so_instead_of_claiming_perfect(
+        self, session: AsyncSession
+    ) -> None:
+        run = await _run(session)
+
+        report = await accuracy_service.build(session, run.id)
+
+        assert report is not None
+        assert [row["horizon"] for row in report.coverage] == [1, 2, 3, 4]
+        assert all(row["observed"] == 1.0 for row in report.coverage)
+        assert all(row["measurable"] is False for row in report.coverage)
+        assert any("Too few finished periods" in caveat for caveat in report.caveats)
+
+    async def test_a_range_that_keeps_its_promise_draws_no_caveat(
+        self, session: AsyncSession
+    ) -> None:
+        run = await _grouped_run(session, combinations=10, outside=2)
+
+        report = await accuracy_service.build(session, run.id)
+
+        assert report is not None
+        measured = [row for row in report.coverage if row["measurable"]]
+        assert measured, "eleven observations a horizon is enough to judge"
+        assert all(row["observed"] == pytest.approx(9 / 11, abs=1e-4) for row in measured)
+        assert not any("range" in caveat for caveat in report.caveats)
+
+    async def test_a_range_narrower_than_it_claims_is_called_out(
+        self, session: AsyncSession
+    ) -> None:
+        run = await _grouped_run(session, combinations=10, outside=6)
+
+        report = await accuracy_service.build(session, run.id)
+
+        assert report is not None
+        assert all(row["holds"] is False for row in report.coverage if row["measurable"])
+        assert any("narrower than it claims" in caveat for caveat in report.caveats)
+
+    async def test_the_share_is_measured_against_the_level_the_run_published(
+        self, session: AsyncSession
+    ) -> None:
+        run = await _grouped_run(session)
+
+        report = await accuracy_service.build(session, run.id)
+
+        assert report is not None
+        assert {row["nominal"] for row in report.coverage} == {run.confidence_level}
+
+
 class TestAccuracyByHorizon:
+    async def test_a_horizon_pools_every_series_that_shares_the_period(
+        self, session: AsyncSession
+    ) -> None:
+        run = await _grouped_run(session, combinations=10)
+
+        report = await accuracy_service.build(session, run.id)
+
+        assert report is not None
+        assert [row.horizon for row in report.by_horizon] == [1, 2, 3, 4]
+        assert [row.observations for row in report.by_horizon] == [11, 11, 11, 11]
+
+
     async def test_error_is_reported_per_horizon_not_only_in_aggregate(
         self, session: AsyncSession
     ) -> None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import json
 import re
 import uuid
 import zlib
@@ -29,10 +30,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ValidationError
 from app.database.sample_data import HEADERS, generate_rows
 from app.models.enums import MeasureAggregation, RunStatus
+from app.services import actuals_service as actuals
 from app.services import dataset_service, forecast_service, scoring_service
 
 GRAIN = ["region", "product_category"]
 HORIZON = 3
+RESTATEMENT_FACTOR = 1.1
 #: One month more than the horizon is withheld, so the full panel carries data
 #: *after* the last month the run forecast. Without that extra month the last
 #: one could not be settled — nothing following it means nothing to prove it
@@ -54,6 +57,10 @@ def _months() -> list[date]:
 
 def _rows_through(last: date) -> list[dict[str, object]]:
     return [row for row in generate_rows() if date.fromisoformat(str(row["order_date"])) <= last]
+
+
+def _scaled(factor: float) -> list[dict[str, object]]:
+    return [{**row, "revenue": float(row["revenue"]) * factor} for row in generate_rows()]  # type: ignore[arg-type]
 
 
 async def _dataset(session: AsyncSession, rows: list[dict[str, object]], name: str) -> uuid.UUID:
@@ -199,6 +206,91 @@ async def test_coverage_says_whether_the_interval_kept_its_promise(
     # three-period horizon the share can only be none, one, two or all of them.
     reachable = [caught * 100.0 / HORIZON for caught in range(HORIZON + 1)]
     assert any(card.coverage == pytest.approx(value) for value in reachable), card.coverage
+
+
+# --------------------------------------------------------- what it was scored against
+
+
+async def test_scoring_records_the_reading_it_graded_against(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+    run = await forecast_service.get_run(session, run_id)
+
+    card = await scoring_service.score_run(session, run_id, dataset_id=full)
+    await session.commit()
+
+    assert card.readings_recorded == HORIZON
+
+    believed = await actuals.current(session, run.dataset_id)
+    points = await forecast_service.points_for_run(session, run_id)
+    graded = {p.period: p.actual for p in points if p.actual is not None and p.series_id is None}
+
+    assert {period for _, period in believed} == set(graded)
+    for period, value in graded.items():
+        assert believed[(actuals.TOTAL_KEY, period)] == pytest.approx(value)
+
+
+async def test_scoring_the_same_panel_again_records_no_second_reading(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+
+    await scoring_service.score_run(session, run_id, dataset_id=full)
+    await session.commit()
+    again = await scoring_service.score_run(session, run_id, dataset_id=full)
+    await session.commit()
+
+    assert again.readings_recorded == 0, "an unchanged number is not a restatement"
+
+
+async def test_a_restated_actual_is_appended_beside_the_first_reading(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial)
+    run = await forecast_service.get_run(session, run_id)
+
+    first = await scoring_service.score_run(session, run_id, dataset_id=full)
+    await session.commit()
+
+    restated = await _dataset(session, _scaled(RESTATEMENT_FACTOR), "The panel, restated")
+    second = await scoring_service.score_run(session, run_id, dataset_id=restated)
+    await session.commit()
+
+    assert second.readings_recorded == first.readings_recorded
+
+    period = min(period for _, period in await actuals.current(session, run.dataset_id))
+    history = await actuals.revisions(session, run.dataset_id, actuals.TOTAL_KEY, period)
+
+    assert len(history) == 2, "the first reading survives the restatement"
+    assert history[1].value == pytest.approx(history[0].value * RESTATEMENT_FACTOR, rel=1e-6)
+    assert [row.source_dataset_id for row in history] == [full, restated]
+
+    as_first_read = await actuals.current(session, run.dataset_id, as_of=history[0].revised_at)
+    assert as_first_read[(actuals.TOTAL_KEY, period)] == pytest.approx(history[0].value)
+    assert first.actual_total == pytest.approx(second.actual_total / RESTATEMENT_FACTOR, rel=1e-6)
+
+
+async def test_a_grouped_run_records_a_reading_per_combination(
+    session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    partial, full = truncated_and_full
+    run_id = await _run_on(session, partial, grain=GRAIN)
+    run = await forecast_service.get_run(session, run_id)
+
+    await scoring_service.score_run(session, run_id, dataset_id=full)
+    await session.commit()
+
+    believed = await actuals.current(session, run.dataset_id)
+    keys = {key for key, _ in believed}
+
+    assert actuals.TOTAL_KEY in keys, "the top line is recorded alongside the combinations"
+    combinations = keys - {actuals.TOTAL_KEY}
+    assert combinations, "a grouped run records each combination it scored"
+    assert all(set(json.loads(key)) == set(GRAIN) for key in combinations)
 
 
 # ------------------------------------------------------------------ the refusals

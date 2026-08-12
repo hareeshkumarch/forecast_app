@@ -56,6 +56,13 @@ async def list_datasets(
     response_model=DatasetUploadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload a CSV or XLSX dataset",
+    description=(
+        "`date_order` settles slash dates the data cannot settle itself: 01/02/2024 is the "
+        "first of February in most of the world and the second of January in the United "
+        "States. Left on 'auto' the column decides, and the profile says when it had to "
+        "guess. A file that cannot be forecast at all is refused with the reasons; one that "
+        "is merely ambiguous comes back with questions to answer."
+    ),
 )
 async def upload_dataset(
     session: SessionDep,
@@ -63,13 +70,6 @@ async def upload_dataset(
     name: str | None = Form(default=None),
     date_order: Literal["auto", "day_first", "month_first"] = Form(default="auto"),
 ) -> DatasetUploadResponse:
-    """Upload a file and read its schema.
-
-    `date_order` settles slash dates the data cannot settle itself: 01/02/2024
-    is the first of February in most of the world and the second of January in
-    the United States. Left on "auto" the column decides, and the profile says
-    so when it had to guess.
-    """
     if not file.filename:
         raise ValidationError("The upload is missing a filename.")
 

@@ -174,28 +174,26 @@ async def get_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunDetail:
 @router.get(
     "/accuracy/headline",
     summary="One accuracy figure across every scored run, with its evidence",
+    description=(
+        "What the accuracy section is entitled to claim, and on what basis. "
+        "`publishable` is false until enough runs over enough periods have been scored."
+    ),
 )
 async def get_headline_accuracy(session: SessionDep) -> dict:
-    """What the accuracy section is entitled to claim, and on what basis.
-
-    `publishable` is false until enough runs over enough periods have been
-    scored. A percentage with nothing behind it is the thing this exists to
-    stop being printed.
-    """
     return (await accuracy_service.headline(session)).as_dict()
 
 
 @router.get(
     "/{run_id}/accuracy",
     summary="How accurate this run turned out to be, and against what",
+    description=(
+        "WAPE and bias by horizon and series class, interval coverage, and value over "
+        "baseline. Every figure carries the run and backtest configuration behind it, and "
+        "`measured_against_outcomes` says whether it is scored against outcomes that have "
+        "since arrived or against held-out stretches of your own history."
+    ),
 )
 async def get_accuracy(run_id: uuid.UUID, session: SessionDep) -> dict:
-    """WAPE and bias by horizon and series class, coverage, and value over baseline.
-
-    Every figure carries the run and the backtest configuration behind it, and
-    the response says plainly whether it is measured against outcomes that have
-    since arrived or against held-out stretches of the customer's own history.
-    """
     report = await accuracy_service.build(session, run_id)
     if report is None:
         raise NotFoundError(f"No forecast run with id {run_id}.")
@@ -347,6 +345,7 @@ def _scorecard(
         unforecast_keys=card.unforecast_keys,
         currency=is_currency_like(target_column),
         blocked_reason=card.blocked_reason,
+        restated_since_scoring=card.restated_since_scoring,
         tracking_signal=card.tracking_signal,
         drifted=card.is_drifted,
         series=[SeriesScoreRow.model_validate(row, from_attributes=True) for row in ranked[:limit]],

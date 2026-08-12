@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import csv
+import io
 import time
+import uuid
 from datetime import date, timedelta
 
 import numpy as np
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.budget import (
     SERIES_CEILING,
@@ -17,8 +21,10 @@ from app.core.budget import (
     admission,
     percentile,
 )
+from app.core.errors import ValidationError
 from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
 from app.models.enums import ForecastFrequency
+from app.services import dataset_service, forecast_service
 
 WEEKLY = ForecastFrequency.WEEKLY
 
@@ -108,6 +114,73 @@ class TestTheCeilingIsEnforcedNotDocumented:
         assert payload["ceiling"] == SERIES_CEILING
         assert payload["hard_limit"] == SERIES_HARD_LIMIT
         assert payload["series_count"] == SERIES_CEILING + 5
+
+
+def grained_csv(combinations: int, periods: int = 14) -> bytes:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(["week", "sku", "units"])
+    days = weeks(periods)
+    for index in range(combinations):
+        writer.writerow([days[index % periods].isoformat(), f"sku-{index}", 100.0 + index % 40])
+    return buffer.getvalue().encode("utf-8")
+
+
+async def dataset_with(session: AsyncSession, combinations: int) -> uuid.UUID:
+    dataset, _profile = await dataset_service.create_from_upload(
+        session, grained_csv(combinations), "grain.csv", name=f"{combinations} combinations"
+    )
+    await session.commit()
+    return dataset.id
+
+
+class TestTheCeilingIsEnforcedOnRunsNotJustDescribed:
+    async def test_a_grain_past_the_hard_limit_is_refused_before_a_run_exists(
+        self, session: AsyncSession
+    ) -> None:
+        dataset_id = await dataset_with(session, SERIES_HARD_LIMIT + 1)
+
+        with pytest.raises(ValidationError) as raised:
+            await forecast_service.create_run(
+                session, dataset_id=dataset_id, group_by=["sku"], horizon=3
+            )
+
+        assert raised.value.detail["admission"] == "refuse"
+        assert raised.value.detail["series_count"] == SERIES_HARD_LIMIT + 1
+        assert "group by product, region or channel" in raised.value.message
+
+        runs = await forecast_service.list_runs(session)
+        assert runs.total == 0, "a refused grain leaves nothing behind"
+
+    async def test_a_grain_past_the_ceiling_is_admitted_and_says_it_is_queued(
+        self, session: AsyncSession
+    ) -> None:
+        dataset_id = await dataset_with(session, SERIES_CEILING + 1)
+
+        run = await forecast_service.create_run(
+            session, dataset_id=dataset_id, group_by=["sku"], horizon=3
+        )
+
+        assert run.options["admission"]["admission"] == "queue"
+        assert run.options["admission"]["series_count"] == SERIES_CEILING + 1
+
+    async def test_an_ordinary_grain_runs_inline(self, session: AsyncSession) -> None:
+        dataset_id = await dataset_with(session, 20)
+
+        run = await forecast_service.create_run(
+            session, dataset_id=dataset_id, group_by=["sku"], horizon=3
+        )
+
+        assert run.options["admission"]["admission"] == "inline"
+        assert run.options["admission"]["series_count"] == 20
+
+    async def test_an_ungrouped_run_is_one_series(self, session: AsyncSession) -> None:
+        dataset_id = await dataset_with(session, 20)
+
+        run = await forecast_service.create_run(session, dataset_id=dataset_id, horizon=3)
+
+        assert run.options["admission"]["series_count"] == 1
+        assert run.options["admission"]["admission"] == "inline"
 
 
 class TestPercentile:
