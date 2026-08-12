@@ -48,10 +48,10 @@ const config: Config = {
       },
       borderRadius: {
         
-        card: "12px",
-        panel: "12px",
-        input: "9px",
-        chip: "6px",
+        card: "2px",
+        panel: "2px",
+        input: "2px",
+        chip: "1px",
       },
       spacing: {
         // Driven by the CSS variables in globals.css so these track the

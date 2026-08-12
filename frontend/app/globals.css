@@ -4,49 +4,46 @@
 
 /* ---------------------------------------------------------------- tokens */
 
-/*
- * Linen & Azure. Warm neutrals carrying a slight amber bias so the ground
- * reads as paper rather than screen, and an azure accent that stays clear of
- * the green and red the tables use to mean good and bad.
- */
+/* The landing-page system carried through the product: drafting paper,
+ * graphite type, measured green, and restrained supporting colours. */
 :root {
-  --canvas: #faf8f4;
-  --surface: #ffffff;
-  --surface-muted: #f2eee7;
-  --border: #e7e1d6;
-  --border-strong: #d5cec0;
+  --canvas: #f1f3ef;
+  --surface: #fafbf9;
+  --surface-muted: #e6e9e4;
+  --border: #d8ddd7;
+  --border-strong: #bcc4bc;
 
-  --text-primary: #191713;
-  --text-secondary: #6a6357;
-  --text-muted: #9a9285;
+  --text-primary: #111512;
+  --text-secondary: #4e554e;
+  --text-muted: #7d847e;
 
-  --accent: #2c5fa8;
-  --accent-soft: #eaf1fa;
-  --accent-hover: #234e8f;
-  --accent-border: #c4d8f0;
-  --accent-disabled: #9bbadd;
-  /* Foreground for anything sitting ON --accent. Split out so the dark theme
-   * can flip it instead of hardcoding white against a light-blue fill. */
+  --accent: #287b59;
+  --accent-soft: #dce9e1;
+  --accent-hover: #175a3e;
+  --accent-border: #adcbbd;
+  --accent-disabled: #88aa99;
+  /* Foreground for anything sitting on the accent colour. */
   --on-accent: #ffffff;
 
-  --navy: #1d3c68;
-  --teal: #3d868c;
-  --gold: #b8862f;
-  --sand: #9db2cf;
+  --navy: #151a16;
+  --teal: #5a9278;
+  --gold: #9c8760;
+  --sand: #a7b9aa;
 
-  --positive: #1a7f5a;
-  --positive-soft: #e8f2ec;
-  --positive-border: #c9e2d5;
-  --negative: #c94a4a;
-  --negative-soft: #fbeae7;
-  --negative-border: #f2cdc6;
-  --warning: #a9721a;
-  --warning-soft: #f9efdc;
-  --warning-border: #ecdcb8;
+  --positive: #287b59;
+  --positive-soft: #dce9e1;
+  --positive-border: #adcbbd;
+  --negative: #aa453f;
+  --negative-soft: #f3e5e2;
+  --negative-border: #ddbdb7;
+  --warning: #8a6a31;
+  --warning-soft: #eee8db;
+  --warning-border: #d8c9aa;
 
-  --overlay: rgba(25, 23, 19, 0.28);
-  --shadow-card: 0 1px 2px rgba(25, 23, 19, 0.05);
-  --shadow-popover: 0 8px 24px rgba(25, 23, 19, 0.12), 0 2px 6px rgba(25, 23, 19, 0.07);
+  --overlay: rgba(17, 22, 18, 0.3);
+  --shadow-card: 0 1px 2px rgba(17, 22, 18, 0.055);
+  --shadow-popover: 0 12px 30px rgba(17, 22, 18, 0.13), 0 2px 5px rgba(17, 22, 18, 0.07);
+  --grid-line: rgba(31, 48, 36, 0.055);
 
   /* Row heights and padding step down together in compact mode. */
   --density-row: 9px;
@@ -70,53 +67,45 @@
   }
 }
 
-/*
- * The same azure identity, lifted for contrast on a dark ground rather than
- * inverted — the accent brightens, the neutrals keep their warm bias, and the
- * series colours are raised so lines stay legible.
- */
+/* The landing page's dark accuracy section becomes the product dark theme. */
 :root[data-theme="dark"] {
-  --canvas: #14120f;
-  --surface: #1c1a17;
-  --surface-muted: #24211c;
-  --border: #332f28;
-  --border-strong: #464138;
+  --canvas: #111512;
+  --surface: #171c18;
+  --surface-muted: #222823;
+  --border: #303832;
+  --border-strong: #49524a;
 
-  --text-primary: #ece7dd;
-  --text-secondary: #a49c8e;
-  --text-muted: #7c7568;
+  --text-primary: #f2f3f1;
+  --text-secondary: #b9bdb9;
+  --text-muted: #858b86;
 
-  --accent: #7db0e9;
-  --accent-soft: #1a2431;
-  --accent-hover: #9ac5f1;
-  --accent-border: #2f4763;
-  --accent-disabled: #43607f;
-  --on-accent: #0f1a26;
+  --accent: #7fbea1;
+  --accent-soft: #1d3027;
+  --accent-hover: #9ed0b7;
+  --accent-border: #355c48;
+  --accent-disabled: #4f7563;
+  --on-accent: #0d1510;
 
-  /* --navy carries the Actual line and the first categorical slot, --accent the
-   * Forecast line and the second. In light they sit 22 dE apart; the first pass
-   * at a dark palette lightened both to #7fb0e2 / #7db0e9, which is 3.9 dE — the
-   * same colour on a 1.9px stroke, leaving solid-vs-dashed as the only cue.
-   * Light inverts the relationship, so the strongest-against-background here is
-   * the palest, not the deepest. */
-  --navy: #c9def2;
-  --teal: #5fb5b3;
-  --gold: #d3a54f;
-  --sand: #8fa8c8;
+  /* Actuals stay pale and neutral; forecasts retain the green accent. */
+  --navy: #d7d8d6;
+  --teal: #66a98a;
+  --gold: #c0a878;
+  --sand: #819b8c;
 
-  --positive: #45c08c;
-  --positive-soft: #14261f;
-  --positive-border: #234433;
-  --negative: #ec7773;
-  --negative-soft: #2b1c1a;
-  --negative-border: #4a2c29;
-  --warning: #d9a03e;
-  --warning-soft: #2a2318;
-  --warning-border: #443821;
+  --positive: #7fbea1;
+  --positive-soft: #1d3027;
+  --positive-border: #355c48;
+  --negative: #e1847d;
+  --negative-soft: #2d1e1c;
+  --negative-border: #57332f;
+  --warning: #d1ad66;
+  --warning-soft: #2d271a;
+  --warning-border: #55482d;
 
   --overlay: rgba(8, 6, 4, 0.62);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --grid-line: rgba(255, 255, 255, 0.045);
 
   color-scheme: dark;
 }
@@ -152,6 +141,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* Tabular figures keep numeric columns aligned without a monospace font. */
   font-variant-numeric: tabular-nums;
+}
+
+.app-shell-grid {
+  background-color: var(--canvas);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
 :focus-visible {
@@ -337,6 +334,47 @@ body {
 }
 
 /* --------------------------------------------------------------- landing */
+
+.forecast-landing {
+  background-color: #f1f3ef;
+  background-image:
+    linear-gradient(rgba(31, 48, 36, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 48, 36, 0.055) 1px, transparent 1px);
+  background-size: 48px 48px;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+.forecast-landing section {
+  scroll-margin-top: 116px;
+}
+
+.demand-prism {
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.demand-prism:hover {
+  filter: brightness(1.14);
+}
+
+@keyframes accuracy-rise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.motion-ready [data-shown="true"] .accuracy-bar {
+  animation: accuracy-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: bottom;
+}
+
+@media (max-width: 639px) {
+  .forecast-landing {
+    background-size: 42px 42px;
+  }
+}
 
 @keyframes grow-x {
   from {

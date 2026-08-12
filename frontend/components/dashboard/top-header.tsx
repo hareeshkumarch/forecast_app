@@ -11,11 +11,11 @@ import {
   Settings,
   Sparkles,
   Sun,
-  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 
 import type { AppSection } from "@/components/dashboard/app-sidebar";
+import { Mark } from "@/components/marketing/mark";
 import {
   CompactFilters,
   ExportControl,
@@ -67,7 +67,7 @@ export function TopHeader({ section }: { section: AppSection }) {
       : "Collapse navigation";
 
   return (
-    <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface px-2 sm:gap-2.5 sm:px-5">
+    <header className="flex h-header shrink-0 items-center gap-2 border-b border-border bg-surface/95 px-2 backdrop-blur-xl sm:gap-2.5 sm:px-5">
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
           <button
@@ -81,13 +81,8 @@ export function TopHeader({ section }: { section: AppSection }) {
               "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:py-1",
             )}
           >
-            <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-accent"
-              aria-hidden
-            >
-              <TrendingUp className="h-4 w-4 text-on-accent" />
-            </span>
-            <span className="hidden truncate text-subhead font-semibold tracking-[-0.01em] text-text-primary sm:block sm:text-title">
+            <Mark size={28} />
+            <span className="hidden truncate text-subhead font-bold tracking-[-0.035em] text-text-primary sm:block sm:text-title">
               Forecast Hub
             </span>
           </button>

@@ -89,7 +89,7 @@ export function AppSidebar() {
       aria-label="Primary navigation"
       data-collapsed={collapsed ? "" : undefined}
       className={cn(
-        "hidden shrink-0 flex-col overflow-hidden border-r border-border bg-surface lg:flex",
+        "hidden shrink-0 flex-col overflow-hidden border-r border-border bg-surface/95 backdrop-blur-xl lg:flex",
         "transition-[width] duration-200 ease-out motion-reduce:transition-none",
         collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded,
       )}

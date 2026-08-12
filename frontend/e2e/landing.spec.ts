@@ -10,7 +10,7 @@ import { expect, test } from "@playwright/test";
 test("the landing page is the root and the app has moved to /dashboard", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Nothing about the fit");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("See your demand");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeHidden();
 });
 
@@ -38,11 +38,11 @@ test("every section is readable once scrolled to", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   for (const heading of [
-    "Three steps from raw history to a ranked forecast.",
-    "Backtested first, trusted second.",
-    "Ten forecasts, every run.",
-    "Twelve ways in.",
-    "See what it picks for your data.",
+    "From a spreadsheet to a plan in three steps.",
+    "Everything a planner needs, and nothing they do not.",
+    "A range tells you more than a perfect-looking line.",
+    "Right about 94% of the sales it had never seen.",
+    "See what is coming next.",
   ]) {
     const target = page.getByRole("heading", { name: heading });
     await target.scrollIntoViewIfNeeded();
@@ -65,7 +65,9 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   // No `.motion-ready`, so nothing was ever hidden and nothing has to animate
   // back into view.
   await expect(page.locator(".motion-ready")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Twelve ways in." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Everything a planner needs, and nothing they do not." }),
+  ).toBeVisible();
 
   await context.close();
 });

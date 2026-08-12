@@ -1,23 +1,23 @@
 import { formatCompact } from "@/lib/format";
 
 const FALLBACK = {
-  canvas: "#faf8f4",
-  surface: "#ffffff",
-  surfaceMuted: "#f2eee7",
-  border: "#e7e1d6",
-  borderStrong: "#d5cec0",
-  textPrimary: "#191713",
-  textSecondary: "#6a6357",
-  textMuted: "#9a9285",
-  accent: "#2c5fa8",
-  accentSoft: "#eaf1fa",
-  navy: "#1d3c68",
-  teal: "#3d868c",
-  gold: "#b8862f",
-  sand: "#9db2cf",
-  positive: "#1a7f5a",
-  negative: "#c94a4a",
-  warning: "#a9721a",
+  canvas: "#f1f3ef",
+  surface: "#fafbf9",
+  surfaceMuted: "#e6e9e4",
+  border: "#d8ddd7",
+  borderStrong: "#bcc4bc",
+  textPrimary: "#111512",
+  textSecondary: "#4e554e",
+  textMuted: "#7d847e",
+  accent: "#287b59",
+  accentSoft: "#dce9e1",
+  navy: "#151a16",
+  teal: "#5a9278",
+  gold: "#9c8760",
+  sand: "#a7b9aa",
+  positive: "#287b59",
+  negative: "#aa453f",
+  warning: "#8a6a31",
 } as const;
 
 const VARIABLES: Record<keyof typeof FALLBACK, string> = {
@@ -72,7 +72,7 @@ export function tooltipStyle(colors: ChartPalette = chartColors()) {
     borderColor: colors.border,
     borderWidth: 1,
     padding: [8, 10] as [number, number],
-    extraCssText: "border-radius:9px;box-shadow:var(--shadow-popover);",
+    extraCssText: "border-radius:2px;box-shadow:var(--shadow-popover);",
     textStyle: { fontFamily: FONT_FAMILY, fontSize: 11, color: colors.textPrimary },
   };
 }

@@ -38,7 +38,7 @@ const WORKSPACES: Record<AppSection, ComponentType> = {
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-canvas">
+    <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
       <a
         href="#main-content"
         className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"

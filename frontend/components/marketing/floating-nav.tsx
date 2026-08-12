@@ -1,0 +1,117 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { Mark } from "@/components/marketing/mark";
+import { cn } from "@/lib/utils";
+
+const SECTIONS = [
+  { id: "how-it-works", label: "How it works" },
+  { id: "features", label: "Features" },
+  { id: "compare", label: "Compare" },
+  { id: "accuracy", label: "Accuracy" },
+];
+
+export function FloatingNav() {
+  const [lifted, setLifted] = useState(false);
+  const [pastHero, setPastHero] = useState(false);
+  const [active, setActive] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setLifted(window.scrollY > 40);
+      setPastHero(window.scrollY > 520);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    const targets = SECTIONS.map((section) => document.getElementById(section.id)).filter(
+      (target): target is HTMLElement => target !== null,
+    );
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: "-43% 0px -43% 0px", threshold: 0 },
+    );
+
+    targets.forEach((target) => observer.observe(target));
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-x-0 top-3 z-50 px-4 sm:top-6 sm:px-8 lg:px-[4.3vw]">
+      <nav
+        aria-label="Sections"
+        className={cn(
+          "mx-auto flex h-[74px] w-full max-w-[1816px] items-center border border-[#d8ddd7] bg-[#fafbf9]/95 px-5 backdrop-blur-xl transition-shadow duration-300 sm:h-[88px] sm:px-7",
+          lifted
+            ? "shadow-[0_18px_38px_-22px_rgba(17,22,18,.4),0_1px_2px_rgba(17,22,18,.08)]"
+            : "shadow-[0_4px_14px_-10px_rgba(17,22,18,.25)]",
+        )}
+      >
+        <Link href="#top" aria-label="Forecast Hub, back to top" className="flex shrink-0 items-center gap-3">
+          <Mark size={31} />
+          <span className="text-[19px] font-bold tracking-[-0.04em] text-[#111512] sm:text-[24px]">
+            Forecast Hub
+          </span>
+        </Link>
+
+        <ul className="mx-auto hidden items-center gap-1 md:flex">
+          {SECTIONS.map((section) => (
+            <li key={section.id}>
+              <Link
+                href={`#${section.id}`}
+                aria-current={active === section.id ? "page" : undefined}
+                className={cn(
+                  "inline-flex px-5 py-3 text-[16px] text-[#3f443f] transition-colors hover:text-[#111512] lg:text-[18px]",
+                  active === section.id && "bg-[#e6e9e4] text-[#111512]",
+                )}
+              >
+                {section.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+
+        <Link
+          href="/dashboard"
+          aria-label="Open the dashboard"
+          aria-hidden={!pastHero}
+          tabIndex={pastHero ? 0 : -1}
+          className={cn(
+            "group ml-auto inline-flex h-[50px] shrink-0 items-center gap-3 bg-[#111512] px-5 text-[15px] font-medium text-white transition-all duration-300 sm:h-[56px] sm:px-6 sm:text-[17px]",
+            pastHero ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0",
+          )}
+        >
+          <span className="hidden sm:inline">Open the dashboard</span>
+          <span className="sm:hidden">Open</span>
+          <Arrow />
+        </Link>
+      </nav>
+    </div>
+  );
+}
+
+export function Arrow() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+      <path
+        d="M2.5 9h12m0 0-4.25-4.25M14.5 9l-4.25 4.25"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="transition-transform duration-300 group-hover:translate-x-0.5"
+      />
+    </svg>
+  );
+}
