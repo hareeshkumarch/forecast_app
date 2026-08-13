@@ -37,3 +37,44 @@ export function barDelay(step: number, historyLength: number, timing: ScapeTimin
 export function shellDelay(step: number, historyLength: number, timing: ScapeTiming): number {
   return barDelay(step, historyLength, timing) + SHELL_FOLLOW;
 }
+
+/*
+ * The chart asks to be hovered, and then waits. Most visitors will not hover a
+ * chart on a page they have been on for two seconds, so the readout — the part
+ * that actually shows what the product does with a week — goes unseen. Rather
+ * than ask harder, the chart walks its own forecast once and shows them.
+ *
+ * It runs after the build has settled, over the forecast weeks only: the past
+ * reads out as "actual", which demonstrates nothing that the bars have not
+ * already said. Any real pointer, key or touch takes it back for good.
+ */
+
+/** A beat between the chart settling and the walk starting, so the two read as
+ *  two things rather than one long animation. */
+export const DEMO_HOLD = 520;
+
+/** One forecast week to the next. Fast enough to read as a scrub of the whole
+ *  horizon, slow enough that the numbers underneath are legibly changing. */
+export const DEMO_STEP = 220;
+
+/** The last week is held, so at least one readout can actually be read before
+ *  the hint comes back. */
+export const DEMO_LINGER = 760;
+
+export type DemoWalk = {
+  start: number;
+  steps: number[];
+  interval: number;
+  release: number;
+};
+
+export function demoWalk(
+  historyLength: number,
+  futureLength: number,
+  timing: ScapeTiming,
+): DemoWalk {
+  const start = timing.settled + DEMO_HOLD;
+  const steps = Array.from({ length: futureLength }, (_, index) => historyLength + index);
+  const last = start + Math.max(steps.length - 1, 0) * DEMO_STEP;
+  return { start, steps, interval: DEMO_STEP, release: last + DEMO_LINGER };
+}

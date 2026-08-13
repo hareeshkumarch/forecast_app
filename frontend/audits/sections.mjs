@@ -150,27 +150,33 @@ line("\n5 — the accuracy figure counts up without moving the sentence");
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
 
-  const before = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("#accuracy h2 span span")][0];
-    return el ? { text: el.textContent, width: el.getBoundingClientRect().width } : null;
+  // While counting the number is a reserved box plus an overlay, so the
+  // wrapper's own textContent is the placeholder and the value together. The
+  // live figure is the last child when there is one.
+  await page.addScriptTag({
+    content: `window.__figure = () => {
+      const el = document.querySelector("#accuracy [data-count-up]");
+      return (el.lastElementChild ?? el).textContent.trim();
+    };`,
   });
+  const before = await page.evaluate(() => window.__figure());
 
   await page.evaluate(() => document.querySelector("#accuracy").scrollIntoView());
   const samples = await page.evaluate(async () => {
-    const el = [...document.querySelectorAll("#accuracy h2 span span")][0];
+    const el = document.querySelector("#accuracy [data-count-up]");
     const seen = new Set();
     const widths = new Set();
     const started = performance.now();
     await new Promise((resolve) => {
       const tick = () => {
-        seen.add(el.textContent);
+        seen.add(window.__figure());
         widths.add(Math.round(el.getBoundingClientRect().width * 10));
         if (performance.now() - started < 1400) requestAnimationFrame(tick);
         else resolve();
       };
       requestAnimationFrame(tick);
     });
-    return { values: [...seen], widths: [...widths], final: el.textContent };
+    return { values: [...seen], widths: [...widths], final: window.__figure() };
   });
 
   const counted = samples.values.length > 8;
@@ -179,7 +185,7 @@ line("\n5 — the accuracy figure counts up without moving the sentence");
   if (!counted) fail.push(`5 only saw ${samples.values.length} distinct values`);
   if (!steady) fail.push(`5 the number's box changed width: ${samples.widths}`);
   if (!landed) fail.push(`5 the count finished on "${samples.final}"`);
-  line(`  armed at "${before?.text}" · ${samples.values.length} distinct values · lands on "${samples.final}"`);
+  line(`  armed at "${before}" · ${samples.values.length} distinct values · lands on "${samples.final}"`);
   line(`  counts ${counted ? "ok" : "FAIL"} · box holds one width ${steady ? "ok" : "FAIL"} · lands on 94 ${landed ? "ok" : "FAIL"}`);
   await page.close();
 }
@@ -207,7 +213,7 @@ line("\n6 — reduced motion gets the finished page, not a blank one");
       ticksFull: full("#accuracy .grow-x"),
       dotsVisible: opaque("#compare .outcome-dot"),
       ghostsVisible: opaque("#accuracy .check-ghost"),
-      figure: document.querySelector("#accuracy h2 span span")?.textContent,
+      figure: document.querySelector("#accuracy [data-count-up]")?.textContent.trim(),
     };
   });
 
@@ -268,6 +274,106 @@ line("\n8 — the hero sequence is unchanged");
   const ok = seq > 0 && seq < 1400;
   if (!ok) fail.push(`8 hero sequence settles at ${seq}ms`);
   line(`  settles at ${seq}ms (budget 1400ms)  ${ok ? "ok" : "FAIL"}`);
+  await page.close();
+}
+
+/* ------------------------------------------------ 9: the hero demonstrates itself */
+line("\n9 — the hero walks its own forecast, once, and hands it back");
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(BASE, { waitUntil: "networkidle" });
+
+  // Never touch the chart: this is what a visitor who only reads sees.
+  const seen = await page.evaluate(async () => {
+    const el = document.querySelector("p.scape-readout");
+    const frames = [];
+    const started = performance.now();
+    await new Promise((resolve) => {
+      const tick = () => {
+        frames.push(el.innerText.trim());
+        if (performance.now() - started < 5200) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+    return { distinct: [...new Set(frames)], last: frames.at(-1) };
+  });
+
+  const weeks = seen.distinct.filter((t) => /^Week \+\d/.test(t));
+  const walked = weeks.length >= 5;
+  const onlyForecast = !seen.distinct.some((t) => /weeks ago/.test(t));
+  const handedBack = /Hover any week/i.test(seen.last);
+  if (!walked) fail.push(`9 the demo showed ${weeks.length} forecast weeks`);
+  if (!onlyForecast) fail.push("9 the demo walked history, which reads out as 'actual'");
+  if (!handedBack) fail.push(`9 the demo did not restore the hint, ended on "${seen.last}"`);
+  line(`  ${weeks.length} forecast weeks shown · ends on "${seen.last}"`);
+  line(`  walks ${walked ? "ok" : "FAIL"} · forecast only ${onlyForecast ? "ok" : "FAIL"} · hint returns ${handedBack ? "ok" : "FAIL"}`);
+  await page.close();
+}
+
+line("\n10 — touching the chart takes it from the demo for good");
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(BASE, { waitUntil: "networkidle" });
+
+  const target = await page.evaluate(() => {
+    const bars = [...document.querySelectorAll("svg[role=img] .scape-bar")];
+    const future = bars.filter((b) => b.querySelector('polygon[fill="#287b59"]'));
+    const box = future[0].getBoundingClientRect();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  });
+
+  // Which week ends up under the cursor is not worth asserting — the prisms
+  // are an isometric projection and overlap, so the bar whose box centre this
+  // is may well be behind another one. What matters is that the walk stops:
+  // held still for four steps' worth of time, the readout must not advance.
+  await page.waitForTimeout(2100);
+  await page.mouse.move(target.x, target.y);
+  const held = await page.evaluate(async () => {
+    const el = document.querySelector("p.scape-readout");
+    const frames = [];
+    const started = performance.now();
+    await new Promise((resolve) => {
+      const tick = () => {
+        frames.push(el.innerText.trim());
+        if (performance.now() - started < 900) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+    return [...new Set(frames)];
+  });
+
+  await page.mouse.move(10, 10);
+  await page.waitForTimeout(1600);
+  const after = await page.locator("p.scape-readout").innerText();
+
+  const stopped = held.length === 1 && /^Week \+\d/.test(held[0]);
+  const stayed = /Hover any week/i.test(after);
+  if (!stopped) fail.push(`10 the walk did not stop under a still pointer: ${JSON.stringify(held)}`);
+  if (!stayed) fail.push(`10 the demo resumed after being taken: "${after.trim()}"`);
+  line(`  held still for 900ms: ${JSON.stringify(held)}`);
+  line(`  1.6s after leaving: "${after.trim()}"`);
+  line(`  walk stops ${stopped ? "ok" : "FAIL"} · demo stays off ${stayed ? "ok" : "FAIL"}`);
+  await page.close();
+}
+
+line("\n11 — the demo is off under reduced motion, and the band still reads");
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(4600);
+  const readout = await page.locator("p.scape-readout").innerText();
+  const band = await page.evaluate(() =>
+    [...document.querySelectorAll("#top dl dt")].map((el) => el.innerText.replace(/\s+/g, "")),
+  );
+
+  const quiet = /Hover any week/i.test(readout);
+  const complete = band.length === 4 && band.every((t) => /\d/.test(t));
+  if (!quiet) fail.push(`11 the demo ran under reduced motion: "${readout.trim()}"`);
+  if (!complete) fail.push(`11 the proof band did not render its figures: ${JSON.stringify(band)}`);
+  line(`  readout "${readout.trim()}" · band ${JSON.stringify(band)}`);
+  line(`  demo off ${quiet ? "ok" : "FAIL"} · band complete ${complete ? "ok" : "FAIL"}`);
   await page.close();
 }
 

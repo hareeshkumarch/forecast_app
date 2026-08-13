@@ -22,7 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
-node audits/sections.mjs   # motion in the compare and accuracy sections
+node audits/sections.mjs   # compare, accuracy, the proof band and the hero demo
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -65,6 +65,14 @@ overshoots its value does so between the keyframes rather than at them. It also
 loads the page twice more — once under `prefers-reduced-motion`, once with
 JavaScript switched off — because both of those paths render through CSS that
 the normal path never reaches, and the failure they produce is a blank chart.
+
+For the hero's self-demonstration it asserts that a still pointer stops the
+walk, rather than asserting which week ends up under the cursor. The prisms are
+an isometric projection and overlap, so the bar whose bounding box the pointer
+is aimed at is often behind another one; the readout that comes back is then
+the wrong week for the right reason. What the check is actually for is that the
+walk stops when the visitor takes over, and a readout that does not advance for
+four steps' worth of time says exactly that.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

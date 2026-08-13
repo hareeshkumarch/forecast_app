@@ -37,6 +37,20 @@ const STEPS = [
   },
 ];
 
+/*
+ * Four numbers the product can actually be held to, not four numbers that
+ * sounded good. In order: the accuracy the section below reports, the size of
+ * the candidate set in `ModelKind`, the run budget in `core/budget.py`, and
+ * the one file step 1 asks for. `count` is off for the one that has nowhere
+ * to count from — a number ticking from zero to one reads as a fault.
+ */
+const PROOF = [
+  { value: 94, unit: "%", count: true, label: "Right on weeks it had never seen" },
+  { value: 10, unit: "", count: true, label: "Models it picks between, every run" },
+  { value: 60, unit: "s", count: true, label: "Budgeted for a run, start to finish" },
+  { value: 1, unit: "", count: false, label: "Spreadsheet to begin. Nothing else" },
+];
+
 const FEATURES = [
   {
     icon: BarChart3,
@@ -121,7 +135,40 @@ function Hero() {
       <Reveal delay={280} className="page-shell mt-10 sm:mt-12">
         <DemandScape />
       </Reveal>
+
+      <Proof />
     </section>
+  );
+}
+
+/*
+ * The band sits below the chart rather than above it. Everything in the hero
+ * above this point is a claim; the chart is the demonstration, and these are
+ * what the demonstration is worth. Putting it any higher would also push the
+ * call to action off the fold, which `audits/track-a.mjs` checks at three
+ * viewport heights.
+ */
+function Proof() {
+  return (
+    <div className="page-shell mt-12 sm:mt-14">
+      <dl className="grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-4">
+        {PROOF.map((stat, index) => (
+          <Reveal
+            key={stat.label}
+            delay={index * 70}
+            className="border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-7"
+          >
+            <dt className="text-stat font-bold text-[#111512]">
+              {stat.count ? <CountUp value={stat.value} /> : stat.value}
+              <span className="text-[#287b59]">{stat.unit}</span>
+            </dt>
+            <dd className="mt-2 max-w-[26ch] font-mono text-site-caption text-[#5d645e]">
+              {stat.label}
+            </dd>
+          </Reveal>
+        ))}
+      </dl>
+    </div>
   );
 }
 

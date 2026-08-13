@@ -1,6 +1,5 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -30,16 +29,27 @@ export type CountUpProps = {
 export function CountUp({ value, className }: CountUpProps) {
   const ref = useRef<HTMLSpanElement>(null);
   const [shown, setShown] = useState(value);
+  // Only true between arming and landing. Outside that window the number is a
+  // plain span holding a plain number — which is what the server sends, what a
+  // page without JavaScript keeps, and what the count settles back into.
+  const [counting, setCounting] = useState(false);
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
     if (window.matchMedia(REDUCED_MOTION).matches) return;
 
-    // Armed on mount rather than when the observer fires. The section this
-    // sits in is several screens down, so this always happens long before it
-    // is on screen, and the number is never seen at its answer and then reset.
+    // Already on screen as the page loads — a deep link to the section, or a
+    // window tall enough to reach it. The server has painted the finished
+    // number by now, so arming would show it, blank it and count it back,
+    // which is worse than not counting at all. Leave it alone.
+    const box = node.getBoundingClientRect();
+    if (box.top < window.innerHeight && box.bottom > 0) return;
+
+    // Armed on mount rather than when the observer fires, so that the number
+    // is never seen at its answer and then reset to zero on the way in.
     setShown(0);
+    setCounting(true);
 
     let frame = 0;
     const observer = new IntersectionObserver(
@@ -52,6 +62,7 @@ export function CountUp({ value, className }: CountUpProps) {
           const progress = Math.min((now - started) / DURATION, 1);
           setShown(Math.round(easeOut(progress) * value));
           if (progress < 1) frame = requestAnimationFrame(tick);
+          else setCounting(false);
         };
         frame = requestAnimationFrame(tick);
       },
@@ -65,15 +76,33 @@ export function CountUp({ value, className }: CountUpProps) {
     };
   }, [value]);
 
+  if (!counting) {
+    return (
+      <span ref={ref} data-count-up className={cn("tabular-nums", className)}>
+        {shown}
+      </span>
+    );
+  }
+
   return (
-    <span
-      ref={ref}
-      // Held at the width of the finished number: with tabular figures `ch` is
-      // exactly one digit, so the count cannot push the sentence around it.
-      className={cn("inline-block text-right tabular-nums", className)}
-      style={{ minWidth: `${String(value).length}ch` } as CSSProperties}
-    >
-      {shown}
+    <span ref={ref} data-count-up className={cn("relative inline-block tabular-nums", className)}>
+      {/*
+       * The finished number, invisible, holding the box open at exactly the
+       * width it will end at. Reserving the space in `ch` instead assumes a
+       * digit advance equal to the advance of "0", which tabular figures do
+       * not guarantee — and the fraction of a pixel that assumption is out by
+       * arrives as layout shift on every frame of the count.
+       */}
+      <span aria-hidden className="invisible">
+        {value}
+      </span>
+      {/*
+       * Left, not right. Right-aligned digits slide leftwards the moment the
+       * count gains a digit, which is a real glyph movement and lands as
+       * layout shift. Growing rightwards into space the box has already
+       * reserved moves nothing: every digit is drawn where it will finish.
+       */}
+      <span className="absolute inset-0 text-left">{shown}</span>
     </span>
   );
 }
