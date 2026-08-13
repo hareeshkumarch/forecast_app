@@ -22,7 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
-node audits/sections.mjs   # compare, accuracy, the proof band and the hero demo
+node audits/sections.mjs   # compare, accuracy, proof band, hero demo and series switch
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -73,6 +73,21 @@ is aimed at is often behind another one; the readout that comes back is then
 the wrong week for the right reason. What the check is actually for is that the
 walk stops when the visitor takes over, and a readout that does not advance for
 four steps' worth of time says exactly that.
+
+`aimAtForecast` exists for the same reason, plus one more: the chart sits low
+enough in the hero that at 1366x768 only about a third of it is on screen, and
+a pointer sent to a point below the fold hovers nothing while looking exactly
+like a broken hover handler. It scrolls the chart in, then hit-tests candidate
+bars with `elementFromPoint` and takes the first that resolves to itself. Call
+it only once the build has settled — a bounding box read mid-animation is the
+height the bar had partway up, not the height it is going to have.
+
+For the series switch it compares bar heights before and after, and asserts the
+`viewBox` and the rendered box are unchanged. That pairing is the point: the
+chart has to redraw completely without resizing, which is what the equal series
+lengths in `lib/scape-data.ts` buy. It also waits only a second before checking
+that every bar animation has finished, which fails if a re-run is ever left
+running at the opening sequence's full pace.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

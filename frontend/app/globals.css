@@ -645,6 +645,13 @@ body {
   transition: border-color 140ms var(--ease-out);
 }
 
+.scape-chip {
+  transition:
+    border-color 140ms var(--ease-out),
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out);
+}
+
 .scape-readout {
   transition: opacity 120ms var(--ease-out);
 }

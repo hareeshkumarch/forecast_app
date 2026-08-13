@@ -8,34 +8,69 @@ export const CAPTION_FADE = 200;
 
 export const SEQUENCE_BUDGET = 1400;
 
+/**
+ * How fast a re-run goes compared with the first build.
+ *
+ * The opening sequence is a performance nobody asked for, and it can afford to
+ * take its time. A re-run is an answer to a click, and the same 1.4 seconds
+ * spent again is the chart making the visitor wait for something they already
+ * understand. Same choreography, same order, roughly half the clock.
+ */
+export const REPLAY_PACE = 0.55;
+
 export type ScapeTiming = {
   historyEnd: number;
   forecastStart: number;
   captionStart: number;
   settled: number;
+  /** Durations the marks animate over, already paced. */
+  rise: number;
+  expand: number;
+  captionFade: number;
+  historyStagger: number;
+  forecastStagger: number;
+  shellFollow: number;
 };
 
-export function scapeTiming(historyLength: number, futureLength: number): ScapeTiming {
-  const historyEnd = Math.max(0, historyLength - 1) * HISTORY_STAGGER + BAR_RISE;
-  const forecastStart = historyEnd + TODAY_HOLD;
-  const lastForecast = forecastStart + Math.max(0, futureLength - 1) * FORECAST_STAGGER;
-  const settled = lastForecast + SHELL_FOLLOW + SHELL_EXPAND;
+export function scapeTiming(
+  historyLength: number,
+  futureLength: number,
+  pace = 1,
+): ScapeTiming {
+  const rise = BAR_RISE * pace;
+  const historyStagger = HISTORY_STAGGER * pace;
+  const forecastStagger = FORECAST_STAGGER * pace;
+  const shellFollow = SHELL_FOLLOW * pace;
+  const expand = SHELL_EXPAND * pace;
+  const captionFade = CAPTION_FADE * pace;
+
+  const historyEnd = Math.max(0, historyLength - 1) * historyStagger + rise;
+  const forecastStart = historyEnd + TODAY_HOLD * pace;
+  const lastForecast = forecastStart + Math.max(0, futureLength - 1) * forecastStagger;
+  const settled = lastForecast + shellFollow + expand;
+
   return {
     historyEnd,
     forecastStart,
-    captionStart: Math.max(0, settled - CAPTION_FADE),
+    captionStart: Math.max(0, settled - captionFade),
     settled,
+    rise,
+    expand,
+    captionFade,
+    historyStagger,
+    forecastStagger,
+    shellFollow,
   };
 }
 
 export function barDelay(step: number, historyLength: number, timing: ScapeTiming): number {
   return step < historyLength
-    ? step * HISTORY_STAGGER
-    : timing.forecastStart + (step - historyLength) * FORECAST_STAGGER;
+    ? step * timing.historyStagger
+    : timing.forecastStart + (step - historyLength) * timing.forecastStagger;
 }
 
 export function shellDelay(step: number, historyLength: number, timing: ScapeTiming): number {
-  return barDelay(step, historyLength, timing) + SHELL_FOLLOW;
+  return barDelay(step, historyLength, timing) + timing.shellFollow;
 }
 
 /*

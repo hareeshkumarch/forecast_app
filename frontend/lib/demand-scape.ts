@@ -56,10 +56,17 @@ const EXTRUDE_X_RATIO = 0.48;
 const EXTRUDE_Y_RATIO = 0.24;
 
 const RANGE_BASE = 1.05;
-const RANGE_GROWTH = 0.055;
+export const RANGE_GROWTH = 0.055;
 
-export function rangeLift(horizon: number): number {
-  return RANGE_BASE + RANGE_GROWTH * horizon;
+/**
+ * How far the range has opened by `horizon` weeks out.
+ *
+ * `growth` is a property of the series, not of the drawing: demand that jumps
+ * about earns a wider interval than demand that settles, and a chart offering
+ * to show more than one shape has to be able to say so.
+ */
+export function rangeLift(horizon: number, growth: number = RANGE_GROWTH): number {
+  return RANGE_BASE + growth * horizon;
 }
 
 const LABEL_ADVANCE = 10.2;
@@ -81,7 +88,11 @@ function extent(values: number[]): number {
   return peak > 0 ? peak : 1;
 }
 
-export function buildScape(history: number[], future: number[]): Scape {
+export function buildScape(
+  history: number[],
+  future: number[],
+  growth: number = RANGE_GROWTH,
+): Scape {
   const steps = history.length + future.length;
   const rows = ROW_SCALE.length;
 
@@ -100,7 +111,7 @@ export function buildScape(history: number[], future: number[]): Scape {
     (PLOT_HEIGHT - extrudeY) /
     (extent([
       ...history,
-      ...future.map((value, index) => value * rangeLift(index + 1)),
+      ...future.map((value, index) => value * rangeLift(index + 1, growth)),
     ]) *
       tallestRow);
 
@@ -114,7 +125,7 @@ export function buildScape(history: number[], future: number[]): Scape {
       const historical = step < history.length;
       const horizon = historical ? 0 : step - history.length + 1;
       const value = (historical ? history[step] : future[step - history.length]) ?? 0;
-      const lift = historical ? 1 : rangeLift(horizon);
+      const lift = historical ? 1 : rangeLift(horizon, growth);
 
       if (!historical) {
         prisms.push({

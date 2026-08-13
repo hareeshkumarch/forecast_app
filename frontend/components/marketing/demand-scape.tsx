@@ -3,20 +3,26 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { buildScape, prismFaces, rangeLift, type Prism, type Tone } from "@/lib/demand-scape";
+import { buildScape, prismFaces, type Prism, type Tone } from "@/lib/demand-scape";
 import {
-  BAR_RISE,
-  CAPTION_FADE,
-  SHELL_EXPAND,
+  DEFAULT_SCENARIO,
+  SCENARIOS,
+  columned,
+  readoutFor,
+  scenarioById,
+} from "@/lib/scape-data";
+import {
+  REPLAY_PACE,
   barDelay,
   demoWalk,
   scapeTiming,
   shellDelay,
+  type ScapeTiming,
 } from "@/lib/scape-motion";
 import { useMotionReady } from "@/components/marketing/reveal";
+import { cn } from "@/lib/utils";
 
-const HISTORY = [72, 96, 84, 110, 91, 104, 81, 118, 89, 102, 78, 94, 72, 86, 68, 91, 74, 81, 64, 73, 61, 69, 58, 76, 67, 72];
-const FUTURE = [86, 106, 78, 101, 72, 91, 68, 83, 61];
+const HINT = "Hover any week, or focus the chart and use the arrow keys";
 
 const PALETTE: Record<Tone, { front: string; side: string; top: string; stroke: string }> = {
   history: { front: "#151a16", side: "#3d433e", top: "#4a504b", stroke: "none" },
@@ -29,60 +35,23 @@ const PALETTE: Record<Tone, { front: string; side: string; top: string; stroke: 
   },
 };
 
-const HINT = "Hover any week, or focus the chart and use the arrow keys";
-
-type Readout = { label: string; point: string; range: string };
-
-function readoutFor(step: number): Readout {
-  if (step < HISTORY.length) {
-    const value = HISTORY[step] ?? 0;
-    return {
-      label: `${HISTORY.length - step} weeks ago`,
-      point: `${value} units sold`,
-      range: "actual",
-    };
-  }
-  const horizon = step - HISTORY.length + 1;
-  const value = FUTURE[step - HISTORY.length] ?? 0;
-  const spread = value * (rangeLift(horizon) - 1);
-  return {
-    label: `Week +${horizon}`,
-    point: `${Math.round(value)} units`,
-    range: `${Math.round(value - spread)} to ${Math.round(value + spread)}`,
-  };
-}
-
-/*
- * The forecast readouts are laid out on shared columns. The chart walks these
- * weeks by itself on load, and "86 units" giving way to "106 units" is two
- * characters of difference that re-centres the whole line — the page moving on
- * its own, which is a layout shift on the way in and a flinch to look at. A
- * hover can afford it because a hover is the visitor's own doing; this cannot.
- * Equal character counts are equal widths in the mono face.
- */
-const FORECAST_READOUTS = FUTURE.map((_, index) => readoutFor(HISTORY.length + index));
-const COLUMN = {
-  point: Math.max(...FORECAST_READOUTS.map((readout) => readout.point.length)),
-  range: Math.max(...FORECAST_READOUTS.map((readout) => readout.range.length)),
-};
-
-function columned(readout: Readout): Readout {
-  if (readout.range === "actual") return readout;
-  return {
-    label: readout.label,
-    point: readout.point.padEnd(COLUMN.point),
-    range: readout.range.padEnd(COLUMN.range),
-  };
-}
-
-function Bar({ prism, onEnter }: { prism: Prism; onEnter: () => void }) {
+function Bar({
+  prism,
+  historyLength,
+  timing,
+  onEnter,
+}: {
+  prism: Prism;
+  historyLength: number;
+  timing: ScapeTiming;
+  onEnter: () => void;
+}) {
   const faces = prismFaces(prism);
   const palette = PALETTE[prism.tone];
   const shell = prism.tone === "range";
-  const timing = scapeTiming(HISTORY.length, FUTURE.length);
   const delay = shell
-    ? shellDelay(prism.step, HISTORY.length, timing)
-    : barDelay(prism.step, HISTORY.length, timing);
+    ? shellDelay(prism.step, historyLength, timing)
+    : barDelay(prism.step, historyLength, timing);
 
   return (
     <g
@@ -91,8 +60,8 @@ function Bar({ prism, onEnter }: { prism: Prism; onEnter: () => void }) {
       style={
         {
           "--delay": `${delay}ms`,
-          "--rise": `${BAR_RISE}ms`,
-          "--expand": `${SHELL_EXPAND}ms`,
+          "--rise": `${timing.rise}ms`,
+          "--expand": `${timing.expand}ms`,
           "--shell-floor": prism.shellFloor,
         } as CSSProperties
       }
@@ -105,17 +74,35 @@ function Bar({ prism, onEnter }: { prism: Prism; onEnter: () => void }) {
 }
 
 export function DemandScape() {
+  const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO.id);
   const [hovered, setHovered] = useState<number | null>(null);
   const [keyed, setKeyed] = useState(false);
   const [running, setRunning] = useState(false);
+  // The opening build can take its time; everything after it is answering a
+  // click, and runs the same choreography on a shorter clock.
+  const [replaying, setReplaying] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const motionReady = useMotionReady();
   // Set the moment the visitor does anything to the chart themselves. From
   // then on it is theirs, and the demonstration never touches it again.
   const taken = useRef(false);
 
-  const scape = useMemo(() => buildScape(HISTORY, FUTURE), []);
-  const timing = useMemo(() => scapeTiming(HISTORY.length, FUTURE.length), []);
+  const scenario = scenarioById(scenarioId);
+  const historyLength = scenario.history.length;
+
+  const scape = useMemo(
+    () => buildScape(scenario.history, scenario.future, scenario.growth),
+    [scenario],
+  );
+  const timing = useMemo(
+    () =>
+      scapeTiming(
+        scenario.history.length,
+        scenario.future.length,
+        replaying ? REPLAY_PACE : 1,
+      ),
+    [scenario, replaying],
+  );
 
   useEffect(() => {
     const node = ref.current;
@@ -137,9 +124,9 @@ export function DemandScape() {
   // Once built, the chart walks its own forecast and shows what the readout
   // gives, rather than only asking to be hovered. See `lib/scape-motion.ts`.
   useEffect(() => {
-    if (!running || !motionReady) return;
+    if (!running || !motionReady || taken.current) return;
 
-    const walk = demoWalk(HISTORY.length, FUTURE.length, timing);
+    const walk = demoWalk(historyLength, scenario.future.length, timing);
     const timers = walk.steps.map((step, index) =>
       window.setTimeout(() => {
         if (!taken.current) setHovered(step);
@@ -154,14 +141,24 @@ export function DemandScape() {
     );
 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [running, motionReady, timing]);
+  }, [running, motionReady, timing, historyLength, scenario.future.length]);
 
   const take = () => {
     taken.current = true;
   };
 
+  const choose = (id: string) => {
+    if (id === scenario.id) return;
+    // Choosing data is the visitor doing the thing the demonstration was for.
+    take();
+    // The readout described a week of the series being replaced.
+    setHovered(null);
+    setReplaying(true);
+    setScenarioId(id);
+  };
+
   const stage = motionReady ? (running ? "scape-running" : "scape-armed") : "";
-  const spoken = hovered === null ? null : readoutFor(hovered);
+  const spoken = hovered === null ? null : readoutFor(scenario, hovered);
   const readout = spoken === null ? null : columned(spoken);
   const marked = hovered === null ? null : scape.columns[hovered];
 
@@ -194,12 +191,40 @@ export function DemandScape() {
 
   return (
     <div className="scape-frame" ref={ref}>
+      {/*
+       * Toggle buttons rather than tabs or radios: the chart below already
+       * owns the arrow keys, and a widget that swallowed them to move between
+       * its own options would take them away from the thing worth exploring.
+       */}
+      <div
+        role="group"
+        aria-label="Example demand to draw"
+        className="mb-5 flex flex-wrap items-center justify-center gap-2"
+      >
+        {SCENARIOS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={option.id === scenario.id}
+            onClick={() => choose(option.id)}
+            className={cn(
+              "scape-chip border px-4 py-2 font-mono text-site-caption uppercase tracking-[0.12em]",
+              option.id === scenario.id
+                ? "border-[#111512] bg-[#111512] text-white"
+                : "border-[#cfd5cf] bg-[#fafbf9] text-[#4e554e] hover:border-[#8f9a90] hover:text-[#111512]",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="relative">
         <svg
           viewBox={scape.viewBox}
           className={stage}
           role="img"
-          aria-label={`${HISTORY.length} weeks of historical demand followed by a ${FUTURE.length}-week forecast and its possible range`}
+          aria-label={`${scenario.label}: ${historyLength} weeks of historical demand followed by a ${scenario.future.length}-week forecast and its possible range`}
           tabIndex={0}
           onKeyDown={onKeyDown}
           onFocus={() => {
@@ -231,20 +256,38 @@ export function DemandScape() {
             />
           ) : null}
 
-          {scape.prisms.map((prism) => (
-            <Bar
-              key={prism.key}
-              prism={prism}
-              onEnter={() => {
-                take();
-                setHovered(prism.step);
-              }}
-            />
-          ))}
+          {/*
+           * Keyed on the scenario, so choosing one remounts the bars and the
+           * build sequence runs again from the start. A CSS animation cannot
+           * be replayed in place without removing the element that carries it,
+           * and running it again is the right thing to show anyway: picking a
+           * series is asking for a forecast, and this is the chart making one.
+           */}
+          <g key={scenario.id}>
+            {scape.prisms.map((prism) => (
+              <Bar
+                key={prism.key}
+                prism={prism}
+                historyLength={historyLength}
+                timing={timing}
+                onEnter={() => {
+                  take();
+                  setHovered(prism.step);
+                }}
+              />
+            ))}
+          </g>
 
+          {/* Outside that key: the axis and the today line are the same in
+              every scenario, and should not blink on each choice. */}
           <g
             className="scape-caption"
-            style={{ "--delay": `${timing.captionStart}ms`, "--caption-fade": `${CAPTION_FADE}ms` } as CSSProperties}
+            style={
+              {
+                "--delay": `${timing.captionStart}ms`,
+                "--caption-fade": `${timing.captionFade}ms`,
+              } as CSSProperties
+            }
           >
             <line
               x1={scape.boundary.x1}
@@ -298,9 +341,7 @@ export function DemandScape() {
         <span className="flex items-center gap-2.5"><span className="size-3 bg-[#287b59]" />What is coming</span>
         <span className="flex items-center gap-2.5"><span className="size-3 bg-[#c8ddd2]" />How far it could move</span>
       </div>
-      <p className="mt-5 text-center text-site-body text-[#8a908a]">
-        Two product groups shown — Chilled in front, Ambient behind.
-      </p>
+      <p className="mt-5 text-center text-site-body text-[#8a908a]">{scenario.caption}</p>
     </div>
   );
 }

@@ -7,6 +7,36 @@ const browser = await chromium.launch({ executablePath: CHROME });
 const fail = [];
 const line = (s) => console.log(s);
 
+/*
+ * Pointing at a forecast bar is not the same as taking the centre of its box.
+ * The prisms are an isometric projection and overlap, so a box centre often
+ * belongs to the bar in front; and the chart sits far enough down the hero to
+ * run past the fold at ordinary window heights, where a point simply hovers
+ * nothing. Scroll it in, then take the first bar that both hit-tests to itself
+ * and lands on screen. Call it once the bars have stopped growing — a box
+ * measured mid-build is the height the bar had, not the height it will have.
+ */
+const aimAtForecast = async (page) => {
+  await page.evaluate(() =>
+    document.querySelector("svg[role=img]").scrollIntoView({ block: "center" }),
+  );
+  const target = await page.evaluate(() => {
+    const bars = [...document.querySelectorAll("svg[role=img] .scape-bar")];
+    const future = bars.filter((b) => b.querySelector('polygon[fill="#287b59"]'));
+    for (const bar of [...future].reverse()) {
+      const r = bar.getBoundingClientRect();
+      const x = r.x + r.width / 2;
+      const y = r.y + r.height * 0.7;
+      if (x < 0 || x > innerWidth || y < 0 || y > innerHeight) continue;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && bar.contains(hit)) return { x, y };
+    }
+    return null;
+  });
+  if (!target) throw new Error("no forecast bar was reachable by the pointer");
+  return target;
+};
+
 /* ------------------------------------------------ 1: comparison wipes */
 line("\n1 — the comparison panels draw themselves");
 {
@@ -316,18 +346,16 @@ line("\n10 — touching the chart takes it from the demo for good");
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
 
-  const target = await page.evaluate(() => {
-    const bars = [...document.querySelectorAll("svg[role=img] .scape-bar")];
-    const future = bars.filter((b) => b.querySelector('polygon[fill="#287b59"]'));
-    const box = future[0].getBoundingClientRect();
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  });
+  // Aim once the build has stopped moving, then interrupt the walk in progress.
+  await page.waitForTimeout(1500);
+  const target = await aimAtForecast(page);
+  await page.waitForTimeout(700);
 
   // Which week ends up under the cursor is not worth asserting — the prisms
-  // are an isometric projection and overlap, so the bar whose box centre this
-  // is may well be behind another one. What matters is that the walk stops:
-  // held still for four steps' worth of time, the readout must not advance.
-  await page.waitForTimeout(2100);
+  // are an isometric projection and overlap, so the bar the pointer lands on
+  // may well be in front of the one aimed at. What matters is that the walk
+  // stops: held still for four steps' worth of time, the readout must not
+  // advance.
   await page.mouse.move(target.x, target.y);
   const held = await page.evaluate(async () => {
     const el = document.querySelector("p.scape-readout");
@@ -374,6 +402,95 @@ line("\n11 — the demo is off under reduced motion, and the band still reads");
   if (!complete) fail.push(`11 the proof band did not render its figures: ${JSON.stringify(band)}`);
   line(`  readout "${readout.trim()}" · band ${JSON.stringify(band)}`);
   line(`  demo off ${quiet ? "ok" : "FAIL"} · band complete ${complete ? "ok" : "FAIL"}`);
+  await page.close();
+}
+
+line("\n12 — choosing a series re-runs the chart on it");
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(4600);
+
+  const chips = page.locator('[aria-label="Example demand to draw"] button');
+  const count = await chips.count();
+
+  const frameOf = async () =>
+    page.evaluate(() => {
+      const svg = document.querySelector("svg[role=img]");
+      const heights = [...svg.querySelectorAll(".scape-bar")].map((bar) => {
+        const box = bar.getBBox();
+        return Math.round(box.height * 100) / 100;
+      });
+      return {
+        viewBox: svg.getAttribute("viewBox"),
+        label: svg.getAttribute("aria-label"),
+        caption: document.querySelector(".scape-frame > p:last-of-type").textContent.trim(),
+        heights,
+        box: (() => {
+          const r = svg.getBoundingClientRect();
+          return `${Math.round(r.width)}x${Math.round(r.height)}`;
+        })(),
+      };
+    });
+
+  const before = await frameOf();
+  await chips.nth(count - 1).click();
+  // Long enough for a replay to have finished; short enough that a full-speed
+  // sequence would still be running if the pace were not being applied.
+  await page.waitForTimeout(1000);
+  const after = await frameOf();
+
+  const redrew = before.heights.join() !== after.heights.join();
+  const sameFrame = before.viewBox === after.viewBox && before.box === after.box;
+  const captionMoved = before.caption !== after.caption;
+  const settled = await page.evaluate(
+    () => [...document.querySelectorAll("svg[role=img] .scape-bar")].every((bar) =>
+      bar.getAnimations().every((a) => a.playState === "finished"),
+    ),
+  );
+  const pressed = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('[aria-label="Example demand to draw"] button')].filter(
+        (b) => b.getAttribute("aria-pressed") === "true",
+      ).length,
+  );
+
+  if (count < 2) fail.push(`12 only ${count} series offered`);
+  if (!redrew) fail.push("12 the bars did not change when another series was chosen");
+  if (!sameFrame) fail.push(`12 the frame moved: ${before.viewBox}/${before.box} -> ${after.viewBox}/${after.box}`);
+  if (!captionMoved) fail.push("12 the caption still describes the old series");
+  if (!settled) fail.push("12 the re-run had not finished within 1000ms");
+  if (pressed !== 1) fail.push(`12 ${pressed} chips read as pressed`);
+  line(`  ${count} series · caption now "${after.caption}"`);
+  line(`  frame ${before.box} -> ${after.box}, viewBox unchanged: ${before.viewBox === after.viewBox}`);
+  line(`  bars redraw ${redrew ? "ok" : "FAIL"} · frame holds ${sameFrame ? "ok" : "FAIL"} · caption follows ${captionMoved ? "ok" : "FAIL"}`);
+  line(`  replay done inside 1000ms ${settled ? "ok" : "FAIL"} · exactly one chip pressed ${pressed === 1 ? "ok" : "FAIL"}`);
+  await page.close();
+}
+
+line("\n13 — a chosen series keeps the demo away, and reads out its own numbers");
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(BASE, { waitUntil: "networkidle" });
+
+  // Click during the demo walk: choosing data is the visitor taking over.
+  await page.waitForTimeout(2100);
+  await page.locator('[aria-label="Example demand to draw"] button').nth(1).click();
+  await page.waitForTimeout(2000);
+  const idle = await page.locator("p.scape-readout").innerText();
+
+  const target = await aimAtForecast(page);
+  await page.mouse.move(target.x, target.y);
+  await page.waitForTimeout(150);
+  const hovered = await page.locator("p.scape-readout").innerText();
+
+  const quiet = /Hover any week/i.test(idle);
+  const reads = /^Week \+\d+ · \d+ units\s+· range \d+ to \d+$/.test(hovered.trim());
+  if (!quiet) fail.push(`13 the demo carried on after a series was chosen: "${idle.trim()}"`);
+  if (!reads) fail.push(`13 the readout did not report the chosen series: "${hovered.trim()}"`);
+  line(`  idle "${idle.trim()}"`);
+  line(`  hovered "${hovered.trim()}"`);
+  line(`  demo stays off ${quiet ? "ok" : "FAIL"} · reads out ${reads ? "ok" : "FAIL"}`);
   await page.close();
 }
 
