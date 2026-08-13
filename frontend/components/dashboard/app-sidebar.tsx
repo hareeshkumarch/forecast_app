@@ -7,6 +7,7 @@ import {
   Database,
   FileBarChart2,
   FileSpreadsheet,
+  FlaskConical,
   LayoutDashboard,
   Layers,
   Settings,
@@ -25,6 +26,7 @@ const APP_NAV: { href: string; label: string; description: string; icon: LucideI
   { href: "/series", label: "Series", description: "Triage by value at risk", icon: Layers },
   { href: "/datasets", label: "Data", description: "Files you have uploaded", icon: FileSpreadsheet },
   { href: "/reports", label: "Reports", description: "Runs and exports", icon: FileBarChart2 },
+  { href: "/scenarios", label: "Scenarios", description: "What-if, compare and monitor", icon: FlaskConical },
   { href: "/connectors", label: "Connectors", description: "Data sources", icon: Database },
   { href: "/usage", label: "LLM Usage", description: "Tokens and cost", icon: Activity },
   { href: "/settings", label: "Settings", description: "Theme and providers", icon: Settings },
@@ -35,6 +37,7 @@ export type AppSection =
   | "series"
   | "datasets"
   | "reports"
+  | "scenarios"
   | "connectors"
   | "usage"
   | "settings";

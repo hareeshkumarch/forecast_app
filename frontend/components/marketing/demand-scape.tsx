@@ -23,6 +23,7 @@ import { useMotionReady } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils";
 
 const HINT = "Hover any week, or focus the chart and use the arrow keys";
+const TOUCH_HINT = "Tap any week to inspect its forecast";
 
 const PALETTE: Record<Tone, { front: string; side: string; top: string; stroke: string }> = {
   history: { front: "#151a16", side: "#3d433e", top: "#4a504b", stroke: "none" },
@@ -57,6 +58,7 @@ function Bar({
     <g
       className={shell ? "scape-bar scape-shell cursor-default" : "scape-bar cursor-default"}
       onMouseEnter={onEnter}
+      onPointerDown={onEnter}
       style={
         {
           "--delay": `${delay}ms`,
@@ -312,18 +314,28 @@ export function DemandScape() {
       {/* Fixed height, so the readout appearing cannot move the page. Full
           width for the same reason horizontally: the line is centred inside a
           box that does not resize with what it is holding. */}
-      <div className="mt-1 flex h-[26px] items-center justify-center">
+      <div className="mt-1 flex min-h-[42px] items-center justify-center sm:h-[26px] sm:min-h-0">
         <p className="scape-readout w-full text-center font-mono text-site-caption" aria-hidden>
           {readout ? (
-            <span className="whitespace-pre">
+            <span className="hidden whitespace-pre sm:inline">
               <span className="text-[#111512]">{readout.label}</span>
               <span className="text-[#585e58]">
                 {` · ${readout.point}`}
                 {readout.range === "actual" ? "" : ` · range ${readout.range}`}
               </span>
             </span>
+          ) : null}
+          {spoken ? (
+            <span className="text-[#585e58] sm:hidden">
+              <span className="text-[#111512]">{spoken.label}</span>
+              {` · ${spoken.point}`}
+              {spoken.range === "actual" ? "" : ` · range ${spoken.range}`}
+            </span>
           ) : (
-            <span className="text-[#858b85]">{HINT}</span>
+            <>
+              <span className="hidden text-[#858b85] sm:inline">{HINT}</span>
+              <span className="text-[#858b85] sm:hidden">{TOUCH_HINT}</span>
+            </>
           )}
         </p>
       </div>

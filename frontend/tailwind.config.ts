@@ -2,6 +2,10 @@ import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 
 const config: Config = {
+  future: {
+    // Prevent hover treatments from sticking after a tap on touch devices.
+    hoverOnlyWhenSupported: true,
+  },
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",

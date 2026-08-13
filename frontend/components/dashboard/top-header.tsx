@@ -20,6 +20,7 @@ import {
   CompactFilters,
   ExportControl,
   RangeControl,
+  ResetFiltersControl,
   RunControl,
   ScenarioControl,
   StatusControl,
@@ -38,6 +39,7 @@ const SECTION_LABEL: Record<AppSection, string> = {
   series: "Series",
   datasets: "Data",
   reports: "Reports",
+  scenarios: "Scenarios",
   connectors: "Connectors",
   usage: "LLM Usage",
   settings: "Settings",
@@ -75,7 +77,7 @@ export function TopHeader({ section }: { section: AppSection }) {
         aria-label="Forecast Hub, back to the home page"
         className={cn(
           "group -ml-0.5 flex min-h-11 items-center gap-2.5 px-1",
-          "transition-colors duration-fast hover:bg-surface-muted fine:min-h-0 fine:py-1",
+          "fine:min-h-0 fine:py-1",
         )}
       >
         <Mark size={24} />
@@ -97,6 +99,7 @@ export function TopHeader({ section }: { section: AppSection }) {
               <RunControl />
               <ScenarioControl />
               <RangeControl />
+              <ResetFiltersControl />
             </div>
             <div className="xl:hidden">
               <CompactFilters />

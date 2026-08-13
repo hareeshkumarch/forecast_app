@@ -26,18 +26,26 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-        finally:
             elapsed_ms = (time.perf_counter() - started) * 1000.0
+            if request.url.path not in _QUIET_PATHS:
+                logger.info(
+                    "%s %s -> %d in %.0fms",
+                    request.method,
+                    request.url.path,
+                    response.status_code,
+                    elapsed_ms,
+                )
 
-        if request.url.path not in _QUIET_PATHS:
-            logger.info(
-                "%s %s -> %d in %.0fms",
+            response.headers[REQUEST_ID_HEADER] = request_id.get()
+            return response
+        except Exception:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            logger.exception(
+                "%s %s failed in %.0fms",
                 request.method,
                 request.url.path,
-                response.status_code,
                 elapsed_ms,
             )
-
-        response.headers[REQUEST_ID_HEADER] = request_id.get()
-        request_id.reset(token)
-        return response
+            raise
+        finally:
+            request_id.reset(token)

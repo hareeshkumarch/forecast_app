@@ -13,6 +13,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
+from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
 from app.services.progress_relay import relay
 
@@ -26,6 +27,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     executors.start()
     relay.start()
+    interrupted = await recover_interrupted_runs()
+    if interrupted:
+        logger.warning(
+            "Marked %d forecast run(s) interrupted by the previous process as retryable failures.",
+            interrupted,
+        )
     logger.info(
         "%s ready — storing to %s (%s), forecasts run %s.",
         settings.app_name,

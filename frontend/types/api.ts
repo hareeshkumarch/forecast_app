@@ -331,6 +331,7 @@ export interface ForecastRun {
   created_at: string;
 
   progress_updated_at?: string | null;
+  retry_of_run_id?: string | null;
 
   scored_at: string | null;
   scored_periods: number;
@@ -691,7 +692,115 @@ export interface HealthResponse {
   forecast_workers: number;
   max_upload_mb: number;
   using_default_credential_key: boolean;
+  environment: "development" | "test" | "production";
+  database_fallback_enabled: boolean;
+  queued_forecast_runs: number;
+  running_forecast_runs: number;
+  failed_forecast_runs: number;
   timestamp: string;
+}
+
+export interface ScenarioPoint {
+  period: string;
+  baseline_forecast: number;
+  simulated_forecast: number;
+  simulated_lower_bound: number | null;
+  simulated_upper_bound: number | null;
+  simulated_best_case: number | null;
+  simulated_worst_case: number | null;
+  delta: number;
+  delta_pct: number;
+}
+
+export interface ScenarioSimulation {
+  run_id: string;
+  volume_multiplier: number;
+  target_shift_pct: number;
+  driver_multipliers: Record<string, number>;
+  baseline_total: number;
+  simulated_total: number;
+  total_delta: number;
+  total_delta_pct: number;
+  simulated_best_case_total: number;
+  simulated_worst_case_total: number;
+  method: string;
+  intervention_size: number;
+  points: ScenarioPoint[];
+}
+
+export interface SavedScenario {
+  id: string;
+  run_id: string;
+  name: string;
+  description: string | null;
+  volume_multiplier: number;
+  target_shift_pct: number;
+  driver_multipliers: Record<string, number>;
+  result: ScenarioSimulation;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RunComparisonSnapshot {
+  run_id: string;
+  name: string;
+  dataset_id: string;
+  model: ModelKind | null;
+  frequency: ForecastFrequency;
+  horizon: number;
+  confidence_level: number;
+  forecast_total: number;
+  realized_accuracy: number | null;
+  realized_wmape: number | null;
+  realized_bias: number | null;
+  realized_coverage: number | null;
+  created_at: string;
+}
+
+export interface RunMetricComparison {
+  name: string;
+  unit: string;
+  left: number | null;
+  right: number | null;
+  delta: number | null;
+  delta_pct: number | null;
+}
+
+export interface RunComparison {
+  left: RunComparisonSnapshot;
+  right: RunComparisonSnapshot;
+  forecast_total_delta: number;
+  forecast_total_delta_pct: number | null;
+  metrics: RunMetricComparison[];
+}
+
+export interface ForecastMonitorItem {
+  run_id: string;
+  name: string;
+  status: RunStatus;
+  model: ModelKind | null;
+  completed_at: string | null;
+  forecast_end: string | null;
+  scored_at: string | null;
+  scored_periods: number;
+  realized_accuracy: number | null;
+  realized_wmape: number | null;
+  realized_bias: number | null;
+  realized_coverage: number | null;
+  alert: string | null;
+  alert_level: "critical" | "warning" | "info" | null;
+  drifted: boolean;
+  can_retry: boolean;
+}
+
+export interface ForecastMonitoring {
+  total: number;
+  healthy: number;
+  attention: number;
+  failed: number;
+  active: number;
+  drift_wmape_limit: number;
+  rows: ForecastMonitorItem[];
 }
 
 export interface LlmUsageTotals {

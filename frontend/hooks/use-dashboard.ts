@@ -14,7 +14,7 @@ import { errorMessage } from "@/lib/errors";
 import { setCurrencySymbol } from "@/lib/format";
 import { llmRunFields, loadLlmConfig, type LlmConfig } from "@/lib/llm-config";
 import { toast } from "@/stores/toast-store";
-import { useDashboardFilters } from "@/stores/ui-store";
+import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { DatasetQuery, RunQuery } from "@/lib/api";
 import type {
   DashboardFilters,
@@ -22,6 +22,7 @@ import type {
   ForecastFrequency,
   GapFill,
   MeasureAggregation,
+  SavedScenario,
   SeriesSort,
 } from "@/types/api";
 
@@ -61,6 +62,10 @@ const queryKeys = {
     ["forecasts", id, "points", start ?? null, end ?? null, seriesId ?? null] as const,
   runSeries: (id: string, query: SeriesQuery) => ["forecasts", id, "series", query] as const,
   runScore: (id: string) => ["forecasts", id, "score"] as const,
+  scenarios: (id: string) => ["forecasts", id, "scenarios"] as const,
+  comparison: (left: string, right: string) => ["forecasts", "compare", left, right] as const,
+  monitoring: ["forecasts", "monitoring"] as const,
+  scenarioDrivers: (id: string) => ["forecasts", id, "scenario-drivers"] as const,
   summary: (f: DashboardFilters) => ["dashboard", "summary", filterKey(f)] as const,
   breakdown: (f: DashboardFilters, column: string) =>
     ["dashboard", "breakdown", column, filterKey(f)] as const,
@@ -72,7 +77,7 @@ const queryKeys = {
 export function useHealth() {
   return useQuery({
     queryKey: queryKeys.health,
-    queryFn: api.getHealth,
+    queryFn: ({ signal }) => api.getHealth(signal),
     refetchInterval: 60_000,
   });
 }
@@ -81,11 +86,20 @@ export function useSummary() {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.summary(filters),
-    queryFn: async () => {
-      const summary = await api.getSummary(filters);
-
-      setCurrencySymbol(summary.currency_symbol);
-      return summary;
+    queryFn: async ({ signal }) => {
+      try {
+        const summary = await api.getSummary(filters, signal);
+        setCurrencySymbol(summary.currency_symbol);
+        return summary;
+      } catch (error) {
+        // A run pinned in session state may have been deleted in another tab
+        // or by a teammate. Fall back to the latest run instead of leaving the
+        // whole dashboard stuck on a recoverable 404.
+        if (error instanceof ApiError && error.status === 404 && filters.runId) {
+          useUiStore.getState().setRunId(null);
+        }
+        throw error;
+      }
     },
   });
 }
@@ -107,7 +121,7 @@ export function useBreakdown(column: string | null) {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.breakdown(filters, column ?? "none"),
-    queryFn: () => api.getBreakdown(filters, column as string),
+    queryFn: ({ signal }) => api.getBreakdown(filters, column as string, signal),
     enabled: Boolean(column),
     placeholderData: keepPreviousData,
   });
@@ -117,7 +131,7 @@ export function useDrivers() {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.drivers(filters),
-    queryFn: () => api.getDrivers(filters),
+    queryFn: ({ signal }) => api.getDrivers(filters, signal),
   });
 }
 
@@ -125,7 +139,7 @@ export function useInsights() {
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.insights(filters),
-    queryFn: () => api.getInsights(filters),
+    queryFn: ({ signal }) => api.getInsights(filters, signal),
   });
 }
 
@@ -182,7 +196,7 @@ export const PICKER_LIMIT = 50;
 export function useForecastRuns(query: RunQuery = {}) {
   return useQuery({
     queryKey: queryKeys.runs(query),
-    queryFn: () => api.listForecastRuns(query),
+    queryFn: ({ signal }) => api.listForecastRuns(query, signal),
 
     refetchInterval: (result) => {
       const counts = result.state.data?.counts;
@@ -196,7 +210,7 @@ export function useForecastRuns(query: RunQuery = {}) {
 export function useLlmUsage(days = 30) {
   return useQuery({
     queryKey: queryKeys.llmUsage(days),
-    queryFn: () => api.getLlmUsage(days),
+    queryFn: ({ signal }) => api.getLlmUsage(days, signal),
     refetchInterval: 30_000,
 
     placeholderData: keepPreviousData,
@@ -207,12 +221,12 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
   const filters = useDashboardFilters();
   return useQuery({
     queryKey: queryKeys.runPoints(runId ?? "none", filters.start, filters.end, seriesId),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.getForecastPoints(runId as string, {
         ...(filters.start ? { start: filters.start } : {}),
         ...(filters.end ? { end: filters.end } : {}),
         ...(seriesId ? { series_id: seriesId } : {}),
-      }),
+      }, signal),
     enabled: Boolean(runId),
 
     placeholderData: keepPreviousData,
@@ -222,7 +236,7 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
 export function useForecastSeries(runId: string | null | undefined, query: SeriesQuery) {
   return useQuery({
     queryKey: queryKeys.runSeries(runId ?? "none", query),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.getForecastSeries(runId as string, {
         sort: query.sort,
         limit: query.limit,
@@ -230,7 +244,7 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
         ...(query.level === undefined ? {} : { level: query.level }),
         ...(query.parentId ? { parent_id: query.parentId } : {}),
         ...(query.search ? { search: query.search } : {}),
-      }),
+      }, signal),
     enabled: Boolean(runId),
     placeholderData: keepPreviousData,
   });
@@ -239,7 +253,7 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
 export function useScorecard(runId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.runScore(runId ?? "none"),
-    queryFn: () => api.getScorecard(runId as string),
+    queryFn: ({ signal }) => api.getScorecard(runId as string, signal),
     enabled: Boolean(runId),
   });
 }
@@ -268,7 +282,7 @@ export function useScoreForecast(runId: string) {
 export function useForecastMetrics(runId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.runMetrics(runId ?? "none"),
-    queryFn: () => api.getForecastMetrics(runId as string),
+    queryFn: ({ signal }) => api.getForecastMetrics(runId as string, signal),
     enabled: Boolean(runId),
   });
 }
@@ -276,7 +290,7 @@ export function useForecastMetrics(runId: string | null | undefined) {
 export function useDatasets(query: DatasetQuery = {}) {
   return useQuery({
     queryKey: queryKeys.datasets(query),
-    queryFn: () => api.listDatasets(query),
+    queryFn: ({ signal }) => api.listDatasets(query, signal),
     placeholderData: keepPreviousData,
   });
 }
@@ -284,7 +298,7 @@ export function useDatasets(query: DatasetQuery = {}) {
 export function useDatasetProfile(id: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.datasetProfile(id ?? "none"),
-    queryFn: () => api.getDatasetProfile(id as string),
+    queryFn: ({ signal }) => api.getDatasetProfile(id as string, signal),
     enabled: Boolean(id),
   });
 }
@@ -292,7 +306,7 @@ export function useDatasetProfile(id: string | null | undefined) {
 export function useDataset(id: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.dataset(id ?? "none"),
-    queryFn: () => api.getDataset(id as string),
+    queryFn: ({ signal }) => api.getDataset(id as string, signal),
     enabled: Boolean(id),
   });
 }
@@ -312,27 +326,132 @@ export function useDatasetQuality(
 
   return useQuery({
     queryKey: queryKeys.datasetQuality(id ?? "none", key),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.getDatasetQuality(id as string, {
         time_column: params.time_column as string,
         target_column: params.target_column as string,
         frequency: params.frequency,
         aggregation: params.aggregation,
         gap_fill: params.gap_fill,
-      }),
+      }, signal),
     enabled: ready,
     retry: false,
   });
 }
 
 export function useConnectors() {
-  return useQuery({ queryKey: queryKeys.connectors, queryFn: api.listConnectors });
+  return useQuery({
+    queryKey: queryKeys.connectors,
+    queryFn: ({ signal }) => api.listConnectors(signal),
+  });
+}
+
+export function useSavedScenarios(runId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.scenarios(runId ?? "none"),
+    queryFn: ({ signal }) => api.listSavedScenarios(runId as string, signal),
+    enabled: Boolean(runId),
+  });
+}
+
+export function useScenarioDrivers(runId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.scenarioDrivers(runId ?? "none"),
+    queryFn: ({ signal }) => api.getDrivers({
+      runId: runId as string,
+      start: null,
+      end: null,
+      view: "base",
+    }, signal),
+    enabled: Boolean(runId),
+  });
+}
+
+export function useSimulateScenario() {
+  return useMutation({
+    mutationFn: ({ runId, ...payload }: {
+      runId: string;
+      volume_multiplier: number;
+      target_shift_pct: number;
+      driver_multipliers?: Record<string, number>;
+    }) => api.simulateScenario(runId, payload),
+    onError: (error: unknown) => toast.error("Could not simulate the scenario", errorMessage(error)),
+  });
+}
+
+export function useSaveScenario() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ runId, ...payload }: {
+      runId: string;
+      name: string;
+      description?: string | null;
+      volume_multiplier: number;
+      target_shift_pct: number;
+      driver_multipliers?: Record<string, number>;
+    }) => api.saveScenario(runId, payload),
+    onSuccess: (scenario) => {
+      client.setQueryData<SavedScenario[]>(queryKeys.scenarios(scenario.run_id), (current) => [
+        scenario,
+        ...(current ?? []).filter((item) => item.id !== scenario.id),
+      ]);
+      void client.invalidateQueries({ queryKey: queryKeys.scenarios(scenario.run_id) });
+      toast.success("Scenario saved", `${scenario.name} is ready to compare and revisit.`);
+    },
+    onError: (error: unknown) => toast.error("Could not save the scenario", errorMessage(error)),
+  });
+}
+
+export function useDeleteSavedScenario() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ runId, scenarioId }: { runId: string; scenarioId: string }) =>
+      api.deleteSavedScenario(runId, scenarioId),
+    onSuccess: (_result, variables) => {
+      client.setQueryData<SavedScenario[]>(queryKeys.scenarios(variables.runId), (current) =>
+        current?.filter((scenario) => scenario.id !== variables.scenarioId) ?? [],
+      );
+      void client.invalidateQueries({ queryKey: queryKeys.scenarios(variables.runId) });
+      toast.success("Scenario removed");
+    },
+    onError: (error: unknown) => toast.error("Could not remove the scenario", errorMessage(error)),
+  });
+}
+
+export function useRunComparison(leftRunId: string | null, rightRunId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.comparison(leftRunId ?? "none", rightRunId ?? "none"),
+    queryFn: ({ signal }) => api.compareForecastRuns(leftRunId as string, rightRunId as string, signal),
+    enabled: Boolean(leftRunId && rightRunId && leftRunId !== rightRunId),
+  });
+}
+
+export function useForecastMonitoring() {
+  return useQuery({
+    queryKey: queryKeys.monitoring,
+    queryFn: ({ signal }) => api.getForecastMonitoring(signal),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: "always",
+  });
+}
+
+export function useRetryForecastRun() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.retryForecastRun,
+    onSuccess: (run) => {
+      void client.invalidateQueries({ queryKey: queryKeys.allRuns });
+      void client.invalidateQueries({ queryKey: queryKeys.monitoring });
+      toast.info("Retry started", `${run.name} is queued with the original configuration.`);
+    },
+    onError: (error: unknown) => toast.error("Could not retry the forecast", errorMessage(error)),
+  });
 }
 
 export function useConnectorTypes() {
   return useQuery({
     queryKey: queryKeys.connectorTypes,
-    queryFn: api.listConnectorTypes,
+    queryFn: ({ signal }) => api.listConnectorTypes(signal),
 
     staleTime: Infinity,
   });
@@ -341,7 +460,7 @@ export function useConnectorTypes() {
 export function useConnectorSchemas(id: string | null) {
   return useQuery({
     queryKey: queryKeys.connectorSchemas(id ?? "none"),
-    queryFn: () => api.listConnectorSchemas(id as string),
+    queryFn: ({ signal }) => api.listConnectorSchemas(id as string, signal),
     enabled: Boolean(id),
     retry: false,
   });

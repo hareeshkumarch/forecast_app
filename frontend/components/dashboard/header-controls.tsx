@@ -2,7 +2,7 @@
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
-import { Calendar, ChevronDown, Download, History, SlidersHorizontal } from "lucide-react";
+import { Calendar, ChevronDown, Download, History, RotateCcw, SlidersHorizontal } from "lucide-react";
 
 import { Field, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
@@ -16,7 +16,7 @@ import {
 import { formatDateRange, formatRelativeTime, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWindowEnd } from "@/lib/periods";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/stores/ui-store";
+import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { ExportFormat, ForecastRun, ForecastView } from "@/types/api";
 
 const LATEST_RUN = "__latest__";
@@ -248,13 +248,18 @@ function RangeFields() {
 }
 
 export function CompactFilters() {
-  const view = useUiStore((state) => state.view);
+  const filters = useDashboardFilters();
+  const view = filters.view;
   const setView = useUiStore((state) => state.setView);
-  const pinnedRunId = useUiStore((state) => state.runId);
+  const pinnedRunId = filters.runId;
   const setRunId = useUiStore((state) => state.setRunId);
+  const resetFilters = useUiStore((state) => state.resetDashboardFilters);
   const { data: runs } = useForecastRuns({ limit: PICKER_LIMIT });
 
   const completed = (runs?.rows ?? []).filter((run) => run.status === "completed");
+  const dirty = Boolean(
+    filters.runId || filters.start || filters.end || filters.view !== DEFAULT_VIEW.value,
+  );
 
   return (
     <Popover.Root>
@@ -296,9 +301,40 @@ export function CompactFilters() {
           <div className="border-t border-border pt-1">
             <RangeFields />
           </div>
+
+          <button
+            type="button"
+            onClick={resetFilters}
+            disabled={!dirty}
+            className="flex h-9 w-full items-center justify-center gap-2 border border-border bg-surface text-caption font-medium text-text-secondary transition-colors duration-fast hover:border-border-strong hover:bg-surface-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Reset dashboard filters
+          </button>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+export function ResetFiltersControl() {
+  const filters = useDashboardFilters();
+  const resetFilters = useUiStore((state) => state.resetDashboardFilters);
+  const dirty = Boolean(
+    filters.runId || filters.start || filters.end || filters.view !== DEFAULT_VIEW.value,
+  );
+
+  if (!dirty) return null;
+  return (
+    <button
+      type="button"
+      onClick={resetFilters}
+      aria-label="Reset dashboard filters"
+      title="Reset dashboard filters"
+      className={cn(TRIGGER, "px-2")}
+    >
+      <RotateCcw className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+    </button>
   );
 }
 

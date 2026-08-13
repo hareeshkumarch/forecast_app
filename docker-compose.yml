@@ -48,6 +48,7 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
+      APP_ENV: ${APP_ENV:-development}
       # Supabase is the store of record. Set SUPABASE_DB_URL (or SUPABASE_URL +
       # SUPABASE_DB_PASSWORD) and every run, dataset and insight is written
       # there; leave them empty and the local postgres service below is used.
@@ -101,6 +102,7 @@ services:
       - --queues=forecasts
       - --concurrency=${WORKER_CONCURRENCY:-2}
     environment:
+      APP_ENV: ${APP_ENV:-development}
       # Workers must resolve to the same store as the API, so they take the
       # same Supabase settings and the same fallback.
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}

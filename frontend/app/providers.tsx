@@ -5,20 +5,30 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ApiError } from "@/lib/api";
-import { usePrefsStore } from "@/stores/prefs-store";
+import { PREFS_STORAGE_KEY, usePrefsStore } from "@/stores/prefs-store";
+import { useUiStore } from "@/stores/ui-store";
 
 function PreferencesBridge() {
   const hydrate = usePrefsStore((state) => state.hydrate);
   const syncSystemTheme = usePrefsStore((state) => state.syncSystemTheme);
+  const hydrateWorkspace = useUiStore((state) => state.hydrateWorkspace);
 
   useEffect(() => {
     hydrate();
+    hydrateWorkspace();
 
     const query = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => syncSystemTheme();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === PREFS_STORAGE_KEY) hydrate(true);
+    };
     query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, [hydrate, syncSystemTheme]);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      query.removeEventListener("change", onChange);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [hydrate, hydrateWorkspace, syncSystemTheme]);
 
   return null;
 }

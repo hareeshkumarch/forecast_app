@@ -76,7 +76,8 @@ export function Landing() {
   const motionReady = useMotionReady();
 
   return (
-    <div className={cn("forecast-landing min-h-screen overflow-hidden bg-[#f1f3ef] text-[#111512]", motionReady && "motion-ready")}>
+    <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-[#f1f3ef] text-[#111512]", motionReady && "motion-ready")}>
+      <a href="#main-content" className="skip-link">Skip to content</a>
       <FloatingNav />
       <main id="main-content">
         <Hero />
@@ -101,39 +102,58 @@ function Eyebrow({ children, light = false }: { children: ReactNode; light?: boo
 
 function Hero() {
   return (
-    <section id="top" className="pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]">
+    <section id="top" className="relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]">
+      <div className="hero-wash pointer-events-none absolute inset-x-0 top-[var(--nav-total)] -z-10 mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" aria-hidden />
+
       <div className="page-shell flex flex-col items-center text-center">
-        <Reveal className="flex items-center justify-center gap-3">
-          <span className="size-2 bg-[#287b59]" aria-hidden />
+        <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
+          <span className="status-dot size-2 bg-[#287b59]" aria-hidden />
           <Eyebrow>Demand forecasting for planning teams</Eyebrow>
         </Reveal>
 
         <Reveal
           as="h1"
           delay={70}
-          className="mt-6 max-w-[17ch] text-balance text-site-display font-bold sm:mt-7"
+          variant="scale"
+          duration={720}
+          className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
         >
           See your demand before it arrives.
         </Reveal>
 
-        <Reveal as="p" delay={140} className="mt-5 max-w-[58ch] text-site-lead text-[#3f463f]">
+        <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-[#3f463f]">
           Connect your sales history and see how much you will sell, week by week, with an honest
           range around every number.
         </Reveal>
 
-        <Reveal delay={210} className="mt-8">
+        <Reveal delay={240} duration={620} className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <Link
             href="/dashboard"
-            className="cta-nudge group inline-flex h-[52px] items-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[56px] sm:px-8"
+            className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[56px] sm:px-8"
           >
             Open the dashboard
             <Arrow />
           </Link>
+          <Link
+            href="#how-it-works"
+            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-[#bfc7bf] bg-[#fafbf9]/75 px-6 text-site-body font-medium text-[#343a35] backdrop-blur-sm hover:border-[#8f9a90] hover:bg-white sm:h-[56px]"
+          >
+            See how it works
+            <span className="ml-2" aria-hidden>↓</span>
+          </Link>
         </Reveal>
       </div>
 
-      <Reveal delay={280} className="page-shell mt-10 sm:mt-12">
-        <DemandScape />
+      <Reveal delay={330} variant="scale" duration={760} className="page-shell mt-10 sm:mt-12">
+        <div className="hero-stage">
+          <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#dbe0da] pb-4">
+            <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-[#5c635d]">Interactive forecast preview</p>
+            <span className="flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-[#287b59]">
+              <span className="status-dot size-1.5 bg-[#287b59]" aria-hidden /> Live example
+            </span>
+          </div>
+          <DemandScape />
+        </div>
       </Reveal>
 
       <Proof />
@@ -156,6 +176,7 @@ function Proof() {
           <Reveal
             key={stat.label}
             delay={index * 70}
+            duration={560}
             className="border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-7"
           >
             <dt className="text-stat font-bold text-[#111512]">
@@ -176,9 +197,9 @@ function HowItWorks() {
   return (
     <section id="how-it-works" className="section-pad border-t border-[#d8ddd7]">
       <div className={cn(SHELL, "grid gap-10 xl:grid-cols-[minmax(0,0.5fr)_minmax(0,1fr)] xl:gap-12")}>
-        <Reveal>
+        <Reveal variant="from-left" duration={640}>
           <Eyebrow>01 — Getting started</Eyebrow>
-          <h2 className="mt-4 max-w-[22ch] text-balance text-site-h2 font-bold">
+          <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
             From a spreadsheet to a plan in three steps.
           </h2>
           <p className="mt-5 max-w-[36ch] text-site-lead text-[#4e554e]">Nothing to configure. Nothing to maintain.</p>
@@ -189,6 +210,8 @@ function HowItWorks() {
             <Reveal
               key={step.title}
               delay={index * 90}
+              variant={step.active ? "scale" : "from-right"}
+              duration={620}
               className={cn(
                 "card-hover flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
                 step.active
@@ -200,7 +223,7 @@ function HowItWorks() {
                 <span className={cn("flex size-10 items-center justify-center border text-site-body", step.active ? "border-[#111512] bg-[#111512] text-white" : "border-[#bcc4bc] text-[#59605a]")}>
                   {index + 1}
                 </span>
-                <step.icon className="size-5 text-[#59605a]" strokeWidth={1.8} aria-hidden />
+                <step.icon className="motion-icon size-5 text-[#59605a]" strokeWidth={1.8} aria-hidden />
               </div>
               <h3 className="mt-5 text-site-h3 font-bold">{step.title}</h3>
               <p className="mt-2 max-w-[42ch] text-site-body text-[#495049]">{step.body}</p>
@@ -217,19 +240,19 @@ function Features() {
   return (
     <section id="features" className="section-pad border-t border-[#d8ddd7]">
       <div className={SHELL}>
-        <Reveal>
+        <Reveal variant="from-left" duration={640}>
           <Eyebrow>What you get</Eyebrow>
-          <h2 className="mt-4 max-w-[26ch] text-balance text-site-h2 font-bold">
+          <h2 className="mt-4 max-w-[26ch] text-balance font-display text-site-h2 font-normal">
             Everything a planner needs, and nothing they do not.
           </h2>
         </Reveal>
 
         <div className="mt-10 grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-3">
           {FEATURES.map((feature, index) => (
-            <Reveal key={feature.title} delay={index * 80} className="card-hover flex flex-col border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 hover:border-[#8f9a90] sm:p-8">
+            <Reveal key={feature.title} delay={index * 100} variant="scale" duration={640} className="card-hover flex flex-col border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 hover:border-[#8f9a90] sm:p-8">
               <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-[#697069]">
                 {feature.number}
-                <feature.icon className="size-5" strokeWidth={1.6} aria-hidden />
+                <feature.icon className="motion-icon size-5" strokeWidth={1.6} aria-hidden />
               </div>
               <h3 className="mt-10 text-site-h3 font-bold">{feature.title}</h3>
               <p className="mt-2 max-w-[42ch] text-site-body text-[#4c534d]">{feature.body}</p>
@@ -245,9 +268,9 @@ function Compare() {
   return (
     <section id="compare" className="section-pad border-t border-[#d8ddd7]">
       <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
-        <Reveal>
+        <Reveal variant="from-left" duration={680}>
           <Eyebrow>Built for a real decision</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance text-site-h2 font-bold">
+          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
             A range tells you more than a perfect-looking line.
           </h2>
           <p className="mt-5 max-w-[46ch] text-site-lead text-[#3f463f]">
@@ -257,7 +280,7 @@ function Compare() {
             One answer, with the uncertainty left in
           </p>
         </Reveal>
-        <Reveal delay={100}>
+        <Reveal delay={120} variant="from-right" duration={720}>
           <RangeVsLine />
         </Reveal>
       </div>
@@ -269,9 +292,9 @@ function Accuracy() {
   return (
     <section id="accuracy" className="section-pad bg-[#111512] text-[#f2f3f1]">
       <div className={cn(SHELL, "grid gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:gap-16")}>
-        <Reveal>
+        <Reveal variant="from-left" duration={680}>
           <Eyebrow light>Accuracy</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance text-site-h2 font-bold">
+          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
             Right about{" "}
             <span className="whitespace-nowrap text-[#287b59]">
               <CountUp value={94} />%
@@ -284,7 +307,7 @@ function Accuracy() {
           </p>
         </Reveal>
 
-        <Reveal delay={100}>
+        <Reveal delay={140} variant="from-right" duration={720}>
           <CheckDiagram />
           <div className="mt-10 border border-white/20">
             <div className="p-6 sm:p-7">
@@ -307,10 +330,10 @@ function Accuracy() {
 function Closing() {
   return (
     <section className="section-pad">
-      <Reveal className="page-shell max-w-[46ch] text-center">
+      <Reveal variant="scale" duration={700} className="page-shell max-w-[46ch] text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
-        <h2 className="mt-4 text-balance text-site-h2 font-bold">See what is coming next.</h2>
-        <Link href="/dashboard" className="cta-nudge group mt-8 inline-flex h-[52px] items-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[56px] sm:px-8">
+        <h2 className="mt-4 text-balance font-display text-site-h2 font-normal">See what is coming next.</h2>
+        <Link href="/dashboard" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] min-[430px]:w-auto sm:h-[56px] sm:px-8">
           Open the dashboard
           <Arrow />
         </Link>

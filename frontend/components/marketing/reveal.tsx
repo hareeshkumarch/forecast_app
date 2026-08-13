@@ -38,6 +38,8 @@ export type RevealProps = {
   as?: ElementType;
   delay?: number;
   amount?: number;
+  variant?: "rise" | "scale" | "from-left" | "from-right" | "fade";
+  duration?: number;
   children: ReactNode;
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
 
@@ -45,6 +47,8 @@ export function Reveal({
   as: Tag = "div",
   delay = 0,
   amount = 0.2,
+  variant = "rise",
+  duration = 520,
   className,
   style,
   children,
@@ -52,11 +56,16 @@ export function Reveal({
 }: RevealProps) {
   const ref = useRef<HTMLElement>(null);
   const [shown, setShown] = useState(false);
-  const revealDelay = Math.min(delay, 180);
+  const revealDelay = Math.max(0, Math.min(delay, 420));
+  const revealDuration = Math.max(180, Math.min(duration, 900));
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    if (window.matchMedia(REDUCED_MOTION).matches) {
+      setShown(true);
+      return;
+    }
 
     // Anything taller than the viewport can never reach a 20% threshold from
     // the top, so clamp what we ask for against the element's own height.
@@ -79,8 +88,13 @@ export function Reveal({
     <Tag
       ref={ref}
       data-shown={shown ? "true" : undefined}
+      data-reveal={variant}
       className={cn("reveal", className)}
-      style={{ ...style, "--reveal-delay": `${revealDelay}ms` } as CSSProperties}
+      style={{
+        ...style,
+        "--reveal-delay": `${revealDelay}ms`,
+        "--reveal-duration": `${revealDuration}ms`,
+      } as CSSProperties}
       {...rest}
     >
       {children}

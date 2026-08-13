@@ -15,7 +15,7 @@ const ROWS = [
 
 export function CheckDiagram() {
   return (
-    <div className="w-full" aria-label="How forecast accuracy is checked against hidden sales history">
+    <div className="w-full" role="img" aria-label="How forecast accuracy is checked against hidden sales history">
       {ROWS.map((row, rowIndex) => (
         <div key={row.label} className="mb-8 last:mb-0">
           <p className="mb-4 font-mono text-site-caption uppercase tracking-[0.17em] text-[#7f8580]">

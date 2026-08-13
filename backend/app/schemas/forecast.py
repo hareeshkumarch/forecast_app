@@ -355,6 +355,7 @@ class ForecastRunRead(ORMModel):
     error_message: str | None
     created_at: datetime
     progress_updated_at: datetime | None = None
+    retry_of_run_id: uuid.UUID | None = None
 
     scored_at: datetime | None = None
     scored_periods: NonNegativeInt = 0
@@ -497,3 +498,93 @@ class WhatIfSimulationResponse(BaseModel):
     #: fraction the total was moved by. The bands widen with it.
     intervention_size: float
     points: list[PointSimulationResult]
+
+
+class SavedScenarioCreate(WhatIfSimulationRequest):
+    name: str = Field(min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class SavedScenarioRead(ORMModel):
+    id: uuid.UUID
+    run_id: uuid.UUID
+    name: str
+    description: str | None
+    volume_multiplier: float
+    target_shift_pct: float
+    driver_multipliers: dict[str, float]
+    result: WhatIfSimulationResponse
+    created_at: datetime
+    updated_at: datetime
+
+
+class RunComparisonSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    name: str
+    dataset_id: uuid.UUID
+    model: ModelKind | None
+    frequency: ForecastFrequency
+    horizon: Horizon
+    confidence_level: Probability
+    forecast_total: float
+    realized_accuracy: float | None
+    realized_wmape: float | None
+    realized_bias: float | None
+    realized_coverage: float | None
+    created_at: datetime
+
+
+class RunMetricComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    unit: str
+    left: float | None
+    right: float | None
+    delta: float | None
+    delta_pct: float | None
+
+
+class RunComparisonResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    left: RunComparisonSnapshot
+    right: RunComparisonSnapshot
+    forecast_total_delta: float
+    forecast_total_delta_pct: float | None
+    metrics: list[RunMetricComparison]
+
+
+class ForecastMonitorItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    name: str
+    status: RunStatus
+    model: ModelKind | None
+    completed_at: datetime | None
+    forecast_end: date | None
+    scored_at: datetime | None
+    scored_periods: NonNegativeInt
+    realized_accuracy: float | None
+    realized_wmape: float | None
+    realized_bias: float | None
+    realized_coverage: float | None
+    alert: str | None
+    alert_level: str | None
+    drifted: bool
+    can_retry: bool
+
+
+class ForecastMonitoringResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total: NonNegativeInt
+    healthy: NonNegativeInt
+    attention: NonNegativeInt
+    failed: NonNegativeInt
+    active: NonNegativeInt
+    drift_wmape_limit: float
+    rows: list[ForecastMonitorItem]

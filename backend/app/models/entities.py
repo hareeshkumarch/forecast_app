@@ -168,6 +168,11 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         foreign_keys="ForecastRun.dataset_id",
     )
 
+    __table_args__ = (
+        Index("ix_datasets_created", "created_at"),
+        Index("ix_datasets_connector", "connector_id"),
+    )
+
 
 class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "dataset_columns"
@@ -242,6 +247,10 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     options: Mapped[dict] = mapped_column(JSONType, default=dict)
     task_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128))
+    retry_of_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("forecast_runs.id", ondelete="SET NULL")
+    )
 
     selected_model: Mapped[ModelKind | None] = mapped_column(_enum(ModelKind, "selected_model"))
     selection_rationale: Mapped[str | None] = mapped_column(Text)
@@ -300,10 +309,23 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     exports: Mapped[list[ExportJob]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    scenarios: Mapped[list[ForecastScenario]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="ForecastScenario.created_at"
+    )
 
     __table_args__ = (
         CheckConstraint("horizon > 0", name="ck_forecast_runs_horizon_positive"),
+        UniqueConstraint("idempotency_key", name="uq_forecast_runs_idempotency_key"),
         Index("ix_forecast_runs_status_created", "status", "created_at"),
+        Index("ix_forecast_runs_dataset_created", "dataset_id", "created_at"),
+        Index(
+            "ix_forecast_runs_completed_lookup",
+            "status",
+            "completed_at",
+            "created_at",
+        ),
+        Index("ix_forecast_runs_scored_dataset", "scored_dataset_id"),
+        Index("ix_forecast_runs_retry_of", "retry_of_run_id"),
     )
 
 
@@ -478,6 +500,7 @@ class ActualObservation(UUIDPrimaryKeyMixin, Base):
         ),
         Index("ix_actual_observations_lookup", "dataset_id", "series_key", "target_date"),
         Index("ix_actual_observations_revised", "dataset_id", "revised_at"),
+        Index("ix_actual_observations_source_dataset", "source_dataset_id"),
     )
 
 
@@ -545,6 +568,41 @@ class ForecastDriver(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="drivers")
 
     __table_args__ = (UniqueConstraint("run_id", "driver", name="uq_forecast_drivers_run_driver"),)
+
+
+class ForecastScenario(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A named, reproducible what-if view over an issued forecast.
+
+    Results are stored with the assumptions so a planning decision does not
+    silently change when the same run is opened later. The source forecast is
+    append-only; scenarios are separate overlays and never mutate it.
+    """
+
+    __tablename__ = "forecast_scenarios"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("forecast_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    volume_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    target_shift_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    driver_multipliers: Mapped[dict] = mapped_column(JSONType, default=dict)
+    result: Mapped[dict] = mapped_column(JSONType, default=dict)
+
+    run: Mapped[ForecastRun] = relationship(back_populates="scenarios")
+
+    __table_args__ = (
+        CheckConstraint(
+            "volume_multiplier >= 0.1 AND volume_multiplier <= 10",
+            name="ck_forecast_scenarios_volume_multiplier",
+        ),
+        CheckConstraint(
+            "target_shift_pct >= -90 AND target_shift_pct <= 1000",
+            name="ck_forecast_scenarios_target_shift",
+        ),
+        Index("ix_forecast_scenarios_run_created", "run_id", "created_at"),
+    )
 
 
 class Insight(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -627,3 +685,5 @@ class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     run: Mapped[ForecastRun] = relationship(back_populates="exports")
+
+    __table_args__ = (Index("ix_export_jobs_run", "run_id"),)

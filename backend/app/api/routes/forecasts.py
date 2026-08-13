@@ -6,13 +6,14 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timezone
+from typing import Annotated
 
 try:
     from datetime import UTC
 except ImportError:
     UTC = timezone.utc  # noqa: UP017
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Header, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -28,6 +29,7 @@ from app.models.enums import PointKind, RunStatus
 from app.schemas.forecast import (
     ForecastMetricRead,
     ForecastMetricsResponse,
+    ForecastMonitoringResponse,
     ForecastPointRead,
     ForecastPointsResponse,
     ForecastProgressEvent,
@@ -36,7 +38,10 @@ from app.schemas.forecast import (
     ForecastRunRead,
     ForecastRunRequest,
     ModelCandidateRead,
+    RunComparisonResponse,
     RunStateCounts,
+    SavedScenarioCreate,
+    SavedScenarioRead,
     ScorecardResponse,
     ScoreRequest,
     SeriesResponse,
@@ -45,7 +50,13 @@ from app.schemas.forecast import (
     WhatIfSimulationRequest,
     WhatIfSimulationResponse,
 )
-from app.services import accuracy_service, forecast_service, scoring_service, series_service
+from app.services import (
+    accuracy_service,
+    forecast_service,
+    scenario_service,
+    scoring_service,
+    series_service,
+)
 from app.services.job_runner import ProgressEvent, progress_bus
 from app.services.progress_relay import latest_from_store
 
@@ -93,7 +104,17 @@ async def list_runs(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Start a forecast run",
 )
-async def start_run(payload: ForecastRunRequest, session: SessionDep) -> ForecastRunRead:
+async def start_run(
+    payload: ForecastRunRequest,
+    session: SessionDep,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)
+    ] = None,
+) -> ForecastRunRead:
+    existing = await forecast_service.run_for_idempotency_key(session, idempotency_key)
+    if existing is not None:
+        return ForecastRunRead.model_validate(existing)
+
     run = await forecast_service.create_run(
         session,
         dataset_id=payload.dataset_id,
@@ -130,12 +151,38 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
         llm_base_url=payload.llm_base_url,
         llm_input_cost_per_million=payload.llm_input_cost_per_million,
         llm_output_cost_per_million=payload.llm_output_cost_per_million,
+        idempotency_key=idempotency_key,
     )
 
     await session.commit()
     await forecast_service.dispatch_run(session, run)
 
     return ForecastRunRead.model_validate(run)
+
+
+@router.get(
+    "/compare",
+    response_model=RunComparisonResponse,
+    summary="Compare two issued forecast runs",
+)
+async def compare_runs(
+    session: SessionDep,
+    left_run_id: uuid.UUID = Query(),
+    right_run_id: uuid.UUID = Query(),
+) -> RunComparisonResponse:
+    return await scenario_service.compare_runs(session, left_run_id, right_run_id)
+
+
+@router.get(
+    "/monitoring",
+    response_model=ForecastMonitoringResponse,
+    summary="Forecast health, drift and recovery queue",
+)
+async def monitor_runs(
+    session: SessionDep,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ForecastMonitoringResponse:
+    return await scenario_service.monitoring(session, limit=limit)
 
 
 @router.post(
@@ -145,6 +192,30 @@ async def start_run(payload: ForecastRunRequest, session: SessionDep) -> Forecas
 )
 async def cancel_run(run_id: uuid.UUID, session: SessionDep) -> ForecastRunRead:
     run = await forecast_service.cancel_run(session, run_id)
+    return ForecastRunRead.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/retry",
+    response_model=ForecastRunRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry a failed forecast with the same configuration",
+)
+async def retry_run(
+    run_id: uuid.UUID,
+    session: SessionDep,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)
+    ] = None,
+) -> ForecastRunRead:
+    existing = await forecast_service.run_for_idempotency_key(session, idempotency_key)
+    if existing is not None:
+        return ForecastRunRead.model_validate(existing)
+    run = await forecast_service.retry_run(
+        session, run_id, idempotency_key=idempotency_key
+    )
+    await session.commit()
+    await forecast_service.dispatch_run(session, run)
     return ForecastRunRead.model_validate(run)
 
 
@@ -316,6 +387,48 @@ async def simulate_run(
         driver_multipliers=payload.driver_multipliers,
     )
     return WhatIfSimulationResponse.model_validate(result)
+
+
+@router.get(
+    "/{run_id}/scenarios",
+    response_model=list[SavedScenarioRead],
+    summary="List saved scenarios for a forecast",
+)
+async def list_scenarios(
+    run_id: uuid.UUID, session: SessionDep
+) -> list[SavedScenarioRead]:
+    rows = await scenario_service.list_scenarios(session, run_id)
+    return [SavedScenarioRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/{run_id}/scenarios",
+    response_model=SavedScenarioRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Simulate and save a named scenario",
+)
+async def save_scenario(
+    run_id: uuid.UUID,
+    payload: SavedScenarioCreate,
+    session: SessionDep,
+) -> SavedScenarioRead:
+    scenario = await scenario_service.save_scenario(session, run_id, payload)
+    await session.commit()
+    return SavedScenarioRead.model_validate(scenario)
+
+
+@router.delete(
+    "/{run_id}/scenarios/{scenario_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a saved scenario",
+)
+async def delete_scenario(
+    run_id: uuid.UUID,
+    scenario_id: uuid.UUID,
+    session: SessionDep,
+) -> Response:
+    await scenario_service.delete_scenario(session, run_id, scenario_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _scorecard(

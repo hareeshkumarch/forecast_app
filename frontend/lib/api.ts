@@ -19,6 +19,7 @@ import type {
   ExportFormat,
   ForecastFrequency,
   ForecastMetricsResponse,
+  ForecastMonitoring,
   ForecastPointsResponse,
   ForecastProgressEvent,
   ForecastRun,
@@ -35,6 +36,9 @@ import type {
   OutlierTreatment,
   RunSort,
   RunState,
+  RunComparison,
+  SavedScenario,
+  ScenarioSimulation,
   Scorecard,
   SeriesResponse,
   SeriesSort,
@@ -67,8 +71,18 @@ export class ApiError extends Error {
   }
 
   get isRetryable(): boolean {
-    return this.status === 0 || this.status >= 500 || this.status === 429;
+    return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500;
   }
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const LONG_REQUEST_TIMEOUT_MS = 120_000;
+
+function mutationKey(scope: string): string {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${scope}:${suffix}`;
 }
 
 function buildQuery(params: Record<string, string | number | boolean | null | undefined>): string {
@@ -91,26 +105,58 @@ export function filterParams(filters: DashboardFilters): Record<string, string |
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
   let response: Response;
+  const parentSignal = init?.signal;
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const abortFromParent = () => controller.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) abortFromParent();
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  const hasBody = init?.body !== undefined && init.body !== null;
+  if (hasBody && !(init?.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
-      headers: {
-        Accept: "application/json",
-        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-        ...init?.headers,
-      },
+      headers,
+      signal: controller.signal,
       cache: "no-store",
     });
   } catch (cause) {
+    if (parentSignal?.aborted) throw cause;
+    if (timedOut) {
+      throw new ApiError(
+        408,
+        "request_timeout",
+        "The API took too long to respond. Please try again.",
+        { timeout_ms: timeoutMs },
+      );
+    }
     throw new ApiError(
       0,
       "network_error",
       "Could not reach the API. Check that the backend is running.",
       { cause: String(cause) },
     );
+  } finally {
+    clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", abortFromParent);
   }
 
   if (response.status === 204) {
@@ -136,11 +182,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const getHealth = () => request<HealthResponse>("/api/health");
+export const getHealth = (signal?: AbortSignal) =>
+  request<HealthResponse>("/api/health", { signal });
 
-export const listConnectors = () => request<Connector[]>("/api/connectors");
+export const listConnectors = (signal?: AbortSignal) =>
+  request<Connector[]>("/api/connectors", { signal });
 
-export const listConnectorTypes = () => request<ConnectorTypeInfo[]>("/api/connectors/types");
+export const listConnectorTypes = (signal?: AbortSignal) =>
+  request<ConnectorTypeInfo[]>("/api/connectors/types", { signal });
 
 export const createConnector = (payload: {
   name: string;
@@ -180,8 +229,8 @@ export const testConnector = (payload: {
     body: JSON.stringify(payload),
   });
 
-export const listConnectorSchemas = (id: string) =>
-  request<ConnectorSchemaList>(`/api/connectors/${id}/schemas`);
+export const listConnectorSchemas = (id: string, signal?: AbortSignal) =>
+  request<ConnectorSchemaList>(`/api/connectors/${id}/schemas`, { signal });
 
 export const importFromConnector = (
   id: string,
@@ -196,7 +245,7 @@ export const importFromConnector = (
   request<Dataset>(`/api/connectors/${id}/import`, {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }, LONG_REQUEST_TIMEOUT_MS);
 
 export interface DatasetQuery {
   search?: string;
@@ -205,10 +254,11 @@ export interface DatasetQuery {
   offset?: number;
 }
 
-export const listDatasets = (query: DatasetQuery = {}) =>
-  request<DatasetPage>(`/api/datasets${buildQuery({ ...query })}`);
+export const listDatasets = (query: DatasetQuery = {}, signal?: AbortSignal) =>
+  request<DatasetPage>(`/api/datasets${buildQuery({ ...query })}`, { signal });
 
-export const getDataset = (id: string) => request<DatasetDetail>(`/api/datasets/${id}`);
+export const getDataset = (id: string, signal?: AbortSignal) =>
+  request<DatasetDetail>(`/api/datasets/${id}`, { signal });
 
 export const getDatasetQuality = (
   id: string,
@@ -219,10 +269,11 @@ export const getDatasetQuality = (
     aggregation?: MeasureAggregation;
     gap_fill?: GapFill;
   },
-) => request<DataQualityResponse>(`/api/datasets/${id}/quality${buildQuery(params)}`);
+  signal?: AbortSignal,
+) => request<DataQualityResponse>(`/api/datasets/${id}/quality${buildQuery(params)}`, { signal });
 
-export const getDatasetProfile = (id: string) =>
-  request<DatasetProfile>(`/api/datasets/${id}/profile`);
+export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
+  request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
 
 export type DateOrder = "auto" | "day_first" | "month_first";
 
@@ -242,7 +293,7 @@ export async function uploadDataset(
   return request<DatasetUploadResponse>("/api/datasets/upload", {
     method: "POST",
     body: form,
-  });
+  }, LONG_REQUEST_TIMEOUT_MS);
 }
 
 export const deleteDataset = (id: string) =>
@@ -271,19 +322,26 @@ export interface RunQuery {
   offset?: number;
 }
 
-export const listForecastRuns = (query: RunQuery = {}) =>
-  request<ForecastRunPage>(`/api/forecasts${buildQuery({ ...query })}`);
+export const listForecastRuns = (query: RunQuery = {}, signal?: AbortSignal) =>
+  request<ForecastRunPage>(`/api/forecasts${buildQuery({ ...query })}`, { signal });
 
-export const getForecastRun = (id: string) => request<ForecastRun>(`/api/forecasts/${id}`);
+export const getForecastRun = (id: string, signal?: AbortSignal) =>
+  request<ForecastRun>(`/api/forecasts/${id}`, { signal });
 
-export const getForecastProgress = (id: string) =>
-  request<ForecastProgressEvent>(`/api/forecasts/${id}/progress`);
+export const getForecastProgress = (id: string, signal?: AbortSignal) =>
+  request<ForecastProgressEvent>(`/api/forecasts/${id}/progress`, { signal });
 
 export const cancelForecastRun = (id: string) =>
   request<ForecastRun>(`/api/forecasts/${id}/cancel`, { method: "POST" });
 
 export const deleteForecastRun = (id: string) =>
   request<void>(`/api/forecasts/${id}`, { method: "DELETE" });
+
+export const retryForecastRun = (id: string) =>
+  request<ForecastRun>(`/api/forecasts/${id}/retry`, {
+    method: "POST",
+    headers: { "Idempotency-Key": mutationKey(`retry:${id}`) },
+  });
 
 export const startForecast = (payload: {
   dataset_id: string;
@@ -314,16 +372,18 @@ export const startForecast = (payload: {
 } & Partial<LlmRunFields>) =>
   request<ForecastRun>("/api/forecasts/run", {
     method: "POST",
+    headers: { "Idempotency-Key": mutationKey("forecast") },
     body: JSON.stringify(payload),
   });
 
-export const getForecastMetrics = (id: string) =>
-  request<ForecastMetricsResponse>(`/api/forecasts/${id}/metrics`);
+export const getForecastMetrics = (id: string, signal?: AbortSignal) =>
+  request<ForecastMetricsResponse>(`/api/forecasts/${id}/metrics`, { signal });
 
 export const getForecastPoints = (
   id: string,
   params: { start?: string; end?: string; series_id?: string } = {},
-) => request<ForecastPointsResponse>(`/api/forecasts/${id}/points${buildQuery(params)}`);
+  signal?: AbortSignal,
+) => request<ForecastPointsResponse>(`/api/forecasts/${id}/points${buildQuery(params)}`, { signal });
 
 export const getForecastSeries = (
   id: string,
@@ -335,9 +395,11 @@ export const getForecastSeries = (
     limit?: number;
     offset?: number;
   } = {},
-) => request<SeriesResponse>(`/api/forecasts/${id}/series${buildQuery(params)}`);
+  signal?: AbortSignal,
+) => request<SeriesResponse>(`/api/forecasts/${id}/series${buildQuery(params)}`, { signal });
 
-export const getScorecard = (id: string) => request<Scorecard>(`/api/forecasts/${id}/score`);
+export const getScorecard = (id: string, signal?: AbortSignal) =>
+  request<Scorecard>(`/api/forecasts/${id}/score`, { signal });
 
 export const scoreForecast = (id: string, datasetId?: string) =>
   request<Scorecard>(`/api/forecasts/${id}/score`, {
@@ -345,21 +407,69 @@ export const scoreForecast = (id: string, datasetId?: string) =>
     body: JSON.stringify({ dataset_id: datasetId ?? null }),
   });
 
+export const simulateScenario = (
+  id: string,
+  payload: {
+    volume_multiplier: number;
+    target_shift_pct: number;
+    driver_multipliers?: Record<string, number>;
+  },
+) => request<ScenarioSimulation>(`/api/forecasts/${id}/simulate`, {
+  method: "POST",
+  body: JSON.stringify(payload),
+}, LONG_REQUEST_TIMEOUT_MS);
+
+export const listSavedScenarios = (id: string, signal?: AbortSignal) =>
+  request<SavedScenario[]>(`/api/forecasts/${id}/scenarios`, { signal });
+
+export const saveScenario = (
+  id: string,
+  payload: {
+    name: string;
+    description?: string | null;
+    volume_multiplier: number;
+    target_shift_pct: number;
+    driver_multipliers?: Record<string, number>;
+  },
+) => request<SavedScenario>(`/api/forecasts/${id}/scenarios`, {
+  method: "POST",
+  body: JSON.stringify(payload),
+}, LONG_REQUEST_TIMEOUT_MS);
+
+export const deleteSavedScenario = (runId: string, scenarioId: string) =>
+  request<void>(`/api/forecasts/${runId}/scenarios/${scenarioId}`, { method: "DELETE" });
+
+export const compareForecastRuns = (
+  leftRunId: string,
+  rightRunId: string,
+  signal?: AbortSignal,
+) => request<RunComparison>(
+  `/api/forecasts/compare${buildQuery({
+    left_run_id: leftRunId,
+    right_run_id: rightRunId,
+  })}`,
+  { signal },
+);
+
+export const getForecastMonitoring = (signal?: AbortSignal) =>
+  request<ForecastMonitoring>("/api/forecasts/monitoring", { signal });
+
 export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/${id}/events`;
 
-export const getSummary = (filters: DashboardFilters) =>
-  request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`);
+export const getSummary = (filters: DashboardFilters, signal?: AbortSignal) =>
+  request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`, { signal });
 
-export const getBreakdown = (filters: DashboardFilters, column: string) =>
+export const getBreakdown = (filters: DashboardFilters, column: string, signal?: AbortSignal) =>
   request<BreakdownResponse>(
     `/api/dashboard/breakdown${buildQuery({ ...filterParams(filters), column })}`,
+    { signal },
   );
 
-export const getDrivers = (filters: DashboardFilters) =>
-  request<DriverResponse>(`/api/dashboard/drivers${buildQuery(filterParams(filters))}`);
+export const getDrivers = (filters: DashboardFilters, signal?: AbortSignal) =>
+  request<DriverResponse>(`/api/dashboard/drivers${buildQuery(filterParams(filters))}`, { signal });
 
-export const getInsights = (filters: DashboardFilters) =>
-  request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`);
+export const getInsights = (filters: DashboardFilters, signal?: AbortSignal) =>
+  request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`, { signal });
 
 export const rewriteInsights = (runId: string | null, llm: LlmRunFields) =>
   request<InsightRewriteResponse>("/api/insights/rewrite", {
@@ -378,8 +488,8 @@ export const checkLlm = (llm: LlmRunFields) =>
     body: JSON.stringify(llm),
   });
 
-export const getLlmUsage = (days = 30) =>
-  request<LlmUsageResponse>(`/api/usage/llm${buildQuery({ days })}`);
+export const getLlmUsage = (days = 30, signal?: AbortSignal) =>
+  request<LlmUsageResponse>(`/api/usage/llm${buildQuery({ days })}`, { signal });
 
 export const exportUrl = (runId: string, format: ExportFormat) =>
   `${API_BASE_URL}/api/exports/${runId}${buildQuery({ format })}`;

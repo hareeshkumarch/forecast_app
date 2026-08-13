@@ -27,24 +27,40 @@ interface ToastState {
 }
 
 let counter = 0;
+const timers = new Map<string, number>();
+
+function clearTimer(id: string): void {
+  const timer = timers.get(id);
+  if (timer !== undefined && typeof window !== "undefined") window.clearTimeout(timer);
+  timers.delete(id);
+}
 
 export const useToastStore = create<ToastState>((set, get) => ({
   toasts: [],
 
   push: (toast) => {
     counter += 1;
-    const id = `toast-${counter}`;
+    const id = `toast-${Date.now()}-${counter}`;
+    const current = get().toasts;
+    const retained = current.slice(-3);
+    current.slice(0, -3).forEach((item) => clearTimer(item.id));
 
-    set((state) => ({ toasts: [...state.toasts.slice(-3), { ...toast, id }] }));
+    set({ toasts: [...retained, { ...toast, id }] });
 
     if (typeof window !== "undefined") {
-      window.setTimeout(() => get().dismiss(id), DURATIONS[toast.tone]);
+      timers.set(id, window.setTimeout(() => get().dismiss(id), DURATIONS[toast.tone]));
     }
     return id;
   },
 
-  dismiss: (id) => set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) })),
-  clear: () => set({ toasts: [] }),
+  dismiss: (id) => {
+    clearTimer(id);
+    set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) }));
+  },
+  clear: () => {
+    timers.forEach((_timer, id) => clearTimer(id));
+    set({ toasts: [] });
+  },
 }));
 
 export const toast = {

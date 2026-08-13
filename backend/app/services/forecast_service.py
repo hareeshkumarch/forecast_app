@@ -271,6 +271,17 @@ async def resolve_run(session: AsyncSession, run_id: uuid.UUID | None) -> Foreca
     return await latest_completed_run(session)
 
 
+async def run_for_idempotency_key(
+    session: AsyncSession, idempotency_key: str | None
+) -> ForecastRun | None:
+    if not idempotency_key:
+        return None
+    result = await session.execute(
+        select(ForecastRun).where(ForecastRun.idempotency_key == idempotency_key).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def create_run(
     session: AsyncSession,
     *,
@@ -306,6 +317,8 @@ async def create_run(
     llm_base_url: str | None = None,
     llm_input_cost_per_million: float | None = None,
     llm_output_cost_per_million: float | None = None,
+    idempotency_key: str | None = None,
+    retry_of_run_id: uuid.UUID | None = None,
 ) -> ForecastRun:
     dataset = await dataset_service.get_dataset(session, dataset_id)
 
@@ -380,6 +393,8 @@ async def create_run(
         aggregation=resolved_aggregation,
         gap_fill=gap_fill,
         outlier_treatment=outlier_treatment,
+        idempotency_key=idempotency_key,
+        retry_of_run_id=retry_of_run_id,
     )
     session.add(run)
     await session.flush()
@@ -417,6 +432,60 @@ async def create_run(
         )
     )
     return run
+
+
+async def retry_run(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    idempotency_key: str | None = None,
+) -> ForecastRun:
+    original = await get_run_state(session, run_id)
+    if original.status != RunStatus.FAILED:
+        raise ValidationError("Only failed forecast runs can be retried.")
+
+    existing = await run_for_idempotency_key(session, idempotency_key)
+    if existing is not None:
+        return existing
+
+    overrides = RunOverrides.from_stored(original.options)
+    return await create_run(
+        session,
+        dataset_id=original.dataset_id,
+        name=f"{original.name} retry"[:200],
+        time_column=original.time_column,
+        target_column=original.target_column,
+        weight_column=original.weight_column,
+        region_column=original.region_column,
+        category_column=original.category_column,
+        group_by=list(original.group_by or []),
+        frequency=original.frequency,
+        horizon=original.horizon,
+        confidence_level=original.confidence_level,
+        aggregation=original.aggregation,
+        gap_fill=original.gap_fill,
+        outlier_treatment=original.outlier_treatment,
+        max_folds=overrides.max_folds,
+        max_series=overrides.max_series,
+        metric_weights=overrides.metric_weights,
+        sarimax_order=overrides.sarimax_order,
+        gbm_max_depth=overrides.gbm_max_depth,
+        gbm_learning_rate=overrides.gbm_learning_rate,
+        candidate_models=overrides.candidate_models,
+        prophet_changepoint_prior_scale=overrides.prophet_changepoint_prior_scale,
+        prophet_interval_width=overrides.prophet_interval_width,
+        outlier_mad_threshold=overrides.outlier_mad_threshold,
+        complexity_penalty_scale=overrides.complexity_penalty_scale,
+        driver_columns=overrides.driver_columns,
+        llm_provider=overrides.llm_provider,
+        llm_api_key=overrides.llm_api_key,
+        llm_model=overrides.llm_model,
+        llm_base_url=overrides.llm_base_url,
+        llm_input_cost_per_million=overrides.llm_input_cost_per_million,
+        llm_output_cost_per_million=overrides.llm_output_cost_per_million,
+        idempotency_key=idempotency_key,
+        retry_of_run_id=original.id,
+    )
 
 
 #: What each role needs the column to actually hold, in the words a customer
@@ -610,6 +679,33 @@ def _validated_grain(
 
 
 _background_tasks: dict[uuid.UUID, asyncio.Task[RunStatus]] = {}
+
+
+async def recover_interrupted_runs() -> int:
+    """Turn orphaned single-process jobs into explicit, retryable failures.
+
+    An in-process executor has no durable queue across a service restart. A run
+    left as pending/running would otherwise look alive forever. Distributed
+    Celery jobs are durable and are deliberately left alone.
+    """
+    if settings.distributed:
+        return 0
+    async with session_scope() as session:
+        result = await session.execute(
+            update(ForecastRun)
+            .where(ForecastRun.status.in_((RunStatus.PENDING, RunStatus.RUNNING)))
+            .values(
+                status=RunStatus.FAILED,
+                stage="interrupted",
+                progress=0.0,
+                error_message=(
+                    "The service restarted before this run finished. Retry it to use the "
+                    "same configuration."
+                ),
+                completed_at=utcnow(),
+            )
+        )
+        return int(result.rowcount or 0)
 
 
 async def dispatch_run(session: AsyncSession, run: ForecastRun) -> None:

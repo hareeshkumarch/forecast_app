@@ -29,19 +29,18 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
     // caller waiting on it always gets a decision back.
     get().resolve(false);
     counter += 1;
-    set({ request: { ...request, id: counter } });
-    return new Promise<boolean>((settle) => {
+    const decision = new Promise<boolean>((settle) => {
       pending = settle;
     });
+    set({ request: { ...request, id: counter } });
+    return decision;
   },
 
   resolve: (answer) => {
     const settle = pending;
     pending = null;
-    if (settle) {
-      set({ request: null });
-      settle(answer);
-    }
+    set({ request: null });
+    settle?.(answer);
   },
 }));
 

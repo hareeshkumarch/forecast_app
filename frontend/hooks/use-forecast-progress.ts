@@ -71,8 +71,10 @@ export function useForecastProgress(
     let source: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const controller = new AbortController();
 
     function teardown() {
+      controller.abort();
       source?.close();
       source = null;
       if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -131,7 +133,7 @@ export function useForecastProgress(
         if (done || pollInFlight) return;
         pollInFlight = true;
         try {
-          apply(await getForecastProgress(id), "polling");
+          apply(await getForecastProgress(id, controller.signal), "polling");
         } catch {
         } finally {
           pollInFlight = false;
@@ -185,7 +187,7 @@ export function useForecastProgress(
       };
     }
 
-    void Promise.resolve(getForecastProgress(id))
+    void Promise.resolve(getForecastProgress(id, controller.signal))
       .then((event) => {
         if (event && newestFrame === 0) apply(event, currentTransport);
       })

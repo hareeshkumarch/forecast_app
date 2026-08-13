@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     app_name: str = "Forecasting Platform"
+    environment: Literal["development", "test", "production"] = Field(
+        default="development", alias="APP_ENV"
+    )
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
 
@@ -148,6 +151,22 @@ class Settings(BaseSettings):
                 "METRIC_WEIGHT_WMAPE, METRIC_WEIGHT_MASE and METRIC_WEIGHT_RMSE cannot all be "
                 "zero: model selection would have nothing left to rank candidates on."
             )
+        if self.environment == "production":
+            if self.database_fallback_enabled:
+                raise ValueError(
+                    "DATABASE_FALLBACK_ENABLED must be false in production so an unreachable "
+                    "primary database cannot split writes onto a local node."
+                )
+            if (
+                self.credential_secret_key == "dev-only-insecure-key-change-me"
+                or len(self.credential_secret_key) < 32
+            ):
+                raise ValueError(
+                    "CREDENTIAL_SECRET_KEY must be a non-default secret of at least 32 "
+                    "characters in production."
+                )
+            if "*" in self.cors_origins:
+                raise ValueError("CORS_ORIGINS cannot contain '*' in production.")
         return self
 
     @property
