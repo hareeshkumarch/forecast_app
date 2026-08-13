@@ -69,6 +69,10 @@
   --section-gap: clamp(3.25rem, 5.5vw, 5.5rem);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* A gentler curve for anything that draws across a distance. `--ease-out`
+   * covers most of its travel in the first quarter of its time, which reads as
+   * a snap and a crawl when the thing travelling is a line being drawn. */
+  --ease-draw: cubic-bezier(0.37, 0.15, 0.25, 1);
 }
 
 @media (min-width: 640px) {
@@ -414,9 +418,28 @@ body {
   }
 }
 
+@keyframes check-ghost {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * The accuracy diagram is told in its own three steps rather than flashing all
+ * sixty bars on one clock — `lib/check-motion.ts` holds the schedule, and each
+ * mark carries its own place in it. `both` covers the wait, so a bar with a
+ * second of delay spends that second at zero rather than at its value.
+ */
 .motion-ready [data-shown="true"] .accuracy-bar {
-  animation: accuracy-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: accuracy-rise var(--bar-rise, 480ms) var(--ease-out) var(--bar-delay, 0ms) both;
   transform-origin: bottom;
+}
+
+.motion-ready [data-shown="true"] .check-ghost {
+  animation: check-ghost var(--ghost-fade, 220ms) var(--ease-out) var(--bar-delay, 0ms) both;
 }
 
 @media (max-width: 639px) {
@@ -469,15 +492,74 @@ body {
   transform: translate3d(0, 0, 0);
 }
 
-/* The rolling-test bars are the only spatial entrance motion on the page. */
 .motion-ready .grow-x {
   transform: scaleX(0);
   transform-origin: left center;
 }
 
 .motion-ready [data-shown="true"] .grow-x {
-  animation: grow-x 420ms var(--ease-out) forwards;
+  animation: grow-x var(--grow-duration, 420ms) var(--ease-out) forwards;
   animation-delay: var(--grow-delay, 0ms);
+}
+
+/*
+ * The comparison panels draw themselves in the order the argument is made:
+ * the history both panels share, then the forecast each one draws its own way
+ * with the range that belongs to it. A clipped wipe rather than a dash offset,
+ * because the line-only panel's forecast is itself dashed — `stroke-dasharray`
+ * cannot be both the drawing and the thing being drawn.
+ *
+ * The wipe also keeps the range honest. Scaling the band instead would show
+ * its full final spread at week one, which is the one thing this section is
+ * arguing against.
+ */
+.draw-wipe {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+.motion-ready .draw-wipe {
+  transform: scaleX(0);
+}
+
+.motion-ready [data-shown="true"] .draw-wipe {
+  animation: grow-x var(--draw-duration, 340ms) var(--ease-draw) var(--draw-delay, 0ms) forwards;
+}
+
+/* What actually happened arrives last, and drops onto the chart. */
+@keyframes outcome-land {
+  from {
+    opacity: 0;
+    transform: translate(0, -7px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes outcome-ring {
+  from {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  to {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+}
+
+.outcome-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.motion-ready [data-shown="true"] .outcome-dot {
+  animation: outcome-land var(--draw-duration, 260ms) var(--ease-out) var(--draw-delay, 0ms) both;
+}
+
+.motion-ready [data-shown="true"] .outcome-ring {
+  animation: outcome-ring var(--draw-duration, 260ms) var(--ease-out) var(--draw-delay, 0ms) both;
 }
 
 @keyframes scape-rise {

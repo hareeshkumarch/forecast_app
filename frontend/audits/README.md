@@ -22,6 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
+node audits/sections.mjs   # motion in the compare and accuracy sections
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -55,6 +56,15 @@ leaves the click falling through to the browser's own ring.
 resizes the viewport instead of scrolling, so `IntersectionObserver` never
 fires and every revealed section photographs blank — an artifact that looks
 exactly like content failing to appear.
+
+**sections.mjs** samples the wipe rects and the bars frame by frame rather than
+reading the timings the components asked for. The two disagree exactly where the
+bugs live: a clip whose `transform-box` the browser did not honour still reports
+the animation it was given while wiping from the wrong origin, and a bar that
+overshoots its value does so between the keyframes rather than at them. It also
+loads the page twice more — once under `prefers-reduced-motion`, once with
+JavaScript switched off — because both of those paths render through CSS that
+the normal path never reaches, and the failure they produce is a blank chart.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

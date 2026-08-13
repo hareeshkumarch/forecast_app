@@ -1,3 +1,7 @@
+import type { CSSProperties } from "react";
+
+import { BAR_RISE, GHOST_FADE, TICK_DRAW, checkDelay } from "@/lib/check-motion";
+
 const TOTAL = 20;
 const HIDDEN = 7;
 const SHOWN = TOTAL - HIDDEN;
@@ -12,7 +16,7 @@ const ROWS = [
 export function CheckDiagram() {
   return (
     <div className="w-full" aria-label="How forecast accuracy is checked against hidden sales history">
-      {ROWS.map((row) => (
+      {ROWS.map((row, rowIndex) => (
         <div key={row.label} className="mb-8 last:mb-0">
           <p className="mb-4 font-mono text-site-caption uppercase tracking-[0.17em] text-[#7f8580]">
             {row.label}
@@ -27,7 +31,13 @@ export function CheckDiagram() {
                 return (
                   <span
                     key={index}
-                    style={{ height: scaledHeight }}
+                    style={
+                      {
+                        height: scaledHeight,
+                        "--bar-delay": `${checkDelay(rowIndex, index, SHOWN, "bar")}ms`,
+                        "--bar-rise": `${BAR_RISE}ms`,
+                      } as CSSProperties
+                    }
                     className="accuracy-bar flex-1 bg-[#d7d8d6]"
                   />
                 );
@@ -37,8 +47,14 @@ export function CheckDiagram() {
                 return (
                   <span
                     key={index}
-                    style={{ height: scaledHeight }}
-                    className="flex-1 border border-dashed border-[#59605b]/25"
+                    style={
+                      {
+                        height: scaledHeight,
+                        "--bar-delay": `${checkDelay(rowIndex, index, SHOWN, "held")}ms`,
+                        "--ghost-fade": `${GHOST_FADE}ms`,
+                      } as CSSProperties
+                    }
+                    className="check-ghost flex-1 border border-dashed border-[#59605b]/25"
                   />
                 );
               }
@@ -46,10 +62,28 @@ export function CheckDiagram() {
               const predicted = height * (index % 2 === 0 ? 0.88 : 1.07);
               return (
                 <span key={index} className="relative flex flex-1 flex-col justify-end">
-                  <span style={{ height: `calc(${predicted}px * 1.28)` }} className="accuracy-bar w-full bg-[#7fbea1]" />
                   <span
-                    style={{ bottom: `calc(${height}px * 1.28)` }}
-                    className="absolute inset-x-0 h-[2px] bg-[#f0f1ef]"
+                    style={
+                      {
+                        height: `calc(${predicted}px * 1.28)`,
+                        "--bar-delay": `${checkDelay(rowIndex, index, SHOWN, "held")}ms`,
+                        "--bar-rise": `${BAR_RISE}ms`,
+                      } as CSSProperties
+                    }
+                    className="accuracy-bar w-full bg-[#7fbea1]"
+                  />
+                  {/* What the week actually came to, drawn across the bar that
+                      guessed at it — so the gap between the two is the thing
+                      that arrives last and stays. */}
+                  <span
+                    style={
+                      {
+                        bottom: `calc(${height}px * 1.28)`,
+                        "--grow-delay": `${checkDelay(rowIndex, index, SHOWN, "tick")}ms`,
+                        "--grow-duration": `${TICK_DRAW}ms`,
+                      } as CSSProperties
+                    }
+                    className="grow-x absolute inset-x-0 h-[2px] bg-[#f0f1ef]"
                   />
                 </span>
               );

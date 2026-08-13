@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { CheckDiagram } from "@/components/marketing/check-diagram";
+import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
@@ -224,7 +225,11 @@ function Accuracy() {
         <Reveal>
           <Eyebrow light>Accuracy</Eyebrow>
           <h2 className="mt-4 max-w-[24ch] text-balance text-site-h2 font-bold">
-            Right about <span className="text-[#287b59]">94%</span> of the sales it had never seen.
+            Right about{" "}
+            <span className="whitespace-nowrap text-[#287b59]">
+              <CountUp value={94} />%
+            </span>{" "}
+            of the sales it had never seen.
           </h2>
           <p className="mt-5 max-w-[52ch] text-site-lead text-[#b9bdb9]">
             That figure comes from your own history, not a benchmark. You can see it for any product,
