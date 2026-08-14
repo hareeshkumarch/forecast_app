@@ -1,0 +1,110 @@
+# Production compose for a single AWS instance.
+#
+# This is the dev compose with three things taken out and two put in.
+#
+# Taken out:
+#   frontend — it is a static export on S3, served by CloudFront. Nothing on
+#              this box needs Node.
+#   redis    — the platform only needs a broker when Celery is doing the
+#   worker     fitting. FORECAST_WORKERS drives an in-process pool instead,
+#              which is the documented single-node default and saves ~500 MB
+#              of RAM on an instance that has 2 GB of it.
+#
+# Put in:
+#   memory limits, so Postgres cannot starve the API on a small box
+#   log rotation, so a long-running instance cannot fill its own disk
+#
+# Usage on the instance:
+#   cd /opt/forecast && docker compose -f deploy/aws/docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-forecasting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-forecasting}
+    # Deliberately no `ports:`. The database is reachable over the compose
+    # network and from nowhere else — there is no security group rule that
+    # would make 5432 safe on a public instance.
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forecasting} -d ${POSTGRES_DB:-forecasting}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../../backend
+    image: ${BACKEND_IMAGE:-forecast-backend:local}
+    # Port 80 on the host, so the security group has one rule and CloudFront
+    # can use the default HTTP port. The container still listens on 8000.
+    ports:
+      - "80:8000"
+    environment:
+      APP_ENV: production
+      # Supabase, when SUPABASE_DB_URL is set in .env; the local postgres
+      # service below when it is not. Both paths are already supported.
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-forecasting}
+      DATABASE_FALLBACK_ENABLED: ${DATABASE_FALLBACK_ENABLED:-true}
+      STORAGE_ROOT: /storage
+      # CloudFront serves the app and the API from one distribution, so every
+      # browser request is same-origin and CORS never comes up. The value is
+      # here for the case where you point a second origin at this box.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?generate one with `openssl rand -hex 32`}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      # One pool worker per vCPU. On a 2-vCPU instance leave this at 2: the
+      # fit stage has a 28-second budget and a single worker will miss it.
+      FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
+      # Seeding runs a real forecast, which is what makes the dashboard look
+      # like a product on first load. It is idempotent, so leaving it on
+      # costs one run per boot and nothing after that.
+      RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      # Empty: without a broker the API fits in-process. Setting these would
+      # require the redis and worker services this file deliberately omits.
+      CELERY_BROKER_URL: ""
+      CELERY_RESULT_BACKEND: ""
+      REDIS_URL: ""
+    volumes:
+      # Uploads, generated Parquet and exports. On EBS, so they survive a
+      # container rebuild and are captured by the instance's snapshots.
+      - /opt/forecast/storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          # Leaves ~1.2 GB for the API and its two fitting processes on a
+          # 2 GB instance, with the rest for Postgres and the host.
+          memory: 1400M
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

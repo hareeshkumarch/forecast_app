@@ -24,7 +24,7 @@ beforeEach(() => {
     sidebarCollapsed: false,
     insightsCollapsed: false,
     resolvedTheme: "light",
-    revision: 0,
+    themeRevision: 0,
   });
 });
 
@@ -130,7 +130,7 @@ describe("applying preferences", () => {
 
 describe("theme toggling", () => {
   it("flips the resolved theme and bumps the revision so charts repaint", () => {
-    const before = usePrefsStore.getState().revision;
+    const before = usePrefsStore.getState().themeRevision;
 
     usePrefsStore.getState().setTheme("light");
     usePrefsStore.getState().toggleTheme();
@@ -138,7 +138,7 @@ describe("theme toggling", () => {
     const state = usePrefsStore.getState();
     expect(state.resolvedTheme).toBe("dark");
     expect(state.theme).toBe("dark");
-    expect(state.revision).toBeGreaterThan(before);
+    expect(state.themeRevision).toBeGreaterThan(before);
   });
 
   it("leaves an explicit choice alone when the OS changes", () => {
