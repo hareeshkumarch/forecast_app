@@ -44,6 +44,16 @@ it wants a disk.
 in-process task instead. The production compose file here therefore drops the
 `redis` and `worker` services, which is ~500 MB of RAM back on a small box.
 
+**Postgres is optional too, if Supabase is the store of record.** The compose
+file keeps a local Postgres behind a `localdb` profile for the case where it
+is not. With `SUPABASE_DB_URL` set there is nothing for it to do —
+`DATABASE_FALLBACK_ENABLED` must be `false` in production, so the local node
+would never be written to — and leaving it out hands another ~512 MB to the
+fitting pool. On a 2 GB box that is the difference between comfortable and
+tight. Supabase's pooled host (`…pooler.supabase.com:6543`) is detected, and
+server-side statement caching is disabled for it because pgbouncer in
+transaction mode cannot carry a prepared statement between statements.
+
 ---
 
 ## The architecture
@@ -193,7 +203,8 @@ that change the number.
 
 | File | What it is |
 | --- | --- |
-| `docker-compose.prod.yml` | The instance's compose file: backend + Postgres, no frontend, no Redis, no Celery worker. |
+| `docker-compose.prod.yml` | The instance's compose file: the backend, no frontend, no Redis, no Celery worker, and Postgres only under the `localdb` profile. |
+| `env.production.example` | The shape of `/opt/forecast/.env`, with placeholders. The real one holds a database password and never goes into git. |
 | `user-data.sh` | EC2 first-boot script. Installs Docker, generates secrets, adds swap, installs a systemd unit, sets up log rotation and image pruning. |
 | `deploy-frontend.sh` | Builds the static export and publishes it to S3 with correct cache headers, then invalidates CloudFront. |
 | `aws-costs.md` | What it costs per month, how long $100 lasts, and how to make it last longer. |

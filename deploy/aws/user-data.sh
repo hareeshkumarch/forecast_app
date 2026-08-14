@@ -12,7 +12,7 @@
 #   a systemd unit that starts compose on boot and restarts it on failure
 #
 # It does NOT open any port to the world. The security group does that, and it
-# should allow :80 from CloudFront's prefix list only — see aws-hosting.md.
+# should allow :80 from CloudFront only — see runbook.md step 5.
 set -euxo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/hareeshkumarch/forecast_app.git}"
@@ -60,16 +60,39 @@ mkdir -p "$APP_DIR/storage"
 # ---- secrets --------------------------------------------------------------
 # Written once. A rewrite would roll CREDENTIAL_SECRET_KEY, and every stored
 # connector credential is encrypted with it — they would all fail to decrypt.
+#
+# SUPABASE_DB_URL is left blank here on purpose: a connection string with a
+# password in it does not belong in user-data, which is readable from the
+# instance metadata service by anything running on the box. Paste it into
+# /opt/forecast/.env after first boot, or pull it from SSM Parameter Store.
 if [ ! -f "$APP_DIR/.env" ]; then
   umask 077
   cat > "$APP_DIR/.env" <<EOF
+# To point this at Supabase:
+#   1. paste the URI from Project Settings -> Database -> Connection string
+#   2. blank COMPOSE_PROFILES below, so the local Postgres stops starting
+#   3. systemctl restart forecast
+SUPABASE_URL=
+SUPABASE_DB_URL=
+
+# Compose reads this from ./.env by itself. 'localdb' starts the bundled
+# Postgres, which is what an instance with no Supabase needs. Set it empty
+# once SUPABASE_DB_URL is filled in — with Supabase as the store of record a
+# local Postgres is 512 MB the fit stage would rather have.
+COMPOSE_PROFILES=localdb
+
+# Refuses the fallback rather than splitting writes. Required in production.
+DATABASE_FALLBACK_ENABLED=false
+
+CREDENTIAL_SECRET_KEY=$(openssl rand -hex 32)
+FORECAST_WORKERS=2
+RUN_SEED_ON_STARTUP=false
+LOG_LEVEL=INFO
+
+# Only read under the \`localdb\` compose profile.
 POSTGRES_USER=forecasting
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 POSTGRES_DB=forecasting
-CREDENTIAL_SECRET_KEY=$(openssl rand -hex 32)
-FORECAST_WORKERS=2
-RUN_SEED_ON_STARTUP=true
-LOG_LEVEL=INFO
 EOF
 fi
 

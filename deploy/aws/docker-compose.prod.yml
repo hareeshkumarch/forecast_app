@@ -11,18 +11,31 @@
 #              of RAM on an instance that has 2 GB of it.
 #
 # Put in:
-#   memory limits, so Postgres cannot starve the API on a small box
+#   memory limits, so nothing on the box can starve the API
 #   log rotation, so a long-running instance cannot fill its own disk
 #
-# Usage on the instance:
-#   cd /opt/forecast && docker compose -f deploy/aws/docker-compose.prod.yml up -d
+# Two ways to run it, decided by whether SUPABASE_DB_URL is set in .env:
+#
+#   # Supabase is the store of record — nothing else to start
+#   docker compose -f deploy/aws/docker-compose.prod.yml up -d --build
+#
+#   # no Supabase: bring up the local Postgres alongside the API
+#   docker compose -f deploy/aws/docker-compose.prod.yml --profile localdb up -d --build
+#
+# The Supabase path is the better one on a 2 GB box: it hands ~512 MB back to
+# the forecasting pool and moves backups onto someone else's rota.
 
 services:
   postgres:
+    # Only started with `--profile localdb`. With Supabase configured this
+    # service is dead weight — production refuses the fallback anyway (see
+    # DATABASE_FALLBACK_ENABLED below), so an unused Postgres would sit there
+    # holding memory that the fit stage wants.
+    profiles: ["localdb"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-forecasting}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forecasting}
       POSTGRES_DB: ${POSTGRES_DB:-forecasting}
     # Deliberately no `ports:`. The database is reachable over the compose
     # network and from nowhere else — there is no security group rule that
@@ -60,9 +73,14 @@ services:
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:-}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-forecasting}
-      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-forecasting}
-      DATABASE_FALLBACK_ENABLED: ${DATABASE_FALLBACK_ENABLED:-true}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      SYNC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-forecasting}:${POSTGRES_PASSWORD:-forecasting}@postgres:5432/${POSTGRES_DB:-forecasting}
+      # Must be false whenever APP_ENV=production — config.py raises on the
+      # combination and the API will not start. That is deliberate: a
+      # half-reachable Supabase would otherwise split writes onto a local node
+      # that nothing reads, and you would not find out until the numbers
+      # disagreed. Fail the boot instead.
+      DATABASE_FALLBACK_ENABLED: "false"
       STORAGE_ROOT: /storage
       # CloudFront serves the app and the API from one distribution, so every
       # browser request is same-origin and CORS never comes up. The value is
@@ -91,6 +109,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        # Without the localdb profile there is no Postgres to wait for, and
+        # the API should start anyway — Supabase is the store of record.
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status==200 else 1)\""]
       interval: 30s

@@ -135,11 +135,62 @@ aws ssm start-session --target <instance-id>
 sudo journalctl -u forecast -f
 ```
 
-Wait for the health endpoint before going on:
+### 2b. Point it at Supabase
+
+`user-data.sh` deliberately leaves `SUPABASE_DB_URL` blank. A connection
+string with a password in it must not go into user data — that is readable
+from the instance metadata service by anything running on the box, including
+an SSRF in the app. Paste it in afterwards instead:
 
 ```bash
-curl -f http://<instance-public-dns>/api/health
+sudo vi /opt/forecast/.env
 ```
+
+```ini
+SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_DB_URL=postgresql://postgres.YOUR-PROJECT-REF:YOUR-PASSWORD@aws-0-YOUR-REGION.pooler.supabase.com:6543/postgres
+
+# was `localdb` — blank it, so the bundled Postgres stops starting
+COMPOSE_PROFILES=
+```
+
+```bash
+sudo systemctl restart forecast
+```
+
+Three things worth knowing about this:
+
+- **The pooled host is the right one to use.** `…pooler.supabase.com:6543` is
+  detected, and the platform turns off server-side statement caching for it,
+  because pgbouncer in transaction mode cannot carry a prepared statement
+  between statements. Both the `:6543` port and the `pooler.supabase` host
+  trigger it.
+- **`DATABASE_FALLBACK_ENABLED` must stay `false`.** `APP_ENV=production`
+  with the fallback on is rejected by `config.py` and the API will not start.
+  That is deliberate: with the fallback on, a Supabase outage diverts writes
+  to a local node nothing reads, and the first symptom is two sets of numbers
+  that disagree.
+- **Dropping the local Postgres is worth ~512 MB** on a 2 GB box, which is
+  memory the fit stage would rather have. That is what blanking
+  `COMPOSE_PROFILES` does.
+
+`SUPABASE_ANON_KEY` has no effect here. The backend connects to Postgres
+directly over the DSN and never goes through PostgREST, so there is no anon
+key for it to use; `config.py` ignores unknown keys, so setting it is harmless
+but does nothing.
+
+Confirm which store it actually chose. `/api/health` reports
+`database_target` as `supabase` or `local`, and returns `status: degraded`
+whenever Supabase is configured but something else is serving:
+
+```bash
+curl -fsS http://<instance-public-dns>/api/health
+# want: "database_target":"supabase", "status":"ok"
+```
+
+With the fallback off, a wrong password does not degrade — it fails the boot,
+so the symptom is a service that never comes up. `journalctl -u forecast -n 50`
+has the reason.
 
 ---
 
