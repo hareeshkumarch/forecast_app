@@ -78,7 +78,9 @@ async def _forecast_total(session: AsyncSession, run_id: uuid.UUID) -> float:
             ForecastPoint.series_id.is_(None),
         )
     )
-    return round(float(result.scalar_one()), 4)
+    # COALESCE guarantees a value, but the column is nullable so the checker
+    # still types the result as optional.
+    return round(float(result.scalar_one() or 0.0), 4)
 
 
 def _accuracy(wmape: float | None) -> float | None:
@@ -127,7 +129,9 @@ async def compare_runs(
         right_value = float(right_metric.value) if right_metric else None
         delta = None if left_value is None or right_value is None else right_value - left_value
         delta_pct = (
-            None if delta is None or left_value == 0 else round(delta / abs(left_value) * 100.0, 2)
+            None
+            if delta is None or left_value is None or left_value == 0
+            else round(delta / abs(left_value) * 100.0, 2)
         )
         metrics.append(
             RunMetricComparison(
@@ -161,6 +165,10 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
     drifted = bool(
         run.realized_wmape is not None and run.realized_wmape > settings.drift_wmape_limit
     )
+    # Bound once rather than called twice in the branch below: two calls are two
+    # separate Optionals as far as a type checker is concerned, so the second
+    # cannot be compared without narrowing the first all over again.
+    realized_accuracy = _accuracy(run.realized_wmape)
 
     if run.status == RunStatus.FAILED:
         alert = run.error_message or "The run failed before producing a forecast."
@@ -174,11 +182,7 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
             f"{settings.drift_wmape_limit:.1f}% drift limit."
         )
         level = "warning"
-    elif (
-        run.realized_wmape is not None
-        and _accuracy(run.realized_wmape) is not None
-        and _accuracy(run.realized_wmape) < settings.insight_accuracy_warning
-    ):
+    elif realized_accuracy is not None and realized_accuracy < settings.insight_accuracy_warning:
         alert = "Realized accuracy is below the review threshold."
         level = "warning"
     elif (
