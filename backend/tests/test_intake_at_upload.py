@@ -65,9 +65,7 @@ class TestAFileThatCannotBeForecastIsRefused:
         assert after == before, "a refused upload is not left on disk"
         assert (await client.get("/api/datasets?limit=200")).json()["total"] == listed
 
-    async def test_the_refusal_travels_through_the_service_too(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_the_refusal_travels_through_the_service_too(self, session: AsyncSession) -> None:
         content = csv_bytes(["week"], [[day.isoformat()] for day in weekly(30)])
 
         with pytest.raises(ValidationError) as raised:
@@ -94,9 +92,7 @@ class TestAFileThatNeedsAnAnswerAsksForOne:
         assert asked["options"]
         assert asked["evidence"], "the rows it means are named"
 
-    async def test_the_question_survives_a_reload_of_the_dataset(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_the_question_survives_a_reload_of_the_dataset(self, client: AsyncClient) -> None:
         rows: list[list[object]] = []
         for day in weekly(30):
             rows.append([day.isoformat(), 100.0])
@@ -117,9 +113,7 @@ class TestAFileThatIsFineIsNotObstructed:
     async def test_the_sample_panel_uploads_with_nothing_to_answer(
         self, client: AsyncClient
     ) -> None:
-        payload = (
-            await client.post(UPLOAD, files=send(generate_csv_bytes(), "sample.csv"))
-        ).json()
+        payload = (await client.post(UPLOAD, files=send(generate_csv_bytes(), "sample.csv"))).json()
 
         assert payload["needs_confirmation"] is False
         assert payload["questions"] == []
@@ -129,9 +123,7 @@ class TestAFileThatIsFineIsNotObstructed:
     async def test_the_chosen_columns_are_reported_with_their_runner_up(
         self, client: AsyncClient
     ) -> None:
-        payload = (
-            await client.post(UPLOAD, files=send(generate_csv_bytes(), "sample.csv"))
-        ).json()
+        payload = (await client.post(UPLOAD, files=send(generate_csv_bytes(), "sample.csv"))).json()
 
         choices = {row["role"]: row for row in payload["dataset"]["intake"]["columns"]}
 

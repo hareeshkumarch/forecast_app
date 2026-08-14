@@ -23,9 +23,7 @@ from app.schemas.forecast import (
 from app.services import forecast_service
 
 
-async def list_scenarios(
-    session: AsyncSession, run_id: uuid.UUID
-) -> list[ForecastScenario]:
+async def list_scenarios(session: AsyncSession, run_id: uuid.UUID) -> list[ForecastScenario]:
     await forecast_service.get_run_state(session, run_id)
     result = await session.execute(
         select(ForecastScenario)
@@ -61,9 +59,7 @@ async def save_scenario(
     return scenario
 
 
-async def delete_scenario(
-    session: AsyncSession, run_id: uuid.UUID, scenario_id: uuid.UUID
-) -> None:
+async def delete_scenario(session: AsyncSession, run_id: uuid.UUID, scenario_id: uuid.UUID) -> None:
     result = await session.execute(
         delete(ForecastScenario).where(
             ForecastScenario.id == scenario_id,
@@ -131,9 +127,7 @@ async def compare_runs(
         right_value = float(right_metric.value) if right_metric else None
         delta = None if left_value is None or right_value is None else right_value - left_value
         delta_pct = (
-            None
-            if delta is None or left_value == 0
-            else round(delta / abs(left_value) * 100.0, 2)
+            None if delta is None or left_value == 0 else round(delta / abs(left_value) * 100.0, 2)
         )
         metrics.append(
             RunMetricComparison(
@@ -165,8 +159,7 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
     alert: str | None = None
     level: str | None = None
     drifted = bool(
-        run.realized_wmape is not None
-        and run.realized_wmape > settings.drift_wmape_limit
+        run.realized_wmape is not None and run.realized_wmape > settings.drift_wmape_limit
     )
 
     if run.status == RunStatus.FAILED:
@@ -188,7 +181,9 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
     ):
         alert = "Realized accuracy is below the review threshold."
         level = "warning"
-    elif run.forecast_end is not None and run.forecast_end <= date.today() and not run.scored_periods:
+    elif (
+        run.forecast_end is not None and run.forecast_end <= date.today() and not run.scored_periods
+    ):
         alert = "Forecast periods have elapsed; score this run against the latest actuals."
         level = "warning"
 

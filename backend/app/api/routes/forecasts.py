@@ -211,9 +211,7 @@ async def retry_run(
     existing = await forecast_service.run_for_idempotency_key(session, idempotency_key)
     if existing is not None:
         return ForecastRunRead.model_validate(existing)
-    run = await forecast_service.retry_run(
-        session, run_id, idempotency_key=idempotency_key
-    )
+    run = await forecast_service.retry_run(session, run_id, idempotency_key=idempotency_key)
     await session.commit()
     await forecast_service.dispatch_run(session, run)
     return ForecastRunRead.model_validate(run)
@@ -394,9 +392,7 @@ async def simulate_run(
     response_model=list[SavedScenarioRead],
     summary="List saved scenarios for a forecast",
 )
-async def list_scenarios(
-    run_id: uuid.UUID, session: SessionDep
-) -> list[SavedScenarioRead]:
+async def list_scenarios(run_id: uuid.UUID, session: SessionDep) -> list[SavedScenarioRead]:
     rows = await scenario_service.list_scenarios(session, run_id)
     return [SavedScenarioRead.model_validate(row) for row in rows]
 

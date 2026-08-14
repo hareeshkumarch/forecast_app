@@ -100,10 +100,14 @@ class TestRerunningProducesASecondRun:
         await session.commit()
 
         rows = (
-            await session.execute(
-                select(ForecastPoint).where(ForecastPoint.run_id.in_([first.id, second.id]))
+            (
+                await session.execute(
+                    select(ForecastPoint).where(ForecastPoint.run_id.in_([first.id, second.id]))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert first.id != second.id
         assert {row.run_id for row in rows} == {first.id, second.id}
@@ -192,9 +196,7 @@ class TestOrdinaryTablesStillMutate:
 
         assert run.status == RunStatus.FAILED
 
-    async def test_an_unrelated_id_is_not_caught_by_the_guard(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_an_unrelated_id_is_not_caught_by_the_guard(self, session: AsyncSession) -> None:
         dataset = await _dataset(session)
         await session.commit()
         assert isinstance(dataset.id, uuid.UUID)

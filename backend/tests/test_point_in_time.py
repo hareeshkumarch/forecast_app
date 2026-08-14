@@ -114,14 +114,14 @@ class TestRollingWindowsAreClosedOnTheLeft:
         before_row = rows.index(59)
 
         mean_column = names.index("roll_mean_4")
-        assert matrix[step_row, mean_column] == pytest.approx(10.0), (
-            "roll_mean_4 already knew about the step at the period it happened"
-        )
+        assert matrix[step_row, mean_column] == pytest.approx(
+            10.0
+        ), "roll_mean_4 already knew about the step at the period it happened"
 
         for column in rolling:
-            assert matrix[step_row, column] == pytest.approx(matrix[before_row, column]), (
-                f"{names[column]} moved on the period the step happened"
-            )
+            assert matrix[step_row, column] == pytest.approx(
+                matrix[before_row, column]
+            ), f"{names[column]} moved on the period the step happened"
 
     def test_the_step_does_become_visible_one_period_later(self) -> None:
         values = np.concatenate([np.full(60, 10.0), np.full(60, 1000.0)])
@@ -163,9 +163,7 @@ class TestTheFutureRowSeesOnlyHistory:
         built = spec()
         build_design_matrix(full[:cut], periods[:cut], built, WEEKLY)
 
-        from_history = build_future_row(
-            full[:cut], periods[:cut], periods[cut], built, WEEKLY
-        )
+        from_history = build_future_row(full[:cut], periods[:cut], periods[cut], built, WEEKLY)
         again = build_future_row(full[:cut], periods[:cut], periods[cut], built, WEEKLY)
 
         np.testing.assert_array_equal(from_history, again)

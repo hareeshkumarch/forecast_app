@@ -196,7 +196,6 @@ class TestPercentile:
 
 
 class TestTheReferenceRunFitsTheBudget:
-
     @pytest.mark.slow
     def test_p95_of_the_reference_dataset_is_under_a_minute(self) -> None:
         periods = weeks()

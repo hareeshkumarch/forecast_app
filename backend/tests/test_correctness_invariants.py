@@ -28,7 +28,6 @@ def weeks(count: int, start: date = date(2023, 1, 2)) -> list[date]:
 
 @dataclass
 class MeanOfTraining:
-
     level: float = float("nan")
 
     @property
@@ -118,9 +117,9 @@ class TestBacktestIsARollingOrigin:
         shuffled = rng.permutation(120)
         train, test = shuffled[:96], shuffled[96:]
 
-        assert not max(train) < min(test), (
-            "a random split happened to be ordered; the invariant would not have caught it"
-        )
+        assert not max(train) < min(
+            test
+        ), "a random split happened to be ordered; the invariant would not have caught it"
 
     def test_a_plan_with_one_origin_is_not_accepted_as_a_backtest(self) -> None:
         plan = BacktestPlan(scheme="expanding", horizon=8, cut_points=[96], initial_train=96)
@@ -138,9 +137,7 @@ class TestBacktestIsARollingOrigin:
 
 class TestIntervalsAreCalibratedNotJustEmitted:
     @pytest.mark.parametrize("nominal", [0.5, 0.8, 0.95])
-    def test_every_served_level_lands_within_five_points_of_its_claim(
-        self, nominal: float
-    ) -> None:
+    def test_every_served_level_lands_within_five_points_of_its_claim(self, nominal: float) -> None:
         rng = np.random.default_rng(5)
         points = [
             HeldOutPoint(

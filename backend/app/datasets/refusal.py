@@ -34,7 +34,6 @@ class Verdict(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class Question:
-
     code: str
     column: str | None
     question: str
@@ -53,7 +52,6 @@ class Question:
 
 @dataclass(slots=True, frozen=True)
 class Quarantine:
-
     code: str
     reason: str
     count: int
@@ -70,7 +68,6 @@ class Quarantine:
 
 @dataclass(slots=True, frozen=True)
 class ColumnChoice:
-
     role: str
     chosen: str | None
     confidence: float
@@ -103,7 +100,6 @@ class ColumnChoice:
 
 @dataclass(slots=True)
 class SeriesGate:
-
     label: str
     observations: int
     required: int
@@ -317,7 +313,10 @@ def assess(
                     f"Every date in '{chosen_time.name}' fits both day/month and month/day, so "
                     "the order cannot be read from the file. Which is it?"
                 ),
-                options=("day/month (15/01/2024 is 15 January)", "month/day (01/15/2024 is 15 January)"),
+                options=(
+                    "day/month (15/01/2024 is 15 January)",
+                    "month/day (01/15/2024 is 15 January)",
+                ),
                 evidence=_conflicting_dates(frame, chosen_time.name),
             )
         )

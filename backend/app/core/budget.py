@@ -60,7 +60,6 @@ class StageTiming:
 
 @dataclass(slots=True)
 class RunTimings:
-
     stages: list[StageTiming] = field(default_factory=list)
 
     @property
