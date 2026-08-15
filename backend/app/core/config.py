@@ -44,11 +44,19 @@ class Settings(BaseSettings):
     #: which is the single-node default. This is a backup of the one artifact
     #: that cannot be regenerated, not a relocation of the read path — see
     #: app/core/object_store.py.
-    storage_bucket: str = Field(default="", alias="SUPABASE_STORAGE_BUCKET")
-    #: Needs insert rights on that bucket. The anon/publishable key can list a
-    #: public bucket but generally cannot write, so this is usually a
-    #: storage-scoped S3 access key or the service role key.
-    storage_api_key: str = Field(default="", alias="SUPABASE_STORAGE_KEY")
+    storage_bucket: str = Field(default="", alias="STORAGE_BUCKET")
+    #: Supabase exposes an S3-compatible endpoint per project, of the form
+    #: https://<ref>.storage.supabase.co/storage/v1/s3. Any other
+    #: S3-compatible endpoint works here too, real S3 included.
+    storage_endpoint: str = Field(default="", alias="STORAGE_ENDPOINT")
+    #: A storage-scoped S3 access key, from Supabase's Project Settings ->
+    #: Storage. Deliberately not the service role key: that one bypasses
+    #: row-level security across the whole database, where this needs only
+    #: "may write one bucket".
+    storage_access_key_id: str = Field(default="", alias="STORAGE_ACCESS_KEY_ID")
+    storage_secret_access_key: str = Field(default="", alias="STORAGE_SECRET_ACCESS_KEY")
+    #: Supabase reports the project's region; SigV4 needs it to match.
+    storage_region: str = Field(default="ap-south-1", alias="STORAGE_REGION")
 
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 

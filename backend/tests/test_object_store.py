@@ -5,12 +5,19 @@ that otherwise succeeded."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-import httpx
 import pytest
 
 from app.core import object_store
 from app.core.config import settings
+
+
+@pytest.fixture(autouse=True)
+def _fresh_client() -> Any:
+    object_store.reset_client()
+    yield
+    object_store.reset_client()
 
 
 @pytest.fixture
@@ -22,38 +29,53 @@ def upload(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "supabase_url", "https://project.supabase.co", raising=False)
     monkeypatch.setattr(settings, "storage_bucket", "file", raising=False)
-    monkeypatch.setattr(settings, "storage_api_key", "test-key", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "storage_endpoint",
+        "https://project.storage.supabase.co/storage/v1/s3",
+        raising=False,
+    )
+    monkeypatch.setattr(settings, "storage_access_key_id", "key-id", raising=False)
+    monkeypatch.setattr(settings, "storage_secret_access_key", "secret", raising=False)
+    monkeypatch.setattr(settings, "storage_region", "ap-south-1", raising=False)
 
 
-def _transport(handler) -> object:
-    """Swap httpx's network for a handler, without touching call sites."""
+class _Recorder:
+    """Stands in for the boto3 client, recording what it was asked to store."""
 
-    class Client(httpx.AsyncClient):
-        def __init__(self, **kwargs):
-            kwargs["transport"] = httpx.MockTransport(handler)
-            super().__init__(**kwargs)
+    def __init__(self, raises: Exception | None = None) -> None:
+        self.raises = raises
+        self.calls: list[dict[str, Any]] = []
 
-    return Client
+    def put_object(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if self.raises is not None:
+            raise self.raises
+        return {"ETag": '"abc"'}
+
+
+def _use(monkeypatch: pytest.MonkeyPatch, client: _Recorder) -> None:
+    monkeypatch.setattr(object_store, "_build_client", lambda: client)
 
 
 # --------------------------------------------------------------- unconfigured
 
 
 async def test_an_unconfigured_platform_archives_nothing(upload: Path) -> None:
-    # The single-node default: no bucket, no key, no network call, no noise.
+    # The single-node default: no bucket, no endpoint, no credential, no call.
     assert object_store.configured() is False
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
 
-async def test_a_bucket_without_a_key_is_not_configured(
+async def test_a_bucket_without_credentials_is_not_configured(
     monkeypatch: pytest.MonkeyPatch, upload: Path
 ) -> None:
-    monkeypatch.setattr(settings, "supabase_url", "https://project.supabase.co", raising=False)
     monkeypatch.setattr(settings, "storage_bucket", "file", raising=False)
-    monkeypatch.setattr(settings, "storage_api_key", "", raising=False)
-    # Half-configured is unconfigured, rather than a request guaranteed to 401.
+    monkeypatch.setattr(settings, "storage_endpoint", "https://x/storage/v1/s3", raising=False)
+    monkeypatch.setattr(settings, "storage_access_key_id", "", raising=False)
+    monkeypatch.setattr(settings, "storage_secret_access_key", "", raising=False)
+    # Half-configured is unconfigured, rather than a request guaranteed to 403.
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
 
@@ -63,25 +85,16 @@ async def test_a_bucket_without_a_key_is_not_configured(
 async def test_it_puts_the_file_in_the_bucket(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    seen: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["body"] = request.content
-        seen["type"] = request.headers.get("content-type")
-        seen["auth"] = request.headers.get("authorization")
-        seen["upsert"] = request.headers.get("x-upsert")
-        return httpx.Response(200, json={"Key": "file/uploads/sales.csv"})
-
-    monkeypatch.setattr(httpx, "AsyncClient", _transport(handler))
+    client = _Recorder()
+    _use(monkeypatch, client)
 
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is True
-    assert seen["url"] == "https://project.supabase.co/storage/v1/object/file/uploads/sales.csv"
-    assert seen["body"] == upload.read_bytes()
-    assert seen["type"] == "text/csv"
-    assert seen["auth"] == "Bearer test-key"
-    # Re-uploading the same dataset id should replace rather than collide.
-    assert seen["upsert"] == "true"
+    assert len(client.calls) == 1
+    call = client.calls[0]
+    assert call["Bucket"] == "file"
+    assert call["Key"] == "uploads/sales.csv"
+    assert call["Body"] == upload.read_bytes()
+    assert call["ContentType"] == "text/csv"
 
 
 async def test_a_spreadsheet_keeps_its_own_content_type(
@@ -89,63 +102,81 @@ async def test_a_spreadsheet_keeps_its_own_content_type(
 ) -> None:
     path = tmp_path / "sales.xlsx"
     path.write_bytes(b"PK\x03\x04")
-    seen: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["type"] = request.headers.get("content-type")
-        return httpx.Response(200)
-
-    monkeypatch.setattr(httpx, "AsyncClient", _transport(handler))
+    client = _Recorder()
+    _use(monkeypatch, client)
 
     assert await object_store.archive_upload(path, "uploads/sales.xlsx") is True
-    assert seen["type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert client.calls[0]["ContentType"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+async def test_an_unknown_suffix_falls_back_to_octet_stream(
+    monkeypatch: pytest.MonkeyPatch, configured: None, tmp_path: Path
+) -> None:
+    path = tmp_path / "sales.parquet"
+    path.write_bytes(b"PAR1")
+    client = _Recorder()
+    _use(monkeypatch, client)
+
+    assert await object_store.archive_upload(path, "uploads/sales.parquet") is True
+    assert client.calls[0]["ContentType"] == "application/octet-stream"
+
+
+async def test_the_client_is_built_once_and_reused(
+    monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
+) -> None:
+    # Building one parses botocore's data files, which is far too much work to
+    # repeat on every upload.
+    built = 0
+    client = _Recorder()
+
+    def build() -> _Recorder:
+        nonlocal built
+        built += 1
+        return client
+
+    monkeypatch.setattr(object_store, "_build_client", build)
+
+    for _ in range(3):
+        assert await object_store.archive_upload(upload, "uploads/sales.csv") is True
+    assert built == 1
+    assert len(client.calls) == 3
 
 
 # ------------------------------------------------------------ nothing may raise
 
 
-@pytest.mark.parametrize("status", [401, 403, 404, 413, 500])
-async def test_a_refusal_is_reported_not_raised(
-    monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path, status: int
+async def test_a_refusal_from_storage_is_reported_not_raised(
+    monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    # A missing bucket, a key without insert rights and a Supabase outage all
-    # arrive here. None of them may fail an upload that already parsed and
-    # stored locally.
-    monkeypatch.setattr(
-        httpx, "AsyncClient", _transport(lambda _r: httpx.Response(status, text="nope"))
-    )
+    # A missing bucket and a key without write rights both arrive as botocore
+    # exceptions. Neither may fail an upload that already stored locally.
+    _use(monkeypatch, _Recorder(raises=RuntimeError("AccessDenied")))
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
 
 async def test_a_network_failure_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("unreachable", request=request)
-
-    monkeypatch.setattr(httpx, "AsyncClient", _transport(handler))
+    _use(monkeypatch, _Recorder(raises=ConnectionError("unreachable")))
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
 
 async def test_a_missing_local_file_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, configured: None, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(
-        httpx, "AsyncClient", _transport(lambda _r: httpx.Response(200))
-    )
+    _use(monkeypatch, _Recorder())
     assert await object_store.archive_upload(tmp_path / "gone.csv", "uploads/gone.csv") is False
 
 
-async def test_a_bucket_name_needing_escaping_is_escaped(
+async def test_a_broken_client_build_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    monkeypatch.setattr(settings, "storage_bucket", "my bucket", raising=False)
-    seen: dict[str, object] = {}
+    # A malformed endpoint fails when the client is constructed, not when it
+    # is used, and that path must degrade the same way.
+    def explode() -> Any:
+        raise ValueError("Invalid endpoint")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        return httpx.Response(200)
-
-    monkeypatch.setattr(httpx, "AsyncClient", _transport(handler))
-    await object_store.archive_upload(upload, "uploads/sales.csv")
-    assert "my%20bucket" in str(seen["url"])
+    monkeypatch.setattr(object_store, "_build_client", explode)
+    assert await object_store.archive_upload(upload, "uploads/sales.csv") is False

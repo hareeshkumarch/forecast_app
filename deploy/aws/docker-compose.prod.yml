@@ -82,10 +82,13 @@ services:
       # disagreed. Fail the boot instead.
       DATABASE_FALLBACK_ENABLED: "false"
       STORAGE_ROOT: /storage
-      # Uploads are copied here as they arrive. Empty means local disk
-      # only, which is the default — see app/core/object_store.py.
-      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-}
-      SUPABASE_STORAGE_KEY: ${SUPABASE_STORAGE_KEY:-}
+      # Uploads are copied here as they arrive, over S3. Empty means local
+      # disk only, which is the default — see app/core/object_store.py.
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
+      STORAGE_REGION: ${STORAGE_REGION:-ap-south-1}
       # CloudFront serves the app and the API from one distribution, so every
       # browser request is same-origin and CORS never comes up. The value is
       # here for the case where you point a second origin at this box.

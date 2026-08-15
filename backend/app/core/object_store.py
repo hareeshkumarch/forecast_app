@@ -11,17 +11,23 @@ local file: the forecasting engine has a 60-second budget with 28 seconds of
 it in fitting, and putting object storage in front of the Parquet it reads
 would spend that budget on transfers. This copies, it does not relocate.
 
+Spoken over S3 rather than Supabase's own REST API, because the credential
+that fits is a storage-scoped S3 access key. The alternative is the service
+role key, which bypasses row-level security across the entire database — far
+more authority than "may write one bucket" needs. The same code therefore
+works against real S3, MinIO, or any other S3-compatible endpoint.
+
 Best-effort by construction. A dataset that parsed and stored locally is a
-successful upload; failing it because Supabase Storage was briefly unreachable
-would trade a working feature for a backup. Failures log and return False.
+successful upload; failing it because storage was briefly unreachable would
+trade a working feature for a backup. Failures log and return False.
 """
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from pathlib import Path
-from urllib.parse import quote
-
-import httpx
+from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -29,7 +35,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 #: Long enough for a 20 MB upload on a slow link, short enough that an
-#: unreachable Supabase cannot hold the request open indefinitely.
+#: unreachable endpoint cannot hold a request open indefinitely.
 _TIMEOUT_SECONDS = 30.0
 
 _CONTENT_TYPES = {
@@ -40,16 +46,70 @@ _CONTENT_TYPES = {
     ".xls": "application/vnd.ms-excel",
 }
 
+_client: Any = None
+_client_lock = threading.Lock()
+
 
 def configured() -> bool:
     """Whether an archive destination has been set up at all."""
-    return bool(settings.supabase_url and settings.storage_bucket and settings.storage_api_key)
+    return bool(
+        settings.storage_bucket
+        and settings.storage_endpoint
+        and settings.storage_access_key_id
+        and settings.storage_secret_access_key
+    )
 
 
-def _endpoint(key: str) -> str:
-    base = settings.supabase_url.rstrip("/")
-    bucket = quote(settings.storage_bucket, safe="")
-    return f"{base}/storage/v1/object/{bucket}/{quote(key, safe='/')}"
+def _build_client() -> Any:
+    # Imported here, not at module scope: the platform runs without an archive
+    # configured by default, and an optional feature should not make its
+    # dependency a hard import for every process that starts.
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.storage_endpoint,
+        aws_access_key_id=settings.storage_access_key_id,
+        aws_secret_access_key=settings.storage_secret_access_key,
+        region_name=settings.storage_region,
+        config=Config(
+            signature_version="s3v4",
+            connect_timeout=_TIMEOUT_SECONDS,
+            read_timeout=_TIMEOUT_SECONDS,
+            # One attempt plus one retry. This is a backup: it should not sit
+            # in front of an upload response retrying a dead endpoint.
+            retries={"max_attempts": 2, "mode": "standard"},
+        ),
+    )
+
+
+def _client_once() -> Any:
+    """One client for the process. Building one parses botocore's data files,
+    which is far too much work to repeat per upload."""
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = _build_client()
+    return _client
+
+
+def reset_client() -> None:
+    """Drop the memoised client. For tests, and for a settings reload."""
+    global _client
+    with _client_lock:
+        _client = None
+
+
+def _put(path: Path, key: str) -> None:
+    body = path.read_bytes()
+    _client_once().put_object(
+        Bucket=settings.storage_bucket,
+        Key=key,
+        Body=body,
+        ContentType=_CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream"),
+    )
 
 
 async def archive_upload(path: Path, key: str) -> bool:
@@ -62,45 +122,17 @@ async def archive_upload(path: Path, key: str) -> bool:
         return False
 
     try:
-        payload = await _read(path)
+        await asyncio.to_thread(_put, path, key)
     except OSError as exc:
         logger.warning("Could not read %s to archive it: %s", path, exc)
         return False
-
-    content_type = _CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
-    headers = {
-        "apikey": settings.storage_api_key,
-        "Authorization": f"Bearer {settings.storage_api_key}",
-        "Content-Type": content_type,
-        # Re-uploading a dataset id should replace, not collide. Datasets are
-        # keyed by uuid, so this only fires on a genuine retry of the same one.
-        "x-upsert": "true",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            response = await client.post(_endpoint(key), content=payload, headers=headers)
-    except httpx.HTTPError as exc:
+    except Exception as exc:
+        # Deliberately broad. A missing bucket, a key without write rights, a
+        # bad endpoint and a network partition all arrive here as different
+        # botocore types, and none of them may fail an upload that already
+        # parsed and stored locally.
         logger.warning("Archiving %s to bucket %s failed: %s", key, settings.storage_bucket, exc)
-        return False
-
-    if response.status_code >= 400:
-        # The body carries Supabase's own reason — a missing bucket and a key
-        # without insert rights fail identically at the status code alone.
-        logger.warning(
-            "Archiving %s to bucket %s returned %s: %s",
-            key,
-            settings.storage_bucket,
-            response.status_code,
-            response.text[:200],
-        )
         return False
 
     logger.info("Archived %s to bucket %s", key, settings.storage_bucket)
     return True
-
-
-async def _read(path: Path) -> bytes:
-    import asyncio
-
-    return await asyncio.to_thread(path.read_bytes)
