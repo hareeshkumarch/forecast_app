@@ -5,6 +5,25 @@
   "installCommand": "npm ci",
   "outputDirectory": ".next",
   "regions": ["bom1"],
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_API_BASE_URL": ""
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "http://ec2-13-204-224-172.ap-south-1.compute.amazonaws.com/api/:path*"
+    },
+    {
+      "source": "/docs",
+      "destination": "http://ec2-13-204-224-172.ap-south-1.compute.amazonaws.com/docs"
+    },
+    {
+      "source": "/openapi.json",
+      "destination": "http://ec2-13-204-224-172.ap-south-1.compute.amazonaws.com/openapi.json"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

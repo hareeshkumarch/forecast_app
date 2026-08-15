@@ -89,7 +89,7 @@ Assuming you earn the full $200 and upgrade to the paid plan before month six:
 | Setup | $/month | $100 lasts | $200 lasts |
 | --- | --- | --- | --- |
 | **`t4g.small`** | $14.57 | 6.9 months | **the full 12-month credit window, with ~$25 to spare** |
-| `t4g.small`, stopped nights and weekends | ~$9.70 | 10.3 months | the full window, ~$84 to spare |
+| `t4g.small`, stopped nights and weekends | ~$7.50 | 13.3 months | the full window, ~$110 unspent |
 | Lightsail $12 | $12.00 | 8.3 months | the full window, ~$56 to spare |
 | `t3.small` | $22.74 | 4.4 months | 8.8 months |
 

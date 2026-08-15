@@ -23,12 +23,33 @@ APP_DIR=/opt/forecast
 dnf update -y
 dnf install -y docker git
 
-# The compose plugin is not in the AL2023 repos; install it where Docker looks.
+# Neither the compose plugin nor buildx is in the AL2023 repos; install both
+# where Docker looks for plugins.
 install -d /usr/local/lib/docker/cli-plugins
 curl -fsSL \
   "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+# buildx is not optional here even though nothing calls it directly: current
+# compose refuses to build without it ("compose build requires buildx 0.17.0 or
+# later") and this file's whole job is `compose up --build`. AL2023 ships
+# docker without it, so a plain `dnf install docker` leaves a machine that can
+# run images and not build them — which fails at first boot, not at install.
+# Its releases are not published under a `latest/download` alias, so the tag
+# has to be resolved first.
+BUILDX_TAG=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest \
+  | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$BUILDX_TAG" ] || { echo "[user-data] could not resolve a buildx release tag" >&2; exit 1; }
+case "$(uname -m)" in
+  aarch64) BUILDX_ARCH=arm64 ;;
+  x86_64)  BUILDX_ARCH=amd64 ;;
+  *)       BUILDX_ARCH=$(uname -m) ;;
+esac
+curl -fsSL \
+  "https://github.com/docker/buildx/releases/download/${BUILDX_TAG}/buildx-${BUILDX_TAG}.linux-${BUILDX_ARCH}" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
 systemctl enable --now docker
 usermod -aG docker ec2-user || true
