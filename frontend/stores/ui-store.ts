@@ -84,6 +84,10 @@ interface UiState {
 
   activeRunId: string | null;
 
+  /** When `activeRunId` was set, so a reopened modal reports the run's own
+   *  elapsed time rather than restarting the clock at zero. */
+  activeRunStartedAt: number | null;
+
   setView: (view: ForecastView) => void;
   setRange: (start: string | null, end: string | null) => void;
   setRunId: (runId: string | null) => void;
@@ -110,6 +114,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   insightDrawer: null,
   mobileRail: null,
   activeRunId: null,
+  activeRunStartedAt: null,
 
   setView: (view) => {
     const state = get();
@@ -174,7 +179,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   setActiveRun: (activeRunId) => {
     if (get().activeRunId === activeRunId) return;
-    set({ activeRunId });
+    set({ activeRunId, activeRunStartedAt: activeRunId ? Date.now() : null });
   },
 
   hydrateWorkspace: () => {

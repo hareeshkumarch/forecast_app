@@ -5,13 +5,8 @@ import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Annotated
-
-try:
-    from datetime import UTC
-except ImportError:
-    UTC = timezone.utc  # noqa: UP017
 
 from fastapi import APIRouter, Header, Query, Response, status
 from sqlalchemy import select
@@ -57,7 +52,7 @@ from app.services import (
     scoring_service,
     series_service,
 )
-from app.services.job_runner import ProgressEvent, progress_bus
+from app.services.job_runner import ProgressEvent, as_utc, progress_bus
 from app.services.progress_relay import latest_from_store
 
 logger = get_logger(__name__)
@@ -525,7 +520,7 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
             subscription.__anext__()
         )
-        last_updated = _aware(initial.updated_at)
+        last_updated = as_utc(initial.updated_at)
 
         try:
             while next_event is not None:
@@ -539,9 +534,9 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
                 except StopAsyncIteration:
                     break
 
-                if _aware(event.updated_at) > last_updated:
+                if as_utc(event.updated_at) > last_updated:
                     yield _sse(event.to_dict())
-                    last_updated = _aware(event.updated_at)
+                    last_updated = as_utc(event.updated_at)
                 if event.status in (RunStatus.COMPLETED, RunStatus.FAILED):
                     break
                 next_event = asyncio.create_task(subscription.__anext__())
@@ -575,7 +570,7 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         stage=run.stage,
         selected_model=run.selected_model.value if run.selected_model else None,
         error=run.error_message,
-        updated_at=_aware(run.updated_at),
+        updated_at=as_utc(run.updated_at),
     )
     if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
         return database
@@ -591,12 +586,8 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         event for event in candidates if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
     ]
     if terminal:
-        return max(terminal, key=lambda event: _aware(event.updated_at))
-    return max(candidates, key=lambda event: (event.progress, _aware(event.updated_at)))
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return max(terminal, key=lambda event: as_utc(event.updated_at))
+    return max(candidates, key=lambda event: (event.progress, as_utc(event.updated_at)))
 
 
 async def _latest_run_id(session: AsyncSession) -> uuid.UUID | None:

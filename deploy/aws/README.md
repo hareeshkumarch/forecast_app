@@ -169,6 +169,32 @@ exponential backoff and then falls back to polling
 `GET /api/forecasts/{id}/progress` every 2 seconds. The progress UI degrades;
 it does not break.
 
+### Where the progress frames come from
+
+The fitting happens in a `ProcessPoolExecutor` worker, and the browser is
+subscribed to a bus in the API process. Those are different processes, so a
+worker cannot simply publish to it — `progress_bus` is a module-level object
+and each process gets its own copy.
+
+Workers are therefore handed a `multiprocessing.Queue` by the pool's
+initializer, and the API process reads it on a dedicated thread that hands
+each frame back to the event loop (`ExecutorRegistry.start_relay`). This is
+what makes the model search legible: the engine reports before and after each
+candidate model, roughly sixteen frames across a backtest, and without the
+queue every one of them was written to a bus in the wrong process.
+
+Two consequences worth knowing:
+
+- **The API runs as a single uvicorn process, deliberately.** Progress lives in
+  the memory of whichever process is running the forecast. With `--workers`,
+  the process holding a viewer's `/events` connection is usually not the one
+  running their run, and the stream would fall back to what the database last
+  recorded. Concurrency comes from `FORECAST_WORKERS` — the fitting pool —
+  which reports back over the queue.
+- **Scaling past one API process means Celery + Redis.** In that configuration
+  progress travels over the broker instead (`progress_relay.py`), and
+  `PROGRESS_CHANNEL_URL` is what turns it on.
+
 ### What creating a forecast does not do
 
 `create_run` returns immediately with a `pending` run — the fitting is

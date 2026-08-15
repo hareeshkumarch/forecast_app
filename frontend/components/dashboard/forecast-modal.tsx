@@ -28,7 +28,12 @@ import {
   useRefreshDashboard,
   useStartForecast,
 } from "@/hooks/use-dashboard";
-import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
+import {
+  STAGE_LABELS,
+  stagesFor,
+  useElapsed,
+  useForecastProgress,
+} from "@/hooks/use-forecast-progress";
 import { errorMessage } from "@/lib/errors";
 import { humanizeModel } from "@/lib/format";
 import { PROVIDERS, llmRunFields, loadLlmConfig } from "@/lib/llm-config";
@@ -94,6 +99,7 @@ export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
   const activeRunId = useUiStore((state) => state.activeRunId);
+  const activeRunStartedAt = useUiStore((state) => state.activeRunStartedAt);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
   const setRunId = useUiStore((state) => state.setRunId);
   const targetDatasetId = useUiStore((state) => state.modalTargetId);
@@ -414,7 +420,11 @@ export function ForecastModal() {
               </div>
             </div>
           ) : null}
-          <ProgressPanel progress={progress} />
+          <ProgressPanel
+            progress={progress}
+            grouped={grain.length > 0}
+            startedAt={activeRunStartedAt}
+          />
         </div>
       ) : (
         <div className="space-y-4">
@@ -887,25 +897,20 @@ function DimensionSelect({
 
 function ProgressPanel({
   progress,
+  grouped,
+  startedAt,
 }: {
   progress: ReturnType<typeof useForecastProgress>;
+  grouped: boolean;
+  startedAt: number | null;
 }) {
   const percent = Math.round(progress.progress * 100);
   const failed = progress.status === "failed";
   const done = progress.status === "completed";
 
-  const stages = [
-    "aggregating",
-    "backtesting",
-    "fitting",
-    "building_outputs",
-    "persisting",
-    "generating_insights",
-    "fitting_series",
-    "storing_series",
-    "complete",
-  ];
+  const stages = stagesFor(grouped);
   const currentIndex = stages.indexOf(progress.stage);
+  const elapsed = useElapsed(startedAt, !done && !failed);
 
   return (
     <div className="space-y-4">
@@ -925,20 +930,25 @@ function ProgressPanel({
             <p className="text-caption text-text-muted">{progress.message}</p>
           ) : null}
         </div>
-        <span className="ml-auto text-meta font-semibold text-text-secondary num">{percent}%</span>
+        <span className="ml-auto shrink-0 text-right">
+          <span className="block text-meta font-semibold text-text-secondary num">{percent}%</span>
+          {elapsed ? (
+            <span className="block text-caption text-text-muted num">{elapsed}</span>
+          ) : null}
+        </span>
       </div>
 
       {progress.isReconnecting ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Live connection interrupted; retrying. Celery is still running the forecast.
+          Live updates interrupted; reconnecting. The forecast is still running on the server.
         </p>
       ) : null}
 
       {progress.isPolling ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Live stream unavailable; status is refreshing every 2 seconds.
+          Live updates unavailable; checking for progress every 2 seconds instead.
         </p>
       ) : null}
 
@@ -959,7 +969,7 @@ function ProgressPanel({
       </div>
 
       <ol className="space-y-1.5">
-        {stages.slice(0, -1).map((stage, index) => {
+        {stages.map((stage, index) => {
           const isDone = done || (currentIndex >= 0 && index < currentIndex);
           const isCurrent = !done && index === currentIndex;
           return (
