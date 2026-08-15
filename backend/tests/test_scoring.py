@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ValidationError
 from app.database.sample_data import HEADERS, generate_rows
-from app.models.enums import MeasureAggregation, RunStatus
+from app.models.enums import MeasureAggregation, PointKind, RunStatus
 from app.services import actuals_service as actuals
 from app.services import dataset_service, forecast_service, scoring_service
 
@@ -225,7 +225,15 @@ async def test_scoring_records_the_reading_it_graded_against(
 
     believed = await actuals.current(session, run.dataset_id)
     points = await forecast_service.points_for_run(session, run_id)
-    graded = {p.period: p.actual for p in points if p.actual is not None and p.series_id is None}
+    # Only the forecast points were graded. The run also writes an ACTUAL-kind
+    # point per historical period, carrying the history it was fitted on —
+    # that is the input to the forecast, not an outcome that arrived later, and
+    # the outcomes ledger is right not to hold it.
+    graded = {
+        p.period: p.actual
+        for p in points
+        if p.actual is not None and p.series_id is None and p.kind is PointKind.FORECAST
+    }
 
     assert {period for _, period in believed} == set(graded)
     for period, value in graded.items():

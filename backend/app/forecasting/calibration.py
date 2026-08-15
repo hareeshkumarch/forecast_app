@@ -77,7 +77,6 @@ class CoverageReport:
 
 @dataclass(slots=True, frozen=True)
 class HeldOutPoint:
-
     horizon: int
     actual: float
     predicted: float
@@ -114,7 +113,6 @@ def measure_coverage(
 
 @dataclass(slots=True, frozen=True)
 class Interval:
-
     horizon: int
     actual: float
     lower: float
@@ -216,7 +214,6 @@ def apply_halfwidths(
 
 @dataclass(slots=True)
 class Calibration:
-
     nominal: float
     halfwidths: dict[int, float]
     before: CoverageReport

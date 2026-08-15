@@ -63,7 +63,6 @@ def config_hash() -> str:
 
 @dataclass(slots=True, frozen=True)
 class Provenance:
-
     code_version: str
     model_version: str
     feature_version: str

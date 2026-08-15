@@ -81,9 +81,9 @@ class TestAGapDoesNotRenumberTheHorizons:
         for step, bucket in enumerate(buckets, start=1):
             assert bucket, f"h={step} lost every sample it had"
             for residual in bucket:
-                assert round(residual / STEP_MARK) == step, (
-                    f"a residual of {residual:.1f} was filed under h={step}"
-                )
+                assert (
+                    round(residual / STEP_MARK) == step
+                ), f"a residual of {residual:.1f} was filed under h={step}"
 
     def test_the_far_horizon_keeps_its_sample(self) -> None:
         intact, horizon = _gapped_run(gap_step=None)
@@ -129,9 +129,9 @@ class TestASeasonalScaleSkipsTheGapsRatherThanClosingThem:
         holed = mase(truth, predicted, gapped, season)
 
         assert intact == pytest.approx(0.2)
-        assert holed == pytest.approx(intact, abs=0.01), (
-            "one unrecorded period must not change how skilful the model looks"
-        )
+        assert holed == pytest.approx(
+            intact, abs=0.01
+        ), "one unrecorded period must not change how skilful the model looks"
 
     def test_pairs_that_straddle_a_hole_are_dropped_not_closed_up(self) -> None:
         season = 4
@@ -239,6 +239,8 @@ class TestAFoldThatCannotBeScoredSaysSo:
 
 class TestTheStepsFallBackWhenNothingRecordedThem:
     def test_a_fold_without_recorded_steps_reads_as_consecutive(self) -> None:
-        fold = FoldResult(fold=0, train_size=10, test_size=3, y_true=[1.0, 2.0, 3.0], y_pred=[1.0, 2.0, 3.0])
+        fold = FoldResult(
+            fold=0, train_size=10, test_size=3, y_true=[1.0, 2.0, 3.0], y_pred=[1.0, 2.0, 3.0]
+        )
 
         assert fold.steps() == [1, 2, 3]

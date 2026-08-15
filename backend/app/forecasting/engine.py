@@ -537,9 +537,7 @@ def _held_out(winner: BacktestResult) -> list[HeldOutPoint]:
     return [
         HeldOutPoint(horizon=step, actual=float(actual), predicted=float(predicted))
         for fold in winner.folds
-        for step, actual, predicted in zip(
-            fold.steps(), fold.y_true, fold.y_pred, strict=False
-        )
+        for step, actual, predicted in zip(fold.steps(), fold.y_true, fold.y_pred, strict=False)
         if np.isfinite(actual) and np.isfinite(predicted)
     ]
 

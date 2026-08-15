@@ -132,9 +132,7 @@ def _intake(profile: DatasetProfileResult, frame: pl.DataFrame) -> refusal.Inges
         if time_column is not None
         else {}
     )
-    return refusal.assess(
-        profile, frame=frame, dimensions=dimensions, series_lengths=lengths
-    )
+    return refusal.assess(profile, frame=frame, dimensions=dimensions, series_lengths=lengths)
 
 
 def intake_payload(verdict: refusal.IngestVerdict) -> dict[str, Any]:

@@ -195,7 +195,6 @@ class TestAccuracyByHorizon:
         assert [row.horizon for row in report.by_horizon] == [1, 2, 3, 4]
         assert [row.observations for row in report.by_horizon] == [11, 11, 11, 11]
 
-
     async def test_error_is_reported_per_horizon_not_only_in_aggregate(
         self, session: AsyncSession
     ) -> None:
@@ -218,9 +217,7 @@ class TestAccuracyByHorizon:
         assert errors[0] == 0.0
         assert errors == sorted(errors), f"error did not grow with horizon: {errors}"
 
-    async def test_bias_is_signed_and_separate_from_error(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_bias_is_signed_and_separate_from_error(self, session: AsyncSession) -> None:
         run = await _run(session)
 
         report = await accuracy_service.build(session, run.id)
@@ -233,9 +230,7 @@ class TestAccuracyByHorizon:
 
 
 class TestAccuracyBySeriesClass:
-    async def test_each_demand_class_is_reported_separately(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_each_demand_class_is_reported_separately(self, session: AsyncSession) -> None:
         run = await _run(session)
 
         report = await accuracy_service.build(session, run.id)
@@ -275,9 +270,7 @@ class TestValueOverBaseline:
         assert value.improvement_pct == 40.0
         assert value.beats_baseline
 
-    async def test_a_model_that_loses_to_the_baseline_says_so(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_a_model_that_loses_to_the_baseline_says_so(self, session: AsyncSession) -> None:
         run = await _run(session)
         candidates = (await accuracy_service.build(session, run.id)) is not None
         assert candidates
@@ -285,15 +278,19 @@ class TestValueOverBaseline:
         from sqlalchemy import select
 
         rows = (
-            await session.execute(select(ModelCandidate).where(ModelCandidate.run_id == run.id))
-        ).scalars().all()
+            (await session.execute(select(ModelCandidate).where(ModelCandidate.run_id == run.id)))
+            .scalars()
+            .all()
+        )
         winner = next(c for c in rows if c.selected)
         baseline = next(c for c in rows if c.model is ModelKind.SEASONAL_NAIVE)
 
         value = accuracy_service.value_add([winner, baseline])
         worse = accuracy_service.value_add(
             [
-                ModelCandidate(run_id=run.id, model=ModelKind.HOLT_WINTERS, selected=True, wmape=30.0),
+                ModelCandidate(
+                    run_id=run.id, model=ModelKind.HOLT_WINTERS, selected=True, wmape=30.0
+                ),
                 ModelCandidate(run_id=run.id, model=ModelKind.SEASONAL_NAIVE, wmape=20.0),
             ]
         )
@@ -430,9 +427,7 @@ class TestTheHeadlineFigure:
 
         assert headline.accuracy_pct == 92.4
 
-    async def test_the_figure_carries_what_stands_behind_it(
-        self, session: AsyncSession
-    ) -> None:
+    async def test_the_figure_carries_what_stands_behind_it(self, session: AsyncSession) -> None:
         run = await _run(session)
         run.realized_wmape = 6.0
         run.scored_periods = 30

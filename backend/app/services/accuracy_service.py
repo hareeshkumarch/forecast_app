@@ -234,7 +234,6 @@ def _finite(value: float) -> float | None:
 
 @dataclass(slots=True)
 class Headline:
-
     accuracy_pct: float | None
     runs_scored: int
     periods_scored: int
@@ -388,9 +387,7 @@ def _coverage_caveats(report: CoverageReport, nominal: float | None) -> list[str
     ]
 
 
-def _backtest_interval_caveats(
-    diagnostics: dict[str, object], nominal: float | None
-) -> list[str]:
+def _backtest_interval_caveats(diagnostics: dict[str, object], nominal: float | None) -> list[str]:
     check = diagnostics.get("interval_check")
     if nominal is None or not isinstance(check, dict) or not check.get("measured"):
         return []

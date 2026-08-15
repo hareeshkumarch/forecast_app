@@ -23,9 +23,7 @@ from app.schemas.forecast import (
 from app.services import forecast_service
 
 
-async def list_scenarios(
-    session: AsyncSession, run_id: uuid.UUID
-) -> list[ForecastScenario]:
+async def list_scenarios(session: AsyncSession, run_id: uuid.UUID) -> list[ForecastScenario]:
     await forecast_service.get_run_state(session, run_id)
     result = await session.execute(
         select(ForecastScenario)
@@ -61,9 +59,7 @@ async def save_scenario(
     return scenario
 
 
-async def delete_scenario(
-    session: AsyncSession, run_id: uuid.UUID, scenario_id: uuid.UUID
-) -> None:
+async def delete_scenario(session: AsyncSession, run_id: uuid.UUID, scenario_id: uuid.UUID) -> None:
     result = await session.execute(
         delete(ForecastScenario).where(
             ForecastScenario.id == scenario_id,
@@ -82,7 +78,9 @@ async def _forecast_total(session: AsyncSession, run_id: uuid.UUID) -> float:
             ForecastPoint.series_id.is_(None),
         )
     )
-    return round(float(result.scalar_one()), 4)
+    # COALESCE guarantees a value, but the column is nullable so the checker
+    # still types the result as optional.
+    return round(float(result.scalar_one() or 0.0), 4)
 
 
 def _accuracy(wmape: float | None) -> float | None:
@@ -132,7 +130,7 @@ async def compare_runs(
         delta = None if left_value is None or right_value is None else right_value - left_value
         delta_pct = (
             None
-            if delta is None or left_value == 0
+            if delta is None or left_value is None or left_value == 0
             else round(delta / abs(left_value) * 100.0, 2)
         )
         metrics.append(
@@ -165,9 +163,12 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
     alert: str | None = None
     level: str | None = None
     drifted = bool(
-        run.realized_wmape is not None
-        and run.realized_wmape > settings.drift_wmape_limit
+        run.realized_wmape is not None and run.realized_wmape > settings.drift_wmape_limit
     )
+    # Bound once rather than called twice in the branch below: two calls are two
+    # separate Optionals as far as a type checker is concerned, so the second
+    # cannot be compared without narrowing the first all over again.
+    realized_accuracy = _accuracy(run.realized_wmape)
 
     if run.status == RunStatus.FAILED:
         alert = run.error_message or "The run failed before producing a forecast."
@@ -181,14 +182,12 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
             f"{settings.drift_wmape_limit:.1f}% drift limit."
         )
         level = "warning"
-    elif (
-        run.realized_wmape is not None
-        and _accuracy(run.realized_wmape) is not None
-        and _accuracy(run.realized_wmape) < settings.insight_accuracy_warning
-    ):
+    elif realized_accuracy is not None and realized_accuracy < settings.insight_accuracy_warning:
         alert = "Realized accuracy is below the review threshold."
         level = "warning"
-    elif run.forecast_end is not None and run.forecast_end <= date.today() and not run.scored_periods:
+    elif (
+        run.forecast_end is not None and run.forecast_end <= date.today() and not run.scored_periods
+    ):
         alert = "Forecast periods have elapsed; score this run against the latest actuals."
         level = "warning"
 
