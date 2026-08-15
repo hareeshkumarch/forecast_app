@@ -10,7 +10,7 @@ from app.api.routes import connectors, dashboard, datasets, exports, forecasts, 
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import CompressExceptStreams, RequestContextMiddleware
 from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
@@ -74,6 +74,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(CompressExceptStreams)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
