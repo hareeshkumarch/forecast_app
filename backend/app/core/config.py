@@ -38,6 +38,18 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path("./storage")
 
+    # ---- Off-box archival of uploads --------------------------------------
+    #: A Supabase Storage bucket that finished uploads are copied into. Left
+    #: empty the copy is skipped entirely and everything stays on local disk,
+    #: which is the single-node default. This is a backup of the one artifact
+    #: that cannot be regenerated, not a relocation of the read path — see
+    #: app/core/object_store.py.
+    storage_bucket: str = Field(default="", alias="SUPABASE_STORAGE_BUCKET")
+    #: Needs insert rights on that bucket. The anon/publishable key can list a
+    #: public bucket but generally cannot write, so this is usually a
+    #: storage-scoped S3 access key or the service role key.
+    storage_api_key: str = Field(default="", alias="SUPABASE_STORAGE_KEY")
+
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
     credential_secret_key: str = "dev-only-insecure-key-change-me"
