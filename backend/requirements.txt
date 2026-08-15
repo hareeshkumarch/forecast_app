@@ -41,6 +41,11 @@ reportlab==4.2.5
 celery[redis]==5.4.0
 redis==5.2.1
 
+# ---- object storage ------------------------------------------------------
+# Only reached when an archive bucket is configured; the import lives inside
+# the function so an unconfigured platform never loads it.
+boto3==1.35.92
+
 # ---- crypto --------------------------------------------------------------
 cryptography==44.0.0
 
