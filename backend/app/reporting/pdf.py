@@ -11,7 +11,6 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     KeepTogether,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -76,6 +75,27 @@ def _number(value: Any, digits: int = 0) -> str:
         return f"{float(value):,.{digits}f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _magnitude(value: Any) -> str:
+    """A number formatted to the precision its own size deserves.
+
+    Driver impacts are in the target's units, and the target can be revenue in
+    the millions or a conversion rate under one. Rounding everything to whole
+    numbers rendered every small driver as "0" — a column of zeroes that
+    silently claimed nothing was moving anything.
+    """
+    if value is None:
+        return "—"
+    try:
+        magnitude = abs(float(value))
+    except (TypeError, ValueError):
+        return str(value)
+    if magnitude >= 100:
+        return _number(value, 0)
+    if magnitude >= 1:
+        return _number(value, 1)
+    return _number(value, 3)
 
 
 def _percent(value: Any, digits: int = 1) -> str:
@@ -196,44 +216,19 @@ def build(
 
     chart = _forecast_chart(rows, run, width, currency)
     if chart is not None:
-        story.append(chart)
-        story.append(Spacer(1, 4))
-
-    story.append(Paragraph("HOW THIS FORECAST WAS MADE", style["section"]))
-    grain = ", ".join(run.group_by) if run.group_by else "one total series"
-    story.append(
-        _table(
-            ["", ""],
-            [
-                [
-                    "Model selected",
-                    _humanise(run.selected_model.value if run.selected_model else None),
-                ],
-                ["Why", run.selection_rationale or "—"],
-                ["Measure", unit],
-                ["Also read", _leading(run)],
-                ["Forecast grain", grain],
-                ["Series forecast", _number(run.series_count or 1)],
-                ["History", f"{_when(run.history_start)} to {_when(run.history_end)}"],
-                ["Horizon", f"{_when(run.forecast_start)} to {_when(run.forecast_end)}"],
-                ["Interval", f"{run.confidence_level * 100:.0f}% confidence"],
-                ["Missing periods", run.gap_fill.value],
-                ["Duplicate periods", f"combined by {run.aggregation.value}"],
-            ],
-            [42 * mm, width - 42 * mm],
-            style,
-        )
-    )
-
-    if run.used_fallback and run.fallback_reason:
-        story.append(Spacer(1, 6))
+        story.append(Paragraph("THE FORECAST", style["section"]))
         story.append(
             Paragraph(
-                f"<b>Read with care.</b> {run.fallback_reason}",
-                ParagraphStyle("warn", parent=style["body"], textColor=ACCENT),
+                f"History to {_when(run.history_end)}, then {run.horizon} "
+                f"{'period' if run.horizon == 1 else 'periods'} ahead. The band is the "
+                f"{run.confidence_level * 100:.0f}% interval: the forecast is one line "
+                "through it, not a promise.",
+                style["body"],
             )
         )
-
+        story.append(Spacer(1, 5))
+        story.append(chart)
+        story.append(Spacer(1, 10))
     story.extend(_scorecard_section(run, rows, width, currency, style))
 
     metrics = sheets.get("metrics") or []
@@ -268,91 +263,6 @@ def build(
             )
         )
 
-    horizon = [
-        row
-        for row in rows
-        if row.get("kind") == "forecast" and row.get("series", TOP_LINE) == TOP_LINE
-    ]
-    if horizon:
-        story.append(PageBreak())
-        story.append(Paragraph("THE FORECAST", style["section"]))
-        shown = horizon[:max_rows]
-        story.append(
-            _table(
-                ["Period", "Forecast", "Low", "High", "Best case", "Worst case"],
-                [
-                    [
-                        str(row.get("period", "")),
-                        _number(row.get("forecast")),
-                        _number(row.get("lower_bound")),
-                        _number(row.get("upper_bound")),
-                        _number(row.get("best_case")),
-                        _number(row.get("worst_case")),
-                    ]
-                    for row in shown
-                ],
-                [30 * mm, *([(width - 30 * mm) / 5] * 5)],
-                style,
-            )
-        )
-        if len(horizon) > len(shown):
-            story.append(Spacer(1, 5))
-            story.append(
-                Paragraph(
-                    f"Showing the first {len(shown):,} of {len(horizon):,} periods. "
-                    "The CSV export carries every one.",
-                    style["body"],
-                )
-            )
-
-    for title, key, columns in (
-        (
-            f"BY {(run.region_column or 'region').upper()}",
-            "regions",
-            ("region", "forecast", "change_vs_last_year_pct", "accuracy_pct"),
-        ),
-        (
-            f"BY {(run.category_column or 'category').upper()}",
-            "categories",
-            ("category", "forecast", "share_pct", "change_vs_last_year_pct"),
-        ),
-    ):
-        data = sheets.get(key) or []
-        if not data:
-            continue
-        story.append(
-            KeepTogether(
-                [
-                    Paragraph(title, style["section"]),
-                    _table(
-                        [
-                            title.removeprefix("BY ").title() if index == 0 else _humanise(c)
-                            for index, c in enumerate(columns)
-                        ],
-                        [
-                            [
-                                str(row.get(columns[0], "")),
-                                _number(row.get(columns[1])),
-                                (
-                                    _signed(row.get(columns[2]))
-                                    if columns[2].endswith("_pct") and "change" in columns[2]
-                                    else _percent(row.get(columns[2]))
-                                ),
-                                (
-                                    _signed(row.get(columns[3]))
-                                    if "change" in columns[3]
-                                    else _percent(row.get(columns[3]))
-                                ),
-                            ]
-                            for row in data[:max_rows]
-                        ],
-                        [width - 96 * mm, 32 * mm, 32 * mm, 32 * mm],
-                        style,
-                    ),
-                ]
-            )
-        )
-
     series = sheets.get("series") or []
     if series:
         shown = series[:max_rows]
@@ -377,29 +287,15 @@ def build(
                         height=min(len(shown), RISK_BARS) * 6 * mm,
                         currency=currency,
                     ),
-                    Spacer(1, 8),
-                    _table(
-                        ["Series", "Forecast", "Error", "At risk"],
-                        [
-                            [
-                                str(row.get("series", "")),
-                                _number(row.get("forecast")),
-                                _percent(row.get("wmape_pct")) if row.get("measured") else "—",
-                                _number(row.get("value_at_risk")),
-                            ]
-                            for row in shown
-                        ],
-                        [width - 96 * mm, 32 * mm, 32 * mm, 32 * mm],
-                        style,
-                    ),
                 ]
             )
         )
-        if len(series) > len(shown):
+        if len(series) > RISK_BARS:
             story.append(Spacer(1, 5))
             story.append(
                 Paragraph(
-                    f"Showing the {len(shown):,} highest of {len(series):,} series.",
+                    f"The {RISK_BARS} largest of {len(series):,} series. Every series, with "
+                    "its forecast and measured error, is in the CSV and Excel exports.",
                     style["body"],
                 )
             )
@@ -410,12 +306,19 @@ def build(
             KeepTogether(
                 [
                     Paragraph("WHAT IS MOVING IT", style["section"]),
+                    Paragraph(
+                        "Each driver's share of the movement this forecast explains, in "
+                        "the measure's own units. Shares are relative to one another, not "
+                        "to the total.",
+                        style["body"],
+                    ),
+                    Spacer(1, 6),
                     _table(
                         ["Driver", "Impact", "Share", "Direction"],
                         [
                             [
                                 str(row.get("driver", "")),
-                                _number(row.get("impact")),
+                                _magnitude(row.get("impact")),
                                 _percent(row.get("impact_pct")),
                                 str(row.get("direction") or "—"),
                             ]
@@ -427,6 +330,19 @@ def build(
                 ]
             )
         )
+
+    story.extend(_method_section(run, unit, width, style))
+
+    story.append(Spacer(1, 10))
+    story.append(
+        Paragraph(
+            "<b>Where the numbers are.</b> This report is the picture. Every period, every "
+            "series and every breakdown — with lower and upper bounds, best and worst case — "
+            "is in the CSV and Excel exports of this same run, which are built to be opened "
+            "in a spreadsheet rather than read on a page.",
+            style["body"],
+        )
+    )
 
     document = SimpleDocTemplate(
         str(path),
@@ -444,6 +360,55 @@ def build(
         _chrome(canvas, doc, run.name)
 
     document.build(story, onFirstPage=decorate, onLaterPages=decorate)
+
+
+def _method_section(
+    run: ForecastRun,
+    unit: str,
+    width: float,
+    style: dict[str, ParagraphStyle],
+) -> list[Any]:
+    """What the reader needs to know before trusting any of the above.
+
+    Last rather than first, deliberately. It is reference material: the reader
+    came for the forecast, and reaches this when they want to know what
+    produced it. Leading with eleven rows of configuration buries the answer.
+    """
+    out: list[Any] = [Paragraph("HOW THIS FORECAST WAS MADE", style["section"])]
+    grain = ", ".join(run.group_by) if run.group_by else "one total series"
+    out.append(
+        _table(
+            ["", ""],
+            [
+                [
+                    "Model selected",
+                    _humanise(run.selected_model.value if run.selected_model else None),
+                ],
+                ["Why", run.selection_rationale or "—"],
+                ["Measure", unit],
+                ["Also read", _leading(run)],
+                ["Forecast grain", grain],
+                ["Series forecast", _number(run.series_count or 1)],
+                ["History", f"{_when(run.history_start)} to {_when(run.history_end)}"],
+                ["Horizon", f"{_when(run.forecast_start)} to {_when(run.forecast_end)}"],
+                ["Interval", f"{run.confidence_level * 100:.0f}% confidence"],
+                ["Missing periods", run.gap_fill.value],
+                ["Duplicate periods", f"combined by {run.aggregation.value}"],
+            ],
+            [42 * mm, width - 42 * mm],
+            style,
+        )
+    )
+
+    if run.used_fallback and run.fallback_reason:
+        out.append(Spacer(1, 6))
+        out.append(
+            Paragraph(
+                f"<b>Read with care.</b> {run.fallback_reason}",
+                ParagraphStyle("warn", parent=style["body"], textColor=ACCENT),
+            )
+        )
+    return out
 
 
 def _scorecard_section(
