@@ -4,8 +4,10 @@ import time
 from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.logging import get_logger, new_request_id, request_id
 
@@ -49,3 +51,32 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             request_id.reset(token)
+
+
+class CompressExceptStreams:
+    """gzip every response except the progress stream.
+
+    The JSON this API returns compresses by roughly three quarters, and the
+    hop between a viewer and this box is long enough that the bytes matter
+    more than the CPU does.
+
+    The forecast progress endpoint is deliberately left alone. It is
+    Server-Sent Events, and its whole contract is that each frame reaches the
+    browser as it is produced — a keep-alive comment is fourteen bytes, well
+    under any compressor's flush threshold, so gzipping the stream trades the
+    liveness it exists for against nothing worth having. This is the same
+    reason the CloudFront behaviour for /api/* has compression switched off.
+    """
+
+    #: Anything whose path ends here streams and must not be buffered.
+    STREAMING_SUFFIX = "/events"
+
+    def __init__(self, app: ASGIApp, minimum_size: int = 512) -> None:
+        self.app = app
+        self.compressed = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and not scope.get("path", "").endswith(self.STREAMING_SUFFIX):
+            await self.compressed(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
