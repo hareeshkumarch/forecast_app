@@ -574,10 +574,67 @@ body {
   --reveal-y: 0px;
 }
 
+/* The words do the moving, so the container must not: a parent fading from 0
+   and children fading from 0 multiply, and the heading lands at a grey that
+   never quite becomes black. */
+.motion-ready .reveal[data-reveal="words"] {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
   transform: translate3d(0, 0, 0);
   will-change: auto;
+}
+
+/*
+ * A heading that arrives a word at a time.
+ *
+ * `inline-block` is what makes a word transformable at all, and it is also the
+ * reason the spaces between words are their own text nodes in the markup
+ * rather than part of a span — a space inside an inline-block is not a break
+ * opportunity, and the heading would stop wrapping.
+ */
+.split-word {
+  display: inline-block;
+}
+
+.motion-ready .split-words .split-word {
+  opacity: 0;
+  transform: translate3d(0, 0.42em, 0);
+}
+
+.motion-ready .split-words[data-shown="true"] .split-word {
+  animation: word-rise 560ms var(--ease-out) calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms))
+    both;
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.42em, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* The rule beside a section's eyebrow draws itself in, so a section announces
+   itself rather than simply being there. Shares the `grow-x` keyframes. */
+.eyebrow-rule {
+  transform-origin: left center;
+}
+
+.motion-ready .eyebrow-rule {
+  transform: scaleX(0);
+}
+
+.motion-ready [data-shown="true"] .eyebrow-rule {
+  animation: grow-x 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 90ms) forwards;
 }
 
 @keyframes icon-settle {
@@ -597,6 +654,27 @@ body {
 
 .motion-ready [data-shown="true"] .motion-icon {
   animation: icon-settle 480ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 120ms) both;
+}
+
+/* The step number lands a beat before its icon, so the card reads left to
+   right as it arrives rather than both corners appearing at once. */
+@keyframes badge-land {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.86);
+  }
+  70% {
+    opacity: 1;
+    transform: translate3d(0, 1px, 0) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.motion-ready [data-shown="true"] .step-badge {
+  animation: badge-land 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 60ms) both;
 }
 
 .motion-ready .grow-x {

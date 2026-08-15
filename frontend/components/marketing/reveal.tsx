@@ -38,7 +38,7 @@ export type RevealProps = {
   as?: ElementType;
   delay?: number;
   amount?: number;
-  variant?: "rise" | "scale" | "from-left" | "from-right" | "fade";
+  variant?: "rise" | "scale" | "from-left" | "from-right" | "fade" | "words";
   duration?: number;
   children: ReactNode;
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
