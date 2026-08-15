@@ -41,7 +41,12 @@ test("every section is readable once scrolled to", async ({ page }) => {
     "From a spreadsheet to a plan in three steps.",
     "Everything a planner needs, and nothing they do not.",
     "A range tells you more than a perfect-looking line.",
-    "Right about 94% of the sales it had never seen.",
+    // The accuracy figure counts up the first time it is scrolled to, so this
+    // heading's name is whatever the count is currently showing. Matching the
+    // finished sentence would deadlock: the count does not start until the
+    // heading is in view, and the heading cannot be scrolled to until it
+    // matches. The words either side of the number are what is stable.
+    /of the sales it had never seen/,
     "See what is coming next.",
   ]) {
     const target = page.getByRole("heading", { name: heading });
@@ -72,13 +77,21 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   await context.close();
 });
 
-test("the header call to action fits its pill on the narrowest phones", async ({ page }) => {
+test("the nav call to action fits its pill on the narrowest phones", async ({ page }) => {
   // The full label wrapped to two lines and spilled out of a fixed-height pill
   // below roughly 360px, which is where the older Android widths sit.
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/");
 
-  const cta = page.locator("header").getByRole("link", { name: "Open the dashboard" });
+  const cta = page.getByRole("navigation", { name: "Sections" }).getByRole("link", {
+    name: "Open the dashboard",
+  });
+
+  // The pill is collapsed to nothing until the hero has been scrolled past —
+  // it is the nav's copy of a call to action the hero is still showing. There
+  // is no pill to measure before that.
+  await expect(cta).toBeHidden();
+  await page.evaluate(() => window.scrollTo(0, 900));
   await expect(cta).toBeVisible();
 
   const fits = await cta.evaluate((node) => node.scrollHeight <= node.clientHeight);
@@ -91,10 +104,28 @@ test("the section nav only appears once it has room for one line", async ({ page
   const nav = page.getByRole("navigation", { name: "Sections" });
   if (!(await nav.isVisible())) return;
 
-  for (const link of await nav.getByRole("link").all()) {
+  // Below the large breakpoint the list is display:none and there is nothing
+  // to measure — which is the "only appears once it has room" the name means.
+  for (const link of await nav.locator("[data-section]:visible").all()) {
     const box = await link.boundingBox();
     expect(box, "every section link has a box").not.toBeNull();
-    // One line of text at this size is ~20px; two would clear 30.
-    expect(box!.height).toBeLessThan(30);
+
+    // Measured against the link's own line-height rather than a fixed pixel
+    // count. The type scale here is fluid, so a single line is a different
+    // number of pixels at every width — a constant threshold only ever
+    // described one of them, and grew stale the moment the scale changed.
+    const onOneLine = await link.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      const frame =
+        parseFloat(styles.paddingTop) +
+        parseFloat(styles.paddingBottom) +
+        parseFloat(styles.borderTopWidth) +
+        parseFloat(styles.borderBottomWidth);
+      // A second line adds a whole line-height, so half of one is a margin no
+      // single-line box can cross and no wrapped box can stay under.
+      return box.height - frame <= parseFloat(styles.lineHeight) * 1.5;
+    });
+    expect(onOneLine, "every section link sits on one line").toBe(true);
   }
 });
