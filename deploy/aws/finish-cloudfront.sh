@@ -18,7 +18,6 @@ set -euo pipefail
 REGION="${AWS_REGION:-ap-south-1}"
 BUCKET="${BUCKET:?set BUCKET to the frontend bucket}"
 VPC_ORIGIN_NAME="${VPC_ORIGIN_NAME:-forecast-api-origin}"
-OAC_NAME="${OAC_NAME:-forecast-s3-oac}"
 SG_NAME="${SG_NAME:-forecast-api}"
 INSTANCE_NAME="${INSTANCE_NAME:-forecast-api}"
 
@@ -27,8 +26,6 @@ aws() { command env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY "$(command -v 
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 echo "==> resolving the pieces built earlier"
-OAC=$(aws cloudfront list-origin-access-controls \
-  --query "OriginAccessControlList.Items[?Name=='$OAC_NAME'].Id" --output text)
 VPCO=$(aws cloudfront list-vpc-origins \
   --query "VpcOriginList.Items[?Name=='$VPC_ORIGIN_NAME'].Id" --output text)
 PRIV=$(aws ec2 describe-instances \
@@ -36,9 +33,9 @@ PRIV=$(aws ec2 describe-instances \
   --query 'Reservations[0].Instances[0].PrivateDnsName' --output text)
 SG=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" \
   --query 'SecurityGroups[0].GroupId' --output text)
-: "${OAC:?no origin access control found}" "${VPCO:?no VPC origin found}"
+: "${VPCO:?no VPC origin found}"
 : "${PRIV:?no running instance found}" "${SG:?no security group found}"
-echo "    oac=$OAC vpc-origin=$VPCO origin=$PRIV sg=$SG"
+echo "    vpc-origin=$VPCO origin=$PRIV sg=$SG"
 
 # Managed policy ids are stable per account but cheap to look up, and looking
 # them up beats hardcoding a uuid that means nothing to a reader.
@@ -54,9 +51,9 @@ DIST=$(aws cloudfront list-distributions \
 
 if [ -z "$DIST" ]; then
   echo "==> creating the distribution"
-  python3 - "$BUCKET" "$REGION" "$PRIV" "$OAC" "$VPCO" "$OPT" "$DIS" "$AVX" > /tmp/forecast-dist.json <<'PY'
+  python3 - "$BUCKET" "$REGION" "$PRIV" "$VPCO" "$OPT" "$DIS" "$AVX" > /tmp/forecast-dist.json <<'PY'
 import json, sys, time
-bucket, region, priv, oac, vpco, opt, dis, avx = sys.argv[1:9]
+bucket, region, priv, vpco, opt, dis, avx = sys.argv[1:8]
 ALL7 = ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"]
 
 def api(path):
@@ -81,10 +78,31 @@ print(json.dumps({
  "PriceClass": "PriceClass_All",   # PriceClass_100 excludes India
  "HttpVersion": "http2and3", "IsIPV6Enabled": True,
  "Origins": {"Quantity": 2, "Items": [
-   {"Id": "s3-frontend", "DomainName": f"{bucket}.s3.{region}.amazonaws.com",
+   # The website endpoint, not the REST one, and it is not a preference.
+   # A static export routes /dashboard/ to /dashboard/index.html, and only
+   # the website endpoint does that resolution:
+   #
+   #   REST     /  403   /dashboard/  403   /dashboard/index.html  200
+   #   website  /  200   /dashboard/  200   /dashboard/index.html  200
+   #
+   # Against the REST endpoint every sub-route would fall through to the
+   # 403 handler below and render as a 404. DefaultRootObject only rescues
+   # "/", which is why this is easy to miss until someone clicks a link.
+   #
+   # The cost is that a website endpoint is a custom origin: no origin
+   # access control, so the bucket stays publicly readable. It holds the
+   # compiled marketing site and nothing else, so that is a fair trade. To
+   # close it, keep the REST endpoint and attach a CloudFront Function that
+   # appends index.html to directory paths — which needs a CloudFront
+   # resource this account cannot create yet.
+   {"Id": "s3-frontend",
+    "DomainName": f"{bucket}.s3-website.{region}.amazonaws.com",
     "OriginPath": "", "CustomHeaders": {"Quantity": 0},
-    "S3OriginConfig": {"OriginAccessIdentity": ""},
-    "OriginAccessControlId": oac,
+    # S3 website endpoints do not speak HTTPS.
+    "CustomOriginConfig": {"HTTPPort": 80, "HTTPSPort": 443,
+        "OriginProtocolPolicy": "http-only",
+        "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]},
+        "OriginReadTimeout": 30, "OriginKeepaliveTimeout": 5},
     "ConnectionAttempts": 3, "ConnectionTimeout": 10,
     "OriginShield": {"Enabled": False}},
    {"Id": "api-origin", "DomainName": priv,
@@ -122,15 +140,19 @@ fi
 DOMAIN=$(aws cloudfront get-distribution --id "$DIST" --query 'Distribution.DomainName' --output text)
 echo "    distribution=$DIST  domain=$DOMAIN"
 
-echo "==> bucket policy, so only this distribution can read S3"
+echo "==> bucket policy: public read"
+# A website endpoint is a custom origin, so CloudFront arrives as an ordinary
+# anonymous client and cannot be identified by an OAC condition. The bucket
+# holds only the compiled public marketing site.
 cat > /tmp/forecast-bucket-policy.json <<EOF
-{"Version":"2008-10-17","Statement":[{
-  "Sid":"AllowCloudFrontServicePrincipalReadOnly",
-  "Effect":"Allow","Principal":{"Service":"cloudfront.amazonaws.com"},
-  "Action":"s3:GetObject","Resource":"arn:aws:s3:::$BUCKET/*",
-  "Condition":{"StringEquals":{"AWS:SourceArn":"arn:aws:cloudfront::$ACCOUNT:distribution/$DIST"}}}]}
+{"Version":"2012-10-17","Statement":[{
+  "Sid":"PublicReadForWebsiteOrigin",
+  "Effect":"Allow","Principal":"*",
+  "Action":"s3:GetObject","Resource":"arn:aws:s3:::$BUCKET/*"}]}
 EOF
 aws s3api put-bucket-policy --bucket "$BUCKET" --policy file:///tmp/forecast-bucket-policy.json
+aws s3api put-bucket-website --bucket "$BUCKET" --website-configuration \
+  '{"IndexDocument":{"Suffix":"index.html"},"ErrorDocument":{"Key":"404.html"}}'
 echo "    done"
 
 echo "==> closing the instance to everything except this distribution"
