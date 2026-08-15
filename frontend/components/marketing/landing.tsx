@@ -213,10 +213,10 @@ function HowItWorks() {
               variant={step.active ? "scale" : "from-right"}
               duration={620}
               className={cn(
-                "card-hover flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
+                "card-edge flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
                 step.active
                   ? "border-[#111512] bg-[#e5e8e3] sm:col-span-2"
-                  : "border-[#cfd5cf] hover:border-[#8f9a90]",
+                  : "border-[#cfd5cf]",
               )}
             >
               <div className="flex items-center justify-between">
@@ -249,7 +249,7 @@ function Features() {
 
         <div className="mt-10 grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-3">
           {FEATURES.map((feature, index) => (
-            <Reveal key={feature.title} delay={index * 100} variant="scale" duration={640} className="card-hover flex flex-col border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 hover:border-[#8f9a90] sm:p-8">
+            <Reveal key={feature.title} delay={index * 100} variant="scale" duration={640} className="card-edge flex flex-col border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-8">
               <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-[#697069]">
                 {feature.number}
                 <feature.icon className="motion-icon size-5" strokeWidth={1.6} aria-hidden />

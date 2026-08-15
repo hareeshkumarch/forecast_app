@@ -759,9 +759,10 @@ body {
   }
 }
 
-.card-hover {
-  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
-}
+/* Marks a card's border so the prefers-contrast query below can strengthen it.
+   Carries no hover: these cards are read, not clicked, and a border that
+   responded to the pointer promised a click that never came. It has no
+   transition either, because nothing about it changes. */
 
 .scape-chip {
   transition:
@@ -937,7 +938,7 @@ svg[role="img"]:focus-visible {
   }
 
   .hero-stage,
-  .card-hover,
+  .card-edge,
   .forecast-landing nav {
     border-color: #717971;
   }
