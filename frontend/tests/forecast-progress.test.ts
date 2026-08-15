@@ -1,7 +1,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useForecastProgress } from "@/hooks/use-forecast-progress";
+import {
+  RUN_STAGES,
+  STAGE_LABELS,
+  stagesFor,
+  useElapsed,
+  useForecastProgress,
+} from "@/hooks/use-forecast-progress";
 import type { ForecastProgressEvent } from "@/types/api";
 
 const RUN_ID = "11111111-2222-3333-4444-555555555555";
@@ -196,5 +202,91 @@ describe("following a forecast", () => {
     unmount();
 
     expect(opened[0]!.closed).toBe(true);
+  });
+});
+
+describe("the steps a run is shown as having", () => {
+  it("leaves the grain steps out of a run that has no grain", () => {
+    expect(stagesFor(false)).toEqual(RUN_STAGES);
+    expect(stagesFor(false)).not.toContain("fitting_series");
+  });
+
+  it("adds the grain steps after the total is stored", () => {
+    const stages = stagesFor(true);
+
+    expect(stages.slice(-2)).toEqual(["fitting_series", "storing_series"]);
+    expect(stages.indexOf("fitting_series")).toBeGreaterThan(stages.indexOf("persisting"));
+  });
+
+  it("names every step it lists", () => {
+    // A step with no label renders as a raw backend identifier.
+    for (const stage of stagesFor(true)) {
+      expect(STAGE_LABELS[stage], stage).toBeTruthy();
+    }
+  });
+
+  it("matches the order the backend reports them in", () => {
+    // The checklist ticks by index, so a step out of order marks the wrong
+    // rows done.
+    expect(stagesFor(true)).toEqual([
+      "aggregating",
+      "backtesting",
+      "fitting",
+      "building_outputs",
+      "persisting",
+      "generating_insights",
+      "fitting_series",
+      "storing_series",
+    ]);
+  });
+});
+
+describe("how long a run has been going", () => {
+  it("shows nothing before a run starts", () => {
+    const { result } = renderHook(() => useElapsed(null, false));
+
+    expect(result.current).toBeNull();
+  });
+
+  it("counts up while the run is going", async () => {
+    const started = Date.now();
+    const { result } = renderHook(() => useElapsed(started, true));
+
+    expect(result.current).toBe("0:00");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(65_000);
+    });
+
+    expect(result.current).toBe("1:05");
+  });
+
+  it("stops at the total rather than blanking when the run ends", async () => {
+    const started = Date.now();
+    const { rerender, result } = renderHook(
+      ({ running }) => useElapsed(started, running),
+      { initialProps: { running: true } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(42_000);
+    });
+    expect(result.current).toBe("0:42");
+
+    rerender({ running: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(result.current).toBe("0:42");
+  });
+
+  it("reports the run's own age, not the age of the panel watching it", async () => {
+    // Reopening the modal mid-run remounts the panel; a clock anchored to
+    // mount would restart at zero and understate a long run.
+    const startedTwoMinutesAgo = Date.now() - 125_000;
+    const { result } = renderHook(() => useElapsed(startedTwoMinutesAgo, true));
+
+    expect(result.current).toBe("2:05");
   });
 });

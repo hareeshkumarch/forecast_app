@@ -11,6 +11,7 @@ import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { SplitWords } from "@/components/marketing/split-words";
 import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
@@ -92,9 +93,23 @@ export function Landing() {
   );
 }
 
-function Eyebrow({ children, light = false }: { children: ReactNode; light?: boolean }) {
+function Eyebrow({
+  children,
+  light = false,
+  rule = true,
+}: {
+  children: ReactNode;
+  light?: boolean;
+  /** Off in the hero, where a pulsing status dot already sits to the left. */
+  rule?: boolean;
+}) {
   return (
-    <div className={cn("font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-[#858b86]" : "text-[#626862]")}>
+    // inline-flex, not flex: the closing section centres its content with
+    // `text-align`, which only moves an inline-level box.
+    <div className={cn("inline-flex items-center gap-3 font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-[#858b86]" : "text-[#626862]")}>
+      {rule ? (
+        <span aria-hidden className={cn("eyebrow-rule h-px w-7 shrink-0", light ? "bg-[#4a8f6d]" : "bg-[#287b59]")} />
+      ) : null}
       {children}
     </div>
   );
@@ -108,18 +123,16 @@ function Hero() {
       <div className="page-shell flex flex-col items-center text-center">
         <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
           <span className="status-dot size-2 bg-[#287b59]" aria-hidden />
-          <Eyebrow>Demand forecasting for planning teams</Eyebrow>
+          <Eyebrow rule={false}>Demand forecasting for planning teams</Eyebrow>
         </Reveal>
 
-        <Reveal
+        <SplitWords
           as="h1"
+          text="See your demand before it arrives."
           delay={70}
-          variant="scale"
-          duration={720}
+          stagger={78}
           className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
-        >
-          See your demand before it arrives.
-        </Reveal>
+        />
 
         <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-[#3f463f]">
           Connect your sales history and see how much you will sell, week by week, with an honest
@@ -199,9 +212,10 @@ function HowItWorks() {
       <div className={cn(SHELL, "grid gap-10 xl:grid-cols-[minmax(0,0.5fr)_minmax(0,1fr)] xl:gap-12")}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>01 — Getting started</Eyebrow>
-          <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
-            From a spreadsheet to a plan in three steps.
-          </h2>
+          <SplitWords
+            text="From a spreadsheet to a plan in three steps."
+            className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
+          />
           <p className="mt-5 max-w-[36ch] text-site-lead text-[#4e554e]">Nothing to configure. Nothing to maintain.</p>
         </Reveal>
 
@@ -220,7 +234,7 @@ function HowItWorks() {
               )}
             >
               <div className="flex items-center justify-between">
-                <span className={cn("flex size-10 items-center justify-center border text-site-body", step.active ? "border-[#111512] bg-[#111512] text-white" : "border-[#bcc4bc] text-[#59605a]")}>
+                <span className={cn("step-badge flex size-10 items-center justify-center border text-site-body", step.active ? "border-[#111512] bg-[#111512] text-white" : "border-[#bcc4bc] text-[#59605a]")}>
                   {index + 1}
                 </span>
                 <step.icon className="motion-icon size-5 text-[#59605a]" strokeWidth={1.8} aria-hidden />
@@ -242,9 +256,10 @@ function Features() {
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>What you get</Eyebrow>
-          <h2 className="mt-4 max-w-[26ch] text-balance font-display text-site-h2 font-normal">
-            Everything a planner needs, and nothing they do not.
-          </h2>
+          <SplitWords
+            text="Everything a planner needs, and nothing they do not."
+            className="mt-4 max-w-[26ch] text-balance font-display text-site-h2 font-normal"
+          />
         </Reveal>
 
         <div className="mt-10 grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-3">
@@ -270,9 +285,10 @@ function Compare() {
       <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Built for a real decision</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
-            A range tells you more than a perfect-looking line.
-          </h2>
+          <SplitWords
+            text="A range tells you more than a perfect-looking line."
+            className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal"
+          />
           <p className="mt-5 max-w-[46ch] text-site-lead text-[#3f463f]">
             Forecast Hub shows what is most likely, how far it could move, and what changed since the last run.
           </p>
@@ -332,7 +348,11 @@ function Closing() {
     <section className="section-pad">
       <Reveal variant="scale" duration={700} className="page-shell max-w-[46ch] text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
-        <h2 className="mt-4 text-balance font-display text-site-h2 font-normal">See what is coming next.</h2>
+        <SplitWords
+          text="See what is coming next."
+          stagger={80}
+          className="mt-4 text-balance font-display text-site-h2 font-normal"
+        />
         <Link href="/dashboard" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] min-[430px]:w-auto sm:h-[56px] sm:px-8">
           Open the dashboard
           <Arrow />
@@ -345,14 +365,18 @@ function Closing() {
 function Footer() {
   return (
     <footer className="border-t border-[#cfd5cf] bg-[#fafbf9]/75">
-      <div className={cn(SHELL, "flex flex-col gap-6 py-8 sm:flex-row sm:items-center")}>
+      <Reveal
+        variant="fade"
+        duration={520}
+        className={cn(SHELL, "flex flex-col gap-6 py-8 sm:flex-row sm:items-center")}
+      >
         <div className="flex items-center gap-3">
           <Mark size={28} />
           <span className="text-site-h3 font-bold">Forecast Hub</span>
         </div>
         <p className="text-site-body text-[#737a73] sm:ml-auto">Demand forecasting for planning teams.</p>
         <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Open dashboard →</Link>
-      </div>
+      </Reveal>
     </footer>
   );
 }

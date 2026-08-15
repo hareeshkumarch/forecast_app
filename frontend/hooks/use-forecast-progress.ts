@@ -202,6 +202,53 @@ export function useForecastProgress(
   return state;
 }
 
+/** The steps every run passes through, in the order the backend reports them. */
+export const RUN_STAGES = [
+  "aggregating",
+  "backtesting",
+  "fitting",
+  "building_outputs",
+  "persisting",
+  "generating_insights",
+];
+
+/** Only a run with a grain fits per-series models, after the total is stored. */
+export const GRAIN_STAGES = ["fitting_series", "storing_series"];
+
+/** The checklist for one run.
+ *
+ * Showing the grain steps to a run that has no grain leaves two rows that can
+ * never light up, which reads as a run that stopped short of finishing.
+ */
+export function stagesFor(grouped: boolean): string[] {
+  return grouped ? [...RUN_STAGES, ...GRAIN_STAGES] : RUN_STAGES;
+}
+
+/** Time on the clock since `startedAt`, as `0:42` or `3:07`.
+ *
+ * A percentage answers "how far", never "how long" — and the model search is
+ * the part of a run whose duration is hardest to guess from the data alone.
+ * The clock stops when the run does, leaving the total on screen.
+ */
+export function useElapsed(startedAt: number | null, running: boolean): string | null {
+  const [seconds, setSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (startedAt === null) {
+      setSeconds(null);
+      return;
+    }
+    const read = () => setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    read();
+    if (!running) return;
+    const tick = setInterval(read, 1000);
+    return () => clearInterval(tick);
+  }, [startedAt, running]);
+
+  if (seconds === null) return null;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export const STAGE_LABELS: Record<string, string> = {
   queued: "Queued",
   aggregating: "Aggregating series",

@@ -17,7 +17,6 @@ const SECTIONS = [
 export function FloatingNav() {
   const [lifted, setLifted] = useState(false);
   const [pastHero, setPastHero] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [active, setActive] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
@@ -66,8 +65,6 @@ export function FloatingNav() {
     const update = () => {
       setLifted(window.scrollY > 40);
       setPastHero(window.scrollY > 520);
-      const scrollable = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
-      setScrollProgress(Math.min(Math.max(window.scrollY / scrollable, 0), 1));
     };
     const onScroll = () => {
       if (frame) return;
@@ -195,11 +192,6 @@ export function FloatingNav() {
             {mobileOpen ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
           </button>
         </div>
-        <span
-          aria-hidden
-          className="nav-progress absolute inset-x-0 bottom-0 h-px bg-[#287b59]"
-          style={{ transform: `scaleX(${scrollProgress})` }}
-        />
       </nav>
 
       <div
