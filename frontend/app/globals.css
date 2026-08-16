@@ -1010,6 +1010,155 @@ svg[role="img"]:focus-visible {
   }
 }
 
+/* ------------------------------------------------------ card interaction
+ *
+ * `.card-edge` marked the cards for the contrast query below and did nothing
+ * else, so ten cards sat inert under the cursor while every other surface on
+ * the page answered it. Two layers, both hover-only:
+ *
+ *   1. the card lifts a little and its border firms up
+ *   2. a soft highlight follows the pointer, positioned by `PointerGlow`
+ *
+ * The highlight is a pseudo-element rather than a background on the card so
+ * it composites above the card's own fill and below its text, and so a card
+ * that already carries a background image is unaffected.
+ */
+.card-edge {
+  position: relative;
+  isolation: isolate;
+  transition:
+    translate 260ms var(--ease-out),
+    border-color 260ms var(--ease-out),
+    box-shadow 260ms var(--ease-out);
+}
+
+/*
+ * Most of these cards are also `Reveal` roots, and the reveal system owns
+ * both `transform` and the `transition` shorthand on them — at a specificity
+ * a plain `.card-lift:hover` loses to, so an earlier version of this simply
+ * did nothing on hover.
+ *
+ * Two consequences, both handled here. The lift moves with `translate`, a
+ * separate property that composes with the reveal's `transform` instead of
+ * fighting it. And the transition is restated with a per-property delay list,
+ * so the reveal keeps its entrance stagger while hover answers immediately —
+ * a shared `transition-delay` would make every card hesitate by its own
+ * stagger before lifting.
+ */
+.motion-ready .reveal.card-edge {
+  transition:
+    opacity 400ms var(--ease-out),
+    transform var(--reveal-duration, 520ms) var(--ease-out),
+    translate 260ms var(--ease-out),
+    box-shadow 260ms var(--ease-out),
+    border-color 260ms var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms), var(--reveal-delay, 0ms), 0ms, 0ms, 0ms;
+}
+
+.card-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms var(--ease-out);
+  /* Falls back to the centre until PointerGlow writes a real position, so a
+     keyboard-focused card still lights up sensibly. */
+  background: radial-gradient(
+    22rem circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(40, 123, 89, 0.1),
+    transparent 62%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card-edge:hover {
+    border-color: #9aa69c;
+  }
+
+  .card-edge:hover::after {
+    opacity: 1;
+  }
+
+  /* Lifting is opt-in, because most of these cards are gapless grid cells
+     that share their borders with a neighbour — raising one tears the seam
+     and casts a shadow onto the card beside it. Only cards standing in their
+     own space get `card-lift`. */
+  .card-lift:hover {
+    translate: 0 -3px;
+    box-shadow: 0 10px 30px -18px rgba(17, 21, 18, 0.32);
+  }
+
+  /* The number and the icon are the card's two fixed points; nudging them
+     apart on hover makes the whole card read as one object being picked up
+     rather than a rectangle that moved. */
+  .card-edge:hover .step-badge {
+    transform: translate3d(0, -1px, 0);
+  }
+
+  .card-edge:hover .motion-icon {
+    transform: translate3d(2px, -1px, 0);
+    color: #287b59;
+  }
+}
+
+.card-edge .motion-icon {
+  transition:
+    transform 260ms var(--ease-out),
+    color 260ms var(--ease-out);
+}
+
+/* Keyboard parity: a card reached by Tab gets the same highlight a cursor
+   would have given it. */
+.card-edge:focus-within::after {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------- CTA sheen
+ *
+ * One pass of light across the primary button on hover. The button is nearly
+ * black and otherwise only changes its border, which on a dark fill is close
+ * to invisible — this gives the page's single most important control a
+ * response you can actually see.
+ */
+.cta-nudge {
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-nudge > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cta-nudge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 80%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cta-nudge:hover::before {
+    animation: cta-sheen 620ms var(--ease-draw) forwards;
+  }
+}
+
+@keyframes cta-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-contrast: more) {
   .forecast-landing {
     background-image: none;
@@ -1019,6 +1168,12 @@ svg[role="img"]:focus-visible {
   .card-edge,
   .forecast-landing nav {
     border-color: #717971;
+  }
+
+  /* A wash of colour is not a contrast cue; drop it rather than compete. */
+  .card-edge::after,
+  .cta-nudge::before {
+    display: none;
   }
 }
 

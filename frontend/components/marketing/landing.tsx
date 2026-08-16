@@ -9,6 +9,7 @@ import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
+import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { SplitWords } from "@/components/marketing/split-words";
@@ -79,6 +80,7 @@ export function Landing() {
   return (
     <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-[#f1f3ef] text-[#111512]", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <PointerGlow />
       <FloatingNav />
       <main id="main-content">
         <Hero />
@@ -190,7 +192,8 @@ function Proof() {
             key={stat.label}
             delay={index * 70}
             duration={560}
-            className="border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-7"
+            // Glow only, no lift: shared borders with the tile next door.
+            className="card-edge border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-7"
           >
             <dt className="text-stat font-bold text-[#111512]">
               {stat.count ? <CountUp value={stat.value} /> : stat.value}
@@ -227,7 +230,9 @@ function HowItWorks() {
               variant={step.active ? "scale" : "from-right"}
               duration={620}
               className={cn(
-                "card-edge flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
+                // card-lift as well as card-edge: these three sit in a gapped
+                // grid, so raising one does not pull on a shared border.
+                "card-edge card-lift flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
                 step.active
                   ? "border-[#111512] bg-[#e5e8e3] sm:col-span-2"
                   : "border-[#cfd5cf]",
