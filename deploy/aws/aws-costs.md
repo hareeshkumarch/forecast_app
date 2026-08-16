@@ -110,9 +110,24 @@ compile. Checked against this project's actual pinned versions on PyPI:
 | polars, pyarrow, duckdb, scipy, numpy, scikit-learn, statsmodels, pandas | aarch64 wheels published |
 | pymssql, psycopg2-binary, asyncpg, cryptography, fastexcel | aarch64 wheels published |
 | reportlab | `py3-none-any` — pure Python, architecture-independent |
+| prophet | `manylinux_2_17_aarch64` wheel, 14.7 MB, with the Stan model already compiled inside it |
 
 Every pinned dependency installs from a prebuilt wheel on arm64. No compilation
 step, no reason to pay double for x86.
+
+Prophet is the one worth spelling out, because its reputation says otherwise.
+The aarch64 wheel carries `prophet/stan_model/prophet_model.bin` — a 2.8 MB
+binary built by the wheel's publisher — so Graviton neither compiles Stan at
+install time nor on first fit. Installed weight is ~200 MB with cmdstanpy and
+matplotlib behind it, against a 30 GB volume.
+
+Its cost here is CPU, not disk or architecture: a Prophet candidate fits a
+Stan model per prior combination, and the run's prior search is capped at two
+hold-out windows (`PROPHET_TUNING_SPLITS`) for exactly that reason. On a
+2-vCPU box it is the slowest candidate in the roster by some margin. If the
+28-second fit budget matters more than having it, build the image with
+`--build-arg INSTALL_OPTIONAL_MODELS=false` and the platform will run the
+other nine models and say plainly that it did.
 
 ---
 

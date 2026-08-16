@@ -185,12 +185,35 @@ whenever Supabase is configured but something else is serving:
 
 ```bash
 curl -fsS http://<instance-public-dns>/api/health
-# want: "database_target":"supabase", "status":"ok"
+# want: "database_target":"supabase", "status":"ok", "unavailable_models":[]
 ```
 
 With the fallback off, a wrong password does not degrade — it fails the boot,
 so the symptom is a service that never comes up. `journalctl -u forecast -n 50`
 has the reason.
+
+### Check the model roster while you are here
+
+`unavailable_models` in that response is the whole answer to "why does the
+dashboard say Prophet was not tried". Empty is what a complete image looks
+like. Anything listed means the image was built without it, or built with it
+and it will not start:
+
+```bash
+curl -fsS http://<instance-public-dns>/api/health/capabilities | jq .
+```
+
+That endpoint gives the per-model reason a user would see. The reason an
+*operator* needs — the pip line, or the exception from the Stan backend — is
+deliberately not in the response, because CloudFront serves it to any browser.
+It is logged once per process instead:
+
+```bash
+docker compose -f deploy/aws/docker-compose.prod.yml logs backend | grep -i "prophet is unavailable"
+```
+
+A missing optional model is not a degraded service and `status` stays `ok`;
+the other nine models still compete for every forecast.
 
 ---
 

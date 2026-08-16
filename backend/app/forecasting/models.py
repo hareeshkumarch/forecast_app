@@ -9,6 +9,12 @@ import numpy as np
 import numpy.typing as npt
 
 from app.core.config import settings
+
+# `availability` is imported as a module and called through, not imported by
+# name: the probe is the seam tests fake a deployment through, and a by-value
+# import would bind past the patch.
+from app.forecasting import availability
+from app.forecasting.availability import ModelAvailability
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
@@ -364,9 +370,10 @@ class ProphetForecaster:
 
     @staticmethod
     def available() -> bool:
-        from importlib.util import find_spec
-
-        return find_spec("prophet") is not None
+        # Not `find_spec("prophet")`. A Prophet whose Stan backend will not
+        # load imports cleanly and only fails at fit, so an import check puts
+        # it on the roster and then loses every backtest to an exception.
+        return availability.prophet_availability().available
 
     def _seasonality_flags(self, y: FloatArray) -> dict[str, bool]:
         period = self.profile.seasonal_period if self.profile else 0
@@ -382,11 +389,9 @@ class ProphetForecaster:
         }
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
-        if not self.available():
-            raise ValueError(
-                "Prophet is not installed in this deployment "
-                "(pip install -r requirements-optional.txt)."
-            )
+        status = availability.prophet_availability()
+        if not status.available:
+            raise ValueError(status.reason)
 
         import logging
 
@@ -1183,26 +1188,82 @@ def build_candidates(
             # this deployment cannot fit — Prophet without Prophet installed,
             # Croston on a series that is not intermittent — run everything
             # instead, and report the winner as though it had been asked for.
-            raise ValueError(
-                "None of the selected models can be fitted here: "
-                + ", ".join(sorted(allowed_set))
-                + ". Available for this series: "
-                + ", ".join(sorted(c.kind.value for c in candidates))
-                + "."
-            )
+            #
+            # Two very different reasons land here, and the message says which:
+            # a model missing from the deployment is the operator's to fix,
+            # while one ruled out for this series is the user's to reconsider.
+            raise ValueError(_no_candidates_message(allowed_set, candidates))
         return filtered
 
     return candidates
 
 
-def unavailable_models() -> dict[ModelKind, str]:
-    missing: dict[ModelKind, str] = {}
-    if not ProphetForecaster.available():
-        missing[ModelKind.PROPHET] = (
-            "Prophet is not installed in this deployment. "
-            "Install it with: pip install -r requirements-optional.txt"
+#: Titles for error copy. The wire format stays `ModelKind`; this is only for
+#: sentences a person reads.
+MODEL_LABELS: dict[ModelKind, str] = {
+    ModelKind.NAIVE: "Naive",
+    ModelKind.SEASONAL_NAIVE: "Seasonal Naive",
+    ModelKind.HOLT_WINTERS: "Holt-Winters",
+    ModelKind.ETS: "Auto-ETS",
+    ModelKind.THETA: "Theta",
+    ModelKind.CROSTON: "Croston (Intermittent)",
+    ModelKind.SARIMAX: "SARIMAX",
+    ModelKind.PROPHET: "Prophet",
+    ModelKind.GRADIENT_BOOSTING: "Gradient Boosting",
+    ModelKind.ENSEMBLE: "Ensemble",
+}
+
+
+def label_for(kind: ModelKind | str) -> str:
+    """`ModelKind.SEASONAL_NAIVE` -> "Seasonal Naive"; unknown values pass through."""
+    try:
+        return MODEL_LABELS[ModelKind(kind)]
+    except ValueError:
+        return str(kind).replace("_", " ").title()
+
+
+def _join(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _no_candidates_message(allowed: set[str], offered: list[Forecaster]) -> str:
+    """Why a model restriction left nothing to fit, in terms a user can act on."""
+    unavailable = unavailable_models()
+    asked_for_unavailable = sorted(
+        label_for(kind) for kind in unavailable if kind.value.lower() in allowed
+    )
+    runnable = _join(sorted({label_for(c.kind) for c in offered}))
+
+    if asked_for_unavailable and len(asked_for_unavailable) == len(allowed):
+        # Everything they ticked is missing from the deployment, so pointing
+        # at the series would be a red herring — nothing about their data is
+        # the problem.
+        return (
+            f"{_join(asked_for_unavailable)} "
+            f"{'is' if len(asked_for_unavailable) == 1 else 'are'} not available on this "
+            f"server, so there is nothing to backtest. Choose another model — "
+            f"{runnable} can be fitted here."
         )
-    return missing
+
+    ruled_out = _join(sorted(label_for(name) for name in allowed))
+    return (
+        f"None of the models you chose ({ruled_out}) suit this series, so there is "
+        f"nothing to backtest. For this series the platform can fit {runnable}."
+    )
+
+
+def unavailable_models() -> dict[ModelKind, ModelAvailability]:
+    """Models this deployment cannot fit, keyed by kind.
+
+    Returns the whole availability record rather than a string, because the
+    two halves of it go to different places: `reason` is rendered next to the
+    run's other candidates, and `operator_hint` is for logs and the health
+    endpoint. Flattening them is what put `pip install` in the dashboard.
+    """
+    status = availability.prophet_availability()
+    return {} if status.available else {ModelKind.PROPHET: status}
 
 
 def build_candidate(

@@ -697,7 +697,22 @@ export interface HealthResponse {
   queued_forecast_runs: number;
   running_forecast_runs: number;
   failed_forecast_runs: number;
+  /** Model kinds this deployment cannot fit. Empty on a complete install. */
+  unavailable_models: ModelKind[];
   timestamp: string;
+}
+
+export interface ModelCapability {
+  model: ModelKind;
+  label: string;
+  available: boolean;
+  /** Set only when `available` is false, and written to be shown to a user. */
+  reason: string | null;
+}
+
+export interface CapabilitiesResponse {
+  models: ModelCapability[];
+  unavailable_models: ModelKind[];
 }
 
 export interface ScenarioPoint {

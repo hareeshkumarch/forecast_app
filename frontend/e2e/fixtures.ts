@@ -216,6 +216,29 @@ const HEALTH = {
   storage_writable: true,
   forecast_workers: 1,
   max_upload_mb: 50,
+  unavailable_models: [],
+};
+
+/**
+ * A complete deployment. Prophet is available here so the picker under test
+ * matches the shipped image; the unavailable path has its own coverage in the
+ * backend suite, and greying a model out here would only make these specs
+ * assert on a deployment nobody runs.
+ */
+const CAPABILITIES = {
+  models: [
+    { model: "naive", label: "Naive", available: true, reason: null },
+    { model: "seasonal_naive", label: "Seasonal Naive", available: true, reason: null },
+    { model: "holt_winters", label: "Holt-Winters", available: true, reason: null },
+    { model: "ets", label: "Auto-ETS", available: true, reason: null },
+    { model: "theta", label: "Theta", available: true, reason: null },
+    { model: "croston", label: "Croston (Intermittent)", available: true, reason: null },
+    { model: "sarimax", label: "SARIMAX", available: true, reason: null },
+    { model: "prophet", label: "Prophet", available: true, reason: null },
+    { model: "gradient_boosting", label: "Gradient Boosting", available: true, reason: null },
+    { model: "ensemble", label: "Ensemble", available: true, reason: null },
+  ],
+  unavailable_models: [],
 };
 
 /** Route every API call to a fixture. Call it before the first navigation. */
@@ -235,6 +258,7 @@ export async function stubApi(page: Page): Promise<void> {
         body: JSON.stringify(body),
       });
 
+    if (pathname.endsWith("/api/health/capabilities")) return json(CAPABILITIES);
     if (pathname.endsWith("/api/health")) return json(HEALTH);
     if (pathname.endsWith("/api/dashboard/summary")) return json(SUMMARY);
     if (pathname.endsWith("/api/dashboard/breakdown")) return json(BREAKDOWN);

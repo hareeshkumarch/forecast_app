@@ -5,6 +5,10 @@ import type { ComponentType } from "react";
 
 import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
+import {
+  ForecastRunPill,
+  ForecastRunProvider,
+} from "@/components/dashboard/forecast-run-watcher";
 import { TopHeader } from "@/components/dashboard/top-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/primitives";
@@ -124,23 +128,29 @@ function LazyOverlayHost() {
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
   return (
-    <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
-      <a
-        href="#main-content"
-        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"
-      >
-        Skip to main content
-      </a>
-      <TopHeader section={section} />
-      <div className="flex min-h-0 flex-1">
-        <AppSidebar />
-        <SectionWorkspace />
-        {section === "dashboard" ? <InsightsRail /> : null}
+    // The run watcher wraps the shell rather than sitting inside the overlay
+    // host: it has to outlive the forecast dialog, which is unmounted the
+    // moment that dialog closes.
+    <ForecastRunProvider>
+      <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
+        <a
+          href="#main-content"
+          className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"
+        >
+          Skip to main content
+        </a>
+        <TopHeader section={section} />
+        <div className="flex min-h-0 flex-1">
+          <AppSidebar />
+          <SectionWorkspace />
+          {section === "dashboard" ? <InsightsRail /> : null}
+        </div>
+        <CommandPalette />
+        <Toaster />
+        <LazyOverlayHost />
+        <ForecastRunPill />
+        <ConfirmDialog />
       </div>
-      <CommandPalette />
-      <Toaster />
-      <LazyOverlayHost />
-      <ConfirmDialog />
-    </div>
+    </ForecastRunProvider>
   );
 }

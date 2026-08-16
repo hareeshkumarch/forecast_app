@@ -46,6 +46,7 @@ function filterKey(filters: DashboardFilters) {
 
 const queryKeys = {
   health: ["health"] as const,
+  capabilities: ["capabilities"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
@@ -79,6 +80,21 @@ export function useHealth() {
     queryKey: queryKeys.health,
     queryFn: ({ signal }) => api.getHealth(signal),
     refetchInterval: 60_000,
+  });
+}
+
+/**
+ * Which models this deployment can fit. Effectively static — it only changes
+ * when the image is rebuilt — so it is cached hard and never refetched on a
+ * window focus, unlike health.
+ */
+export function useCapabilities() {
+  return useQuery({
+    queryKey: queryKeys.capabilities,
+    queryFn: ({ signal }) => api.getCapabilities(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 }
 

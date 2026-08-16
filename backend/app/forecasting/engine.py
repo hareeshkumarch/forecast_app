@@ -332,8 +332,10 @@ def run_forecast(
         results.append(combined.result)
     timings.record(Stage.FIT, time.perf_counter() - fit_started)
 
-    for kind, reason in unavailable_models().items():
-        results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
+    for kind, status in unavailable_models().items():
+        # The user-facing half only. The operator half is logged once per
+        # process by the probe itself, where somebody can act on it.
+        results.append(BacktestResult(model=kind, failed=True, failure_reason=status.reason))
 
     cps = payload.model_options.get("complexity_penalty_scale") if payload.model_options else None
     # model_options round-trips through stored JSON, so the value is only a number

@@ -242,13 +242,43 @@ hardest on the value it will not have.
 
 ### Optional models
 
-Prophet is not installed by default because it compiles a Stan model on first
-use. The engine detects what is present and reports the rest as unavailable
-rather than failing:
+Prophet is the one model kept out of `requirements.txt`, so that a plain
+checkout stays light. **Docker images install it** — the `INSTALL_OPTIONAL_MODELS`
+build arg defaults to `true` — so every deployment has the full ten-model
+roster. Add it to a local virtualenv with:
 
 ```bash
 pip install -r backend/requirements-optional.txt
 ```
+
+Build a lean image without it, and the engine detects the gap and reports it
+rather than failing: the model picker greys Prophet out, the run proceeds on
+the other nine, and the comparison table records why the tenth is absent.
+
+```bash
+docker build --build-arg INSTALL_OPTIONAL_MODELS=false ./backend
+```
+
+To ask a running deployment what it can fit — this is the quickest way to
+answer "is Prophet live on that box?" without a shell on it:
+
+```bash
+curl -s http://<host>/api/health | jq .unavailable_models        # [] when complete
+curl -s http://<host>/api/health/capabilities | jq .             # per-model detail
+```
+
+Two notes on the pins, both of which have bitten this repo:
+
+- **Prophet does not compile anything.** Since 1.1 the manylinux wheels ship
+  `prophet/stan_model/prophet_model.bin` prebuilt, for x86-64 and aarch64
+  alike. There is no Stan build at install time and none on first use.
+- **`cmdstanpy` is pinned below 1.3.0 on purpose.** Prophet's wheel bundles a
+  CmdStan tree with no makefile in it, because nothing there ever builds a
+  model; cmdstanpy 1.3.0 made its path validation insist on one and so rejects
+  the tree Prophet ships. Prophet itself only asks for `cmdstanpy>=1.0.4`, so
+  an unpinned install resolves to a combination that *imports cleanly and
+  fails every fit*. `requirements-optional.txt` pins 1.2.5, and the image runs
+  a real fit at build time so the pair is checked before anything ships.
 
 ### Tuning what it decides
 

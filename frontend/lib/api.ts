@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   BreakdownResponse,
+  CapabilitiesResponse,
   Connector,
   ConnectorSchemaList,
   ConnectorTestResult,
@@ -184,6 +185,9 @@ async function request<T>(
 
 export const getHealth = (signal?: AbortSignal) =>
   request<HealthResponse>("/api/health", { signal });
+
+export const getCapabilities = (signal?: AbortSignal) =>
+  request<CapabilitiesResponse>("/api/health/capabilities", { signal });
 
 export const listConnectors = (signal?: AbortSignal) =>
   request<Connector[]>("/api/connectors", { signal });
