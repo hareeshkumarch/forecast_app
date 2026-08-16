@@ -398,9 +398,13 @@ Without a shell on the box, the same thing in one call:
 aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name AWS-RunShellScript \
-  --parameters 'commands=["sudo /opt/forecast/deploy/aws/update-backend.sh"]' \
+  --parameters 'commands=["sudo FORCE=1 /opt/forecast/deploy/aws/update-backend.sh"]' \
   --query 'Command.CommandId' --output text
 ```
+
+`FORCE=1` because `send-command` has no terminal to answer the in-flight-run
+prompt with. Drop it and the script refuses instead of guessing, which is the
+right default when nobody is watching — but it does mean nothing happens.
 
 The manual equivalent, if you would rather do it by hand:
 

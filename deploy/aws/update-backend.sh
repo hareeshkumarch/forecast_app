@@ -11,8 +11,12 @@
 #   aws ssm send-command \
 #     --instance-ids <instance-id> \
 #     --document-name AWS-RunShellScript \
-#     --parameters 'commands=["sudo /opt/forecast/deploy/aws/update-backend.sh"]' \
+#     --parameters 'commands=["sudo FORCE=1 /opt/forecast/deploy/aws/update-backend.sh"]' \
 #     --query 'Command.CommandId' --output text
+#
+# FORCE=1 there because send-command has no terminal to answer the in-flight
+# prompt below. Without it the script refuses rather than guessing, which is
+# the right default for an unattended run but does mean it stops.
 #
 # The manual equivalent is three commands (see runbook.md, "Redeploying").
 # This exists for the fourth thing those three do not do: check that what came
