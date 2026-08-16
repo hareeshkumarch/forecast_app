@@ -384,17 +384,47 @@ progress indicator should say it is streaming; if it says it is polling, the
 **Backend** — on the instance:
 
 ```bash
+sudo /opt/forecast/deploy/aws/update-backend.sh
+```
+
+It fetches `main`, rebuilds through systemd, waits for health, and then
+checks `unavailable_models` is empty before calling it a success. That last
+step is the point: a rebuild that quietly drops an optional model looks
+exactly like one that worked, which is how Prophet stayed missing.
+
+Without a shell on the box, the same thing in one call:
+
+```bash
+aws ssm send-command \
+  --instance-ids "$INSTANCE_ID" \
+  --document-name AWS-RunShellScript \
+  --parameters 'commands=["sudo /opt/forecast/deploy/aws/update-backend.sh"]' \
+  --query 'Command.CommandId' --output text
+```
+
+The manual equivalent, if you would rather do it by hand:
+
+```bash
 cd /opt/forecast
 sudo git fetch --depth 1 origin main && sudo git checkout -f FETCH_HEAD
 sudo systemctl restart forecast
+curl -fsS http://localhost/api/health    # want "unavailable_models":[]
 ```
 
-One thing to know before you do it: without a Celery broker the executor has
-no durable queue, so `reap_orphaned_runs` marks every in-flight run
-`failed` with "The service restarted before this run finished" on the way
-back up. It is a clean, retryable failure rather than a stuck run — but it
-is a reason to redeploy when nobody is mid-forecast, and a reason not to run
-this on Spot capacity.
+Two things to know before you do it.
+
+Without a Celery broker the executor has no durable queue, so
+`reap_orphaned_runs` marks every in-flight run `failed` with "The service
+restarted before this run finished" on the way back up. It is a clean,
+retryable failure rather than a stuck run — but it is a reason to redeploy
+when nobody is mid-forecast, and a reason not to run this on Spot capacity.
+The script checks for in-flight runs and asks before restarting; `FORCE=1`
+skips the prompt.
+
+And the first rebuild after Prophet was added is a slow one — it installs
+~200 MB more wheels on 2 vCPUs. The systemd unit allows 30 minutes for it
+and the script waits 15 for health; neither is usually needed, but a build
+that looks hung for five minutes is normal.
 
 ---
 
