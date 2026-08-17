@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildScape, labelWidth, prismFaces, scapeVertices } from "@/lib/demand-scape";
+import { buildScape, labelWidth, prismFaces, scapeVertices, type Layer } from "@/lib/demand-scape";
 
 function required<T>(value: T | undefined, what: string): T {
   if (value === undefined) throw new Error(`missing ${what}`);
@@ -9,6 +9,22 @@ function required<T>(value: T | undefined, what: string): T {
 
 const series = (count: number, seed: number) =>
   Array.from({ length: count }, (_, index) => 40 + ((index * seed) % 80));
+
+/** Two rows of made-up demand, the shape the chart is always handed. */
+const layers = (historyCount: number, futureCount: number): Layer[] => [
+  {
+    id: "front",
+    label: "Front",
+    history: series(historyCount, 7).map((value) => value * 0.6),
+    future: series(futureCount, 5).map((value) => value * 0.6),
+  },
+  {
+    id: "behind",
+    label: "Behind",
+    history: series(historyCount, 7),
+    future: series(futureCount, 5),
+  },
+];
 
 const parseViewBox = (viewBox: string) => {
   const parts = viewBox.split(" ").map(Number);
@@ -25,10 +41,7 @@ const LENGTHS = [8, 35, 120];
 describe("demand scape geometry", () => {
   it.each(LENGTHS)("keeps every vertex inside the viewBox at n = %i", (n) => {
     const historyLength = Math.max(1, n - Math.min(9, Math.floor(n / 2)));
-    const scape = buildScape(
-      series(historyLength, 7),
-      series(n - historyLength, 5),
-    );
+    const scape = buildScape(layers(historyLength, n - historyLength));
     const box = parseViewBox(scape.viewBox);
 
     for (const [x, y] of scapeVertices(scape)) {
@@ -40,7 +53,7 @@ describe("demand scape geometry", () => {
   });
 
   it.each(LENGTHS)("keeps guides and labels inside the viewBox at n = %i", (n) => {
-    const scape = buildScape(series(n - 9, 7), series(9, 5));
+    const scape = buildScape(layers(n - 9, 9));
     const box = parseViewBox(scape.viewBox);
     const within = (x: number, y: number) =>
       x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
@@ -49,7 +62,7 @@ describe("demand scape geometry", () => {
       expect(within(guide.x1, guide.y1)).toBe(true);
       expect(within(guide.x2, guide.y2)).toBe(true);
     }
-    for (const label of scape.labels) {
+    for (const label of [...scape.labels, ...scape.rowLabels]) {
       expect(within(label.x, label.y)).toBe(true);
     }
     expect(within(scape.boundary.x1, scape.boundary.y1)).toBe(true);
@@ -58,7 +71,7 @@ describe("demand scape geometry", () => {
 
   it("holds its aspect ratio steady as the series grows", () => {
     const ratios = LENGTHS.map((n) => {
-      const scape = buildScape(series(n - 9, 7), series(9, 5));
+      const scape = buildScape(layers(n - 9, 9));
       return scape.width / scape.height;
     });
 
@@ -71,7 +84,7 @@ describe("demand scape geometry", () => {
 
   it("spends a fixed drift budget however many bars divide it", () => {
     const drift = LENGTHS.map((n) => {
-      const scape = buildScape(series(n - 9, 7), series(9, 5));
+      const scape = buildScape(layers(n - 9, 9));
       const front = scape.prisms.filter((prism) => prism.row === 0);
       const first = required(front[0], "first prism");
       const last = required(front[front.length - 1], "last prism");
@@ -90,7 +103,7 @@ describe("demand scape geometry", () => {
 
   it("walks no further at 120 bars than at 8", () => {
     const reach = LENGTHS.map((n) => {
-      const scape = buildScape(series(n - 9, 7), series(9, 5));
+      const scape = buildScape(layers(n - 9, 9));
       const xs = scapeVertices(scape).map(([x]) => x);
       return Math.max(...xs);
     });
@@ -99,12 +112,12 @@ describe("demand scape geometry", () => {
   });
 
   it("adds bars without moving the frame", () => {
-    const boxes = LENGTHS.map((n) => buildScape(series(n - 9, 7), series(9, 5)).viewBox);
+    const boxes = LENGTHS.map((n) => buildScape(layers(n - 9, 9)).viewBox);
     expect(new Set(boxes).size).toBe(1);
   });
 
   it.each(LENGTHS)("keeps whole captions, not just their anchors, off the bars at n = %i", (n) => {
-    const scape = buildScape(series(n - 9, 7), series(9, 5));
+    const scape = buildScape(layers(n - 9, 9));
     const box = parseViewBox(scape.viewBox);
     const plotLeft = Math.min(...scape.prisms.map((prism) => prism.x));
     const plotRight = Math.max(...scape.prisms.map((p) => p.x + p.width + p.extrudeX));
@@ -124,7 +137,7 @@ describe("demand scape geometry", () => {
   });
 
   it("keeps labels out of the band the bars occupy", () => {
-    const scape = buildScape(series(26, 7), series(9, 5));
+    const scape = buildScape(layers(26, 9));
     const xs = scape.prisms.map((prism) => prism.x);
     const plotLeft = Math.min(...xs);
     const plotRight = Math.max(...scape.prisms.map((p) => p.x + p.width + p.extrudeX));
@@ -140,7 +153,7 @@ describe("demand scape geometry", () => {
   });
 
   it("names the series length it was given", () => {
-    const scape = buildScape(series(26, 7), series(9, 5));
+    const scape = buildScape(layers(26, 9));
     expect(scape.labels.map((label) => label.text)).toEqual([
       "26 weeks ago",
       "today",
@@ -148,8 +161,54 @@ describe("demand scape geometry", () => {
     ]);
   });
 
+  it("names each row where that row begins, in the gutter beside it", () => {
+    const scape = buildScape(layers(26, 9));
+    const plotLeft = Math.min(...scape.prisms.map((prism) => prism.x));
+
+    expect(scape.rowLabels.map((label) => label.text)).toEqual(["Front", "Behind"]);
+    for (const label of scape.rowLabels) {
+      expect(label.x).toBeLessThanOrEqual(plotLeft);
+      expect(label.x - labelWidth(label.text)).toBeGreaterThanOrEqual(
+        parseViewBox(scape.viewBox).x,
+      );
+    }
+
+    // Each name sits on its own row's baseline, so the two are as far apart
+    // vertically as the rows they belong to.
+    const [front, behind] = scape.rowLabels;
+    const baselines = scape.prisms.filter((prism) => prism.step === 0);
+    const rowGap =
+      required(
+        baselines.find((prism) => prism.row === 0),
+        "front row",
+      ).baseY -
+      required(
+        baselines.find((prism) => prism.row === 1),
+        "back row",
+      ).baseY;
+    expect(required(front, "front name").y - required(behind, "back name").y).toBeCloseTo(
+      rowGap,
+      6,
+    );
+  });
+
+  it("keeps the oldest-week caption clear of the row names", () => {
+    const scape = buildScape(layers(26, 9));
+    const past = required(
+      scape.labels.find((label) => label.key === "past"),
+      "past caption",
+    );
+
+    for (const label of scape.rowLabels) {
+      expect(past.y).toBeLessThan(label.y);
+      // A mono line at font-size 15: anything closer would have the two sets
+      // of glyphs touching.
+      expect(label.y - past.y).toBeGreaterThan(15);
+    }
+  });
+
   it("draws a bar as three closed faces", () => {
-    const scape = buildScape(series(26, 7), series(9, 5));
+    const scape = buildScape(layers(26, 9));
     const faces = prismFaces(required(scape.prisms[0], "first prism"));
     for (const face of [faces.front, faces.side, faces.top]) {
       expect(face.split(" ")).toHaveLength(4);

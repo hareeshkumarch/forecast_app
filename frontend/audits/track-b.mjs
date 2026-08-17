@@ -244,8 +244,9 @@ line("\nB3 — micro-interactions");
   // The uncertainty shells are almost transparent, so Playwright treats them
   // as invisible. Drive the pointer to a forecast bar's own centre instead.
   const target = await page.evaluate(() => {
-    const bars = [...document.querySelectorAll("svg[role=img] .scape-bar")];
-    const future = bars.filter((b) => b.querySelector('polygon[fill="#287b59"]'));
+    const future = [
+      ...document.querySelectorAll('svg[role=img] .scape-bar[data-tone="future"]'),
+    ];
     const box = future[Math.floor(future.length / 2)].getBoundingClientRect();
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   });

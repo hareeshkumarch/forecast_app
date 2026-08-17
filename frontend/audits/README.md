@@ -22,7 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
-node audits/sections.mjs   # compare, accuracy, proof band, hero demo and series switch
+node audits/sections.mjs   # compare, accuracy, proof band, hero demo and its two product lines
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -82,12 +82,13 @@ bars with `elementFromPoint` and takes the first that resolves to itself. Call
 it only once the build has settled — a bounding box read mid-animation is the
 height the bar had partway up, not the height it is going to have.
 
-For the series switch it compares bar heights before and after, and asserts the
-`viewBox` and the rendered box are unchanged. That pairing is the point: the
-chart has to redraw completely without resizing, which is what the equal series
-lengths in `lib/scape-data.ts` buy. It also waits only a second before checking
-that every bar animation has finished, which fails if a re-run is ever left
-running at the opening sequence's full pace.
+For the chart's two product lines it reads the fills the browser computed
+rather than the palette the component asked for, and requires the two rows to
+share none of them. The rows overlap by design — that is what makes the drawing
+read as depth — so two rows that resolve to the same ink are one silhouette
+wearing two names, and nothing in the geometry can tell you that has happened.
+It then checks that the two figures the readout splits a week into add up to
+the total it quotes for that week, which is the claim the depth is making.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

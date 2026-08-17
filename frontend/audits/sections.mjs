@@ -21,8 +21,9 @@ const aimAtForecast = async (page) => {
     document.querySelector("svg[role=img]").scrollIntoView({ block: "center" }),
   );
   const target = await page.evaluate(() => {
-    const bars = [...document.querySelectorAll("svg[role=img] .scape-bar")];
-    const future = bars.filter((b) => b.querySelector('polygon[fill="#287b59"]'));
+    const future = [
+      ...document.querySelectorAll('svg[role=img] .scape-bar[data-tone="future"]'),
+    ];
     for (const bar of [...future].reverse()) {
       const r = bar.getBoundingClientRect();
       const x = r.x + r.width / 2;
@@ -405,92 +406,67 @@ line("\n11 — the demo is off under reduced motion, and the band still reads");
   await page.close();
 }
 
-line("\n12 — choosing a series re-runs the chart on it");
+line("\n12 — the depth of the chart is two product lines, told apart");
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.waitForTimeout(4600);
 
-  const chips = page.locator('[aria-label="Example demand to draw"] button');
-  const count = await chips.count();
+  // The rows overlap by design, so two rows painted the same colour read as
+  // one silhouette and the third dimension says nothing. Compare the ink
+  // actually rendered rather than the palette that was meant to be used.
+  const rows = await page.evaluate(() => {
+    const fills = (row) =>
+      new Set(
+        [...document.querySelectorAll(`.scape-frame .scape-bar[data-row="${row}"]:not(.scape-shell)`)]
+          .flatMap((bar) => [...bar.querySelectorAll("polygon")])
+          .map((face) => getComputedStyle(face).fill),
+      );
+    return {
+      front: [...fills(0)],
+      behind: [...fills(1)],
+      names: [...document.querySelectorAll(".scape-frame svg text")].map((t) => t.textContent),
+    };
+  });
 
-  const frameOf = async () =>
-    page.evaluate(() => {
-      const svg = document.querySelector("svg[role=img]");
-      const heights = [...svg.querySelectorAll(".scape-bar")].map((bar) => {
-        const box = bar.getBBox();
-        return Math.round(box.height * 100) / 100;
-      });
-      return {
-        viewBox: svg.getAttribute("viewBox"),
-        label: svg.getAttribute("aria-label"),
-        caption: document.querySelector(".scape-frame > p:last-of-type").textContent.trim(),
-        heights,
-        box: (() => {
-          const r = svg.getBoundingClientRect();
-          return `${Math.round(r.width)}x${Math.round(r.height)}`;
-        })(),
-      };
-    });
+  const shared = rows.front.filter((fill) => rows.behind.includes(fill));
+  const told = rows.front.length > 0 && rows.behind.length > 0 && shared.length === 0;
+  // Both rows are named on the chart itself: a row a visitor cannot name is a
+  // shape, not a product line.
+  const named = ["Chilled", "Ambient"].every((name) => rows.names.includes(name));
 
-  const before = await frameOf();
-  await chips.nth(count - 1).click();
-  // Long enough for a replay to have finished; short enough that a full-speed
-  // sequence would still be running if the pace were not being applied.
-  await page.waitForTimeout(1000);
-  const after = await frameOf();
-
-  const redrew = before.heights.join() !== after.heights.join();
-  const sameFrame = before.viewBox === after.viewBox && before.box === after.box;
-  const captionMoved = before.caption !== after.caption;
-  const settled = await page.evaluate(
-    () => [...document.querySelectorAll("svg[role=img] .scape-bar")].every((bar) =>
-      bar.getAnimations().every((a) => a.playState === "finished"),
-    ),
-  );
-  const pressed = await page.evaluate(
-    () =>
-      [...document.querySelectorAll('[aria-label="Example demand to draw"] button')].filter(
-        (b) => b.getAttribute("aria-pressed") === "true",
-      ).length,
-  );
-
-  if (count < 2) fail.push(`12 only ${count} series offered`);
-  if (!redrew) fail.push("12 the bars did not change when another series was chosen");
-  if (!sameFrame) fail.push(`12 the frame moved: ${before.viewBox}/${before.box} -> ${after.viewBox}/${after.box}`);
-  if (!captionMoved) fail.push("12 the caption still describes the old series");
-  if (!settled) fail.push("12 the re-run had not finished within 1000ms");
-  if (pressed !== 1) fail.push(`12 ${pressed} chips read as pressed`);
-  line(`  ${count} series · caption now "${after.caption}"`);
-  line(`  frame ${before.box} -> ${after.box}, viewBox unchanged: ${before.viewBox === after.viewBox}`);
-  line(`  bars redraw ${redrew ? "ok" : "FAIL"} · frame holds ${sameFrame ? "ok" : "FAIL"} · caption follows ${captionMoved ? "ok" : "FAIL"}`);
-  line(`  replay done inside 1000ms ${settled ? "ok" : "FAIL"} · exactly one chip pressed ${pressed === 1 ? "ok" : "FAIL"}`);
+  if (!told) fail.push(`12 the rows share ${shared.length} fills: ${JSON.stringify(shared)}`);
+  if (!named) fail.push(`12 the rows are not named on the chart: ${JSON.stringify(rows.names)}`);
+  line(`  front ${JSON.stringify(rows.front)}`);
+  line(`  behind ${JSON.stringify(rows.behind)}`);
+  line(`  rows told apart ${told ? "ok" : "FAIL"} · rows named ${named ? "ok" : "FAIL"}`);
   await page.close();
 }
 
-line("\n13 — a chosen series keeps the demo away, and reads out its own numbers");
+line("\n13 — a week reads out as a total and the lines that make it up");
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
 
-  // Click during the demo walk: choosing data is the visitor taking over.
+  // Take the chart mid-walk: pointing at it is the visitor taking over.
   await page.waitForTimeout(2100);
-  await page.locator('[aria-label="Example demand to draw"] button').nth(1).click();
-  await page.waitForTimeout(2000);
-  const idle = await page.locator("p.scape-readout").innerText();
-
   const target = await aimAtForecast(page);
   await page.mouse.move(target.x, target.y);
-  await page.waitForTimeout(150);
-  const hovered = await page.locator("p.scape-readout").innerText();
+  await page.waitForTimeout(200);
+  const hovered = (await page.locator("p.scape-readout").innerText()).trim();
 
-  const quiet = /Hover any week/i.test(idle);
-  const reads = /^Week \+\d+ · \d+ units\s+· range \d+ to \d+$/.test(hovered.trim());
-  if (!quiet) fail.push(`13 the demo carried on after a series was chosen: "${idle.trim()}"`);
-  if (!reads) fail.push(`13 the readout did not report the chosen series: "${hovered.trim()}"`);
-  line(`  idle "${idle.trim()}"`);
-  line(`  hovered "${hovered.trim()}"`);
-  line(`  demo stays off ${quiet ? "ok" : "FAIL"} · reads out ${reads ? "ok" : "FAIL"}`);
+  const [headline = "", split = ""] = hovered.split("\n").map((part) => part.trim());
+  const reads = /^Week \+\d+ · \d+ units\s+· range \d+ to \d+$/.test(headline);
+  const parts = [...split.matchAll(/([A-Za-z]+) (\d+)/g)];
+  const total = Number(headline.match(/· (\d+) units/)?.[1] ?? NaN);
+  const summed = parts.reduce((sum, [, , value]) => sum + Number(value), 0);
+  const addsUp = parts.length === 2 && summed === total;
+
+  if (!reads) fail.push(`13 the readout did not report the week: "${headline}"`);
+  if (!addsUp) fail.push(`13 "${split}" does not add up to ${total}`);
+  line(`  headline "${headline}"`);
+  line(`  split "${split}" -> ${summed}`);
+  line(`  reads out ${reads ? "ok" : "FAIL"} · lines add up ${addsUp ? "ok" : "FAIL"}`);
   await page.close();
 }
 

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   DEMO_HOLD,
   DEMO_LINGER,
-  REPLAY_PACE,
   SEQUENCE_BUDGET,
   barDelay,
   demoWalk,
@@ -33,33 +32,10 @@ describe("the build sequence", () => {
     expect(timing.settled).toBeGreaterThan(0);
     expect(timing.settled).toBeLessThan(SEQUENCE_BUDGET);
   });
-});
 
-describe("re-running the build for a new series", () => {
-  const replay = scapeTiming(HISTORY, FUTURE, REPLAY_PACE);
-
-  it("answers a click faster than it opened the page", () => {
-    expect(replay.settled).toBeLessThan(timing.settled);
-    expect(replay.settled).toBeLessThan(SEQUENCE_BUDGET);
-  });
-
-  it("keeps the same choreography, only quicker", () => {
-    expect(replay.forecastStart).toBeGreaterThan(replay.historyEnd);
-    expect(barDelay(HISTORY - 1, HISTORY, replay)).toBeLessThan(replay.forecastStart);
-    expect(shellDelay(HISTORY, HISTORY, replay)).toBeGreaterThan(
-      barDelay(HISTORY, HISTORY, replay),
-    );
-  });
-
-  it("scales every duration it hands to the marks, not just the delays", () => {
-    expect(replay.rise).toBeCloseTo(timing.rise * REPLAY_PACE, 6);
-    expect(replay.expand).toBeCloseTo(timing.expand * REPLAY_PACE, 6);
-    expect(replay.captionFade).toBeCloseTo(timing.captionFade * REPLAY_PACE, 6);
-  });
-
-  it("still runs the weeks in order", () => {
+  it("runs the weeks in order", () => {
     const delays = Array.from({ length: HISTORY + FUTURE }, (_, step) =>
-      barDelay(step, HISTORY, replay),
+      barDelay(step, HISTORY, timing),
     );
     expect(delays).toEqual([...delays].sort((a, b) => a - b));
   });

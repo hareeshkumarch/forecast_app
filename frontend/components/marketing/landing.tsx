@@ -161,11 +161,8 @@ function Hero() {
 
       <Reveal delay={330} variant="scale" duration={760} className="page-shell mt-10 sm:mt-12">
         <div className="hero-stage">
-          <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#dbe0da] pb-4">
+          <div className="mb-5 border-b border-[#dbe0da] pb-4">
             <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-[#5c635d]">Interactive forecast preview</p>
-            <span className="flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-[#287b59]">
-              <span className="status-dot size-1.5 bg-[#287b59]" aria-hidden /> Live example
-            </span>
           </div>
           <DemandScape />
         </div>
