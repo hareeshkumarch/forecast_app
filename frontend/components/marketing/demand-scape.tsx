@@ -21,7 +21,7 @@ const TOUCH_HINT = "Tap any week to inspect its forecast";
 /* One series, drawn one way: nothing here depends on state, so it is measured
    once for the module rather than on every render. */
 const SCAPE = buildScape(SERIES.layers, SERIES.growth);
-const TIMING = scapeTiming(HISTORY_WEEKS, FUTURE_WEEKS);
+const TIMING = scapeTiming(HISTORY_WEEKS, FUTURE_WEEKS, SCAPE.rows);
 const WALK = demoWalk(HISTORY_WEEKS, FUTURE_WEEKS, TIMING);
 
 type Face = { front: string; side: string; top: string; stroke: string };
@@ -119,22 +119,28 @@ function Key({ weights, children }: { weights: string[]; children: ReactNode }) 
 function Bar({
   prism,
   timing,
+  active,
   onEnter,
 }: {
   prism: Prism;
   timing: ScapeTiming;
+  /** The week under the pointer, which this bar is part of. */
+  active: boolean;
   onEnter: () => void;
 }) {
   const faces = prismFaces(prism);
   const palette = faceFor(prism.tone, prism.row);
   const shell = prism.tone === "range";
   const delay = shell
-    ? shellDelay(prism.step, HISTORY_WEEKS, timing)
-    : barDelay(prism.step, HISTORY_WEEKS, timing);
+    ? shellDelay(prism.step, HISTORY_WEEKS, timing, prism.row, SCAPE.rows)
+    : barDelay(prism.step, HISTORY_WEEKS, timing, prism.row, SCAPE.rows);
 
   return (
     <g
       className={shell ? "scape-bar scape-shell cursor-default" : "scape-bar cursor-default"}
+      /* The readout names the week; this shows which one it is talking about
+         on the drawing itself, in both rows at once. */
+      data-active={active ? "true" : undefined}
       /* Named rather than left to be recognised by its fill: the browser
          audits pick bars out of the page, and a colour is a thing that
          changes. */
@@ -264,6 +270,10 @@ export function DemandScape() {
           }}
           onMouseLeave={() => setHovered(null)}
           onTouchStart={take}
+          /* Drives the dimming in CSS, so pointing at a week costs one
+             attribute write rather than a style on each of eighty-eight
+             marks. */
+          data-reading={hovered === null ? undefined : "true"}
         >
           <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
             {SCAPE.guides.map((guide) => (
@@ -274,16 +284,19 @@ export function DemandScape() {
           {/* The marker spans both rows: a week is a week in every product
               line, and reading one of them alone is not what the chart is
               for. */}
-          {marked ? (
-            <rect
-              className="scape-marker"
-              x={marked.x}
-              y={marked.y1}
-              width={marked.width}
-              height={marked.y2 - marked.y1}
-              aria-hidden
-            />
-          ) : null}
+          {marked
+            ? marked.bands.map((band) => (
+                <rect
+                  key={band.key}
+                  className="scape-marker"
+                  x={band.x}
+                  y={band.y1}
+                  width={band.width}
+                  height={band.y2 - band.y1}
+                  aria-hidden
+                />
+              ))
+            : null}
 
           <g>
             {SCAPE.prisms.map((prism) => (
@@ -291,6 +304,7 @@ export function DemandScape() {
                 key={prism.key}
                 prism={prism}
                 timing={TIMING}
+                active={prism.step === hovered}
                 onEnter={() => {
                   take();
                   setHovered(prism.step);

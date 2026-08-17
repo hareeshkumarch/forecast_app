@@ -120,9 +120,21 @@ console.log("\ntouch and keyboard");
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(150);
   const spoken = await page.locator("p.sr-only").innerText();
-  const marker = await page.evaluate(() => document.querySelectorAll(".scape-marker").length);
+  // One band per product line, not one rectangle across both: the rows are
+  // offset along the depth axis, so a single upright marker wide enough to
+  // cover the far row stands on the floor beside the near one.
+  const marked = await page.evaluate(() => ({
+    bands: document.querySelectorAll(".scape-marker").length,
+    rows: new Set(
+      [...document.querySelectorAll(".scape-frame .scape-bar")].map((bar) => bar.dataset.row),
+    ).size,
+  }));
   note(/week|ago|units/i.test(spoken), "arrow keys move and announce a week", `"${spoken.trim()}"`);
-  note(marker === 1, "the selected column is marked", `${marker} marker`);
+  note(
+    marked.bands === marked.rows,
+    "the selected week is marked in every row",
+    `${marked.bands} bands for ${marked.rows} rows`,
+  );
   await page.keyboard.press("Escape");
   await page.waitForTimeout(120);
   note(

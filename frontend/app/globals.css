@@ -8,17 +8,30 @@
  * graphite type, measured green, and restrained supporting colours. */
 :root {
   --canvas: #f1f3ef;
-  --surface: #fafbf9;
-  --surface-muted: #e6e9e4;
+  /*
+   * Written as channels, then wrapped, for the five tokens something asks for
+   * at a fraction of their strength. Tailwind builds `bg-surface/95` by
+   * substituting an alpha into the colour it was given, which it can do to a
+   * hex and cannot do to a bare `var()` — handed one, it emits no rule at all,
+   * so the utility silently resolves to nothing and the element renders fully
+   * transparent. `tests/alpha-tokens.test.ts` fails if a token gains a
+   * fractional use without gaining its channels here.
+   */
+  --surface-rgb: 250 251 249;
+  --surface: rgb(var(--surface-rgb));
+  --surface-muted-rgb: 230 233 228;
+  --surface-muted: rgb(var(--surface-muted-rgb));
   --border: #d8ddd7;
   --border-strong: #bcc4bc;
 
   --text-primary: #111512;
   --text-secondary: #4e554e;
-  --text-muted: #7d847e;
+  --text-muted-rgb: 125 132 126;
+  --text-muted: rgb(var(--text-muted-rgb));
 
   --accent: #287b59;
-  --accent-soft: #dce9e1;
+  --accent-soft-rgb: 220 233 225;
+  --accent-soft: rgb(var(--accent-soft-rgb));
   --accent-hover: #175a3e;
   --accent-border: #adcbbd;
   --accent-disabled: #88aa99;
@@ -31,7 +44,8 @@
   --sand: #a7b9aa;
 
   --positive: #287b59;
-  --positive-soft: #dce9e1;
+  --positive-soft-rgb: 220 233 225;
+  --positive-soft: rgb(var(--positive-soft-rgb));
   --positive-border: #adcbbd;
   --negative: #aa453f;
   --negative-soft: #f3e5e2;
@@ -143,7 +157,8 @@
   --check-actual: #d7d8d6;
   --check-predicted: #7fbea1;
   --check-outcome: #f0f1ef;
-  --check-held: #59605b;
+  --check-held-rgb: 89 96 91;
+  --check-held: rgb(var(--check-held-rgb));
 
   /* The line-versus-range panels. */
   --compare-ink: #111512;
@@ -202,17 +217,21 @@
 /* The landing page's dark accuracy section becomes the product dark theme. */
 :root[data-theme="dark"] {
   --canvas: #111512;
-  --surface: #171c18;
-  --surface-muted: #222823;
+  --surface-rgb: 23 28 24;
+  --surface: rgb(var(--surface-rgb));
+  --surface-muted-rgb: 34 40 35;
+  --surface-muted: rgb(var(--surface-muted-rgb));
   --border: #303832;
   --border-strong: #49524a;
 
   --text-primary: #f2f3f1;
   --text-secondary: #b9bdb9;
-  --text-muted: #858b86;
+  --text-muted-rgb: 133 139 134;
+  --text-muted: rgb(var(--text-muted-rgb));
 
   --accent: #7fbea1;
-  --accent-soft: #1d3027;
+  --accent-soft-rgb: 29 48 39;
+  --accent-soft: rgb(var(--accent-soft-rgb));
   --accent-hover: #9ed0b7;
   --accent-border: #355c48;
   --accent-disabled: #4f7563;
@@ -225,7 +244,8 @@
   --sand: #819b8c;
 
   --positive: #7fbea1;
-  --positive-soft: #1d3027;
+  --positive-soft-rgb: 29 48 39;
+  --positive-soft: rgb(var(--positive-soft-rgb));
   --positive-border: #355c48;
   --negative: #e1847d;
   --negative-soft: #2d1e1c;
@@ -1011,6 +1031,10 @@ body {
   transition:
     border-color 140ms var(--ease-out),
     background-color 140ms var(--ease-out),
+    /* Alongside opacity and over the same time, so the nav's pill fades out
+       and only then stops being there. Left out, visibility snaps at the
+       start of the transition and takes the fade with it. */ visibility 300ms
+      var(--ease-out),
     opacity 300ms var(--ease-out);
 }
 
@@ -1043,6 +1067,33 @@ body {
 .scape-marker {
   fill: var(--scape-marker);
   pointer-events: none;
+}
+
+/*
+ * The week under the pointer, found by quieting the other thirty-four.
+ *
+ * Marking the week itself was the obvious way and it does not survive the
+ * palette: an outline has to contrast with the bar it is drawn on, and there
+ * are four of those — near-black, mid-grey, deep green, pale green — which
+ * swap ends in the dark theme. The accent read cleanly on the sold weeks and
+ * vanished into the forecast ones.
+ *
+ * Receding is one instruction that works on all of them, because it is a
+ * change to the mark rather than a colour laid over it. The chart keeps its
+ * shape, and the week being read is the only part still at full strength.
+ */
+.scape-bar {
+  transition: opacity 140ms var(--ease-out);
+}
+
+svg[data-reading="true"] .scape-bar:not([data-active="true"]) {
+  opacity: 0.32;
+}
+
+/* The shells are already nearly transparent; taking another two thirds off
+   leaves the forecast's range invisible exactly when it is being asked about. */
+svg[data-reading="true"] .scape-shell:not([data-active="true"]) {
+  opacity: 0.55;
 }
 
 /* The theme control shows the theme it switches *to*, and picks which icon

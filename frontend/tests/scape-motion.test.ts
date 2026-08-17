@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEMO_HOLD,
   DEMO_LINGER,
+  ROW_LEAD,
   SEQUENCE_BUDGET,
   barDelay,
   demoWalk,
@@ -12,8 +13,9 @@ import {
 
 const HISTORY = 26;
 const FUTURE = 9;
+const ROWS = 2;
 
-const timing = scapeTiming(HISTORY, FUTURE);
+const timing = scapeTiming(HISTORY, FUTURE, ROWS);
 const walk = demoWalk(HISTORY, FUTURE, timing);
 
 describe("the build sequence", () => {
@@ -38,6 +40,44 @@ describe("the build sequence", () => {
       barDelay(step, HISTORY, timing),
     );
     expect(delays).toEqual([...delays].sort((a, b) => a - b));
+  });
+});
+
+describe("building the depth away-to-near", () => {
+  it("starts the row behind before the row in front of it", () => {
+    for (let step = 0; step < HISTORY + FUTURE; step++) {
+      expect(barDelay(step, HISTORY, timing, 1, ROWS)).toBeLessThan(
+        barDelay(step, HISTORY, timing, 0, ROWS),
+      );
+    }
+  });
+
+  it("gives every row the same lead, so the two never drift apart", () => {
+    const gaps = Array.from({ length: HISTORY + FUTURE }, (_, step) =>
+      barDelay(step, HISTORY, timing, 0, ROWS) - barDelay(step, HISTORY, timing, 1, ROWS),
+    );
+    expect(new Set(gaps).size).toBe(1);
+    expect(gaps[0]).toBe(ROW_LEAD);
+  });
+
+  it("keeps a shell behind the forecast bar it wraps, in its own row", () => {
+    for (let row = 0; row < ROWS; row++) {
+      expect(shellDelay(HISTORY, HISTORY, timing, row, ROWS)).toBeGreaterThan(
+        barDelay(HISTORY, HISTORY, timing, row, ROWS),
+      );
+    }
+  });
+
+  it("still settles inside the budget once the lead is paid for", () => {
+    // The nearest row is the last to arrive, so the budget has to cover it.
+    const lastBar = barDelay(HISTORY + FUTURE - 1, HISTORY, timing, 0, ROWS);
+    expect(lastBar + timing.shellFollow + timing.expand).toBeLessThanOrEqual(timing.settled);
+    expect(timing.settled).toBeLessThan(SEQUENCE_BUDGET);
+  });
+
+  it("costs nothing when there is only one row", () => {
+    expect(scapeTiming(HISTORY, FUTURE, 1).settled).toBeLessThan(timing.settled);
+    expect(barDelay(0, HISTORY, timing, 0, 1)).toBe(0);
   });
 });
 

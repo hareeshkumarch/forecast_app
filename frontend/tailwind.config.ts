@@ -16,17 +16,20 @@ const config: Config = {
     extend: {
       colors: {
         canvas: "var(--canvas)",
-        surface: "var(--surface)",
-        "surface-muted": "var(--surface-muted)",
+        // rgb(channels / <alpha-value>) for the five tokens used at a
+        // fraction: Tailwind cannot inject an alpha into a bare var(), and
+        // emits nothing at all when asked to. See globals.css.
+        surface: "rgb(var(--surface-rgb) / <alpha-value>)",
+        "surface-muted": "rgb(var(--surface-muted-rgb) / <alpha-value>)",
         border: "var(--border)",
         "border-strong": "var(--border-strong)",
 
         "text-primary": "var(--text-primary)",
         "text-secondary": "var(--text-secondary)",
-        "text-muted": "var(--text-muted)",
+        "text-muted": "rgb(var(--text-muted-rgb) / <alpha-value>)",
 
         accent: "var(--accent)",
-        "accent-soft": "var(--accent-soft)",
+        "accent-soft": "rgb(var(--accent-soft-rgb) / <alpha-value>)",
         "accent-hover": "var(--accent-hover)",
         "accent-border": "var(--accent-border)",
         "accent-disabled": "var(--accent-disabled)",
@@ -39,7 +42,7 @@ const config: Config = {
         sand: "var(--sand)",
 
         positive: "var(--positive)",
-        "positive-soft": "var(--positive-soft)",
+        "positive-soft": "rgb(var(--positive-soft-rgb) / <alpha-value>)",
         "positive-border": "var(--positive-border)",
         negative: "var(--negative)",
         "negative-soft": "var(--negative-soft)",
@@ -69,7 +72,7 @@ const config: Config = {
         "check-actual": "var(--check-actual)",
         "check-predicted": "var(--check-predicted)",
         "check-outcome": "var(--check-outcome)",
-        "check-held": "var(--check-held)",
+        "check-held": "rgb(var(--check-held-rgb) / <alpha-value>)",
         "scape-shell-key": "var(--scape-shell-key)",
       },
       borderRadius: {

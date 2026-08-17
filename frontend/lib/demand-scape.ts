@@ -44,7 +44,29 @@ export type Label = {
 
 export type Boundary = { x1: number; y1: number; x2: number; y2: number };
 
-export type Column = { step: number; x: number; y1: number; y2: number; width: number };
+/** One row's slice of a week: the vertical band standing over that row's bar. */
+export type Band = { key: string; x: number; y1: number; y2: number; width: number };
+
+export type Column = {
+  step: number;
+  x: number;
+  y1: number;
+  y2: number;
+  width: number;
+  /*
+   * A band per row, rather than one rectangle spanning both.
+   *
+   * The rows are offset along the depth axis, so a single upright rectangle
+   * wide enough to cover the far row also covers the floor beside the near
+   * one — a pale slab standing next to the week instead of behind it.
+   *
+   * Each band runs from its own row's baseline to just over the top of what
+   * that row draws in that week, rather than to the top of the frame. A band
+   * of fixed height is mostly empty sky above a short week, which reads as a
+   * marker floating near the bar instead of one standing behind it.
+   */
+  bands: Band[];
+};
 
 export type Scape = {
   viewBox: string;
@@ -111,6 +133,10 @@ const GUIDE_COUNT = 7;
 const LABEL_DROP = 5;
 /** How far the oldest-week caption clears the name of the back row. */
 const PAST_LIFT = 26;
+
+/** Air over the tallest mark in a week, so its band reads as standing behind
+ *  the bar rather than being clipped to it. */
+const BAND_HEADROOM = 12;
 
 function extent(values: number[]): number {
   const peak = Math.max(...values, 0);
@@ -196,12 +222,18 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
+  // The highest point each row reaches in each week, shells included — what a
+  // band has to clear to stand behind everything drawn there.
+  const ceilings = new Map<string, number>();
   for (const prism of prisms) {
-    const top = prism.baseY - prism.height;
+    const top = prism.baseY - prism.height - prism.extrudeY;
     minX = Math.min(minX, prism.x);
     maxX = Math.max(maxX, prism.x + prism.width + prism.extrudeX);
-    minY = Math.min(minY, top - prism.extrudeY);
+    minY = Math.min(minY, top);
     maxY = Math.max(maxY, prism.baseY);
+
+    const key = `${prism.row}-${prism.step}`;
+    ceilings.set(key, Math.min(ceilings.get(key) ?? Infinity, top));
   }
 
   minX = Math.min(minX, 0);
@@ -292,6 +324,17 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
       width: back - front,
       y1: minY,
       y2: step * dy,
+      bands: Array.from({ length: rows }, (_, row) => {
+        const floor = step * dy - row * ROW_DY;
+        const ceiling = ceilings.get(`${row}-${step}`) ?? floor;
+        return {
+          key: `band-${row}`,
+          x: front + row * ROW_DX,
+          width: width + extrudeX,
+          y1: ceiling - BAND_HEADROOM,
+          y2: floor,
+        };
+      }),
     };
   });
 

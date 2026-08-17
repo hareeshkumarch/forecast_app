@@ -172,11 +172,25 @@ export function FloatingNav() {
             aria-label="Open the dashboard"
             aria-hidden={!pastHero}
             tabIndex={pastHero ? 0 : -1}
+            /*
+             * Hidden by `visibility`, not by collapsing to nothing.
+             *
+             * The pill used to animate from `w-0`, which grew the group it
+             * sits in from 48px to 260px the moment the hero scrolled past
+             * and shoved the section list sideways — a layout shift, small
+             * but real, and the only one on the page. Reserving the width
+             * costs an empty slot at the right of the nav that nobody can
+             * see, and buys a nav that never moves.
+             *
+             * `visibility: hidden` rather than `opacity: 0` alone: it takes
+             * the pill out of the tab order and out of hit-testing while
+             * keeping its box, which is exactly the pair of things wanted.
+             */
             className={cn(
-              "cta-nudge group inline-flex h-[40px] shrink-0 items-center justify-center overflow-hidden border-2 border-land-cta bg-land-cta text-site-body font-medium text-land-cta-ink hover:border-accent sm:h-[42px]",
+              "cta-nudge group inline-flex h-[40px] w-[40px] shrink-0 items-center justify-center overflow-hidden border-2 border-land-cta bg-land-cta text-site-body font-medium text-land-cta-ink hover:border-accent sm:h-[42px] sm:w-auto sm:px-4",
               pastHero
-                ? "w-[40px] translate-y-0 opacity-100 sm:w-auto sm:px-4"
-                : "pointer-events-none w-0 translate-y-1 border-x-0 opacity-0",
+                ? "visible translate-y-0 opacity-100"
+                : "pointer-events-none invisible translate-y-1 opacity-0",
             )}
           >
             <span className="hidden whitespace-nowrap sm:inline">Open the dashboard</span>

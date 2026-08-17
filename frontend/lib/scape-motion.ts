@@ -1,5 +1,5 @@
 export const BAR_RISE = 260;
-export const HISTORY_STAGGER = 14;
+export const HISTORY_STAGGER = 11;
 export const TODAY_HOLD = 160;
 export const FORECAST_STAGGER = 22;
 export const SHELL_FOLLOW = 80;
@@ -7,6 +7,22 @@ export const SHELL_EXPAND = 340;
 export const CAPTION_FADE = 200;
 
 export const SEQUENCE_BUDGET = 1400;
+
+/**
+ * How far ahead of the row in front of it a row behind starts.
+ *
+ * The two rows used to arrive together, which drew the chart as one object
+ * with a texture rather than as two product lines standing one behind the
+ * other. Building away-to-near assembles the depth instead of asserting it:
+ * the far line lands, and the near line arrives in front of something that is
+ * already there.
+ *
+ * Small on purpose. This is a beat between two rows, not a second sequence —
+ * at much more than this the chart reads as being drawn twice, and the whole
+ * build has 1.4 seconds to spend. `HISTORY_STAGGER` came down from 14 to pay
+ * for it.
+ */
+export const ROW_LEAD = 70;
 
 export type ScapeTiming = {
   historyEnd: number;
@@ -22,11 +38,17 @@ export type ScapeTiming = {
   shellFollow: number;
 };
 
-export function scapeTiming(historyLength: number, futureLength: number): ScapeTiming {
+export function scapeTiming(
+  historyLength: number,
+  futureLength: number,
+  rows = 1,
+): ScapeTiming {
   const historyEnd = Math.max(0, historyLength - 1) * HISTORY_STAGGER + BAR_RISE;
   const forecastStart = historyEnd + TODAY_HOLD;
   const lastForecast = forecastStart + Math.max(0, futureLength - 1) * FORECAST_STAGGER;
-  const settled = lastForecast + SHELL_FOLLOW + SHELL_EXPAND;
+  // The nearest row is the last to arrive, so the sequence is not settled
+  // until its lead has been spent as well.
+  const settled = lastForecast + rowLead(0, rows) + SHELL_FOLLOW + SHELL_EXPAND;
 
   return {
     historyEnd,
@@ -42,14 +64,33 @@ export function scapeTiming(historyLength: number, futureLength: number): ScapeT
   };
 }
 
-export function barDelay(step: number, historyLength: number, timing: ScapeTiming): number {
-  return step < historyLength
-    ? step * timing.historyStagger
-    : timing.forecastStart + (step - historyLength) * timing.forecastStagger;
+/** How long a row waits before it starts, counting from the back row forward. */
+export function rowLead(row: number, rows: number): number {
+  return Math.max(0, rows - 1 - row) * ROW_LEAD;
 }
 
-export function shellDelay(step: number, historyLength: number, timing: ScapeTiming): number {
-  return barDelay(step, historyLength, timing) + timing.shellFollow;
+export function barDelay(
+  step: number,
+  historyLength: number,
+  timing: ScapeTiming,
+  row = 0,
+  rows = 1,
+): number {
+  const week =
+    step < historyLength
+      ? step * timing.historyStagger
+      : timing.forecastStart + (step - historyLength) * timing.forecastStagger;
+  return week + rowLead(row, rows);
+}
+
+export function shellDelay(
+  step: number,
+  historyLength: number,
+  timing: ScapeTiming,
+  row = 0,
+  rows = 1,
+): number {
+  return barDelay(step, historyLength, timing, row, rows) + timing.shellFollow;
 }
 
 /*
