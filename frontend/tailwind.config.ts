@@ -48,6 +48,29 @@ const config: Config = {
         "warning-soft": "var(--warning-soft)",
         "warning-border": "var(--warning-border)",
         overlay: "var(--overlay)",
+
+        /* Landing-page tokens. Everything the marketing page shares with the
+         * product — surfaces, borders, body text, the accent — is above; these
+         * are the ones only it has. See the `--land-*` block in globals.css. */
+        "land-dim": "var(--land-dim)",
+        "land-rule": "var(--land-rule)",
+        "land-rule-soft": "var(--land-rule-soft)",
+        "land-cta": "var(--land-cta-bg)",
+        "land-cta-hover": "var(--land-cta-hover-bg)",
+        "land-cta-ink": "var(--land-cta-text)",
+        "land-invert": "var(--land-invert-bg)",
+        "land-invert-ink": "var(--land-invert-text)",
+        "land-invert-secondary": "var(--land-invert-secondary)",
+        "land-invert-muted": "var(--land-invert-muted)",
+        "land-invert-dim": "var(--land-invert-dim)",
+        "land-invert-border": "var(--land-invert-border)",
+        "land-invert-rule": "var(--land-invert-rule)",
+        "land-invert-accent": "var(--land-invert-accent)",
+        "check-actual": "var(--check-actual)",
+        "check-predicted": "var(--check-predicted)",
+        "check-outcome": "var(--check-outcome)",
+        "check-held": "var(--check-held)",
+        "scape-shell-key": "var(--scape-shell-key)",
       },
       borderRadius: {
         card: "0px",

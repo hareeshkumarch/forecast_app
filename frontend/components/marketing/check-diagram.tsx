@@ -18,7 +18,7 @@ export function CheckDiagram() {
     <div className="w-full" role="img" aria-label="How forecast accuracy is checked against hidden sales history">
       {ROWS.map((row, rowIndex) => (
         <div key={row.label} className="mb-8 last:mb-0">
-          <p className="mb-4 font-mono text-site-caption uppercase tracking-[0.17em] text-[#7f8580]">
+          <p className="mb-4 font-mono text-site-caption uppercase tracking-[0.17em] text-land-invert-dim">
             {row.label}
           </p>
 
@@ -38,7 +38,7 @@ export function CheckDiagram() {
                         "--bar-rise": `${BAR_RISE}ms`,
                       } as CSSProperties
                     }
-                    className="accuracy-bar flex-1 bg-[#d7d8d6]"
+                    className="accuracy-bar flex-1 bg-check-actual"
                   />
                 );
               }
@@ -54,7 +54,7 @@ export function CheckDiagram() {
                         "--ghost-fade": `${GHOST_FADE}ms`,
                       } as CSSProperties
                     }
-                    className="check-ghost flex-1 border border-dashed border-[#59605b]/25"
+                    className="check-ghost flex-1 border border-dashed border-check-held/25"
                   />
                 );
               }
@@ -70,7 +70,7 @@ export function CheckDiagram() {
                         "--bar-rise": `${BAR_RISE}ms`,
                       } as CSSProperties
                     }
-                    className="accuracy-bar w-full bg-[#7fbea1]"
+                    className="accuracy-bar w-full bg-check-predicted"
                   />
                   {/* What the week actually came to, drawn across the bar that
                       guessed at it — so the gap between the two is the thing
@@ -83,7 +83,7 @@ export function CheckDiagram() {
                         "--grow-duration": `${TICK_DRAW}ms`,
                       } as CSSProperties
                     }
-                    className="grow-x absolute inset-x-0 h-[2px] bg-[#f0f1ef]"
+                    className="grow-x absolute inset-x-0 h-[2px] bg-check-outcome"
                   />
                 </span>
               );
@@ -92,17 +92,17 @@ export function CheckDiagram() {
         </div>
       ))}
 
-      <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-white/10 pt-5 text-site-body text-[#9ca19d]">
+      <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 border-t border-land-invert-rule pt-5 text-site-body text-land-invert-muted">
         <span className="flex items-center gap-2.5">
-          <span className="inline-block size-3 bg-[#d7d8d6]" aria-hidden />
+          <span className="inline-block size-3 bg-check-actual" aria-hidden />
           Real sales
         </span>
         <span className="flex items-center gap-2.5">
-          <span className="inline-block size-3 bg-[#7fbea1]" aria-hidden />
+          <span className="inline-block size-3 bg-check-predicted" aria-hidden />
           What we predicted
         </span>
         <span className="flex items-center gap-2.5">
-          <span className="inline-block h-[2px] w-5 bg-[#f0f1ef]" aria-hidden />
+          <span className="inline-block h-[2px] w-5 bg-check-outcome" aria-hidden />
           What actually happened
         </span>
       </div>

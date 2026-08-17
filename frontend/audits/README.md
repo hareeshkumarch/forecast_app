@@ -23,6 +23,7 @@ node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
 node audits/sections.mjs   # compare, accuracy, proof band, hero demo and its two product lines
+node audits/theme.mjs      # light and dark: contrast against the real ground, and no surface left behind
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -51,6 +52,16 @@ geometry itself is covered at n = 8, 35 and 120 by `tests/demand-scape.test.ts`.
 disagree exactly where the bug lived. An element with `tabindex` matches
 `:focus` on a mouse click but not `:focus-visible`, so styling only the latter
 leaves the click falling through to the browser's own ring.
+
+**theme.mjs** composites each element's background over its ancestors' before
+measuring contrast, rather than reading `background-color` off the element
+itself. Almost nothing on the landing page paints its own background — a
+caption inside a card inside a section reports `rgba(0, 0, 0, 0)` and would
+score against white, which is neither the colour behind it nor a colour on the
+page. It also holds "a surface stayed light" to elements big enough to be a
+ground, because a chart key's 12px swatch and the call to action are supposed
+to stay light in the dark theme: the button is the darkest thing on a light
+page precisely so it can be the lightest thing on a dark one.
 
 **reveal.mjs** scrolls to each section before measuring. A full-page screenshot
 resizes the viewport instead of scrolling, so `IntersectionObserver` never

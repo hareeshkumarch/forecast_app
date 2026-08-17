@@ -45,6 +45,112 @@
   --shadow-popover: 0 12px 30px rgba(17, 22, 18, 0.13), 0 2px 5px rgba(17, 22, 18, 0.07);
   --grid-line: rgba(31, 48, 36, 0.055);
 
+  /* ------------------------------------------------------------- landing
+   *
+   * The marketing page used to write its colours literally, some seventy of
+   * them, and eight of those were greys within a few points of each other
+   * doing the same job. They are tokens now, for the obvious reason — the
+   * page can be dark — and for a quieter one: a page whose supporting text
+   * has one colour is a page you can restate, and one with eight is a page
+   * you can only edit.
+   *
+   * Surfaces, borders, body text and the accent come from the product tokens
+   * above; a landing that invented its own would be a second system to keep
+   * in step. What is here is what the marketing page has and the product
+   * does not.
+   */
+
+  /* Between --text-secondary and --text-muted: eyebrows, captions, the ink
+     of things that label rather than say. */
+  --land-dim: #626862;
+  /* The hairline inside a component, lighter than the border between two. */
+  --land-rule: #cfd5cf;
+  --land-rule-soft: #dbe0da;
+
+  /* The primary call to action: ink-on-paper reversed. Not --text-primary on
+     --surface, because in the dark theme it stops being the darkest thing on
+     the page and has to invert with it. */
+  --land-cta-bg: #111512;
+  --land-cta-hover-bg: #242a25;
+  --land-cta-text: #ffffff;
+
+  /* The accuracy section, which runs against the page rather than with it.
+     In the light theme that means near-black; in the dark theme the same
+     intent lands the other way, as the one band lifted off the canvas. */
+  --land-invert-bg: #111512;
+  --land-invert-text: #f2f3f1;
+  --land-invert-secondary: #b9bdb9;
+  --land-invert-muted: #afb4af;
+  --land-invert-dim: #7f8580;
+  --land-invert-border: rgba(255, 255, 255, 0.2);
+  --land-invert-rule: rgba(255, 255, 255, 0.12);
+  --land-invert-accent: #7fbea1;
+
+  /* The wash behind the headline and the tint across the chart's frame. */
+  --land-wash-accent: #dce9e1;
+  --land-wash-warm: #eee8db;
+  --land-stage-tint-accent: rgba(40, 123, 89, 0.1);
+  --land-stage-tint-warm: rgba(156, 135, 96, 0.08);
+  --land-stage-veil: rgba(250, 251, 249, 0.94);
+  --land-stage-shadow: 0 28px 70px -48px rgba(17, 22, 18, 0.65), 0 1px 2px rgba(17, 22, 18, 0.06);
+  --land-glow: rgba(40, 123, 89, 0.1);
+  --land-lift-shadow: 0 10px 30px -18px rgba(17, 21, 18, 0.32);
+  /* The nav's own shade. Carried as a colour rather than a whole shadow so
+     the three offsets it is used at stay in the components that set them. */
+  --land-nav-shadow: rgba(17, 22, 18, 0.4);
+
+  --land-mark-crown: #303530;
+  --land-mark-shadow: #101411;
+
+  /* The hero chart. Two product lines, three faces each: the near line at
+     full strength and the line behind it stepped back, with each face lit a
+     shade lighter than the one below it. Named per face rather than derived,
+     because "lighter" in a dark theme is not the same instruction. */
+  --scape-sold-near: #151a16;
+  --scape-sold-near-side: #333a34;
+  --scape-sold-near-top: #3f453f;
+  --scape-sold-far: #5c645d;
+  --scape-sold-far-side: #767d76;
+  --scape-sold-far-top: #828981;
+
+  --scape-next-near: #1d6b4b;
+  --scape-next-near-side: #357f5f;
+  --scape-next-near-top: #458d6e;
+  --scape-next-far: #5ba488;
+  --scape-next-far-side: #74b09a;
+  --scape-next-far-top: #82b9a5;
+
+  --scape-shell-near: rgba(40, 123, 89, 0.08);
+  --scape-shell-near-side: rgba(40, 123, 89, 0.1);
+  --scape-shell-near-top: rgba(40, 123, 89, 0.12);
+  --scape-shell-near-line: #9ebfaf;
+  --scape-shell-far: rgba(40, 123, 89, 0.05);
+  --scape-shell-far-side: rgba(40, 123, 89, 0.07);
+  --scape-shell-far-top: rgba(40, 123, 89, 0.09);
+  --scape-shell-far-line: #bcd2c7;
+  /* A solid stand-in for the shells, for the key — a translucent swatch on
+     a card reads as a lighter colour, not as a transparent one. */
+  --scape-shell-key: #c8ddd2;
+
+  --scape-guide: #cfd6cf;
+  --scape-axis: #616862;
+  --scape-week: #7d837d;
+  --scape-row-name: #3f463f;
+  --scape-marker: rgba(17, 21, 18, 0.055);
+
+  /* The accuracy diagram, which sits inside the inverted section and so is
+     lit for a dark ground in both themes. */
+  --check-actual: #d7d8d6;
+  --check-predicted: #7fbea1;
+  --check-outcome: #f0f1ef;
+  --check-held: #59605b;
+
+  /* The line-versus-range panels. */
+  --compare-ink: #111512;
+  --compare-forecast: #287b59;
+  --compare-rule: #cfd6cf;
+  --compare-outcome: #747b74;
+
   /* Row heights and padding step down together in compact mode. */
   --density-row: 9px;
   --density-cell-y: 9px;
@@ -132,6 +238,82 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
   --grid-line: rgba(255, 255, 255, 0.045);
+
+  /* ------------------------------------------------------- landing, dark
+   *
+   * Not the light values darkened. Three of these carry an intent that only
+   * survives if the value flips outright: the call to action is the darkest
+   * thing on a light page and has to become the lightest thing on a dark one;
+   * the accuracy section runs against the page, so a band that dropped away
+   * from the paper has to lift off the canvas instead; and the near row of
+   * the hero chart is the heaviest ink in the light theme and the brightest
+   * in this one. A near-black button on a near-black page is the bug this
+   * whole block exists to avoid.
+   */
+  --land-dim: #9aa09b;
+  --land-rule: #3a423c;
+  --land-rule-soft: #2a312c;
+
+  --land-cta-bg: #f2f3f1;
+  --land-cta-hover-bg: #dcdfdb;
+  --land-cta-text: #111512;
+
+  --land-invert-bg: #1b211c;
+  --land-invert-text: #f2f3f1;
+  --land-invert-secondary: #b9bdb9;
+  --land-invert-muted: #afb4af;
+  --land-invert-dim: #8b918c;
+  --land-invert-border: rgba(255, 255, 255, 0.16);
+  --land-invert-rule: rgba(255, 255, 255, 0.1);
+  --land-invert-accent: #7fbea1;
+
+  --land-wash-accent: #1a2c22;
+  --land-wash-warm: #26211a;
+  --land-stage-tint-accent: rgba(127, 190, 161, 0.09);
+  --land-stage-tint-warm: rgba(192, 168, 120, 0.07);
+  --land-stage-veil: rgba(23, 28, 24, 0.9);
+  --land-stage-shadow: 0 28px 70px -48px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --land-glow: rgba(127, 190, 161, 0.1);
+  --land-lift-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
+  --land-nav-shadow: rgba(0, 0, 0, 0.75);
+
+  --land-mark-crown: #a8afa8;
+  --land-mark-shadow: #6b736c;
+
+  --scape-sold-near: #d7dbd6;
+  --scape-sold-near-side: #e6e9e4;
+  --scape-sold-near-top: #eff1ee;
+  --scape-sold-far: #767e77;
+  --scape-sold-far-side: #8b938c;
+  --scape-sold-far-top: #969d97;
+
+  --scape-next-near: #7fbea1;
+  --scape-next-near-side: #93c9b0;
+  --scape-next-near-top: #a1d1bb;
+  --scape-next-far: #47765f;
+  --scape-next-far-side: #56846d;
+  --scape-next-far-top: #608e77;
+
+  --scape-shell-near: rgba(127, 190, 161, 0.1);
+  --scape-shell-near-side: rgba(127, 190, 161, 0.13);
+  --scape-shell-near-top: rgba(127, 190, 161, 0.16);
+  --scape-shell-near-line: #4f8069;
+  --scape-shell-far: rgba(127, 190, 161, 0.06);
+  --scape-shell-far-side: rgba(127, 190, 161, 0.08);
+  --scape-shell-far-top: rgba(127, 190, 161, 0.1);
+  --scape-shell-far-line: #3d6353;
+  --scape-shell-key: #2f4b3e;
+
+  --scape-guide: #2b332d;
+  --scape-axis: #838a84;
+  --scape-week: #858b86;
+  --scape-row-name: #c3c8c2;
+  --scape-marker: rgba(255, 255, 255, 0.06);
+
+  --compare-ink: #e4e7e3;
+  --compare-forecast: #7fbea1;
+  --compare-rule: #3a423c;
+  --compare-outcome: #9aa09b;
 
   color-scheme: dark;
 }
@@ -368,10 +550,10 @@ body {
 /* --------------------------------------------------------------- landing */
 
 .forecast-landing {
-  background-color: #f1f3ef;
+  background-color: var(--canvas);
   background-image:
-    linear-gradient(rgba(31, 48, 36, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 48, 36, 0.055) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -382,10 +564,10 @@ body {
   top: max(8px, env(safe-area-inset-top));
   left: max(8px, env(safe-area-inset-left));
   transform: translateY(-160%);
-  border: 2px solid #111512;
-  background: #fafbf9;
+  border: 2px solid var(--text-primary);
+  background: var(--surface);
   padding: 10px 14px;
-  color: #111512;
+  color: var(--text-primary);
   font-size: 0.875rem;
   font-weight: 600;
   transition: transform 140ms var(--ease-out);
@@ -474,16 +656,16 @@ body {
    that is still tinted where it meets that clip shows up as a straight line
    across the page. */
 .hero-wash {
-  /* Literal colours, not --accent-soft/--warning-soft, and that is the point.
-     Those variables flip under :root[data-theme="dark"], which the product
-     sets from the OS preference — but this hero is light by construction, its
-     nav and headline hardcoded to #fafbf9 and #111512. Reading the variables
-     made this the one element on the page that followed the theme, so a
-     visitor whose OS was dark got two near-black smudges behind a light
-     headline. These are the light-theme values the wash was designed with. */
+  /* Its own two tokens rather than --accent-soft/--warning-soft. The wash
+     needs a value that works behind the headline in each theme, and those
+     two are chosen to sit under text and chips elsewhere in the product; the
+     one time this read them, a visitor on a dark OS got two near-black
+     smudges behind a light headline, because the page around it was still
+     light. The page follows the theme now, and so does the wash — but they
+     remain separate decisions. */
   background:
-    radial-gradient(34% 40% at 27% 52%, #dce9e1 0%, transparent 72%),
-    radial-gradient(30% 36% at 68% 40%, #eee8db 0%, transparent 74%);
+    radial-gradient(34% 40% at 27% 52%, var(--land-wash-accent) 0%, transparent 72%),
+    radial-gradient(30% 36% at 68% 40%, var(--land-wash-warm) 0%, transparent 74%);
   opacity: 0.8;
   animation: hero-breathe 12s ease-in-out infinite alternate;
   will-change: transform, opacity;
@@ -501,14 +683,15 @@ body {
 }
 
 .hero-stage {
-  border: 1px solid #c9d0c9;
+  border: 1px solid var(--land-rule);
+  /* A veil over a two-colour tint, rather than a flat fill: the tint is what
+     keeps the frame from reading as another card, and the veil is what keeps
+     the chart inside it readable. */
   background:
-    linear-gradient(rgba(250, 251, 249, 0.92), rgba(250, 251, 249, 0.96)),
-    linear-gradient(90deg, rgba(40, 123, 89, 0.1), rgba(156, 135, 96, 0.08));
+    linear-gradient(var(--land-stage-veil), var(--land-stage-veil)),
+    linear-gradient(90deg, var(--land-stage-tint-accent), var(--land-stage-tint-warm));
   padding: clamp(1rem, 2.5vw, 1.75rem);
-  box-shadow:
-    0 28px 70px -48px rgba(17, 22, 18, 0.65),
-    0 1px 2px rgba(17, 22, 18, 0.06);
+  box-shadow: var(--land-stage-shadow);
 }
 
 .status-dot {
@@ -519,11 +702,15 @@ body {
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(40, 123, 89, 0.18);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 18%, transparent);
   }
   50% {
     opacity: 0.72;
-    box-shadow: 0 0 0 5px rgba(40, 123, 89, 0);
+    /* Plainly transparent, not the accent at zero alpha. A fully transparent
+       shadow has no colour left to theme, and writing it as a mix cost the
+       5px spread: the declaration resolved to `none` and the ring stopped
+       expanding, leaving a dot that only dimmed. */
+    box-shadow: 0 0 0 5px transparent;
   }
 }
 
@@ -854,8 +1041,26 @@ body {
 }
 
 .scape-marker {
-  fill: rgba(17, 21, 18, 0.055);
+  fill: var(--scape-marker);
   pointer-events: none;
+}
+
+/* The theme control shows the theme it switches *to*, and picks which icon
+   from the document rather than from React. The bootstrap script sets
+   `data-theme` before the first paint; the store that knows the same thing
+   arrives a moment later, and a button that waited for it would show the
+   wrong icon in between. Default to the light-theme icon, so a document that
+   somehow carries no theme at all still shows exactly one. */
+.theme-icon-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-dark {
+  display: inline-block;
 }
 
 .scape-frame svg[role="img"] {
@@ -1067,14 +1272,14 @@ svg[role="img"]:focus-visible {
      keyboard-focused card still lights up sensibly. */
   background: radial-gradient(
     22rem circle at var(--glow-x, 50%) var(--glow-y, 50%),
-    rgba(40, 123, 89, 0.1),
+    var(--land-glow),
     transparent 62%
   );
 }
 
 @media (hover: hover) and (pointer: fine) {
   .card-edge:hover {
-    border-color: #9aa69c;
+    border-color: var(--border-strong);
   }
 
   .card-edge:hover::after {
@@ -1087,7 +1292,7 @@ svg[role="img"]:focus-visible {
      own space get `card-lift`. */
   .card-lift:hover {
     translate: 0 -3px;
-    box-shadow: 0 10px 30px -18px rgba(17, 21, 18, 0.32);
+    box-shadow: var(--land-lift-shadow);
   }
 
   /* The number and the icon are the card's two fixed points; nudging them
@@ -1099,7 +1304,7 @@ svg[role="img"]:focus-visible {
 
   .card-edge:hover .motion-icon {
     transform: translate3d(2px, -1px, 0);
-    color: #287b59;
+    color: var(--accent);
   }
 }
 

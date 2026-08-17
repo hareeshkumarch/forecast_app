@@ -34,33 +34,65 @@ type Face = { front: string; side: string; top: string; stroke: string };
  * moment they touch. The near line is at full strength and the line behind it
  * steps back, which is the depth cue the eye already knows and the only thing
  * that lets a visitor see there are two product lines here at all.
+ *
+ * The values live in the stylesheet. An SVG presentation attribute is a CSS
+ * declaration and takes a custom property like any other, so the chart follows
+ * the theme without this file knowing there is one — which matters most for
+ * the near row of sold weeks: it is the heaviest ink on a light page and has
+ * to become the brightest on a dark one, and that is not a colour a component
+ * can work out for itself.
  */
 const PALETTE: Record<Tone, Face[]> = {
   history: [
-    { front: "#151a16", side: "#333a34", top: "#3f453f", stroke: "none" },
-    { front: "#5c645d", side: "#767d76", top: "#828981", stroke: "none" },
+    {
+      front: "var(--scape-sold-near)",
+      side: "var(--scape-sold-near-side)",
+      top: "var(--scape-sold-near-top)",
+      stroke: "none",
+    },
+    {
+      front: "var(--scape-sold-far)",
+      side: "var(--scape-sold-far-side)",
+      top: "var(--scape-sold-far-top)",
+      stroke: "none",
+    },
   ],
   future: [
-    { front: "#1d6b4b", side: "#357f5f", top: "#458d6e", stroke: "none" },
-    { front: "#5ba488", side: "#74b09a", top: "#82b9a5", stroke: "none" },
+    {
+      front: "var(--scape-next-near)",
+      side: "var(--scape-next-near-side)",
+      top: "var(--scape-next-near-top)",
+      stroke: "none",
+    },
+    {
+      front: "var(--scape-next-far)",
+      side: "var(--scape-next-far-side)",
+      top: "var(--scape-next-far-top)",
+      stroke: "none",
+    },
   ],
   range: [
     {
-      front: "rgba(40,123,89,.08)",
-      side: "rgba(40,123,89,.10)",
-      top: "rgba(40,123,89,.12)",
-      stroke: "#9ebfaf",
+      front: "var(--scape-shell-near)",
+      side: "var(--scape-shell-near-side)",
+      top: "var(--scape-shell-near-top)",
+      stroke: "var(--scape-shell-near-line)",
     },
     {
-      front: "rgba(40,123,89,.05)",
-      side: "rgba(40,123,89,.07)",
-      top: "rgba(40,123,89,.09)",
-      stroke: "#bcd2c7",
+      front: "var(--scape-shell-far)",
+      side: "var(--scape-shell-far-side)",
+      top: "var(--scape-shell-far-top)",
+      stroke: "var(--scape-shell-far-line)",
     },
   ],
 };
 
-const FALLBACK: Face = { front: "#151a16", side: "#333a34", top: "#3f453f", stroke: "none" };
+const FALLBACK: Face = {
+  front: "var(--scape-sold-near)",
+  side: "var(--scape-sold-near-side)",
+  top: "var(--scape-sold-near-top)",
+  stroke: "none",
+};
 
 /** The nearest row's weight is the one a row beyond the palette falls back to,
  *  so a third product line would still draw rather than disappear. */
@@ -233,7 +265,7 @@ export function DemandScape() {
           onMouseLeave={() => setHovered(null)}
           onTouchStart={take}
         >
-          <g stroke="#cfd6cf" strokeWidth="1" opacity=".95">
+          <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
             {SCAPE.guides.map((guide) => (
               <line key={guide.key} x1={guide.x1} y1={guide.y1} x2={guide.x2} y2={guide.y2} />
             ))}
@@ -281,11 +313,11 @@ export function DemandScape() {
               y1={SCAPE.boundary.y1}
               x2={SCAPE.boundary.x2}
               y2={SCAPE.boundary.y2}
-              stroke="#616862"
+              stroke="var(--scape-axis)"
               strokeDasharray="5 5"
               strokeWidth="1.5"
             />
-            <g fill="#7d837d" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
+            <g fill="var(--scape-week)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
               {SCAPE.labels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
                   {label.text}
@@ -295,7 +327,7 @@ export function DemandScape() {
             {/* Darker than the week captions: these name what the depth of the
                 chart is, which is the part a visitor is least likely to guess
                 and most likely to be told once. */}
-            <g fill="#3f463f" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
+            <g fill="var(--scape-row-name)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
               {SCAPE.rowLabels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
                   {label.text}
@@ -314,30 +346,30 @@ export function DemandScape() {
           <span className="block">
             {readout ? (
               <span className="hidden whitespace-pre sm:inline">
-                <span className="text-[#111512]">{readout.label}</span>
-                <span className="text-[#585e58]">
+                <span className="text-text-primary">{readout.label}</span>
+                <span className="text-text-secondary">
                   {` · ${readout.point}`}
                   {readout.range === "actual" ? "" : ` · range ${readout.range}`}
                 </span>
               </span>
             ) : null}
             {spoken ? (
-              <span className="text-[#585e58] sm:hidden">
-                <span className="text-[#111512]">{spoken.label}</span>
+              <span className="text-text-secondary sm:hidden">
+                <span className="text-text-primary">{spoken.label}</span>
                 {` · ${spoken.point}`}
                 {spoken.range === "actual" ? "" : ` · range ${spoken.range}`}
               </span>
             ) : (
               <>
-                <span className="hidden text-[#858b85] sm:inline">{HINT}</span>
-                <span className="text-[#858b85] sm:hidden">{TOUCH_HINT}</span>
+                <span className="hidden text-land-dim sm:inline">{HINT}</span>
+                <span className="text-land-dim sm:hidden">{TOUCH_HINT}</span>
               </>
             )}
           </span>
           {/* The same week one level down. Held on its own line rather than
               run on to the first: the split is what the two rows are for, and
               a line that long wraps differently on every phone. */}
-          <span className="block min-h-[1.45em] whitespace-pre text-[#8a908a]">
+          <span className="block min-h-[1.45em] whitespace-pre text-land-dim">
             {readout ? readout.split : ""}
           </span>
         </p>
@@ -351,12 +383,12 @@ export function DemandScape() {
           : ""}
       </p>
 
-      <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-[#656b65]">
+      <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-land-dim">
         <Key weights={PALETTE.history.map((face) => face.front)}>What you sold</Key>
         <Key weights={PALETTE.future.map((face) => face.front)}>What is coming</Key>
-        <Key weights={["#c8ddd2"]}>How far it could move</Key>
+        <Key weights={["var(--scape-shell-key)"]}>How far it could move</Key>
       </div>
-      <p className="mt-5 text-center text-site-body text-[#8a908a]">{SERIES.caption}</p>
+      <p className="mt-5 text-center text-site-body text-land-dim">{SERIES.caption}</p>
     </div>
   );
 }

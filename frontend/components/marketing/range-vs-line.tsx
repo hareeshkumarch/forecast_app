@@ -8,10 +8,13 @@ import {
 } from "@/lib/compare-motion";
 import { area, buildPanel, path } from "@/lib/range-vs-line";
 
-const INK = "#111512";
-const FOREST = "#287b59";
-const RULE = "#cfd6cf";
-const MUTED = "#747b74";
+/* Read from the stylesheet rather than written here, so the panels follow
+   the theme like the rest of the page. SVG presentation attributes are CSS
+   declarations, and take a custom property the same way a rule would. */
+const INK = "var(--compare-ink)";
+const FOREST = "var(--compare-forecast)";
+const RULE = "var(--compare-rule)";
+const MUTED = "var(--compare-outcome)";
 
 type PanelProps = {
   index: number;
@@ -32,8 +35,8 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
   const aheadClip = `compare-ahead-${index}`;
 
   return (
-    <figure className="m-0 border border-[#d8ddd7] bg-[#fafbf9]">
-      <figcaption className="border-b border-[#e4e8e3] px-5 py-3 font-mono text-site-caption uppercase tracking-[0.14em] text-[#5c635c]">
+    <figure className="m-0 border border-border bg-surface">
+      <figcaption className="border-b border-land-rule-soft px-5 py-3 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
         {label}
       </figcaption>
 
@@ -142,7 +145,7 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
         </svg>
       </div>
 
-      <p className="border-t border-[#e4e8e3] px-5 py-4 text-site-body text-[#3f463f]">{verdict}</p>
+      <p className="border-t border-land-rule-soft px-5 py-4 text-site-body text-text-secondary">{verdict}</p>
     </figure>
   );
 }
@@ -167,7 +170,7 @@ export function RangeVsLine() {
         />
       </div>
 
-      <p className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-site-caption uppercase tracking-[0.13em] text-[#747b74]">
+      <p className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-site-caption uppercase tracking-[0.13em] text-land-dim">
         <span className="flex items-center gap-2">
           <span className="inline-block h-[2px] w-5" style={{ background: INK }} aria-hidden />
           What you sold

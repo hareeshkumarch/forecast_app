@@ -77,6 +77,70 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   await context.close();
 });
 
+/*
+ * The landing page was light by construction, and the one element that read
+ * the theme tokens while the rest did not gave a visitor on a dark OS two
+ * near-black smudges behind a light headline. These three cover the shape of
+ * that bug from both ends: the whole page has to move together, and it has to
+ * move for the OS as well as for the button.
+ */
+test("the landing page follows the operating system's colour scheme", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  const canvas = await page
+    .locator(".forecast-landing")
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  expect(canvas).toBe("rgb(17, 21, 18)");
+
+  await context.close();
+});
+
+test("the theme control switches the page and is remembered", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  const inkOf = (selector: string) =>
+    page.locator(selector).first().evaluate((node) => getComputedStyle(node).backgroundColor);
+
+  const litPage = await inkOf(".forecast-landing");
+  // The chart is drawn in SVG with its own palette, which is exactly where a
+  // half-themed page shows: the frame flips and the drawing inside does not.
+  const litChart = await page
+    .locator('.scape-bar[data-tone="history"][data-row="0"] polygon')
+    .first()
+    .evaluate((node) => getComputedStyle(node).fill);
+
+  await page.getByRole("button", { name: "Switch between light and dark" }).click();
+
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await inkOf(".forecast-landing")).not.toBe(litPage);
+  expect(
+    await page
+      .locator('.scape-bar[data-tone="history"][data-row="0"] polygon')
+      .first()
+      .evaluate((node) => getComputedStyle(node).fill),
+  ).not.toBe(litChart);
+
+  // Survives a reload, and without a flash: the bootstrap script in the
+  // document head sets the theme before anything paints, so the very first
+  // frame is already dark.
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("the choice made on the landing page is the one the dashboard opens in", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch between light and dark" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.goto("/dashboard");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
 test("the nav call to action fits its pill on the narrowest phones", async ({ page }) => {
   // The full label wrapped to two lines and spilled out of a fixed-height pill
   // below roughly 360px, which is where the older Android widths sit.
