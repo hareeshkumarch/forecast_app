@@ -755,8 +755,12 @@ body {
   --reveal-scale: 1;
   opacity: 0;
   transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(var(--reveal-scale));
+  /* Opacity over three quarters of the travel rather than a flat 400ms. Fixed,
+     it finished at wildly different points depending on how long the element
+     had been given — barely half way through a 760ms reveal — so a slow
+     arrival was fully opaque and still visibly moving. */
   transition:
-    opacity 400ms var(--ease-out),
+    opacity calc(var(--reveal-duration, 520ms) * 0.75) var(--ease-out),
     transform var(--reveal-duration, 520ms) var(--ease-out);
   transition-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
@@ -1031,6 +1035,7 @@ body {
   transition:
     border-color 140ms var(--ease-out),
     background-color 140ms var(--ease-out),
+    transform 160ms var(--ease-out),
     /* Alongside opacity and over the same time, so the nav's pill fades out
        and only then stops being there. Left out, visibility snaps at the
        start of the transition and takes the fade with it. */ visibility 300ms
@@ -1045,6 +1050,23 @@ body {
 @media (hover: hover) and (pointer: fine) {
   .cta-nudge:hover .cta-arrow {
     transform: translate3d(3px, 0, 0);
+  }
+
+  /*
+   * One pixel, which is the whole of it.
+   *
+   * `audits/track-b.mjs` has asked for this since it was written and the rule
+   * was never there, so the check has been red the entire time. A button that
+   * answers the cursor with nothing reads as disabled next to cards on the
+   * same page that lift 3px — but this is the page's primary action sitting on
+   * its own, not a card in a grid, and any more travel turns a press into a
+   * hop. Written as `transform` rather than the standalone `translate`
+   * property: the arrow inside has its own nudge and is a different element,
+   * so there is nothing here to compose with — and `getComputedStyle().transform`
+   * is where anything measuring this will look, `audits/track-b.mjs` included.
+   */
+  .cta-nudge:hover {
+    transform: translate3d(0, -1px, 0);
   }
 }
 
