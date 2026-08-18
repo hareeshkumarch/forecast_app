@@ -2,17 +2,19 @@
 
 import { BarChart3, CirclePlay, FileUp, Gauge, Layers3, Table2 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { CheckDiagram } from "@/components/marketing/check-diagram";
 import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
+import { PlanBand } from "@/components/marketing/plan-band";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { SplitWords } from "@/components/marketing/split-words";
+import { BAND_GROW, MARK_LAND } from "@/lib/plan-motion";
 import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
@@ -87,6 +89,7 @@ export function Landing() {
         <HowItWorks />
         <Features />
         <Compare />
+        <Decision />
         <Accuracy />
         <Closing />
       </main>
@@ -300,6 +303,39 @@ function Compare() {
         </Reveal>
         <Reveal delay={120} variant="from-right" duration={720}>
           <RangeVsLine />
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function Decision() {
+  return (
+    <section id="decision" className="section-pad border-t border-border">
+      <div className={SHELL}>
+        <Reveal variant="from-left" duration={640}>
+          <Eyebrow>From forecast to plan</Eyebrow>
+          <SplitWords
+            text="Three numbers, not one."
+            className="mt-4 max-w-[20ch] text-balance font-display text-site-h2 font-normal"
+          />
+          <p className="mt-5 max-w-[42ch] text-site-lead text-text-secondary">
+            What to commit to, what to be ready for, and how far ahead both hold.
+          </p>
+        </Reveal>
+
+        <Reveal delay={120} variant="scale" duration={720} className="mt-10 sm:mt-12">
+          <div
+            className="hero-stage"
+            style={
+              {
+                "--band-grow": `${BAND_GROW}ms`,
+                "--mark-land": `${MARK_LAND}ms`,
+              } as CSSProperties
+            }
+          >
+            <PlanBand />
+          </div>
         </Reveal>
       </div>
     </section>

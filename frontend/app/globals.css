@@ -166,6 +166,13 @@
   --compare-rule: #cfd6cf;
   --compare-outcome: #747b74;
 
+  /* The planning band. `--plan-prepare` is deliberately not the warning
+     colour: being ready for the upper bound is capacity, not an alarm. */
+  --plan-commit: #287b59;
+  --plan-prepare: #7a5f31;
+  --plan-fill-low: rgba(40, 123, 89, 0.16);
+  --plan-fill-high: rgba(122, 95, 49, 0.15);
+
   /* Row heights and padding step down together in compact mode. */
   --density-row: 9px;
   --density-cell-y: 9px;
@@ -334,6 +341,11 @@
   --compare-forecast: #7fbea1;
   --compare-rule: #3a423c;
   --compare-outcome: #9aa09b;
+
+  --plan-commit: #7fbea1;
+  --plan-prepare: #c4a86e;
+  --plan-fill-low: rgba(127, 190, 161, 0.18);
+  --plan-fill-high: rgba(196, 168, 110, 0.16);
 
   color-scheme: dark;
 }
@@ -667,6 +679,68 @@ body {
   }
   to {
     transform: scaleX(1);
+  }
+}
+
+/* ------------------------------------------------------- the planning band
+ *
+ * The track opens from the commit end, then the three figures land on it left
+ * to right, so a range exists before anything is placed inside it.
+ */
+.plan-track {
+  border-top: 1px solid var(--land-rule);
+  border-bottom: 1px solid var(--land-rule);
+  overflow: hidden;
+}
+
+.plan-fill-low {
+  background: var(--plan-fill-low);
+}
+
+.plan-fill-high {
+  background: var(--plan-fill-high);
+}
+
+.motion-ready .plan-track,
+.motion-ready .plan-edge,
+.motion-ready .plan-base,
+.motion-ready .plan-mark {
+  opacity: 0;
+}
+
+.motion-ready [data-shown="true"] .plan-track {
+  animation: band-open var(--band-grow) var(--ease-out) both;
+  transform-origin: left;
+}
+
+.motion-ready [data-shown="true"] .plan-edge,
+.motion-ready [data-shown="true"] .plan-base {
+  animation: mark-land var(--mark-land) var(--ease-out) var(--band-grow) both;
+}
+
+.motion-ready [data-shown="true"] .plan-mark {
+  animation: mark-land var(--mark-land) var(--ease-out) var(--mark-delay, 0ms) both;
+}
+
+@keyframes band-open {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes mark-land {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 

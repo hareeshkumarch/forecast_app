@@ -8,7 +8,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(1200);
 
-const ids = ["how-it-works", "features", "compare", "accuracy"];
+const ids = ["how-it-works", "features", "compare", "decision", "accuracy"];
 
 for (const id of ids) {
   await page.evaluate((target) => {
