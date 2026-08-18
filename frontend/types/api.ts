@@ -595,6 +595,97 @@ export interface DriverResponse {
   rows: DriverRow[];
 }
 
+export type DecisionGrade = "plannable" | "directional" | "indicative";
+
+export interface DecisionAction {
+  headline: string;
+  detail: string;
+}
+
+export interface DecisionHorizon {
+  periods: number;
+  through: string | null;
+  covers_run: boolean;
+}
+
+export interface DecisionConcentration {
+  count: number;
+  total: number;
+  share: number;
+  leaders: string[];
+  lopsided: boolean;
+}
+
+export interface DecisionResponse {
+  run_id: string | null;
+  has_decision: boolean;
+  grade: DecisionGrade | null;
+  meaning: string | null;
+  accuracy: number | null;
+  confidence_level: number | null;
+  commit: number | null;
+  base: number | null;
+  prepare: number | null;
+  spread_pct: number | null;
+  commit_display: string | null;
+  base_display: string | null;
+  prepare_display: string | null;
+  exposure: number | null;
+  downside_pct: number | null;
+  lean_pct: number | null;
+  horizon: DecisionHorizon | null;
+  concentration: DecisionConcentration | null;
+  actions: DecisionAction[];
+}
+
+export interface HorizonAccuracy {
+  horizon: number;
+  wape: number | null;
+  bias_pct: number | null;
+  observations: number;
+}
+
+export interface ClassAccuracy {
+  demand_class: string;
+  wape: number | null;
+  bias_pct: number | null;
+  series: number;
+  point_forecast_claimed: boolean;
+}
+
+export interface CoveragePoint {
+  nominal: number;
+  horizon: number;
+  observed: number;
+  gap_pp: number;
+  n_observations: number;
+  measurable: boolean;
+  holds: boolean;
+}
+
+export interface ValueAdd {
+  model: string;
+  model_error: number | null;
+  baseline: string | null;
+  baseline_error: number | null;
+  improvement_pct: number | null;
+  beats_baseline: boolean;
+}
+
+export interface AccuracyReport {
+  run_id: string;
+  dataset_id: string;
+  scored_at: string | null;
+  measured_against_outcomes: boolean;
+  backtest: Record<string, number | null>;
+  by_horizon: HorizonAccuracy[];
+  by_class: ClassAccuracy[];
+  coverage: CoveragePoint[];
+  coverage_tolerance_pp: number;
+  forecast_value_add: ValueAdd | null;
+  caveats: string[];
+}
+
 export interface Insight {
   id: string;
   run_id: string;

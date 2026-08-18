@@ -71,6 +71,8 @@ const queryKeys = {
   breakdown: (f: DashboardFilters, column: string) =>
     ["dashboard", "breakdown", column, filterKey(f)] as const,
   drivers: (f: DashboardFilters) => ["dashboard", "drivers", filterKey(f)] as const,
+  decision: (f: DashboardFilters) => ["dashboard", "decision", filterKey(f)] as const,
+  accuracyReport: (id: string) => ["forecasts", id, "accuracy"] as const,
   insights: (f: DashboardFilters) => ["dashboard", "insights", filterKey(f)] as const,
   llmUsage: (days: number) => ["usage", "llm", days] as const,
 };
@@ -148,6 +150,22 @@ export function useDrivers() {
   return useQuery({
     queryKey: queryKeys.drivers(filters),
     queryFn: ({ signal }) => api.getDrivers(filters, signal),
+  });
+}
+
+export function useDecision() {
+  const filters = useDashboardFilters();
+  return useQuery({
+    queryKey: queryKeys.decision(filters),
+    queryFn: ({ signal }) => api.getDecision(filters, signal),
+  });
+}
+
+export function useAccuracyReport(runId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.accuracyReport(runId ?? "none"),
+    queryFn: ({ signal }) => api.getAccuracyReport(runId as string, signal),
+    enabled: Boolean(runId),
   });
 }
 

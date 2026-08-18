@@ -480,13 +480,36 @@ async def test_a_first_run_does_not_caption_a_comparison_it_never_made(
         label = kpi["comparison_label"]
         if label is None or not label.startswith("vs "):
             continue
-        assert (
-            kpi["delta_display"] is not None
-        ), f"{kpi['key']} says {label!r} with nothing to compare against"
+        assert kpi["delta_display"] is not None, (
+            f"{kpi['key']} says {label!r} with nothing to compare against"
+        )
 
     # The window caption under Actual YTD is not a comparison and stands alone.
     actual = next(kpi for kpi in body["kpis"] if kpi["key"] == "actual_ytd")
     assert actual["comparison_label"], "the actual window is worth stating on its own"
+
+
+async def test_the_decision_separates_the_promise_from_the_capacity(
+    client: AsyncClient,
+) -> None:
+    await _seed_and_run(client)
+
+    body = (await client.get("/api/dashboard/decision")).json()
+
+    assert body["has_decision"] is True
+    assert body["grade"] in {"plannable", "directional", "indicative"}
+    assert body["commit"] <= body["base"] <= body["prepare"]
+    assert body["commit_display"] and body["prepare_display"]
+    assert body["actions"], "a decision with nothing to do reads as a missing section"
+    assert body["horizon"]["periods"] >= 0
+
+
+async def test_the_decision_is_empty_before_any_run(client: AsyncClient) -> None:
+    body = (await client.get("/api/dashboard/decision")).json()
+
+    assert body["has_decision"] is False
+    assert body["run_id"] is None
+    assert body["actions"] == []
 
 
 async def test_dashboard_is_empty_before_any_run(client: AsyncClient) -> None:
@@ -788,9 +811,9 @@ async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
     metrics = (await client.get(f"/api/forecasts/{detail['id']}/metrics")).json()
     for candidate in metrics["candidates"]:
         for name, value in candidate["params"].items():
-            assert not isinstance(value, float) or math.isfinite(
-                value
-            ), f"{candidate['model']}.{name} is {value}, which Postgres will reject"
+            assert not isinstance(value, float) or math.isfinite(value), (
+                f"{candidate['model']}.{name} is {value}, which Postgres will reject"
+            )
     assert json.dumps(metrics), "the metrics response must be serialisable"
 
 

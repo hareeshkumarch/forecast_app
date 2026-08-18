@@ -1,4 +1,5 @@
 import type {
+  AccuracyReport,
   ApiErrorBody,
   BreakdownResponse,
   CapabilitiesResponse,
@@ -16,6 +17,7 @@ import type {
   DatasetProfile,
   DatasetSort,
   DatasetUploadResponse,
+  DecisionResponse,
   DriverResponse,
   ExportFormat,
   ForecastFrequency,
@@ -471,6 +473,14 @@ export const getBreakdown = (filters: DashboardFilters, column: string, signal?:
 
 export const getDrivers = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<DriverResponse>(`/api/dashboard/drivers${buildQuery(filterParams(filters))}`, { signal });
+
+export const getDecision = (filters: DashboardFilters, signal?: AbortSignal) =>
+  request<DecisionResponse>(`/api/dashboard/decision${buildQuery(filterParams(filters))}`, {
+    signal,
+  });
+
+export const getAccuracyReport = (runId: string, signal?: AbortSignal) =>
+  request<AccuracyReport>(`/api/forecasts/${runId}/accuracy`, { signal });
 
 export const getInsights = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`, { signal });

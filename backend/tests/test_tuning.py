@@ -7,10 +7,12 @@ import pytest
 
 from app.forecasting.selection import INTERMITTENT_METRIC_WEIGHTS
 from app.forecasting.tuning import (
+    MIN_SURVIVORS,
     SearchSpace,
     blended_error,
     cache_key,
     evaluation_budget,
+    search_width,
     tune,
     validation_splits,
 )
@@ -190,4 +192,92 @@ def test_no_weights_falls_back_to_the_plain_error() -> None:
 
     assert blended_error(actual, predicted, None) == pytest.approx(
         blended_error(actual, predicted, {})
+    )
+
+
+# ------------------------------------------------------------ successive halving
+
+
+def test_screening_on_one_fold_buys_a_wider_search() -> None:
+    # Every candidate is screened on the earliest fold and only the survivors
+    # pay for the rest, so the same number of fits explores more of the space.
+    assert search_width(240, 100, 3) > evaluation_budget(240, 100)
+    assert search_width(240, 100, 1) == evaluation_budget(240, 100)
+    assert search_width(240, 5, 3) <= 5
+
+
+def test_halving_still_finds_the_parameter_that_validates_best() -> None:
+    matrix, target = _linear_problem(240)
+    space = SearchSpace({"scale": [0.05, 0.2, 0.5, 0.8, 1.0, 1.3, 2.0, 5.0, 10.0, 20.0]})
+
+    def fit_predict(params: dict[str, object], start: int, end: int) -> np.ndarray:
+        coefficients = np.linalg.lstsq(matrix[:start], target[:start], rcond=None)[0]
+        return matrix[start:end] @ coefficients * float(params["scale"])  # type: ignore[arg-type]
+
+    result = tune("halved", matrix, target, space, fit_predict, 6)
+
+    assert result.params["scale"] == 1.0
+    assert result.method.endswith("_halving")
+    assert result.evaluations <= max(MIN_SURVIVORS, 10 // 3) + 1
+
+
+def test_a_small_space_is_not_screened() -> None:
+    matrix, target = _linear_problem(240)
+    space = SearchSpace({"scale": [0.1, 1.0, 10.0]})
+
+    def fit_predict(params: dict[str, object], start: int, end: int) -> np.ndarray:
+        coefficients = np.linalg.lstsq(matrix[:start], target[:start], rcond=None)[0]
+        return matrix[start:end] @ coefficients * float(params["scale"])  # type: ignore[arg-type]
+
+    result = tune("unscreened", matrix, target, space, fit_predict, 6)
+
+    assert "halving" not in result.method
+    assert result.evaluations == 3
+
+
+def test_a_candidate_that_fails_screening_is_not_resurrected() -> None:
+    matrix, target = _linear_problem(240)
+    space = SearchSpace({"mode": ["broken", "a", "b", "c", "d", "e"]})
+
+    def fit_predict(params: dict[str, object], start: int, end: int) -> np.ndarray:
+        if params["mode"] == "broken":
+            raise RuntimeError("did not converge")
+        coefficients = np.linalg.lstsq(matrix[:start], target[:start], rcond=None)[0]
+        return matrix[start:end] @ coefficients
+
+    result = tune("screened_out", matrix, target, space, fit_predict, 6)
+
+    assert result.params["mode"] != "broken"
+    assert np.isfinite(result.score)
+
+
+# ---------------------------------------------------------------- scale-free error
+
+
+def test_mase_in_the_objective_is_measured_against_the_seasonal_walk() -> None:
+    # Scaling MAE by the level of the series is a different measure, and on a
+    # seasonal series it ranks candidates differently from the MASE selection
+    # scores by — which is the disagreement the objective exists to close.
+    season = 4
+    history = np.concatenate(
+        [np.array([10.0, 40.0, 10.0, 40.0]) + step * 2.0 for step in range(6)]
+    )
+    actual = np.array([22.0, 52.0, 22.0, 52.0])
+    predicted = actual + 3.0
+
+    weights = {"mase": 1.0}
+    against_history = blended_error(actual, predicted, weights, history, season)
+    against_level = blended_error(actual, predicted, weights)
+
+    assert np.isfinite(against_history)
+    assert against_history != pytest.approx(against_level)
+
+
+def test_too_little_history_for_mase_falls_back_rather_than_returning_nan() -> None:
+    weights = {"mase": 1.0}
+    actual = np.array([10.0, 20.0, 30.0])
+    predicted = np.array([11.0, 19.0, 31.0])
+
+    assert blended_error(actual, predicted, weights, np.array([5.0]), 12) == pytest.approx(
+        blended_error(actual, predicted, weights)
     )

@@ -276,3 +276,10 @@ def test_an_interval_leans_the_way_the_model_has_been_wrong() -> None:
         "the model has under-forecast by about 20 every time, so the room "
         "above the point forecast has to be the larger side"
     )
+    assert below > 0.0, (
+        "and the smaller side still has to exist: clamping it to zero produced "
+        "a lower bound equal to the point forecast, which claims demand cannot "
+        "come in under the number"
+    )
+    assert float(np.min(bands.lower)) < 100.0
+    assert float(np.min(bands.worst_case)) < 100.0

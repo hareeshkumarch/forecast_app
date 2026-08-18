@@ -492,7 +492,15 @@ class ProphetForecaster:
                     if yhat.size != actual.size or not np.all(np.isfinite(yhat)):
                         errors = []
                         break
-                    errors.append(blended_error(actual, yhat, self.metric_weights))
+                    errors.append(
+                        blended_error(
+                            actual,
+                            yhat,
+                            self.metric_weights,
+                            np.asarray(train["y"].to_numpy(), dtype=np.float64),
+                            self.profile.seasonal_period if self.profile else 1,
+                        )
+                    )
 
                 if not errors:
                     continue
@@ -914,6 +922,7 @@ class GradientBoostingForecaster:
             fit_predict,
             max(1, min(horizon, 12)),
             metric_weights=self.metric_weights,
+            season=self.profile.seasonal_period if self.profile else 1,
         )
 
         keep = self._kept_columns(result.params, from_driver)

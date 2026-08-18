@@ -16,6 +16,8 @@ MIN_VALIDATION_ROWS = 6
 MIN_EVALUATIONS = 4
 ROWS_PER_EVALUATION = 12
 CACHE_LIMIT = 64
+SURVIVOR_SHARE = 1.0 / 3.0
+MIN_SURVIVORS = 3
 
 
 def as_int(value: object, default: int = 0) -> int:
@@ -88,6 +90,17 @@ def evaluation_budget(n_rows: int, space_size: int) -> int:
     return int(min(space_size, settings.tuning_max_evaluations, affordable))
 
 
+def search_width(n_rows: int, space_size: int, folds: int) -> int:
+    """How many candidates the budget buys once cheap screening is priced in."""
+    budget = evaluation_budget(n_rows, space_size)
+    if folds < 2:
+        return budget
+
+    fits = budget * folds
+    affordable = fits / (1.0 + folds * SURVIVOR_SHARE)
+    return int(min(space_size, max(budget, round(affordable))))
+
+
 def validation_splits(n_rows: int, horizon: int) -> list[tuple[int, int]]:
     min_rows = settings.tuning_min_validation_rows
     if n_rows < min_rows * 2:
@@ -141,36 +154,44 @@ def tuning_error(actual: FloatArray, predicted: FloatArray) -> float:
 
 
 def blended_error(
-    actual: FloatArray, predicted: FloatArray, weights: dict[str, float] | None
+    actual: FloatArray,
+    predicted: FloatArray,
+    weights: dict[str, float] | None,
+    insample: FloatArray | None = None,
+    season: int = 1,
 ) -> float:
     """Score a candidate the way the run will score the model it belongs to.
 
     Tuning that minimises one error and selection that minimises another will
     disagree, and the disagreement is silent: the search hands over the
-    hyperparameters that were best at the wrong thing. On an intermittent
-    series it is worse than silent, because a percentage error rewards
-    forecasting zero and that is the whole reason the run stops using one.
-
-    The run's weights come from settings; min-max normalising across
-    candidates the way selection does is not available for a single model, so
-    each metric is put on a comparable percentage scale against the level of
-    the series instead.
+    hyperparameters that were best at the wrong thing.
     """
     if not weights:
         return tuning_error(actual, predicted)
 
-    from app.forecasting.metrics import evaluate
+    from app.forecasting.metrics import evaluate, mase
 
     scores = evaluate(actual, predicted)
     scale = float(np.mean(np.abs(actual)))
     if not np.isfinite(scale) or scale <= 0.0:
         scale = 1.0
 
+    # Real MASE where the training window is on hand. Scaling MAE by the level
+    # of the series instead measures something else, and on a seasonal series
+    # the two rank candidates differently — which is the disagreement with
+    # selection this function exists to close.
+    scaled_mae = scores["mae"] / scale * 100.0
+    seasonal = (
+        mase(actual, predicted, insample, max(1, season)) * 100.0
+        if insample is not None and np.size(insample) > max(1, season)
+        else float("nan")
+    )
+
     comparable = {
         "wmape": scores["wmape"],
-        "mase": scores["mae"] / scale * 100.0,
+        "mase": seasonal if np.isfinite(seasonal) else scaled_mae,
         "rmse": scores["rmse"] / scale * 100.0,
-        "mae": scores["mae"] / scale * 100.0,
+        "mae": scaled_mae,
     }
 
     total = sum(weight for metric, weight in weights.items() if metric in comparable)
@@ -204,6 +225,7 @@ def tune(
     fit_predict: FitPredict,
     horizon: int,
     metric_weights: dict[str, float] | None = None,
+    season: int = 1,
 ) -> TuningResult:
     n_rows = int(matrix.shape[0])
     splits = validation_splits(n_rows, horizon)
@@ -217,7 +239,7 @@ def tune(
     if cached is not None:
         return cached
 
-    budget = evaluation_budget(n_rows, space.size())
+    budget = search_width(n_rows, space.size(), len(splits))
     rng = np.random.default_rng(SEARCH_SEED)
 
     if space.size() <= budget:
@@ -237,30 +259,46 @@ def tune(
             candidates.append(params)
         method = "random"
 
-    best_params, best_score = defaults, float("inf")
-    evaluated = 0
-
-    for params in candidates:
+    def score_over(params: dict[str, object], folds: list[tuple[int, int]]) -> float:
         errors: list[float] = []
-        for start, end in splits:
+        for start, end in folds:
             try:
                 predictions = fit_predict(params, start, end)
             except Exception:
-                errors = []
-                break
+                return float("nan")
 
             actual = target[start:end]
             predictions = np.asarray(predictions, dtype=float).ravel()
             if predictions.size != actual.size or not np.all(np.isfinite(predictions)):
-                errors = []
-                break
-            errors.append(blended_error(actual, predictions, metric_weights))
+                return float("nan")
+            errors.append(
+                blended_error(actual, predictions, metric_weights, target[:start], season)
+            )
 
-        if not errors:
+        return float(np.mean(errors)) if errors else float("nan")
+
+    contenders = candidates
+    if len(splits) >= 2 and len(candidates) > MIN_SURVIVORS:
+        # Successive halving: every candidate is screened on the earliest fold,
+        # and only the survivors pay for the rest. A candidate that fails a fold
+        # is dropped either way, so screening on one loses nothing.
+        screened = [
+            (score_over(params, splits[:1]), index) for index, params in enumerate(candidates)
+        ]
+        alive = sorted((score, index) for score, index in screened if np.isfinite(score))
+        keep = max(MIN_SURVIVORS, int(len(candidates) * SURVIVOR_SHARE))
+        contenders = [candidates[index] for _, index in alive[:keep]]
+        method = f"{method}_halving"
+
+    best_params, best_score = defaults, float("inf")
+    evaluated = 0
+
+    for params in contenders:
+        score = score_over(params, splits)
+        if not np.isfinite(score):
             continue
 
         evaluated += 1
-        score = float(np.mean(errors))
         if score < best_score:
             best_params, best_score = params, score
 
