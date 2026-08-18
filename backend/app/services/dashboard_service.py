@@ -9,12 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.numbers import compact
 from app.datasets.profiler import currency_symbol, is_currency_like
+from app.forecasting import decisions
+from app.forecasting.hierarchy import leaf_depth
 from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import (
     ForecastDriver,
     ForecastMetric,
     ForecastPoint,
     ForecastRun,
+    ForecastSeries,
     Insight,
 )
 from app.models.enums import PointKind
@@ -24,6 +27,10 @@ from app.schemas.dashboard import (
     BreakdownRowRead,
     DashboardQuery,
     DashboardSummary,
+    DecisionAction,
+    DecisionConcentration,
+    DecisionHorizon,
+    DecisionResponse,
     DriverResponse,
     DriverRow,
     InsightRead,
@@ -379,6 +386,128 @@ async def insights(
     return InsightResponse(
         run_id=run.id, items=[InsightRead.model_validate(row) for row in result.scalars().all()]
     )
+
+
+async def decision(session: AsyncSession, query: DashboardQuery) -> DecisionResponse:
+    run = await forecast_service.resolve_run(session, query.run_id)
+    if run is None:
+        return DecisionResponse(run_id=None)
+
+    periods = await _forecast_periods(session, run.id, query.start, query.end)
+    metrics = await _metrics(session, run.id)
+
+    backtested = metrics.get("accuracy")
+    realized = None if run.realized_wmape is None else accuracy_from_wmape(run.realized_wmape)
+    # A scored run beats a backtest: it grades this forecast, not the method.
+    accuracy = realized if realized is not None else (backtested.value if backtested else None)
+
+    found = decisions.decide(
+        periods,
+        frequency=run.frequency,
+        confidence_level=run.confidence_level,
+        accuracy=accuracy,
+        at_risk=await _value_at_risk(session, run),
+        realized_bias=run.realized_bias,
+        realized_wmape=run.realized_wmape,
+        realized_coverage=run.realized_coverage,
+    )
+    if found is None:
+        return DecisionResponse(run_id=run.id)
+
+    currency = _is_currency(run.target_column)
+    symbol = _symbol_for(run.target_column)
+
+    def shown(value: float) -> str:
+        return compact(value, currency=currency, symbol=symbol)
+
+    return DecisionResponse(
+        run_id=run.id,
+        has_decision=True,
+        grade=found.grade.value,
+        meaning=found.meaning,
+        accuracy=found.accuracy,
+        confidence_level=found.confidence_level,
+        commit=found.commit,
+        base=found.base,
+        prepare=found.prepare,
+        spread_pct=found.spread_pct,
+        commit_display=shown(found.commit),
+        base_display=shown(found.base),
+        prepare_display=shown(found.prepare),
+        exposure=found.exposure,
+        downside_pct=found.downside_pct,
+        lean_pct=found.lean_pct,
+        horizon=DecisionHorizon(
+            periods=found.horizon.periods,
+            through=found.horizon.through,
+            covers_run=found.horizon.covers_run,
+        ),
+        concentration=(
+            None
+            if found.concentration is None
+            else DecisionConcentration(
+                count=found.concentration.count,
+                total=found.concentration.total,
+                share=found.concentration.share,
+                leaders=found.concentration.leaders,
+                lopsided=found.concentration.lopsided,
+            )
+        ),
+        actions=[
+            DecisionAction(headline=action.headline, detail=action.detail)
+            for action in found.actions
+        ],
+    )
+
+
+async def _forecast_periods(
+    session: AsyncSession, run_id: uuid.UUID, start: date | None, end: date | None
+) -> list[decisions.Period]:
+    statement = (
+        select(ForecastPoint)
+        .where(
+            ForecastPoint.run_id == run_id,
+            ForecastPoint.series_id.is_(None),
+            ForecastPoint.kind == PointKind.FORECAST,
+            ForecastPoint.forecast.is_not(None),
+        )
+        .order_by(ForecastPoint.period)
+    )
+    if start is not None:
+        statement = statement.where(ForecastPoint.period >= start)
+    if end is not None:
+        statement = statement.where(ForecastPoint.period <= end)
+
+    result = await session.execute(statement)
+    return [
+        decisions.Period(
+            period=point.period,
+            forecast=float(point.forecast or 0.0),
+            lower=None if point.lower_bound is None else float(point.lower_bound),
+            upper=None if point.upper_bound is None else float(point.upper_bound),
+            worst=None if point.worst_case is None else float(point.worst_case),
+        )
+        for point in result.scalars().all()
+    ]
+
+
+async def _value_at_risk(session: AsyncSession, run: ForecastRun) -> list[tuple[str, float]]:
+    leaves = leaf_depth(run.group_by)
+    if leaves == 0:
+        return []
+
+    result = await session.execute(
+        select(ForecastSeries.label, ForecastSeries.forecast_total, ForecastSeries.wmape).where(
+            ForecastSeries.run_id == run.id,
+            ForecastSeries.level == leaves,
+            ForecastSeries.wmape.is_not(None),
+        )
+    )
+    return [
+        (label, abs(float(total)) * float(wmape) / 100.0)
+        for label, total, wmape in result.all()
+        if total is not None and wmape is not None
+    ]
 
 
 def _is_currency(column: str) -> bool:

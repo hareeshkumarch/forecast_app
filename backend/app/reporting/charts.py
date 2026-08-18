@@ -6,20 +6,43 @@ from typing import Any
 from reportlab.lib.units import mm
 from reportlab.platypus import Flowable
 
-from app.reporting.palette import ACCENT, BAND_FILL, FAINT, GRID, INK, MUTED, POSITIVE
+from app.reporting.palette import (
+    ACCENT,
+    BAND_FILL,
+    COMMIT,
+    FAINT,
+    GRID,
+    INK,
+    MUTED,
+    PLAN_FILL,
+    POSITIVE,
+    PREPARE,
+    RISK_REST,
+)
 
 GRID_LINES = 4
 MIN_BAND_HEIGHT = 0.4
+
+
+# Quarters cleanly under a four-line grid. One significant digit is too coarse
+# near a power of ten: 1.01M rounds to 2M and the chart loses half its height.
+NICE_STEPS = (1.0, 1.2, 1.6, 2.0, 2.4, 3.2, 4.0, 5.0, 6.0, 8.0, 10.0)
+STEP_SLACK = 1e-9
 
 
 def _nice_ceiling(value: float) -> float:
     if value <= 0:
         return 1.0
 
-    from math import ceil, floor, log10
+    from math import floor, log10
 
     magnitude = 10.0 ** floor(log10(value))
-    return float(ceil(value / magnitude) * magnitude)
+    scaled = value / magnitude
+
+    for step in NICE_STEPS:
+        if scaled <= step + STEP_SLACK:
+            return step * magnitude
+    return 10.0 * magnitude
 
 
 def _compact(value: float, currency: bool) -> str:
@@ -175,12 +198,14 @@ class RiskChart(Flowable):
         width: float,
         height: float,
         currency: bool = True,
+        cut: int | None = None,
     ) -> None:
         super().__init__()
         self.rows = rows
         self.width = width
         self.height = height
         self.currency = currency
+        self.cut = cut
 
     def wrap(self, *_args: Any) -> tuple[float, float]:
         return self.width, self.height
@@ -197,19 +222,41 @@ class RiskChart(Flowable):
 
         gap = self.height / len(self.rows)
         bar = min(gap * 0.6, 5 * mm)
+        cut = self.cut if self.cut and 0 < self.cut < len(self.rows) else None
 
         for index, (label, value) in enumerate(self.rows):
             top = self.height - (index + 1) * gap + (gap - bar) / 2
+            leading = cut is not None and index < cut
 
             canvas.setFont("Helvetica", 7)
-            canvas.setFillColor(INK)
+            canvas.setFillColor(INK if leading or cut is None else MUTED)
             canvas.drawString(0, top + bar / 2 - 2.2, _clip(label, 34))
 
-            canvas.setFillColor(ACCENT if index == 0 else POSITIVE)
+            canvas.setFillColor(ACCENT if leading or cut is None else RISK_REST)
             canvas.rect(label_width, top, max(track * value / largest, 0.4), bar, stroke=0, fill=1)
 
             canvas.setFillColor(MUTED)
             canvas.drawRightString(self.width, top + bar / 2 - 2.2, _compact(value, self.currency))
+
+        if cut is None:
+            return
+
+        at = self.height - cut * gap
+
+        # Rows leave ~7pt between bars, which a 6pt caption clears at neither
+        # end; on the rule, in the gutter between value labels, it has room.
+        canvas.setFont("Helvetica-Bold", 6)
+        caption = "HALF THE RISK IS ABOVE THIS LINE"
+        caption_width = canvas.stringWidth(caption, "Helvetica-Bold", 6)
+
+        canvas.setStrokeColor(ACCENT)
+        canvas.setLineWidth(0.6)
+        canvas.setDash(2, 2)
+        canvas.line(label_width, at, self.width - caption_width - 2 * mm, at)
+        canvas.setDash()
+
+        canvas.setFillColor(ACCENT)
+        canvas.drawRightString(self.width, at - 2.0, caption)
 
 
 class ScoreChart(Flowable):
@@ -294,3 +341,80 @@ class ScoreChart(Flowable):
 
 def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+
+class PlanBand(Flowable):
+    LABELS = ("COMMIT TO", "BASE CASE", "BE READY FOR")
+
+    def __init__(
+        self,
+        commit: float,
+        base: float,
+        prepare: float,
+        width: float,
+        height: float,
+        currency: bool = True,
+    ) -> None:
+        super().__init__()
+        self.commit = commit
+        self.base = base
+        self.prepare = prepare
+        self.width = width
+        self.height = height
+        self.currency = currency
+
+    def wrap(self, *_args: Any) -> tuple[float, float]:
+        return self.width, self.height
+
+    def draw(self) -> None:
+        canvas = self.canv
+        span = self.prepare - self.commit
+        left, right = 2 * mm, self.width - 2 * mm
+        track = right - left
+        bar_height = 7 * mm
+        bar_bottom = 9 * mm
+
+        def x(value: float) -> float:
+            if span <= 0:
+                return left + track / 2
+            return left + (value - self.commit) / span * track
+
+        canvas.setFillColor(PLAN_FILL)
+        canvas.rect(left, bar_bottom, track, bar_height, stroke=0, fill=1)
+
+        for value, colour in ((self.commit, COMMIT), (self.prepare, PREPARE)):
+            canvas.setFillColor(colour)
+            canvas.rect(x(value) - 0.75, bar_bottom, 1.5, bar_height, stroke=0, fill=1)
+
+        base_at = x(self.base)
+        canvas.setStrokeColor(INK)
+        canvas.setLineWidth(1.2)
+        canvas.line(base_at, bar_bottom - 1.5 * mm, base_at, bar_bottom + bar_height + 1.5 * mm)
+
+        values = (self.commit, self.base, self.prepare)
+        colours = (COMMIT, INK, PREPARE)
+        top = bar_bottom + bar_height + 3.5 * mm
+
+        for index, (label, value, colour) in enumerate(
+            zip(self.LABELS, values, colours, strict=True)
+        ):
+            at = x(value)
+            canvas.setFont("Helvetica", 6.5)
+            canvas.setFillColor(FAINT)
+            _anchored(canvas, at, top + 5 * mm, label, index, left, right)
+
+            canvas.setFont("Helvetica-Bold", 10.5)
+            canvas.setFillColor(colour)
+            _anchored(canvas, at, top, _compact(value, self.currency), index, left, right)
+
+
+def _anchored(
+    canvas: Any, at: float, y: float, text: str, index: int, left: float, right: float
+) -> None:
+    if index == 0:
+        canvas.drawString(left, y, text)
+    elif index == 2:
+        canvas.drawRightString(right, y, text)
+    else:
+        half = canvas.stringWidth(text, canvas._fontname, canvas._fontsize) / 2
+        canvas.drawCentredString(min(max(at, left + half), right - half), y, text)

@@ -10,6 +10,7 @@ from app.schemas.dashboard import (
     BreakdownResponse,
     DashboardQuery,
     DashboardSummary,
+    DecisionResponse,
     DriverResponse,
     InsightResponse,
     InsightRewriteRequest,
@@ -42,6 +43,15 @@ async def breakdown(
     ),
 ) -> BreakdownResponse:
     return await dashboard_service.breakdown(session, query, column)
+
+
+@router.get(
+    "/decision",
+    response_model=DecisionResponse,
+    summary="What to commit to, what to be ready for, and what to do about it",
+)
+async def decision(session: SessionDep, query: DashboardQueryDep) -> DecisionResponse:
+    return await dashboard_service.decision(session, query)
 
 
 @router.get("/drivers", response_model=DriverResponse, summary="Top drivers")

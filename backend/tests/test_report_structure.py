@@ -113,9 +113,9 @@ def _sheets(*, driver_impact: float = 4200.0) -> dict[str, list[dict[str, Any]]]
     }
 
 
-def _text(tmp_path: Path, **kwargs: Any) -> str:
+def _text(tmp_path: Path, run: Any = None, **kwargs: Any) -> str:
     out = tmp_path / "report.pdf"
-    pdf.build(out, _run(), _rows(), _sheets(**kwargs), max_rows=200)
+    pdf.build(out, run or _run(), _rows(), _sheets(**kwargs), max_rows=200)
     with pdfplumber.open(out) as document:
         return "\n".join((page.extract_text() or "") for page in document.pages)
 
@@ -126,6 +126,8 @@ def _text(tmp_path: Path, **kwargs: Any) -> str:
 @pytest.mark.parametrize(
     "heading",
     [
+        "THE DECISION",
+        "DO THIS",
         "THE FORECAST",
         "HOW THIS FORECAST ACTUALLY DID",
         "SERIES AT RISK",
@@ -194,3 +196,85 @@ def test_a_large_driver_impact_stays_readable(tmp_path: Path) -> None:
 )
 def test_magnitude_picks_precision_from_size(value: Any, expected: str) -> None:
     assert pdf._magnitude(value) == expected
+
+
+# ------------------------------------------------------ the answer comes first
+
+
+def test_the_decision_is_above_the_evidence_for_it(tmp_path: Path) -> None:
+    # A planner opens this to find out what to commit to. Everything below is
+    # the working, and a reader who trusts the working should not have to reach
+    # page two to find the answer.
+    text = _text(tmp_path)
+
+    assert text.index("THE DECISION") < text.index("THE FORECAST")
+    assert text.index("THE DECISION") < text.index("HOW THIS FORECAST WAS MADE")
+
+
+def test_the_three_planning_numbers_are_named_not_just_printed(tmp_path: Path) -> None:
+    text = _text(tmp_path)
+
+    for label in ("COMMIT TO", "BASE CASE", "BE READY FOR"):
+        assert label in text
+
+
+def test_the_grade_says_what_the_forecast_may_be_used_for(tmp_path: Path) -> None:
+    # The word on its own is a label the reader has to have been told the
+    # meaning of; next to the sentence it stands for, it is a permission.
+    text = _text(tmp_path)
+
+    assert "PLANNABLE" in text
+    assert "Period totals are firm enough to commit to." in text
+
+
+def test_a_forecast_too_rough_to_plan_from_refuses_in_the_report(tmp_path: Path) -> None:
+    rough = _run(realized_wmape=70.0, realized_bias=None, realized_coverage=None)
+    text = _text(tmp_path, run=rough)
+
+    assert "INDICATIVE" in text
+    assert "Do not set targets from this run" in text
+
+
+def test_the_lean_the_last_run_earned_leads_the_actions(tmp_path: Path) -> None:
+    # It changes every number under it, so it outranks the rest of the list.
+    leaning = _run(realized_bias=-8.0, realized_wmape=12.4)
+    body = _text(tmp_path, run=leaning)
+
+    do_this = body.index("DO THIS")
+    assert "1 Correct the plan 8.0% up" in body[do_this:]
+
+
+def test_a_miss_that_scatters_is_not_written_up_as_a_lean(tmp_path: Path) -> None:
+    # The default run misses by 2.1% against 12.4% error: noise, not direction.
+    assert "Correct the plan" not in _text(tmp_path)
+
+
+def test_an_unscored_run_still_gets_a_decision(tmp_path: Path) -> None:
+    # Nothing in the decision needs a scored run: the interval alone carries
+    # the commit level, and the backtest carries the grade.
+    unscored = _run(
+        scored_at=None,
+        scored_periods=0,
+        realized_wmape=None,
+        realized_bias=None,
+        realized_mae=None,
+        realized_coverage=None,
+    )
+    text = _text(tmp_path, run=unscored)
+
+    assert "THE DECISION" in text
+    assert "COMMIT TO" in text
+
+
+def test_the_grade_travels_on_every_page(tmp_path: Path) -> None:
+    # A chart photographed off page three and pasted into a deck otherwise
+    # arrives with no statement of what it may be used for.
+    out = tmp_path / "report.pdf"
+    pdf.build(out, _run(), _rows(), _sheets(), max_rows=200)
+
+    with pdfplumber.open(out) as document:
+        pages = [page.extract_text() or "" for page in document.pages]
+
+    assert len(pages) > 1
+    for page in pages:
+        assert "Period totals are firm enough to commit to." in page

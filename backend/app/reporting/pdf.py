@@ -20,17 +20,31 @@ from reportlab.platypus import (
 
 from app.database.base import utcnow
 from app.datasets.profiler import is_currency_like
+from app.forecasting import decisions
+from app.forecasting.decisions import GRADE_MEANING, Decision, Grade
 from app.forecasting.drivers import PERIOD_WORDS
 from app.forecasting.frequency import comparison_window
 from app.forecasting.metrics import accuracy_from_wmape, intervals_held
 from app.models.entities import ForecastRun
-from app.reporting.charts import ForecastChart, RiskChart, ScoreChart
-from app.reporting.palette import ACCENT, BAND, FAINT, INK, MUTED, RULE
+from app.reporting.charts import ForecastChart, PlanBand, RiskChart, ScoreChart
+from app.reporting.palette import (
+    ACCENT,
+    BAND,
+    CHIP,
+    COMMIT,
+    FAINT,
+    INK,
+    MUTED,
+    PREPARE,
+    RULE,
+)
 
 TOP_LINE = "Total"
 
 RISK_BARS = 12
-CHART_HEIGHT = 52 * mm
+CHART_HEIGHT = 46 * mm
+PLAN_HEIGHT = 26 * mm
+MAX_ACTIONS = 4
 
 DIRECTIONAL_SHARE = 0.5
 
@@ -58,6 +72,21 @@ def _styles() -> dict[str, ParagraphStyle]:
             alignment=TA_LEFT,
         ),
         "body": ParagraphStyle("body", parent=base, fontSize=8.5, leading=12, textColor=MUTED),
+        "lede": ParagraphStyle("lede", parent=base, fontSize=10, leading=14, textColor=INK),
+        "action": ParagraphStyle(
+            "action", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=12, textColor=INK
+        ),
+        "actionWhy": ParagraphStyle(
+            "actionWhy", parent=base, fontSize=8, leading=11, textColor=MUTED, spaceBefore=1.5
+        ),
+        "rank": ParagraphStyle(
+            "rank",
+            parent=base,
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            leading=12,
+            textColor=FAINT,
+        ),
         "cell": ParagraphStyle("cell", parent=base, fontSize=8, leading=10.5, textColor=INK),
         "cellRight": ParagraphStyle(
             "cellRight", parent=base, fontSize=8, leading=10.5, textColor=INK, alignment=TA_RIGHT
@@ -175,9 +204,13 @@ def _table(
     return table
 
 
-def _chrome(canvas: Any, document: Any, run_name: str) -> None:
+def _chrome(canvas: Any, document: Any, run_name: str, footnote: str) -> None:
     canvas.saveState()
-    width, _height = A4
+    width, height = A4
+
+    canvas.setStrokeColor(ACCENT)
+    canvas.setLineWidth(2.0)
+    canvas.line(MARGIN, height - 10 * mm, MARGIN + 14 * mm, height - 10 * mm)
 
     canvas.setStrokeColor(RULE)
     canvas.setLineWidth(0.5)
@@ -186,6 +219,8 @@ def _chrome(canvas: Any, document: Any, run_name: str) -> None:
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(FAINT)
     canvas.drawString(MARGIN, 8 * mm, run_name[:70])
+    if footnote:
+        canvas.drawCentredString(width / 2, 8 * mm, footnote)
     canvas.drawRightString(width - MARGIN, 8 * mm, f"Page {document.page}")
     canvas.restoreState()
 
@@ -213,6 +248,10 @@ def build(
             style["subtitle"],
         )
     )
+
+    decision = _decision_for(run, rows, sheets)
+    if decision is not None:
+        story.extend(_decision_section(decision, run, width, currency, style))
 
     chart = _forecast_chart(rows, run, width, currency)
     if chart is not None:
@@ -266,6 +305,7 @@ def build(
     series = sheets.get("series") or []
     if series:
         shown = series[:max_rows]
+        concentration = decision.concentration if decision is not None else None
         story.append(
             KeepTogether(
                 [
@@ -286,6 +326,7 @@ def build(
                         width=width,
                         height=min(len(shown), RISK_BARS) * 6 * mm,
                         currency=currency,
+                        cut=concentration.count if concentration is not None else None,
                     ),
                 ]
             )
@@ -356,10 +397,183 @@ def build(
         subject=f"Forecast for {run.target_column}",
     )
 
+    footnote = "" if decision is None else GRADE_MEANING[decision.grade]
+
     def decorate(canvas: Any, doc: Any) -> None:
-        _chrome(canvas, doc, run.name)
+        _chrome(canvas, doc, run.name, footnote)
 
     document.build(story, onFirstPage=decorate, onLaterPages=decorate)
+
+
+GRADE_WORD: dict[Grade, str] = {
+    Grade.PLANNABLE: "PLANNABLE",
+    Grade.DIRECTIONAL: "DIRECTIONAL",
+    Grade.INDICATIVE: "INDICATIVE",
+}
+
+
+def _decision_for(
+    run: ForecastRun, rows: list[dict[str, Any]], sheets: dict[str, list[dict[str, Any]]]
+) -> Decision | None:
+    ahead = [
+        row
+        for row in rows
+        if row.get("series", TOP_LINE) == TOP_LINE
+        and row.get("kind") == "forecast"
+        and row.get("forecast") is not None
+    ]
+    periods = [
+        decisions.Period(
+            period=date.fromisoformat(str(row["period"])),
+            forecast=float(row["forecast"]),
+            lower=None if row.get("lower_bound") is None else float(row["lower_bound"]),
+            upper=None if row.get("upper_bound") is None else float(row["upper_bound"]),
+            worst=None if row.get("worst_case") is None else float(row["worst_case"]),
+        )
+        for row in sorted(ahead, key=lambda row: str(row.get("period", "")))
+    ]
+
+    backtested = next(
+        (m["value"] for m in sheets.get("metrics") or [] if m.get("name") == "accuracy"), None
+    )
+    # A scored run beats a backtest: it grades this forecast, not the method.
+    realized = None if run.realized_wmape is None else accuracy_from_wmape(run.realized_wmape)
+    accuracy = realized if realized is not None else backtested
+
+    return decisions.decide(
+        periods,
+        frequency=run.frequency,
+        confidence_level=run.confidence_level,
+        accuracy=None if accuracy is None else float(accuracy),
+        at_risk=[
+            (str(row.get("series", "")), float(row["value_at_risk"]))
+            for row in sheets.get("series") or []
+            if row.get("value_at_risk") is not None
+        ],
+        realized_bias=run.realized_bias,
+        realized_wmape=run.realized_wmape,
+        realized_coverage=run.realized_coverage,
+    )
+
+
+def _grade_banner(decision: Decision, width: float, style: dict[str, ParagraphStyle]) -> Table:
+    table = Table(
+        [
+            [
+                Paragraph(f"<b>{GRADE_WORD[decision.grade]}</b>", style["action"]),
+                Paragraph(decision.meaning, style["body"]),
+            ]
+        ],
+        colWidths=[30 * mm, width - 30 * mm],
+        hAlign="LEFT",
+    )
+    tone = {Grade.PLANNABLE: COMMIT, Grade.DIRECTIONAL: PREPARE, Grade.INDICATIVE: ACCENT}
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), CHIP),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.0, tone[decision.grade]),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+    return table
+
+
+def _actions_table(
+    decision: Decision, width: float, style: dict[str, ParagraphStyle]
+) -> Table | None:
+    shown = decision.actions[:MAX_ACTIONS]
+    if not shown:
+        return None
+
+    table = Table(
+        [
+            [
+                Paragraph(f"{index + 1}", style["rank"]),
+                [
+                    Paragraph(action.headline, style["action"]),
+                    Paragraph(action.detail, style["actionWhy"]),
+                ],
+            ]
+            for index, action in enumerate(shown)
+        ],
+        colWidths=[8 * mm, width - 8 * mm],
+        hAlign="LEFT",
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.3, RULE),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    return table
+
+
+def _decision_section(
+    decision: Decision,
+    run: ForecastRun,
+    width: float,
+    currency: bool,
+    style: dict[str, ParagraphStyle],
+) -> list[Any]:
+    singular, plural = PERIOD_WORDS.get(run.frequency, ("period", "periods"))
+    horizon = decision.horizon
+    money = "currency" if currency else run.target_column
+
+    reach = (
+        f"The band holds across all {run.horizon} {plural}."
+        if horizon.covers_run
+        else (
+            f"Period numbers hold for {horizon.periods} "
+            f"{singular if horizon.periods == 1 else plural}"
+            + (f", to {_when(horizon.through)}" if horizon.through else "")
+            + f" — past that the range is too wide to split {singular} by {singular}."
+        )
+        if horizon.periods
+        else "The band is too wide for period-level planning anywhere in this horizon."
+    )
+
+    out: list[Any] = [
+        Paragraph("THE DECISION", style["section"]),
+        _grade_banner(decision, width, style),
+        Spacer(1, 9),
+        PlanBand(
+            commit=decision.commit,
+            base=decision.base,
+            prepare=decision.prepare,
+            width=width,
+            height=PLAN_HEIGHT,
+            currency=currency,
+        ),
+        Paragraph(
+            f"Totals over the horizon, in {money}. Commit to the lower bound: at a "
+            f"{run.confidence_level * 100:.0f}% interval, demand clears it in about "
+            f"{_clearing(run.confidence_level)} {plural} in ten. Be ready for the upper "
+            f"bound — that is capacity, not commitment. {reach}",
+            style["body"],
+        ),
+        Spacer(1, 10),
+    ]
+
+    actions = _actions_table(decision, width, style)
+    if actions is not None:
+        out.extend([Paragraph("DO THIS", style["section"]), actions])
+    return out
+
+
+def _clearing(confidence_level: float) -> str:
+    return f"{round((1.0 - (1.0 - confidence_level) / 2.0) * 10)}"
 
 
 def _method_section(
@@ -455,6 +669,8 @@ def _scorecard_section(
     )
     verdict = _verdict(run)
 
+    # Chart kept with its heading; the measures below may break. Holding all
+    # three needs most of a page, and a near-miss blanks the page before it.
     return [
         KeepTogether(
             [
@@ -467,10 +683,10 @@ def _scorecard_section(
                     height=CHART_HEIGHT,
                     currency=currency,
                 ),
-                Spacer(1, 8),
-                _table(["", ""], measures, [56 * mm, width - 56 * mm], style),
             ]
         ),
+        Spacer(1, 8),
+        _table(["", ""], measures, [56 * mm, width - 56 * mm], style),
         *(
             [
                 Spacer(1, 6),

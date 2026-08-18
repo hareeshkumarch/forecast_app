@@ -15,7 +15,14 @@ import pytest
 
 from app.forecasting.frequency import add_periods
 from app.models.enums import ForecastFrequency
-from app.reporting.charts import ForecastChart, RiskChart, ScoreChart, _compact, _nice_ceiling
+from app.reporting.charts import (
+    ForecastChart,
+    PlanBand,
+    RiskChart,
+    ScoreChart,
+    _compact,
+    _nice_ceiling,
+)
 
 MONTHLY = ForecastFrequency.MONTHLY
 WIDTH, HEIGHT = 480.0, 150.0
@@ -96,9 +103,27 @@ def test_the_axis_rounds_up_to_something_readable() -> None:
     # revenue in millions and for a conversion rate alike.
     assert _nice_ceiling(38_700.0) == 40_000.0
     assert _nice_ceiling(0.037) == pytest.approx(0.04)
-    assert _nice_ceiling(1_010_000.0) == 2_000_000.0
     assert _nice_ceiling(0.0) == 1.0
     assert _nice_ceiling(-5.0) == 1.0
+
+
+def test_the_axis_does_not_double_itself_just_past_a_power_of_ten() -> None:
+    # Rounding on the leading digit alone sent 1.01M to 2M, and every chart of
+    # a series that had just crossed a power of ten drew itself in the bottom
+    # half of an empty frame. Readable is not the only requirement: the axis
+    # also has to be close enough to the data to be worth the ink.
+    assert _nice_ceiling(1_010_000.0) == pytest.approx(1_200_000.0)
+    assert _nice_ceiling(101_200.0) == pytest.approx(120_000.0)
+
+    for value in (1.01, 17.0, 230.0, 4_900.0, 61_000.0, 780_000.0):
+        assert _nice_ceiling(value) >= value
+        assert _nice_ceiling(value) <= value * 1.4
+
+
+def test_a_value_already_on_a_step_keeps_it() -> None:
+    # A chart topping out at exactly 40,000 should not be drawn to 50,000.
+    assert _nice_ceiling(40_000.0) == pytest.approx(40_000.0)
+    assert _nice_ceiling(1_000_000.0) == pytest.approx(1_000_000.0)
 
 
 def test_axis_labels_stay_short_enough_to_read() -> None:
@@ -177,3 +202,90 @@ def test_a_forecast_chart_draws_the_actuals_it_has_and_no_more() -> None:
         chart = _chart(realized=realized)
         chart.canv = Canvas("/dev/null")
         chart.draw()
+
+
+# ------------------------------------------------------ the concentration cut
+
+
+def test_a_cut_outside_the_bars_drawn_is_ignored() -> None:
+    """A rule below the last bar describes nothing and looks like an axis."""
+    from reportlab.pdfgen.canvas import Canvas
+
+    rows = [("A", 90.0), ("B", 60.0), ("C", 30.0)]
+    for cut in (None, 0, 3, 40):
+        chart = RiskChart(rows=rows, width=WIDTH, height=60.0, cut=cut)
+        chart.canv = Canvas("/dev/null")
+        chart.draw()  # must not raise
+
+
+def test_the_cut_rule_leaves_room_for_its_own_caption() -> None:
+    # Drawn full width, the rule ran under the caption and the caption ran
+    # through the bar above it. The rule now stops short of the text.
+    from reportlab.pdfgen.canvas import Canvas
+
+    chart = RiskChart(rows=[("A", 90.0), ("B", 60.0), ("C", 30.0)], width=WIDTH, height=60.0, cut=1)
+    canvas = Canvas("/dev/null")
+    chart.canv = canvas
+
+    drawn: list[tuple[float, float, float, float]] = []
+    canvas.line = lambda *args: drawn.append(args)  # type: ignore[method-assign]
+    chart.draw()
+
+    caption = canvas.stringWidth("HALF THE RISK IS ABOVE THIS LINE", "Helvetica-Bold", 6)
+    assert drawn, "the cut should draw a rule"
+    assert drawn[-1][2] <= WIDTH - caption
+
+
+# ------------------------------------------------------------- the plan band
+
+
+def test_the_plan_band_reserves_its_space() -> None:
+    band = PlanBand(commit=80.0, base=100.0, prepare=130.0, width=WIDTH, height=70.0)
+
+    assert band.wrap(WIDTH, 800.0) == (WIDTH, 70.0)
+
+
+@pytest.mark.parametrize(
+    ("commit", "base", "prepare", "why"),
+    [
+        (80.0, 100.0, 130.0, "an ordinary band"),
+        (100.0, 100.0, 100.0, "a forecast with no interval, so all three collapse"),
+        (80.0, 80.0, 130.0, "a base case hard against the lower bound"),
+        (80.0, 130.0, 130.0, "a base case hard against the upper bound"),
+        (-50.0, -20.0, 10.0, "a band that crosses zero"),
+        (0.0, 0.0, 0.0, "a series forecast at nothing at all"),
+    ],
+)
+def test_the_plan_band_draws_whatever_the_forecast_gives_it(
+    commit: float, base: float, prepare: float, why: str
+) -> None:
+    from reportlab.pdfgen.canvas import Canvas
+
+    band = PlanBand(commit=commit, base=base, prepare=prepare, width=WIDTH, height=70.0)
+    band.canv = Canvas("/dev/null")
+    band.draw()  # must not raise
+    assert True, why
+
+
+def test_the_middle_label_stays_inside_the_frame() -> None:
+    """The base case sits where the forecast puts it, including at one end."""
+    from reportlab.pdfgen.canvas import Canvas
+
+    band = PlanBand(commit=80.0, base=80.0, prepare=130.0, width=WIDTH, height=70.0)
+    canvas = Canvas("/dev/null")
+    band.canv = canvas
+
+    # The font is captured at call time: the band draws its caption and its
+    # figure at two different sizes, and measuring both with one of them makes
+    # the check pass or fail for the wrong reason.
+    placed: list[tuple[float, str, str, float]] = []
+    canvas.drawCentredString = lambda x, _y, text: placed.append(  # type: ignore[method-assign]
+        (x, text, canvas._fontname, canvas._fontsize)
+    )
+    band.draw()
+
+    assert placed, "the base case should be labelled"
+    for x, text, font, size in placed:
+        half = canvas.stringWidth(text, font, size) / 2
+        assert x - half >= 0.0
+        assert x + half <= WIDTH
