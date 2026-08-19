@@ -9,8 +9,11 @@ from app.api.deps import SessionDep
 from app.core.config import settings
 from app.core.errors import PayloadTooLargeError, ValidationError
 from app.models.enums import ForecastFrequency, GapFill, MeasureAggregation
+from app.schema import coverage
 from app.schema.contract import MappingProposal
 from app.schemas.dataset import (
+    CoverageResponse,
+    CoverageRowRead,
     DataQualityResponse,
     DatasetConfigureRequest,
     DatasetDetail,
@@ -249,3 +252,38 @@ async def accept_mapping(
         },
     )
     return _mapping_response(dataset_id, proposal)
+
+
+@router.get(
+    "/{dataset_id}/coverage",
+    response_model=CoverageResponse,
+    summary="What the file actually holds, series by period",
+    description=(
+        "A grid of every series against every period the frequency implies, so ragged "
+        "starts, mid-history gaps and runs of zeros are visible before a run is paid for. "
+        "Null means the series has no row for that period, which is a different fact from "
+        "a reported zero. Bounded: the patchiest series are kept when there are more than "
+        "the grid can carry, and the most recent periods when the calendar is longer."
+    ),
+)
+async def dataset_coverage(
+    dataset_id: uuid.UUID,
+    session: SessionDep,
+    max_series: int = Query(default=coverage.DEFAULT_MAX_SERIES, ge=1, le=400),
+    max_periods: int = Query(default=coverage.DEFAULT_MAX_PERIODS, ge=1, le=400),
+) -> CoverageResponse:
+    matrix = await mapping_service.coverage_for(
+        session, dataset_id, max_series=max_series, max_periods=max_periods
+    )
+    return CoverageResponse(
+        dataset_id=dataset_id,
+        frequency=matrix.frequency,
+        periods=matrix.periods,
+        rows=[CoverageRowRead(**row.as_dict()) for row in matrix.rows],
+        series_total=matrix.series_total,
+        series_shown=len(matrix.rows),
+        periods_total=matrix.periods_total,
+        required_history=matrix.required_history,
+        series_truncated=matrix.series_truncated,
+        periods_truncated=matrix.periods_truncated,
+    )

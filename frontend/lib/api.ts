@@ -14,6 +14,7 @@ import type {
   Dataset,
   DatasetDetail,
   DatasetPage,
+  CoverageResponse,
   DatasetProfile,
   DatasetSort,
   DatasetUploadResponse,
@@ -281,6 +282,12 @@ export const getDatasetQuality = (
 
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
+
+export const getDatasetCoverage = (
+  id: string,
+  params: { max_series?: number; max_periods?: number } = {},
+  signal?: AbortSignal,
+) => request<CoverageResponse>(`/api/datasets/${id}/coverage${buildQuery(params)}`, { signal });
 
 export type DateOrder = "auto" | "day_first" | "month_first";
 

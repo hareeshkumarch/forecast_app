@@ -982,3 +982,27 @@ export interface DashboardFilters {
   end?: string | null;
   view: ForecastView;
 }
+
+export interface CoverageRow {
+  series_id: string;
+  observations: number;
+  gaps: number;
+  zeros: number;
+  status: "ok" | "warn" | "reject";
+  route: "model" | "fallback" | "none";
+  /** One entry per period, null where the series has no row for that period. */
+  values: (number | null)[];
+}
+
+export interface CoverageResponse {
+  dataset_id: string;
+  frequency: ForecastFrequency;
+  periods: string[];
+  rows: CoverageRow[];
+  series_total: number;
+  series_shown: number;
+  periods_total: number;
+  required_history: number;
+  series_truncated: boolean;
+  periods_truncated: boolean;
+}

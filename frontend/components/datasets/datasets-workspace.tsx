@@ -1,8 +1,9 @@
 "use client";
 
-import { Database, FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
+import { Database, FileSpreadsheet, Grid3x3, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { CoverageModal } from "@/components/datasets/coverage-modal";
 import {
   Badge,
   Button,
@@ -51,6 +52,7 @@ export function DatasetsWorkspace() {
     direction: "desc",
   });
   const [page, setPage] = useState(0);
+  const [inspecting, setInspecting] = useState<Dataset | null>(null);
   const search = useDebounced(query, 250);
 
   const {
@@ -288,6 +290,15 @@ export function DatasetsWorkspace() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          icon={Grid3x3}
+                          disabled={dataset.status !== "ready"}
+                          onClick={() => setInspecting(dataset)}
+                        >
+                          Coverage
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           icon={Plus}
                           disabled={dataset.status !== "ready"}
                           onClick={() => openModal("configure-forecast", dataset.id)}
@@ -347,6 +358,8 @@ export function DatasetsWorkspace() {
           ) : null}
         </Card>
       )}
+
+      <CoverageModal dataset={inspecting} onClose={() => setInspecting(null)} />
     </main>
   );
 }

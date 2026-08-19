@@ -11,6 +11,8 @@ const FALLBACK = {
   textMuted: "#7d847e",
   accent: "#287b59",
   accentSoft: "#dce9e1",
+  accentHover: "#175a3e",
+  accentDisabled: "#88aa99",
   navy: "#151a16",
   teal: "#5a9278",
   gold: "#9c8760",
@@ -31,6 +33,8 @@ const VARIABLES: Record<keyof typeof FALLBACK, string> = {
   textMuted: "--text-muted",
   accent: "--accent",
   accentSoft: "--accent-soft",
+  accentHover: "--accent-hover",
+  accentDisabled: "--accent-disabled",
   navy: "--navy",
   teal: "--teal",
   gold: "--gold",
@@ -62,6 +66,56 @@ export function chartColors(): ChartPalette {
 export function categoricalPalette(colors: ChartPalette = chartColors()): string[] {
   return [colors.navy, colors.accent, colors.teal, colors.sand, colors.textSecondary];
 }
+
+/**
+ * Four steps of one hue for magnitude, lightest first.
+ *
+ * Taken from the token family rather than generated, and in this order because
+ * it is the one sequence of brand greens that clears monotonic lightness, the
+ * adjacent-step gap and — the check that rules most of them out — 2:1 contrast
+ * at the pale end in *both* themes. A palest step under 2:1 is the bug that
+ * matters on a coverage grid: the lowest cell stops being distinguishable from
+ * an empty one, and "nearly no demand" reads as "no data".
+ */
+const RAMP_KEYS = ["accentDisabled", "teal", "accent", "accentHover"] as const;
+
+export function sequentialRamp(colors: ChartPalette = chartColors()): string[] {
+  return RAMP_KEYS.map((key) => colors[key]);
+}
+
+/**
+ * The same ramp as CSS variables, for markup rather than canvas.
+ *
+ * A swatch in an HTML legend is server-rendered, and `chartColors()` has no
+ * document to read on the server — so it answers with the light fallback and
+ * that is what ships in the HTML, whatever theme the reader is in. Handing the
+ * variable to CSS lets the browser resolve it per theme, which is the one way
+ * a legend and the chart beside it cannot disagree.
+ */
+export function sequentialRampVars(): string[] {
+  return RAMP_KEYS.map((key) => `var(${VARIABLES[key]})`);
+}
+
+export function colorVar(key: keyof ChartPalette): string {
+  return `var(${VARIABLES[key]})`;
+}
+
+/**
+ * How a series was arrived at, encoded as shape rather than hue.
+ *
+ * The brand greens are deliberately desaturated, and no two of them clear the
+ * normal-vision separation floor against the dark surface — the closest pair
+ * manages ΔE 9.5 where 15 is the floor. Colouring fitted against fallback
+ * would be a distinction most people cannot see at night. Shape is free of
+ * that: a filled circle against a hollow diamond survives colour blindness,
+ * greyscale printing and a 6px mark.
+ */
+export const ROUTE_MARKS = {
+  model: { symbol: "circle", hollow: false, label: "Fitted" },
+  fallback: { symbol: "diamond", hollow: true, label: "Baseline" },
+} as const;
+
+export type RouteKey = keyof typeof ROUTE_MARKS;
 
 const FONT_FAMILY =
   'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';

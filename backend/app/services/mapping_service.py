@@ -12,6 +12,12 @@ from app.core.errors import NotFoundError, ValidationError
 from app.models.entities import Dataset, SchemaMapping
 from app.schema.canonical import CanonicalConfig, to_canonical
 from app.schema.contract import SOURCE_OVERRIDE, MappingProposal
+from app.schema.coverage import (
+    DEFAULT_MAX_PERIODS,
+    DEFAULT_MAX_SERIES,
+    CoverageMatrix,
+    coverage_matrix,
+)
 from app.schema.resolve import apply_override, fingerprint_of, prepare, propose
 from app.schema.validation import ValidationReport, validate_canonical
 from app.services import dataset_service
@@ -35,6 +41,27 @@ async def report_for(
     canonical = await asyncio.to_thread(to_canonical, working, config)
     return await asyncio.to_thread(
         validate_canonical, canonical, frequency=config.frequency, covariates=config.covariates
+    )
+
+
+async def coverage_for(
+    session: AsyncSession,
+    dataset_id: uuid.UUID,
+    *,
+    max_series: int = DEFAULT_MAX_SERIES,
+    max_periods: int = DEFAULT_MAX_PERIODS,
+) -> CoverageMatrix:
+    frame = await _frame_of(session, dataset_id)
+    remembered = await _remembered(session, frame)
+    proposal, working = await asyncio.to_thread(propose, frame, remembered=remembered)
+
+    config = CanonicalConfig.from_proposal(proposal)
+    canonical = await asyncio.to_thread(to_canonical, working, config)
+    report = await asyncio.to_thread(
+        validate_canonical, canonical, frequency=config.frequency, covariates=config.covariates
+    )
+    return await asyncio.to_thread(
+        coverage_matrix, canonical, report, max_series=max_series, max_periods=max_periods
     )
 
 
@@ -105,9 +132,7 @@ async def remember(
     return stored
 
 
-async def remembered_for(
-    session: AsyncSession, frame: pl.DataFrame
-) -> dict[str, object] | None:
+async def remembered_for(session: AsyncSession, frame: pl.DataFrame) -> dict[str, object] | None:
     return await _remembered(session, frame)
 
 

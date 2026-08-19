@@ -252,3 +252,31 @@ class MappingAcceptRequest(StrictModel):
         if claimed & set(self.covariates):
             raise ValueError("A column cannot be a covariate and a key or role column at once.")
         return self
+
+
+class CoverageRowRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    series_id: str
+    observations: NonNegativeInt
+    gaps: NonNegativeInt
+    zeros: NonNegativeInt
+    status: str
+    route: str
+    #: One entry per period, null where the series has no row for that period.
+    values: list[float | None] = Field(default_factory=list)
+
+
+class CoverageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: uuid.UUID
+    frequency: ForecastFrequency
+    periods: list[date] = Field(default_factory=list)
+    rows: list[CoverageRowRead] = Field(default_factory=list)
+    series_total: NonNegativeInt
+    series_shown: NonNegativeInt
+    periods_total: NonNegativeInt
+    required_history: NonNegativeInt
+    series_truncated: bool
+    periods_truncated: bool

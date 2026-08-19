@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { AccuracyScatter } from "@/components/charts/accuracy-scatter";
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { AccuracyCell } from "@/components/dashboard/accuracy-cell";
 import {
@@ -41,6 +42,7 @@ import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { SeriesRow, SeriesSort, SeriesStatus } from "@/types/api";
 
 const PAGE_SIZE = 25;
+const CHART_LIMIT = 200;
 
 const SORTS: { value: SeriesSort; label: string; hint: string }[] = [
   {
@@ -204,6 +206,18 @@ function SeriesTable({
   const { data, isLoading, isError, error, refetch, isPlaceholderData } =
     useForecastSeries(runId, query);
 
+  // The chart plots the run, not the page. It shares the filters so the two
+  // never disagree, but takes the leaves in one go — a scatter of 25 rows at a
+  // time would move under you every time the table paged.
+  const { data: population } = useForecastSeries(runId, {
+    sort: "value_at_risk",
+    limit: CHART_LIMIT,
+    offset: 0,
+    level: leafLevel,
+    ...(state === "all" ? {} : { status: state as SeriesStatus }),
+    ...(settled.trim() ? { search: settled.trim() } : {}),
+  });
+
   function change<T>(set: (value: T) => void) {
     return (value: T) => {
       set(value);
@@ -241,6 +255,26 @@ function SeriesTable({
           }
           showActions={false}
         />
+      ) : null}
+
+      {population && population.rows.length > 1 ? (
+        <Card>
+          <PanelHeader
+            title="Where the error actually is"
+            subtitle={
+              population.total > population.rows.length
+                ? `The ${population.rows.length} biggest of ${population.total.toLocaleString()} lines, by what is at stake`
+                : "Every line, by size against how wrong it tends to be"
+            }
+          />
+          <div className="px-2 pb-2">
+            <AccuracyScatter
+              rows={population.rows}
+              currency={population.currency}
+              onSelect={setSelected}
+            />
+          </div>
+        </Card>
       ) : null}
 
       <Card className="overflow-hidden">

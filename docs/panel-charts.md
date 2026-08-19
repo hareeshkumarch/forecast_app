@@ -24,6 +24,29 @@ only with a second encoding, so **direct labels are mandatory**, not optional.
 series: small multiples, or fold the tail into "Other". The brand is
 deliberately desaturated, so identity must never rest on hue alone.
 
+### The dark theme has no usable categorical pair at all
+
+The analysis above was run against the light surface only, and that turned out
+to be the easy half. Re-run against the dark surface, `accent #7fbea1` against
+`gold #c0a878` is ΔE 9.5 for **normal** colour vision, against a floor of 15 —
+a hard fail, not a warning. `accent` against `textSecondary` is worse at 8.3.
+No two tokens in the dark palette are far enough apart to carry identity.
+
+So a chart that must distinguish two classes does it by **shape**, not hue: one
+colour, a filled mark against a hollow one. That is what `ROUTE_MARKS` in
+`lib/chart-theme.ts` is, and why the scatter below uses it. Reach for a second
+hue only after checking it in *both* themes.
+
+### The sequential ramp
+
+`accent-disabled → teal → accent → accent-hover`, lightest first. It is the one
+sequence of brand greens that passes monotonic lightness, the adjacent-step gap
+and — the check that eliminates the rest — 2:1 contrast at the pale end in both
+themes, which is what keeps the lowest cell of a coverage grid distinguishable
+from an empty one. `sequentialRamp()` returns it resolved; `sequentialRampVars()`
+returns it as CSS variables for markup, which server-renders correctly where
+`chartColors()` does not.
+
 ## 1. Before the run — is the file read correctly?
 
 Answered by `MappingProposal.candidates` and `.warnings`.
@@ -63,22 +86,41 @@ the warning status colour. It shows at a glance how much of the panel routes to
 a baseline instead of a fitted model — the number that most determines what the
 run is worth.
 
-**Coverage grid.** Rows = series ordered by first period, columns = periods,
-cell = has data / gap / zero. A sequential single-hue ramp for magnitude, with
-gaps as the surface colour so they read as holes. Up to ~200 series this is the
-single most informative panel chart in the product: ragged starts,
-mid-history gaps and intermittency all show up as texture. Above 200 series,
-aggregate rows to the parent level rather than shrinking cells below 3px.
+**Coverage grid.** *Built* — `components/charts/coverage-grid.tsx`, served by
+`GET /datasets/{id}/coverage`. Rows = series ordered by first period, columns =
+periods, cell = has data / gap / zero. A sequential single-hue ramp for
+magnitude, with gaps as the surface colour so they read as holes. Up to ~200
+series this is the single most informative panel chart in the product: ragged
+starts, mid-history gaps and intermittency all show up as texture.
+
+Two things the build settled that the sketch had wrong. A reported zero drawn
+as the palest ramp step is unreadable — it sits at 1.15:1 against the surface,
+so a month somebody reported as nil looks identical to a month they never sent,
+which is the one distinction the grid exists to make. Zero gets an off-ramp
+grey *and* a cell outline. And the bands are quartiles of the values present,
+not equal widths: on a skewed demand panel, equal widths put nearly every cell
+in the bottom step, which is the same picture as no ramp at all.
+
+When there are more series than the grid can carry it keeps the patchiest, then
+puts those back into first-period order — a page of complete series says
+nothing, but a ranking by gap count stops reading as a staircase.
 
 ## 3. After the run — where should I look?
 
 Answered by `FanOutResult` and the stored `ForecastSeries` rows.
 
-**Accuracy against size.** Scatter: x = forecast total (log), y = wMAPE, dot
-area = value at risk, dot colour = route (`model` vs `fallback`, two slots,
-both direct-labelled). Answers "is my error in the series that matter or in the
-long tail" in one look; the sorted table answers it one row at a time. Label
-the worst five points and leave the rest to hover.
+**Accuracy against size.** *Built* — `components/charts/accuracy-scatter.tsx`,
+in the series workspace above the table. Scatter: x = forecast total (log),
+y = wMAPE, dot area = value at risk, route by **shape** — filled circle for
+fitted, hollow diamond for baseline — not by colour, for the dark-theme reason
+above. Answers "is my error in the series that matter or in the long tail" in
+one look; the sorted table answers it one row at a time. Label the worst five
+and leave the rest to hover.
+
+The five labelled points are by definition the five biggest, so they all sit at
+the right-hand end and their labels ran off the plot on top of each other.
+Anything past a twelfth of the maximum points its label back inwards, with
+`labelLayout: { hideOverlap, moveOverlap: "shiftY" }` to settle the rest.
 
 **Small multiples of the top N.** A 3-across grid of history-plus-forecast
 sparklines for the top 12 by value at risk, shared y-scale within a row,

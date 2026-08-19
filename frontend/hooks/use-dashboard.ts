@@ -57,6 +57,7 @@ const queryKeys = {
   dataset: (id: string) => ["datasets", id] as const,
   datasetProfile: (id: string) => ["datasets", id, "profile"] as const,
   datasetQuality: (id: string, key: string) => ["datasets", id, "quality", key] as const,
+  datasetCoverage: (id: string) => ["datasets", id, "coverage"] as const,
   runs: (query: RunQuery = {}) => ["forecasts", "list", query] as const,
   allRuns: ["forecasts"] as const,
   run: (id: string) => ["forecasts", id] as const,
@@ -284,6 +285,14 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
       }, signal),
     enabled: Boolean(runId),
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useDatasetCoverage(datasetId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.datasetCoverage(datasetId ?? "none"),
+    queryFn: ({ signal }) => api.getDatasetCoverage(datasetId as string, {}, signal),
+    enabled: Boolean(datasetId),
   });
 }
 

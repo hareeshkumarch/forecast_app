@@ -247,3 +247,72 @@ def test_single_series_canonical_frame_carries_the_placeholder_id() -> None:
     canonical = to_canonical(working, CanonicalConfig.from_proposal(proposal))
 
     assert canonical["series_id"].unique().to_list() == [SINGLE_SERIES_ID]
+
+
+def test_coverage_grid_separates_a_gap_from_a_reported_zero() -> None:
+    from app.schema.coverage import coverage_matrix
+
+    frame = pl.DataFrame(
+        {
+            "order_date": [*ISO, *ISO[6:], *ISO],
+            "sku": [
+                *(["A-100"] * len(MONTHS)),
+                *(["B-200"] * (len(MONTHS) - 6)),
+                *(["C-300"] * len(MONTHS)),
+            ],
+            "units": [
+                *_sales(0.0),
+                *_sales(500.0)[6:],
+                *[0.0 if index % 2 else 12.0 for index in range(len(MONTHS))],
+            ],
+        }
+    )
+    proposal, working = propose(frame)
+    canonical = to_canonical(working, CanonicalConfig.from_proposal(proposal))
+    report = validate_canonical(canonical, frequency=ForecastFrequency.MONTHLY)
+
+    matrix = coverage_matrix(canonical, report)
+    by_id = {row.series_id: row for row in matrix.rows}
+
+    assert len(matrix.periods) == len(MONTHS)
+    assert next(row.series_id for row in matrix.rows) in {"A-100", "C-300"}
+
+    # A series that starts late has nulls in front of it, not zeros.
+    assert by_id["B-200"].values[:6] == [None] * 6
+    assert by_id["B-200"].gaps == 6
+    assert by_id["B-200"].zeros == 0
+
+    # A series that reported nil has zeros, and they are not gaps.
+    assert by_id["C-300"].gaps == 0
+    assert by_id["C-300"].zeros == len(MONTHS) // 2
+    assert by_id["C-300"].route == "fallback"
+
+
+def test_coverage_grid_keeps_the_patchiest_when_it_has_to_choose() -> None:
+    from app.schema.coverage import coverage_matrix
+
+    dates: list[str] = []
+    keys: list[str] = []
+    values: list[float] = []
+    for index in range(12):
+        kept = ISO if index >= 6 else ISO[index + 1 :]
+        dates.extend(kept)
+        keys.extend([f"S-{index:02d}"] * len(kept))
+        values.extend(_sales(index * 10.0)[len(ISO) - len(kept) :])
+
+    proposal, working = propose(pl.DataFrame({"order_date": dates, "sku": keys, "units": values}))
+    canonical = to_canonical(working, CanonicalConfig.from_proposal(proposal))
+    report = validate_canonical(canonical, frequency=ForecastFrequency.MONTHLY)
+
+    matrix = coverage_matrix(canonical, report, max_series=4)
+
+    assert matrix.series_total == 12
+    assert len(matrix.rows) == 4
+    assert matrix.series_truncated
+    # The four kept are the four that start latest, so have the most missing
+    # periods — not the four that happen to come first.
+    assert {row.series_id for row in matrix.rows} == {"S-02", "S-03", "S-04", "S-05"}
+    # And they are handed back in first-period order, so the grid still reads as
+    # a staircase rather than as a ranking.
+    assert [row.series_id for row in matrix.rows] == ["S-02", "S-03", "S-04", "S-05"]
+    assert [row.gaps for row in matrix.rows] == [3, 4, 5, 6]
