@@ -109,6 +109,38 @@ services:
       CELERY_BROKER_URL: ""
       CELERY_RESULT_BACKEND: ""
       REDIS_URL: ""
+
+      # ---- sign-in ---------------------------------------------------------
+      # Every variable this file does not name is one the container never sees,
+      # whatever /opt/forecast/.env holds. Adding a setting to the application
+      # and not to this list produces the worst possible symptom: the feature
+      # reads as switched off, the file says it is on, and nothing disagrees
+      # out loud.
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_REQUIRE_APPROVAL: ${AUTH_REQUIRE_APPROVAL:-true}
+      AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:-}
+      AUTH_ALLOWED_EMAIL_DOMAINS: ${AUTH_ALLOWED_EMAIL_DOMAINS:-}
+      AUTH_ALLOWLIST: ${AUTH_ALLOWLIST:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
+
+      # ---- approval email --------------------------------------------------
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+
+      # ---- secrets ---------------------------------------------------------
+      # The four that cannot live in the secret manager, because they are what
+      # opens it.
+      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID:-}
+      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET:-}
+      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+      INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-prod}
+      INFISICAL_HOST: ${INFISICAL_HOST:-}
+      INFISICAL_SECRET_PATH: ${INFISICAL_SECRET_PATH:-}
     volumes:
       # Uploads, generated Parquet and exports. On EBS, so they survive a
       # container rebuild and are captured by the instance's snapshots.
