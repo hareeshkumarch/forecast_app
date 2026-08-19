@@ -49,6 +49,24 @@ class CapabilitiesResponse(BaseModel):
         return tuple(row.model for row in self.models if not row.available)
 
 
+class FeaturesResponse(BaseModel):
+    """What this backend serves, in a few bytes.
+
+    The frontend used to answer this by fetching /openapi.json — 158 KB and
+    over a second on a phone, once per session, to learn two booleans. The
+    document is still the fallback, because it is the only source that is true
+    of a backend older than the frontend asking; this is the fast path for the
+    usual case where they match.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    series_status_filter: bool = True
+    dataset_coverage: bool = True
+    schema_mapping: bool = True
+    access_approval: bool = True
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -173,3 +191,20 @@ async def health(session: SessionDep) -> HealthResponse:
         secrets_source="infisical" if secrets_load.loaded else "environment",
         timestamp=utcnow().isoformat(),
     )
+
+
+@router.get(
+    "/health/features",
+    response_model=FeaturesResponse,
+    summary="Which optional capabilities this deployment serves",
+    description=(
+        "A few bytes in place of the OpenAPI document, which the frontend was fetching once a "
+        "session to learn the same thing. Public, like the rest of health: it reports posture, "
+        "never data, and the frontend needs it before it knows whether anybody is signed in."
+    ),
+)
+async def get_features() -> FeaturesResponse:
+    # Every field defaults true. A deployment serving this endpoint at all is
+    # new enough to have the features it describes — the version that lacked
+    # them also lacks this route, which is what the fallback is for.
+    return FeaturesResponse()

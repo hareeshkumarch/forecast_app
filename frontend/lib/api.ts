@@ -358,14 +358,31 @@ export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
  * the query cache.
  */
 export const getApiFeatures = async (signal?: AbortSignal): Promise<ApiFeatures> => {
-  const spec = await request<OpenApiDocument>("/openapi.json", { signal });
-  const paths = spec.paths ?? {};
-  const seriesParams = paths["/api/forecasts/{run_id}/series"]?.get?.parameters ?? [];
+  // The cheap answer first: a few bytes against 158 KB, which on a phone is
+  // over a second of the session's first paint spent learning two booleans.
+  try {
+    const features = await request<{
+      series_status_filter: boolean;
+      dataset_coverage: boolean;
+    }>("/api/health/features", { signal });
 
-  return {
-    seriesStatusFilter: seriesParams.some((parameter) => parameter.name === "status"),
-    datasetCoverage: "/api/datasets/{dataset_id}/coverage" in paths,
-  };
+    return {
+      seriesStatusFilter: features.series_status_filter,
+      datasetCoverage: features.dataset_coverage,
+    };
+  } catch {
+    // A backend older than this frontend has no such endpoint. Reading its
+    // OpenAPI document is slow but it is the only source that is true of
+    // whatever version is actually running, which is the whole point.
+    const spec = await request<OpenApiDocument>("/openapi.json", { signal });
+    const paths = spec.paths ?? {};
+    const seriesParams = paths["/api/forecasts/{run_id}/series"]?.get?.parameters ?? [];
+
+    return {
+      seriesStatusFilter: seriesParams.some((parameter) => parameter.name === "status"),
+      datasetCoverage: "/api/datasets/{dataset_id}/coverage" in paths,
+    };
+  }
 };
 
 export const getDatasetCoverage = (
