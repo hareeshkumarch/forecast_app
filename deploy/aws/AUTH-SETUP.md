@@ -84,3 +84,100 @@ The origin is still plain HTTP and publicly reachable. Until CloudFront is in
 front of it, tokens cross the internet in clear text and the box answers anyone
 who knows its hostname. Auth is worth having before that lands, but it is not
 a substitute for it.
+
+---
+
+# Approving people
+
+Anyone can sign in with Google. Nobody gets in until an administrator says so.
+
+A new account lands as `pending`, an email goes to `AUTH_ADMIN_EMAILS` with an
+**Approve** and a **Reject** link, and until one is clicked that person sees a
+"waiting for approval" screen rather than the app. The API refuses their
+requests with 403 for the same reason, so the wait is not something the browser
+is politely observing.
+
+The links carry their own authority — signed with `CREDENTIAL_SECRET_KEY`, they
+name one account and one decision and expire after
+`AUTH_APPROVAL_LINK_TTL_HOURS` (a week by default). No session is needed to use
+one, which is the point: approving from a phone should not mean signing in
+first.
+
+```
+AUTH_ADMIN_EMAILS=you@gmail.com
+AUTH_REQUIRE_APPROVAL=true
+PUBLIC_API_BASE_URL=https://<the API's public address>
+```
+
+`PUBLIC_API_BASE_URL` is where the links point. Get it wrong and the mail
+arrives with links that go nowhere.
+
+Administrators are approved on sight — otherwise the first one would be waiting
+on themselves.
+
+## Sending the mail, for nothing
+
+Plain SMTP, so any of these work without a code change:
+
+| | Free allowance | Notes |
+| --- | --- | --- |
+| **Gmail** | free | Needs 2-factor on the account, then an [App Password](https://myaccount.google.com/apppasswords). `smtp.gmail.com:587`. Simplest if the mail is going to your own inbox. |
+| **Brevo** | 300/day | Real sending domain, better deliverability |
+| **Resend** | 3,000/month | Needs a verified domain for anything but test sends |
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=you@gmail.com
+SMTP_PASSWORD=<the 16-character app password, not your Google password>
+SMTP_FROM=you@gmail.com
+SMTP_STARTTLS=true
+```
+
+If mail is not configured, or sending fails, the request is still recorded —
+`GET /api/auth/pending` lists everyone waiting, for administrators. A mail
+server being down delays access; it does not lose the request.
+
+---
+
+# Secrets from Infisical
+
+Set these four and every other setting is read from Infisical instead of the
+environment:
+
+```
+INFISICAL_CLIENT_ID=<machine identity client id>
+INFISICAL_CLIENT_SECRET=<machine identity client secret>
+INFISICAL_PROJECT_ID=<project id>
+INFISICAL_ENVIRONMENT=prod        # optional, defaults to prod
+INFISICAL_SECRET_PATH=/           # optional, defaults to /
+INFISICAL_HOST=https://app.infisical.com   # optional, or your own instance
+```
+
+These four stay in the environment and have to: a secret manager cannot hold
+the credential used to reach it. Create the machine identity under
+**Access Control → Identities**, give it *Universal Auth*, and grant it read
+access to the project.
+
+Values from Infisical **override** anything already in the environment. It has
+been made the source of truth, and a leftover variable on the box quietly
+winning over the thing everyone is editing is the failure that costs an
+afternoon.
+
+Fetched once, at startup, before any setting is read — so a change in Infisical
+needs a restart, the same as an environment variable did.
+
+`GET /api/health` reports `"secrets_source": "infisical"` or `"environment"`,
+so which one is in force is answerable without a shell.
+
+**If Infisical is unreachable** the app still starts, on whatever the
+environment holds, and logs a warning. That is deliberate: a secret manager
+being briefly down should not take a working deployment with it. The existing
+production checks still refuse to start with a default credential key, so this
+cannot silently degrade into an insecure install.
+
+## Cost
+
+Infisical Cloud has a free tier that covers this. Self-hosting is free
+software but needs somewhere to run, which is not free — on the current
+budget, use the cloud free tier.

@@ -30,6 +30,12 @@ scipy==1.14.1
 # for credential encryption; this adds the JWT layer over it.
 PyJWT[crypto]==2.10.1
 
+# ---- secrets -------------------------------------------------------------
+# Read at startup and put into the environment, so every setting keeps being
+# declared the same way. Imported lazily: a deployment still on plain
+# environment variables never loads it.
+infisicalsdk==1.0.17
+
 # ---- connectors ----------------------------------------------------------
 psycopg2-binary==2.9.10
 pymysql==1.1.1

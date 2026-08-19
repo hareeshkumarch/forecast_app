@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-import { SignInPrompt } from "@/components/auth/sign-in-gate";
+import { AccessGate, SignInPrompt } from "@/components/auth/sign-in-gate";
 import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
 
@@ -158,7 +158,9 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
         <TopHeader section={section} />
         <div className="flex min-h-0 flex-1">
           <AppSidebar />
-          <SectionWorkspace />
+          <AccessGate>
+            <SectionWorkspace />
+          </AccessGate>
           {section === "dashboard" ? <InsightsRail /> : null}
         </div>
         <CommandPalette />

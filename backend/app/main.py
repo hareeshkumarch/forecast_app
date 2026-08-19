@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.deps import current_user
+from app.api.deps import approved_user, current_user
 from app.api.routes import (
     auth,
     connectors,
@@ -105,8 +105,12 @@ api.include_router(health.router)
 
 # Everything else is gated at the router, not per endpoint, so a route added
 # later is protected by default rather than by whoever remembers to say so.
-guarded = [Depends(current_user)]
-api.include_router(auth.router, dependencies=guarded)
+# The auth router takes the weaker gate on purpose: it has to be able to
+# answer "you are waiting for approval", which a gate that requires approval
+# could never say.
+api.include_router(auth.router, dependencies=[Depends(current_user)])
+
+guarded = [Depends(approved_user)]
 api.include_router(connectors.router, dependencies=guarded)
 api.include_router(datasets.router, dependencies=guarded)
 api.include_router(forecasts.router, dependencies=guarded)

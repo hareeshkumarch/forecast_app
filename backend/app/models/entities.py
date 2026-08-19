@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import (
+    AccessStatus,
     ColumnKind,
     ColumnRole,
     ConnectorStatus,
@@ -749,6 +750,18 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str | None] = mapped_column(String(200))
     picture_url: Mapped[str | None] = mapped_column(String(600))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    status: Mapped[AccessStatus] = mapped_column(
+        _enum(AccessStatus, "access_status"), default=AccessStatus.PENDING, nullable=False
+    )
+    #: Who decided, and when. Kept because "why does this person have access?"
+    #: is a question that gets asked months later, and an audit trail nobody
+    #: wrote down is one nobody can answer.
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[str | None] = mapped_column(String(320))
+    #: When the request to approve them was last emailed out, so a reminder can
+    #: be sent without spamming on every page load.
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("subject", name="uq_app_users_subject"),

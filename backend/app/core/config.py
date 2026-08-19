@@ -8,6 +8,8 @@ from urllib.parse import quote, urlparse
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.secrets import hydrate
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
@@ -76,6 +78,29 @@ class Settings(BaseSettings):
     auth_allowed_email_domains_raw: str = Field(default="", alias="AUTH_ALLOWED_EMAIL_DOMAINS")
     #: Individual addresses admitted whatever the domain rule says.
     auth_allowlist_raw: str = Field(default="", alias="AUTH_ALLOWLIST")
+    #: Who is told when somebody new signs in, and who may approve them. These
+    #: accounts are approved on sight — without that the first administrator
+    #: would be waiting on themselves for access.
+    auth_admin_emails_raw: str = Field(default="", alias="AUTH_ADMIN_EMAILS")
+    #: Off means anyone who can sign in is in. On means a new account waits for
+    #: an administrator, which is the point of the approval mail.
+    auth_require_approval: bool = Field(default=True, alias="AUTH_REQUIRE_APPROVAL")
+    #: How long an approve/reject link in an email stays usable.
+    auth_approval_link_ttl_hours: int = Field(default=168, ge=1, le=8760)
+
+    # ---- Outbound email ----------------------------------------------------
+    # Plain SMTP rather than a provider SDK, so this works on a Gmail app
+    # password, a Brevo free tier or a paid service without a code change.
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str = Field(default="", alias="SMTP_USERNAME")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", alias="SMTP_FROM")
+    smtp_starttls: bool = Field(default=True, alias="SMTP_STARTTLS")
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0.0)
+    #: Where the approve/reject links point. The API's own address, reachable
+    #: from wherever the administrator opens their mail.
+    public_api_base_url: str = Field(default="", alias="PUBLIC_API_BASE_URL")
 
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
@@ -255,6 +280,18 @@ class Settings(BaseSettings):
         )
 
     @property
+    def auth_admin_emails(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower()
+            for part in self.auth_admin_emails_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
+
+    @property
     def auth_allowlist(self) -> tuple[str, ...]:
         return tuple(
             part.strip().lower()
@@ -315,6 +352,12 @@ class Settings(BaseSettings):
     def ensure_directories(self) -> None:
         for directory in (self.uploads_dir, self.parquet_dir, self.exports_dir):
             directory.mkdir(parents=True, exist_ok=True)
+
+
+#: Pulled in before any Settings is built. Every field is read from the
+#: environment as the object is constructed, so a secret fetched afterwards
+#: would arrive too late for anything to see it.
+secrets_load = hydrate()
 
 
 @lru_cache

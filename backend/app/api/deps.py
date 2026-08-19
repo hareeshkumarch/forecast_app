@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import ANONYMOUS, AuthenticatedUser, AuthError, verify_token
+from app.core.auth import ANONYMOUS, AuthenticatedUser, AuthError, ForbiddenError, verify_token
 from app.core.config import settings
 from app.core.errors import ValidationError
 from app.database.session import get_session
@@ -48,6 +48,54 @@ async def current_user(request: Request) -> AuthenticatedUser:
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(current_user)]
+
+
+async def approved_user(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> AuthenticatedUser:
+    """A signed-in account that an administrator has let in.
+
+    Separate from `current_user` because /auth/me has to answer *while*
+    somebody is waiting for approval — a gate that refuses everything would
+    leave the frontend unable to tell "waiting" from "signed out", and the
+    person staring at a sign-in button they have already used.
+    """
+    user = await current_user(request)
+    if user.is_anonymous or not settings.auth_require_approval:
+        return user
+
+    from app.models.enums import AccessStatus
+    from app.services import user_service
+
+    # Read, never write: this runs on every request, and recording a visit here
+    # would put a database write behind every read the platform serves. The
+    # account is created and stamped by /auth/me, which runs once a session.
+    row = await user_service.status_of(session, user)
+    if row is not None and row.status is AccessStatus.APPROVED:
+        return user
+
+    # No row means this account has never been registered, which is not the
+    # same as being approved. Treating the absence as permission would let a
+    # new sign-in skip /auth/me and walk straight past the gate.
+    if row is None:
+        raise ForbiddenError(
+            "This account is not registered on this deployment yet.",
+            detail={"status": AccessStatus.PENDING.value},
+        )
+
+    if row.status is AccessStatus.REJECTED:
+        raise ForbiddenError(
+            "This account was not given access to this deployment.",
+            detail={"status": row.status.value},
+        )
+    raise ForbiddenError(
+        "This account is waiting for an administrator to approve it.",
+        detail={"status": row.status.value},
+    )
+
+
+ApprovedUser = Annotated[AuthenticatedUser, Depends(approved_user)]
 
 VALID_VIEWS = ("base", "best", "worst")
 

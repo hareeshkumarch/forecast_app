@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 from sqlalchemy import func, select, text
 
 from app.api.deps import SessionDep
-from app.core.config import settings
+from app.core.config import secrets_load, settings
 from app.core.security import using_insecure_default_key
 from app.database.base import utcnow
 from app.database.session import active_target
@@ -69,6 +69,11 @@ class HealthResponse(BaseModel):
     #: Here so that one `curl /api/health` answers "is Prophet live on this
     #: box?", which otherwise takes a shell on the instance to find out.
     unavailable_models: tuple[ModelKind, ...]
+    #: Whether sign-in is being enforced, and where configuration came from.
+    #: Posture, never data: it says a gate exists, not who is behind it.
+    auth_enabled: bool
+    auth_requires_approval: bool
+    secrets_source: str
     timestamp: Annotated[str, Field(min_length=1)]
 
     @computed_field
@@ -163,5 +168,8 @@ async def health(session: SessionDep) -> HealthResponse:
         running_forecast_runs=run_counts.get(RunStatus.RUNNING, 0),
         failed_forecast_runs=run_counts.get(RunStatus.FAILED, 0),
         unavailable_models=(await _capabilities()).unavailable_models,
+        auth_enabled=settings.auth_enabled,
+        auth_requires_approval=settings.auth_enabled and settings.auth_require_approval,
+        secrets_source="infisical" if secrets_load.loaded else "environment",
         timestamp=utcnow().isoformat(),
     )

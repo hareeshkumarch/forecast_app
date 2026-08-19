@@ -51,6 +51,7 @@ const queryKeys = {
   health: ["health"] as const,
   capabilities: ["capabilities"] as const,
   apiFeatures: ["api-features"] as const,
+  currentUser: ["auth", "me"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
@@ -297,6 +298,20 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
  * away controls that probably work. Matched versions are the normal case, and
  * this only earns its place in the window where they are not.
  */
+/**
+ * What the backend says about this session, including whether it has been
+ * approved. Asked of the server rather than read off the token, because the
+ * token proves identity and says nothing about admission.
+ */
+export function useCurrentUser() {
+  return useQuery({
+    queryKey: queryKeys.currentUser,
+    queryFn: ({ signal }) => api.getCurrentUser(signal),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useApiFeatures(): ApiFeatures {
   const { data } = useQuery({
     queryKey: queryKeys.apiFeatures,

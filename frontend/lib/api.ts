@@ -16,6 +16,7 @@ import type {
   DatasetPage,
   ApiFeatures,
   CoverageResponse,
+  CurrentUserRead,
   DatasetProfile,
   OpenApiDocument,
   DatasetSort,
@@ -291,6 +292,9 @@ export const getDatasetQuality = (
   },
   signal?: AbortSignal,
 ) => request<DataQualityResponse>(`/api/datasets/${id}/quality${buildQuery(params)}`, { signal });
+
+export const getCurrentUser = (signal?: AbortSignal) =>
+  request<CurrentUserRead>("/api/auth/me", { signal });
 
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });

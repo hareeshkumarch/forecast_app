@@ -37,6 +37,19 @@ class SeriesStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class AccessStatus(StrEnum):
+    """Whether a signed-in account is allowed to use the platform.
+
+    Signing in with Google proves who somebody is. It does not say they were
+    meant to have an account here, so a new identity lands in PENDING and waits
+    for a human to say otherwise.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class ColumnRole(StrEnum):
     TIME = "time"
     TARGET = "target"

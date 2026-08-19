@@ -1016,3 +1016,15 @@ export interface ApiFeatures {
   seriesStatusFilter: boolean;
   datasetCoverage: boolean;
 }
+
+export type AccessStatus = "pending" | "approved" | "rejected";
+
+export interface CurrentUserRead {
+  authenticated: boolean;
+  status: AccessStatus | null;
+  is_admin: boolean;
+  id: string | null;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
+}
