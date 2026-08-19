@@ -1006,3 +1006,13 @@ export interface CoverageResponse {
   series_truncated: boolean;
   periods_truncated: boolean;
 }
+
+export interface OpenApiDocument {
+  paths?: Record<string, { get?: { parameters?: { name: string }[] } }>;
+}
+
+/** Endpoints and parameters the running backend declares. */
+export interface ApiFeatures {
+  seriesStatusFilter: boolean;
+  datasetCoverage: boolean;
+}

@@ -17,6 +17,7 @@ import { toast } from "@/stores/toast-store";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { DatasetQuery, RunQuery } from "@/lib/api";
 import type {
+  ApiFeatures,
   DashboardFilters,
   ExportFormat,
   ForecastFrequency,
@@ -49,6 +50,7 @@ function filterKey(filters: DashboardFilters) {
 const queryKeys = {
   health: ["health"] as const,
   capabilities: ["capabilities"] as const,
+  apiFeatures: ["api-features"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
@@ -286,6 +288,26 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
     enabled: Boolean(runId),
     placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * Which of this frontend's features the deployed backend can actually serve.
+ *
+ * Optimistic when it cannot tell: a probe that fails is not a reason to take
+ * away controls that probably work. Matched versions are the normal case, and
+ * this only earns its place in the window where they are not.
+ */
+export function useApiFeatures(): ApiFeatures {
+  const { data } = useQuery({
+    queryKey: queryKeys.apiFeatures,
+    queryFn: ({ signal }) => api.getApiFeatures(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  return data ?? { seriesStatusFilter: true, datasetCoverage: true };
 }
 
 export function useDatasetCoverage(datasetId: string | null | undefined) {

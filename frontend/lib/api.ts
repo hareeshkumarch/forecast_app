@@ -14,8 +14,10 @@ import type {
   Dataset,
   DatasetDetail,
   DatasetPage,
+  ApiFeatures,
   CoverageResponse,
   DatasetProfile,
+  OpenApiDocument,
   DatasetSort,
   DatasetUploadResponse,
   DecisionResponse,
@@ -282,6 +284,31 @@ export const getDatasetQuality = (
 
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
+
+/**
+ * What the backend actually serves, read from its own OpenAPI document.
+ *
+ * The frontend deploys from a push and the backend from a command on the box,
+ * so for a window after every release one is newer than the other. Most of
+ * that mismatch is harmless — a missing endpoint 404s and says so. The one
+ * that is not is a query parameter the older backend has never heard of:
+ * FastAPI ignores undeclared parameters rather than rejecting them, so a
+ * filter the user set is dropped in transit and the answer comes back looking
+ * like a filtered one. Asking first is the only way not to lie about it.
+ *
+ * The spec is ~128KB, so it is reduced to booleans here and only those reach
+ * the query cache.
+ */
+export const getApiFeatures = async (signal?: AbortSignal): Promise<ApiFeatures> => {
+  const spec = await request<OpenApiDocument>("/openapi.json", { signal });
+  const paths = spec.paths ?? {};
+  const seriesParams = paths["/api/forecasts/{run_id}/series"]?.get?.parameters ?? [];
+
+  return {
+    seriesStatusFilter: seriesParams.some((parameter) => parameter.name === "status"),
+    datasetCoverage: "/api/datasets/{dataset_id}/coverage" in paths,
+  };
+};
 
 export const getDatasetCoverage = (
   id: string,

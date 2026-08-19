@@ -26,6 +26,7 @@ import {
 import { Select } from "@/components/ui/select";
 import { useDebounced } from "@/hooks/use-debounced";
 import {
+  useApiFeatures,
   useForecastRuns,
   PICKER_LIMIT,
   useForecastSeries,
@@ -184,8 +185,13 @@ function SeriesTable({
 }) {
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
   const [scope, setScope] = useState<string>(DEFAULTS.scope);
-  const [state, setState] = useState<string>(DEFAULTS.state);
+  const [requestedState, setState] = useState<string>(DEFAULTS.state);
   const [search, setSearch] = useState(DEFAULTS.search);
+
+  const features = useApiFeatures();
+  // An older backend does not declare `status` and FastAPI drops parameters it
+  // does not know, so sending it would filter nothing and look like it had.
+  const state = features.seriesStatusFilter ? requestedState : DEFAULTS.state;
 
   const settled = useDebounced(search, 250);
   const [page, setPage] = useState(0);
@@ -313,10 +319,20 @@ function SeriesTable({
             value={state}
             onChange={change(setState)}
             options={STATES}
-            label="How the line was arrived at"
+            disabled={!features.seriesStatusFilter}
+            label={
+              features.seriesStatusFilter
+                ? "How the line was arrived at"
+                : "Filtering by state needs a newer backend than this one"
+            }
             className="w-[168px]"
             menuClassName="w-[300px]"
           />
+          {features.seriesStatusFilter ? null : (
+            <span className="text-caption text-text-muted">
+              State filter needs a newer backend
+            </span>
+          )}
           <Select
             value={sort}
             onChange={change((value: string) => setSort(value as SeriesSort))}
