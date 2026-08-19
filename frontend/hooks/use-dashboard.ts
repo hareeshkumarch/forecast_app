@@ -312,6 +312,13 @@ export function useCurrentUser() {
     queryFn: ({ signal }) => api.getCurrentUser(signal),
     staleTime: 60_000,
     retry: false,
+    // Somebody waiting for approval has no way to learn it happened: the
+    // decision is made on another person's screen, and nothing reaches theirs.
+    // Without this they sit on the waiting card until they think to reload,
+    // which is exactly the moment the product feels broken. Polled only while
+    // they are waiting, and stopped the moment they are through.
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 10_000 : false),
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -320,6 +327,12 @@ export function useManagedUsers(enabled: boolean) {
     queryKey: queryKeys.managedUsers,
     queryFn: ({ signal }) => api.getManagedUsers(signal),
     enabled,
+    // A request arrives while the administrator is looking at this list, and
+    // the list is the place they were told to look. It only runs while the
+    // page is open and only for an administrator, so the cost is a small
+    // query every twenty seconds by one person.
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 }
 

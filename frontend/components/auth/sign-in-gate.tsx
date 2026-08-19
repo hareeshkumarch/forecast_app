@@ -183,7 +183,8 @@ export function AwaitingApproval({ email }: { email: string | null }) {
         ) : (
           "Your account has been sent to an administrator."
         )}{" "}
-        You will be able to sign in as soon as it is approved — no need to keep this page open.
+        This page lets you in by itself the moment it is approved — you do not need to reload it,
+        and you do not need to keep it open.
       </p>
       <SecondaryAction label="Sign out" />
     </AuthScreen>
