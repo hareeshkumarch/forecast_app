@@ -51,6 +51,28 @@ def storage_root() -> Path:
 
 
 @pytest.fixture(autouse=True)
+def _rate_limits_start_fresh():
+    """Each test gets its own allowance.
+
+    Every request in this suite arrives from the same place as far as the
+    limiter is concerned, so without this they all share one window: the run
+    is fine for the first two hundred and forty requests and then fails
+    whatever happens to be running when the allowance runs out. That is a
+    different set of tests each time, in files that have nothing to do with
+    rate limiting, answering 429 where they expected a result — the same shape
+    of afternoon as the auth switches above.
+
+    Cleared rather than switched off, so the middleware stays in the path and
+    the tests that assert on its headers still have something to assert about.
+    """
+    from app.core.ratelimit import limiter
+
+    limiter.forget_all()
+    yield
+    limiter.forget_all()
+
+
+@pytest.fixture(autouse=True)
 async def _schema() -> AsyncIterator[None]:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)
