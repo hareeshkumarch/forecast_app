@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Shield, ShieldOff, UserRound, X } from "lucide-react";
+import { Check, Shield, ShieldOff, UserPlus, UserRound, X } from "lucide-react";
+import { type FormEvent, useState } from "react";
 
 import {
   Badge,
@@ -8,11 +9,13 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  Input,
   PanelHeader,
   Skeleton,
 } from "@/components/ui/primitives";
 import {
   useCurrentUser,
+  useInvite,
   useManagedUsers,
   useUserDecision,
   useUserRole,
@@ -120,6 +123,8 @@ function People() {
         }
       />
 
+      <InviteForm />
+
       {isError ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : isPending ? (
@@ -154,6 +159,44 @@ function People() {
         </p>
       ) : null}
     </Card>
+  );
+}
+
+function InviteForm() {
+  const [email, setEmail] = useState("");
+  const invite = useInvite();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const address = email.trim();
+    if (!address) return;
+    invite.mutate(address, { onSuccess: () => setEmail("") });
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 px-4 pb-3">
+      <Input
+        type="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="Invite someone by email"
+        aria-label="Invite someone by email"
+        className="min-w-0 flex-1 sm:max-w-xs"
+      />
+      <Button type="submit" variant="secondary" icon={UserPlus} loading={invite.isPending}>
+        Invite
+      </Button>
+      {invite.isSuccess ? (
+        <span className="text-caption text-positive" role="status">
+          Invitation sent — they are approved the moment they sign in.
+        </span>
+      ) : null}
+      {invite.isError ? (
+        <span className="text-caption text-negative" role="alert">
+          {invite.error.message}
+        </span>
+      ) : null}
+    </form>
   );
 }
 

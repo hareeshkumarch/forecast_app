@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core import approvals
@@ -67,6 +68,16 @@ class DecisionRequest(StrictModel):
 
 class RoleRequest(StrictModel):
     role: AccessRole
+
+
+#: Deliberately loose. The only test that means anything is whether the mail
+#: arrives, and a stricter pattern would reject valid addresses to no benefit —
+#: an invitation nobody can receive is self-correcting.
+EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
+class InviteRequest(StrictModel):
+    email: Annotated[str, Field(min_length=3, max_length=320, pattern=EMAIL_SHAPE)]
 
 
 @router.get(
@@ -193,6 +204,26 @@ async def change_role(
 
     updated = await user_service.set_role(session, target, payload.role, decided_by=user.email)
     return _managed(updated, user)
+
+
+@router.post(
+    "/invite",
+    response_model=ManagedUserRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Give somebody access before they have signed in",
+    description=(
+        "Creates an approved account with no sign-in attached to it yet and emails an "
+        "invitation. Whoever next signs in with that address claims it and walks straight in "
+        "— so it must be an address only they can receive mail at. Inviting somebody already "
+        "known re-approves them, which is how an account refused by mistake is let back in."
+    ),
+)
+async def invite_person(
+    payload: InviteRequest, session: SessionDep, user: CurrentUser
+) -> ManagedUserRead:
+    await _assert_admin(session, user)
+    row = await user_service.invite(session, payload.email, invited_by=user.email)
+    return _managed(row, user)
 
 
 async def _assert_admin(session: SessionDep, user: CurrentUser) -> None:

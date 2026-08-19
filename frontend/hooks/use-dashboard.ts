@@ -346,6 +346,14 @@ export function useUserRole() {
   });
 }
 
+export function useInvite() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (email: string) => api.invitePerson(email),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
 export function useApiFeatures(): ApiFeatures {
   const { data } = useQuery({
     queryKey: queryKeys.apiFeatures,

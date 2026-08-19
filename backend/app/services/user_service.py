@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import approvals, mailer
+from app.core import approvals, email_templates, mailer
 from app.core.auth import AuthenticatedUser
 from app.core.config import settings
 from app.core.errors import AppError
@@ -55,6 +55,19 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
         return None
 
     row = await session.scalar(select(AppUser).where(AppUser.subject == user.id))
+
+    # No row for this subject, but there may be an invitation waiting under the
+    # address. Claiming it here is what makes an invited person walk straight
+    # in rather than joining the queue they were invited to skip.
+    invited = False
+    if row is None and user.email:
+        row = await session.scalar(
+            select(AppUser).where(AppUser.email == user.email, AppUser.subject.is_(None))
+        )
+        if row is not None:
+            row.subject = user.id
+            invited = True
+
     created = row is None
 
     if row is None:
@@ -87,8 +100,32 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
 
     if created and row.status is AccessStatus.PENDING:
         await request_approval(session, row)
+        await _tell_requester(row)
+    elif invited:
+        logger.info("%s claimed the invitation waiting for that address.", row.email)
 
     return row
+
+
+async def _tell_requester(row: AppUser) -> None:
+    """Acknowledge to the person who just asked.
+
+    Without it they sign in, are told to wait, and hear nothing — with no way
+    to tell whether anybody was actually told. One message costs nothing and
+    removes the whole question.
+    """
+    await mailer.send(
+        [row.email],
+        **_as_mail(email_templates.request_received(_app_url())),
+    )
+
+
+def _app_url() -> str:
+    return settings.public_api_base_url.rstrip("/") + "/dashboard"
+
+
+def _as_mail(message: email_templates.Message) -> dict[str, str]:
+    return {"subject": message.subject, "text": message.text, "html": message.html}
 
 
 def _initial_status(email: str) -> AccessStatus:
@@ -200,11 +237,65 @@ async def set_status(
             "refused from here. Remove them from AUTH_ADMIN_EMAILS first."
         )
 
+    was = target.status
     target.status = status
     target.decided_at = utcnow()
     target.decided_by = decided_by
     await session.flush()
+
+    # Only on a change. Re-approving somebody already approved should not send
+    # them a second "you're in".
+    if status is not was:
+        await _tell_decision(target, status)
     return target
+
+
+async def _tell_decision(row: AppUser, status: AccessStatus) -> None:
+    message = (
+        email_templates.access_approved(_app_url())
+        if status is AccessStatus.APPROVED
+        else email_templates.access_refused()
+    )
+    await mailer.send([row.email], **_as_mail(message))
+
+
+async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUser:
+    """Give somebody access before they have ever signed in.
+
+    The row is created approved and without a subject; whoever next signs in
+    with that address claims it. That is the whole mechanism, and it is why
+    the address has to be one only they can receive mail at.
+    """
+    address = email.strip().lower()
+    existing = await session.scalar(select(AppUser).where(AppUser.email == address))
+
+    if existing is not None:
+        # Already known. Re-inviting is how somebody refused by mistake is let
+        # back in, so it approves rather than refusing to act.
+        existing.status = AccessStatus.APPROVED
+        existing.decided_at = utcnow()
+        existing.decided_by = invited_by
+        existing.invited_at = utcnow()
+        existing.invited_by = invited_by
+        await session.flush()
+        await mailer.send([address], **_as_mail(email_templates.invitation(invited_by, _app_url())))
+        return existing
+
+    row = AppUser(
+        subject=None,
+        email=address,
+        status=AccessStatus.APPROVED,
+        role=AccessRole.MEMBER,
+        decided_at=utcnow(),
+        decided_by=invited_by,
+        invited_at=utcnow(),
+        invited_by=invited_by,
+    )
+    session.add(row)
+    await session.flush()
+
+    await mailer.send([address], **_as_mail(email_templates.invitation(invited_by, _app_url())))
+    return row
 
 
 async def set_role(

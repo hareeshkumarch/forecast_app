@@ -314,6 +314,12 @@ export const setUserRole = (id: string, role: AccessRole) =>
     body: JSON.stringify({ role }),
   });
 
+export const invitePerson = (email: string) =>
+  request<ManagedUser>("/api/auth/invite", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
 

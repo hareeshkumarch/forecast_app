@@ -746,7 +746,10 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "app_users"
 
     #: The `sub` claim: stable for the life of the account, unlike the email.
-    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    #: Null on an invitation, which exists before the person it names has ever
+    #: signed in — the row is claimed, and the subject filled, the first time
+    #: somebody arrives with that address.
+    subject: Mapped[str | None] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     name: Mapped[str | None] = mapped_column(String(200))
     picture_url: Mapped[str | None] = mapped_column(String(600))
@@ -767,7 +770,11 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: be sent without spamming on every page load.
     requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invited_by: Mapped[str | None] = mapped_column(String(320))
+
     __table_args__ = (
         UniqueConstraint("subject", name="uq_app_users_subject"),
+        UniqueConstraint("email", name="uq_app_users_email"),
         Index("ix_app_users_email", "email"),
     )
