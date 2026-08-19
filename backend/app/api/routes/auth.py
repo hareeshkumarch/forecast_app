@@ -291,7 +291,10 @@ async def decide_many(
 async def remove_many(payload: BulkRequest, session: SessionDep, user: CurrentUser) -> BulkResult:
     await _assert_admin(session, user)
     return await _each(
-        session, user, payload.user_ids, lambda target: user_service.remove(session, target)
+        session,
+        user,
+        payload.user_ids,
+        lambda target: user_service.remove(session, target, removed_by=user.email),
     )
 
 
@@ -347,7 +350,7 @@ async def remove_person(user_id: uuid.UUID, session: SessionDep, user: CurrentUs
     if target.subject == user.id:
         raise ForbiddenError("You cannot remove your own account.")
 
-    await user_service.remove(session, target)
+    await user_service.remove(session, target, removed_by=user.email)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -383,6 +386,42 @@ def _managed(row: AppUser, viewer: AuthenticatedUser) -> ManagedUserRead:
         subject_pending=row.subject is None,
         is_self=row.subject is not None and row.subject == viewer.id,
     )
+
+
+class AuditEntry(StrictModel):
+    at: str
+    action: str
+    subject_email: str
+    actor_email: str | None
+    detail: str | None
+
+
+@router.get(
+    "/audit",
+    response_model=list[AuditEntry],
+    summary="Who changed whose access, and when",
+    description=(
+        "Append-only. app_users records only the last decision about an account, so this is "
+        "the only place that can answer why somebody lost access in March, or who invited "
+        "the account that turned out to be wrong. Rows outlive the accounts they name."
+    ),
+)
+async def read_audit(
+    session: SessionDep,
+    user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> list[AuditEntry]:
+    await _assert_admin(session, user)
+    return [
+        AuditEntry(
+            at=row.at.isoformat(),
+            action=row.action,
+            subject_email=row.subject_email,
+            actor_email=row.actor_email,
+            detail=row.detail,
+        )
+        for row in await user_service.history(session, limit)
+    ]
 
 
 #: Long enough that an idle stream costs nothing, short enough that a proxy

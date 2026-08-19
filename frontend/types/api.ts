@@ -1019,7 +1019,7 @@ export interface ApiFeatures {
 
 export type AccessStatus = "pending" | "approved" | "rejected";
 
-export type AccessRole = "admin" | "member";
+export type AccessRole = "admin" | "member" | "viewer";
 
 export interface CurrentUserRead {
   authenticated: boolean;

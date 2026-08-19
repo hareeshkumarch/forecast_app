@@ -8,6 +8,7 @@ from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import ANONYMOUS, AuthenticatedUser, AuthError, ForbiddenError, verify_token
+from app.core.permissions import Permission, allows, permission_for
 from app.core.config import settings
 from app.core.errors import ValidationError
 from app.database.session import get_session
@@ -96,6 +97,90 @@ async def approved_user(
 
 
 ApprovedUser = Annotated[AuthenticatedUser, Depends(approved_user)]
+
+
+async def permitted(
+    request: Request, session: AsyncSession = Depends(get_session)
+) -> AuthenticatedUser:
+    """The permission this request needs, decided from what it is.
+
+    Mounted once on the guarded routers rather than annotated on each handler,
+    so a route added later is covered by the table in permissions.py instead of
+    by somebody remembering. Wraps `approved_user`, so it is still one gate: a
+    request that has no business here is refused before the permission question
+    is even asked.
+    """
+    user = await approved_user(request, session)
+    if user.is_anonymous or not settings.auth_enabled:
+        return user
+
+    from app.services import user_service
+
+    permission = permission_for(request.method, request.url.path)
+    row = await user_service.status_of(session, user)
+    if allows(
+        permission,
+        row.role if row else None,
+        configured_admin=user_service.is_configured_admin(user.email),
+    ):
+        return user
+
+    raise ForbiddenError(
+        f"This account is not allowed to {_ENGLISH.get(permission, permission.value)}.",
+        detail={"permission": permission.value},
+    )
+
+
+def require(permission: Permission):
+    """A route saying what it needs rather than who it trusts.
+
+    Returns a dependency, so it reads as
+    `dependencies=[Depends(require(Permission.FORECAST_RUN))]` on the router or
+    the handler. The check is a database read on every call, deliberately:
+    permissions carried in a token would mean a demotion or a revocation
+    taking effect whenever that token happened to expire, and this platform's
+    revocation is expected to bite on the next request.
+    """
+
+    async def guard(
+        request: Request, session: AsyncSession = Depends(get_session)
+    ) -> AuthenticatedUser:
+        user = await approved_user(request, session)
+        if user.is_anonymous or not settings.auth_enabled:
+            return user
+
+        from app.services import user_service
+
+        row = await user_service.status_of(session, user)
+        if allows(
+            permission,
+            row.role if row else None,
+            configured_admin=user_service.is_configured_admin(user.email),
+        ):
+            return user
+
+        raise ForbiddenError(
+            f"This account is not allowed to {_ENGLISH.get(permission, permission.value)}.",
+            detail={"permission": permission.value},
+        )
+
+    return guard
+
+
+#: The message somebody actually reads. "not allowed to forecast:run" is a
+#: log line; "not allowed to start forecasts" is an answer.
+_ENGLISH = {
+    Permission.READ: "see this",
+    Permission.DATASET_WRITE: "add or change datasets",
+    Permission.DATASET_DELETE: "delete datasets",
+    Permission.FORECAST_RUN: "start forecasts",
+    Permission.FORECAST_DELETE: "delete forecast runs",
+    Permission.CONNECTOR_MANAGE: "manage connectors",
+    Permission.USER_MANAGE: "manage who has access",
+    Permission.AUDIT_READ: "read the audit log",
+}
+
+
 
 VALID_VIEWS = ("base", "best", "worst")
 

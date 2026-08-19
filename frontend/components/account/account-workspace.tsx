@@ -4,7 +4,9 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Ban,
   Check,
+  Eye,
   MoreHorizontal,
+  Pencil,
   Shield,
   ShieldOff,
   Trash2,
@@ -37,7 +39,13 @@ import {
 } from "@/hooks/use-dashboard";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { AccessStatus, ManagedUser } from "@/types/api";
+import type { AccessRole, AccessStatus, ManagedUser } from "@/types/api";
+
+const ROLE_LABEL: Record<AccessRole, string> = {
+  admin: "Administrator",
+  member: "Member",
+  viewer: "Read-only",
+};
 
 const STATUS_TONE: Record<AccessStatus, "positive" | "warning" | "negative"> = {
   approved: "positive",
@@ -107,7 +115,7 @@ function Profile() {
           ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <Badge tone={data.role === "admin" ? "positive" : "neutral"}>
-              {data.role === "admin" ? "Administrator" : "Member"}
+              {data.role ? ROLE_LABEL[data.role] : "Member"}
             </Badge>
             {data.status ? (
               <Badge tone={STATUS_TONE[data.status]}>{data.status}</Badge>
@@ -347,7 +355,7 @@ function Person({
   picked: boolean;
   onPick: () => void;
   onDecide: (status: AccessStatus) => void;
-  onRole: (role: "admin" | "member") => void;
+  onRole: (role: AccessRole) => void;
   onRemove: () => void;
 }) {
   const pending = row.status === "pending";
@@ -374,6 +382,9 @@ function Person({
           {row.is_self ? <span className="shrink-0 text-text-muted">(you)</span> : null}
           {row.role === "admin" ? (
             <Shield className="h-3 w-3 shrink-0 text-accent" aria-label="Administrator" />
+          ) : null}
+          {row.role === "viewer" ? (
+            <Eye className="h-3 w-3 shrink-0 text-text-muted" aria-label="Read-only" />
           ) : null}
         </p>
         <p className="truncate text-caption text-text-muted">
@@ -426,15 +437,26 @@ function Person({
               ) : null}
 
               {!row.is_self && row.status === "approved" ? (
-                row.role === "admin" ? (
-                  <Item icon={ShieldOff} onSelect={() => onRole("member")}>
-                    Remove administrator
-                  </Item>
-                ) : (
-                  <Item icon={Shield} onSelect={() => onRole("admin")}>
-                    Make administrator
-                  </Item>
-                )
+                <>
+                  {row.role === "admin" ? (
+                    <Item icon={ShieldOff} onSelect={() => onRole("member")}>
+                      Remove administrator
+                    </Item>
+                  ) : (
+                    <Item icon={Shield} onSelect={() => onRole("admin")}>
+                      Make administrator
+                    </Item>
+                  )}
+                  {row.role === "viewer" ? (
+                    <Item icon={Pencil} onSelect={() => onRole("member")}>
+                      Let them make changes
+                    </Item>
+                  ) : (
+                    <Item icon={Eye} onSelect={() => onRole("viewer")}>
+                      Read-only access
+                    </Item>
+                  )}
+                </>
               ) : null}
 
               {!row.is_self ? (

@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.database.base import utcnow
-from app.models.entities import AppUser
+from app.models.entities import AccessAudit, AppUser
 from app.models.enums import AccessRole, AccessStatus
 
 logger = get_logger(__name__)
@@ -95,10 +95,12 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
             row.status = AccessStatus.APPROVED
             row.decided_at = utcnow()
             row.decided_by = "administrator list"
+            _record(session, APPROVED, row, detail="named in AUTH_ADMIN_EMAILS")
 
     await session.flush()
 
     if created and row.status is AccessStatus.PENDING:
+        _record(session, REQUESTED, row)
         await request_approval(session, row)
         await _tell_requester(session, row)
         _announce(row)
@@ -253,9 +255,58 @@ async def set_status(
     # Only on a change. Re-approving somebody already approved should not send
     # them a second "you're in".
     if status is not was:
+        if status is AccessStatus.APPROVED:
+            action = RESTORED if was is AccessStatus.REJECTED else APPROVED
+        else:
+            action = REVOKED if was is AccessStatus.APPROVED else REJECTED
+        _record(session, action, target, actor=decided_by, detail=f"from {was.value}")
         await _tell_decision(session, target, status, was)
         _announce(target)
     return target
+
+
+REQUESTED = "requested"
+APPROVED = "approved"
+REJECTED = "rejected"
+REVOKED = "revoked"
+RESTORED = "restored"
+PROMOTED = "promoted"
+DEMOTED = "demoted"
+INVITED = "invited"
+REMOVED = "removed"
+WELCOMED = "welcomed"
+
+
+def _record(
+    session: AsyncSession,
+    action: str,
+    row: AppUser,
+    *,
+    actor: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Append, in the transaction that did the thing.
+
+    Written here rather than in the route so it cannot be skipped by a caller
+    that went straight to the service — the emailed approve/reject link does
+    exactly that, and it is the path least likely to be watched.
+    """
+    session.add(
+        AccessAudit(
+            action=action,
+            subject_email=row.email,
+            subject_id=row.id,
+            actor_email=actor,
+            detail=detail,
+        )
+    )
+
+
+async def history(session: AsyncSession, limit: int = 200) -> list[AccessAudit]:
+    result = await session.execute(
+        select(AccessAudit).order_by(AccessAudit.at.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
 
 
 def _announce(row: AppUser) -> None:
@@ -317,6 +368,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         existing.invited_at = utcnow()
         existing.invited_by = invited_by
         await session.flush()
+        _record(session, INVITED, existing, actor=invited_by, detail="re-invited")
         mailer.queue(
             session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
         )
@@ -336,6 +388,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
     session.add(row)
     await session.flush()
 
+    _record(session, INVITED, row, actor=invited_by)
     mailer.queue(
         session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
     )
@@ -369,6 +422,13 @@ async def set_role(
     await session.flush()
 
     if role is not was:
+        _record(
+            session,
+            PROMOTED if role is AccessRole.ADMIN else DEMOTED,
+            target,
+            actor=decided_by,
+            detail=f"{was.value} -> {role.value}",
+        )
         message = (
             email_templates.promoted(_app_url())
             if role is AccessRole.ADMIN
@@ -379,7 +439,7 @@ async def set_role(
     return target
 
 
-async def remove(session: AsyncSession, target: AppUser) -> None:
+async def remove(session: AsyncSession, target: AppUser, *, removed_by: str | None = None) -> None:
     """Forget an account entirely.
 
     Distinct from refusing one. Refusing is a decision that is kept — the row
@@ -408,6 +468,10 @@ async def remove(session: AsyncSession, target: AppUser) -> None:
     tell = target.subject is not None and target.status is AccessStatus.APPROVED
     email = target.email
     identifier = target.id
+
+    # Recorded before the delete, and the record outlives it: an audit trail
+    # that disappears with its subject cannot answer the question it is for.
+    _record(session, REMOVED, target, actor=removed_by, detail=f"was {target.status.value}")
 
     await session.delete(target)
     await session.flush()

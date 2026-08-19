@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 from app.models.enums import (
     AccessRole,
     AccessStatus,
@@ -821,4 +821,34 @@ class MailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("status = 'pending'"),
             sqlite_where=text("status = 'pending'"),
         ),
+    )
+
+
+class AccessAudit(UUIDPrimaryKeyMixin, Base):
+    """An append-only record of who changed whose access.
+
+    app_users holds `decided_by` and `decided_at`, which is the last thing that
+    happened and nothing before it — the second decision overwrites the first,
+    so "why did this person lose access in March" has no answer.
+
+    The subject's email is copied rather than joined. Removing an account must
+    not turn the record of removing it into a row about nobody.
+    """
+
+    __tablename__ = "access_audit"
+
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_email: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    #: Null when the platform acted on its own — an invitation claimed, an
+    #: account admitted because it is named in AUTH_ADMIN_EMAILS.
+    actor_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_access_audit_at", "at"),
+        Index("ix_access_audit_subject", "subject_email"),
     )

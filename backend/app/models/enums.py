@@ -61,6 +61,11 @@ class AccessRole(StrEnum):
 
     ADMIN = "admin"
     MEMBER = "member"
+    #: Read the numbers, change nothing. Stored as a plain string like every
+    #: other enum here, so adding it needed no migration — and nobody holds it
+    #: until an administrator gives it to them, so nothing anybody can do today
+    #: changes because it exists.
+    VIEWER = "viewer"
 
 
 class ColumnRole(StrEnum):

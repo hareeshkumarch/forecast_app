@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.deps import approved_user, current_user
+from app.api.deps import current_user, permitted
 from app.api.routes import (
     auth,
     connectors,
@@ -128,7 +128,12 @@ api.include_router(auth.unauthenticated_router)
 # approval could never say.
 api.include_router(auth.router, dependencies=[Depends(current_user)])
 
-guarded = [Depends(approved_user)]
+# `permitted` wraps `approved_user`, so this is still one gate rather than
+# two: being let in at all is checked first, then what this particular
+# request needs. The mapping from route to permission lives in
+# app/core/permissions.py, so a route added later is covered by a table
+# rather than by somebody remembering to decorate it.
+guarded = [Depends(permitted)]
 api.include_router(connectors.router, dependencies=guarded)
 api.include_router(datasets.router, dependencies=guarded)
 api.include_router(forecasts.router, dependencies=guarded)
