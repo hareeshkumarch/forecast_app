@@ -110,43 +110,46 @@ async def test_an_invitation_is_matched_on_the_address_alone(session: AsyncSessi
     assert claimed.status is AccessStatus.APPROVED
 
 
-async def test_the_welcome_is_sent_once(session: AsyncSession, monkeypatch) -> None:
-    """Once, on the first sign-in that gets through.
+async def test_signing_in_again_sends_nothing(session: AsyncSession, monkeypatch) -> None:
+    """The count that matters is per journey, not per page load.
 
-    Not on every visit — the stamp is what makes the difference, and it is set
-    before the send so a slow mail server cannot turn one welcome into one per
-    page load.
+    An approved account used to collect three messages saying a version of the
+    same thing: an acknowledgement when they asked, the approval, and a
+    welcome on their first sign-in. Now the approval is the whole of it, and
+    arriving is silent.
     """
-    sent: list[list[str]] = []
+    sent: list[str] = []
 
-    def record(_session, to, *_args, **_kwargs):
-        sent.append(to)
+    def record(_session, _to, *, subject: str, **_kwargs):
+        sent.append(subject)
 
     monkeypatch.setattr(user_service.mailer, "queue", record)
     settings.auth_admin_emails_raw = "boss@example.com"
 
     caller = AuthenticatedUser(id="sub-welcome", email="boss@example.com", name="Boss")
-    first = await user_service.resolve(session, caller)
-
-    assert first is not None
-    assert first.welcomed_at is not None
-    assert sent == [["boss@example.com"]]
-
+    await user_service.resolve(session, caller)
     await user_service.resolve(session, caller)
     await user_service.resolve(session, caller)
 
-    assert sent == [["boss@example.com"]], "the welcome went out again on a later visit"
+    assert sent == [], f"signing in should send nothing, sent {sent}"
 
 
-async def test_somebody_still_waiting_is_not_welcomed(session: AsyncSession, monkeypatch) -> None:
-    """A welcome to an account that cannot get in would be a lie."""
-    subjects: list[str] = []
+async def test_asking_for_access_tells_the_administrator_and_nobody_else(
+    session: AsyncSession, monkeypatch
+) -> None:
+    """One message per request, to the only person who can act on it.
 
-    def record(_session, _to, *, subject: str, **_kwargs):
-        subjects.append(subject)
+    The requester used to get an acknowledgement as well, which told them what
+    the screen in front of them already said — and that screen now updates
+    itself the moment a decision is made.
+    """
+    recipients: list[list[str]] = []
+
+    def record(_session, to, **_kwargs):
+        recipients.append(to)
 
     monkeypatch.setattr(user_service.mailer, "queue", record)
-    settings.auth_admin_emails_raw = ""
+    settings.auth_admin_emails_raw = "boss@example.com"
     settings.auth_require_approval = True
 
     row = await user_service.resolve(
@@ -155,13 +158,13 @@ async def test_somebody_still_waiting_is_not_welcomed(session: AsyncSession, mon
 
     assert row is not None
     assert row.status is AccessStatus.PENDING
-    assert row.welcomed_at is None
-    assert not any("Welcome" in s for s in subjects)
+    assert recipients == [["boss@example.com"]]
 
 
-async def test_an_invited_person_is_welcomed_when_they_arrive(
+async def test_an_invited_person_arriving_gets_no_second_message(
     session: AsyncSession, monkeypatch
 ) -> None:
+    """The invitation already said everything the welcome would have."""
     subjects: list[str] = []
 
     def record(_session, _to, *, subject: str, **_kwargs):
@@ -171,6 +174,7 @@ async def test_an_invited_person_is_welcomed_when_they_arrive(
     settings.auth_admin_emails_raw = ""
 
     await user_service.invite(session, "guest@example.com", invited_by="boss@example.com")
+    assert len(subjects) == 1, "the invitation itself"
     subjects.clear()
 
     row = await user_service.resolve(
@@ -178,8 +182,8 @@ async def test_an_invited_person_is_welcomed_when_they_arrive(
     )
 
     assert row is not None
-    assert row.welcomed_at is not None
-    assert any("Welcome" in s for s in subjects)
+    assert row.status is AccessStatus.APPROVED
+    assert subjects == []
 
 
 async def test_a_bulk_change_still_honours_every_guard(session: AsyncSession, monkeypatch) -> None:

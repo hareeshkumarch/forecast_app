@@ -70,7 +70,6 @@ def _button(action: Action) -> str:
 #: was sent is the shape of one people report as spam.
 REASON_ACCESS = "somebody asked for access to it"
 REASON_DECIDED = "you asked for access to it"
-REASON_WELCOME = "your account was approved"
 REASON_INVITED = "somebody invited you to it"
 REASON_ACCOUNT = "it concerns your account"
 
@@ -174,29 +173,25 @@ def access_request(who: str, email: str, approve_url: str, reject_url: str, hour
     )
 
 
-def request_received(app_url: str) -> Message:
-    return _message(
-        subject="Your access request is with an administrator",
-        heading="Thanks — your request is in",
-        paragraphs=[
-            "Somebody has to approve your account before you can see anything. We have passed "
-            "it on and you will get an email the moment it is decided.",
-            "There is nothing else for you to do, and no need to keep the page open.",
-        ],
-        actions=[Action("Open the app", app_url)],
-        reason=REASON_DECIDED,
-    )
-
-
 def access_approved(app_url: str) -> Message:
+    """The only message an approved account gets.
+
+    It used to be one of three to the same person: an acknowledgement when
+    they asked, this, and a welcome on their first sign-in — each a version of
+    the same news. The one part of the welcome worth keeping was the sentence
+    telling them what to do next, so it is here.
+    """
     return _message(
         subject="Your access has been approved",
         heading="You're in",
         paragraphs=[
-            "An administrator has approved your account, so the workspace is open to you now.",
-            "Sign in with the same address you asked with and everything is where you left it.",
+            "An administrator has approved your account, so the workspace is open to you now. "
+            "Sign in with the same address you asked with.",
+            "Upload a file and the platform works out what its columns mean, splits it into "
+            "series and forecasts each one — you do not have to describe the shape of your "
+            "data first.",
         ],
-        actions=[Action("Open the app", app_url)],
+        actions=[Action("Start with a file", f"{app_url}/datasets")],
         reason=REASON_DECIDED,
     )
 
@@ -283,39 +278,6 @@ def promoted(app_url: str) -> Message:
     )
 
 
-def demoted(app_url: str) -> Message:
-    return _message(
-        subject="A change to what you can do",
-        heading="You are no longer an administrator",
-        paragraphs=[
-            "Your administrator role for this workspace has been handed back, so approving "
-            "people and changing what others can do has moved to somebody else.",
-            "Your own access has not changed — your datasets, forecast runs and connectors are "
-            "all still yours.",
-        ],
-        actions=[Action("Open the app", app_url)],
-        reason=REASON_ACCOUNT,
-    )
-
-
-def welcome(name: str | None, app_url: str) -> Message:
-    greeting = f"Welcome, {name}." if name else "Welcome."
-    return _message(
-        subject=f"Welcome to {PRODUCT}",
-        heading=greeting,
-        paragraphs=[
-            "You are in. Upload a file and the platform works out what its columns mean, "
-            "splits it into series, and forecasts each one — you do not have to describe the "
-            "shape of your data first.",
-            "Every number it shows you is computed and checked against what actually happened, "
-            "so you can ask it how well it has been doing.",
-        ],
-        actions=[Action("Start with a file", f"{app_url}/datasets")],
-        footnote="This is the only message you will get from us unless something needs you.",
-        reason=REASON_WELCOME,
-    )
-
-
 def invitation(inviter: str, app_url: str) -> Message:
     return _message(
         subject=f"{inviter} invited you to {PRODUCT}",
@@ -323,6 +285,9 @@ def invitation(inviter: str, app_url: str) -> Message:
         paragraphs=[
             f"<strong style='color:{INK};'>{inviter}</strong> has given you access. Sign in with "
             "this email address and you are straight in — no approval to wait for.",
+            "Upload a file and the platform works out what its columns mean, splits it into "
+            "series and forecasts each one — you do not have to describe the shape of your "
+            "data first.",
         ],
         actions=[Action("Sign in", app_url)],
         footnote="Use the same address this was sent to; the invitation is tied to it.",

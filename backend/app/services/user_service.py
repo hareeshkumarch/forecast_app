@@ -102,32 +102,11 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     if created and row.status is AccessStatus.PENDING:
         _record(session, REQUESTED, row)
         await request_approval(session, row)
-        await _tell_requester(session, row)
         _announce(row)
-    elif row.status is AccessStatus.APPROVED and row.welcomed_at is None:
-        # The first sign-in that actually gets through, whether they were
-        # invited, approved after asking, or named in the administrator list.
-        # Stamped before sending, so a mail server that hangs cannot turn one
-        # welcome into one per page load.
-        row.welcomed_at = utcnow()
-        await session.flush()
-        mailer.queue(
-            session, [row.email], **_as_mail(email_templates.welcome(row.name, _app_url()))
-        )
     elif invited:
         logger.info("%s claimed the invitation waiting for that address.", row.email)
 
     return row
-
-
-async def _tell_requester(session: AsyncSession, row: AppUser) -> None:
-    """Acknowledge to the person who just asked.
-
-    Without it they sign in, are told to wait, and hear nothing — with no way
-    to tell whether anybody was actually told. One message costs nothing and
-    removes the whole question.
-    """
-    mailer.queue(session, [row.email], **_as_mail(email_templates.request_received(_app_url())))
 
 
 def _app_url() -> str:
@@ -274,7 +253,6 @@ PROMOTED = "promoted"
 DEMOTED = "demoted"
 INVITED = "invited"
 REMOVED = "removed"
-WELCOMED = "welcomed"
 
 
 def _record(
@@ -429,12 +407,12 @@ async def set_role(
             actor=decided_by,
             detail=f"{was.value} -> {role.value}",
         )
-        message = (
-            email_templates.promoted(_app_url())
-            if role is AccessRole.ADMIN
-            else email_templates.demoted(_app_url())
-        )
-        mailer.queue(session, [target.email], **_as_mail(message))
+        # Only the promotion. Being told you have gained powers you did not
+        # know about is worth an email; being told you have lost some is an
+        # indignity with nothing attached for the reader to do, and the app
+        # shows it either way the moment it happens.
+        if role is AccessRole.ADMIN:
+            mailer.queue(session, [target.email], **_as_mail(email_templates.promoted(_app_url())))
         _announce(target)
     return target
 
