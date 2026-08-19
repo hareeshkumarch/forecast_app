@@ -28,6 +28,23 @@ from app.database.session import SessionFactory, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _authentication_stays_off():
+    """No test leaves the auth switches flipped for the next one.
+
+    `settings` is a single object for the whole session, so a test that turns
+    authentication on and forgets to turn it off does not fail itself — it
+    fails every test that runs after it, in files it has nothing to do with,
+    with a 401 that reads as a broken endpoint. That cost an afternoon once;
+    it does not get to cost another.
+    """
+    from app.core.config import settings
+
+    before = (settings.auth_enabled, settings.auth_require_approval)
+    yield
+    settings.auth_enabled, settings.auth_require_approval = before
+
+
 @pytest.fixture(scope="session")
 def storage_root() -> Path:
     return _STORAGE

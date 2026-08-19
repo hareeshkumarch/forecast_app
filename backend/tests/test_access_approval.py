@@ -13,11 +13,30 @@ from app.core.config import settings
 
 @pytest.fixture(autouse=True)
 def _short_lived():
-    original = (settings.credential_secret_key, settings.auth_approval_link_ttl_hours)
+    """Restore every setting these tests touch, not only the ones they set.
+
+    `settings` is one object for the whole session. A test that switches
+    authentication on and leaves it on does not fail — it fails every test that
+    runs after it, in files it has never heard of, with a 401 that looks like a
+    bug in the endpoint.
+    """
+    original = (
+        settings.credential_secret_key,
+        settings.auth_approval_link_ttl_hours,
+        settings.auth_enabled,
+        settings.auth_require_approval,
+        settings.auth_admin_emails_raw,
+    )
     settings.credential_secret_key = "test-signing-key"
     settings.auth_approval_link_ttl_hours = 24
     yield
-    settings.credential_secret_key, settings.auth_approval_link_ttl_hours = original
+    (
+        settings.credential_secret_key,
+        settings.auth_approval_link_ttl_hours,
+        settings.auth_enabled,
+        settings.auth_require_approval,
+        settings.auth_admin_emails_raw,
+    ) = original
 
 
 def test_a_link_carries_one_decision_about_one_account() -> None:
