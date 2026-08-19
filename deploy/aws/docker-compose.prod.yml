@@ -93,15 +93,24 @@ services:
       # browser request is same-origin and CORS never comes up. The value is
       # here for the case where you point a second origin at this box.
       CORS_ORIGINS: ${CORS_ORIGINS:-}
-      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:?generate one with `openssl rand -hex 32`}
+      # Not `:?` any more. That refused to start the stack when the value was
+      # absent from this file, which is exactly the state a deployment reading
+      # its secrets from Infisical is in: compose interpolates on the host,
+      # before the container exists and long before anything has talked to a
+      # secret manager. The guard has not been dropped, it has moved to where
+      # it can see the real value — config.py refuses to boot in production on
+      # a default or short key, after hydration, which is the check that was
+      # wanted all along.
+      CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
       # One pool worker per vCPU. On a 2-vCPU instance leave this at 2: the
       # fit stage has a 28-second budget and a single worker will miss it.
       FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
-      # Seeding runs a real forecast, which is what makes the dashboard look
-      # like a product on first load. It is idempotent, so leaving it on
-      # costs one run per boot and nothing after that.
-      RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
+      # Off by default here, unlike the dev compose. Seeding writes a demo
+      # dataset into whatever this deployment calls its store of record, and
+      # on this file that is somebody's real Supabase project. A default that
+      # is merely inconvenient in development is contamination in production.
+      RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: json
       # Empty: without a broker the API fits in-process. Setting these would

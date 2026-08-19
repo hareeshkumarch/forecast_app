@@ -302,3 +302,44 @@ async def test_each_decision_sends_the_message_that_fits_it(monkeypatch) -> None
 
     # And no message at all when nothing changed.
     assert await decide(AccessStatus.APPROVED, AccessStatus.APPROVED) is None
+
+
+def test_production_refuses_to_start_on_a_secret_manager_it_cannot_read() -> None:
+    """The fallback stops being a smaller version of the deployment.
+
+    Falling back to the environment is right while the environment still holds
+    everything. Once the file on the box has been emptied — the whole point of
+    adopting a secret manager — the same fallback comes up with AUTH_ENABLED
+    defaulting to false, which is a publicly readable API with nothing saying
+    so out loud.
+    """
+    import app.core.config as config
+
+    was = (config.secrets_load.configured, config.secrets_load.loaded, config.secrets_load.error)
+
+    def build():
+        return config.Settings(
+            APP_ENV="production",
+            credential_secret_key="x" * 40,
+            database_fallback_enabled=False,
+            cors_origins_raw="https://example.com",
+        )
+
+    try:
+        config.secrets_load.configured, config.secrets_load.loaded = True, False
+        config.secrets_load.error = "ConnectionError: refused"
+        with pytest.raises(Exception, match="Infisical"):
+            build()
+
+        config.secrets_load.loaded = True
+        build()
+
+        # A deployment that never adopted it is untouched.
+        config.secrets_load.configured, config.secrets_load.loaded = False, False
+        build()
+    finally:
+        (
+            config.secrets_load.configured,
+            config.secrets_load.loaded,
+            config.secrets_load.error,
+        ) = was

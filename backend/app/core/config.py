@@ -229,6 +229,22 @@ class Settings(BaseSettings):
                 )
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS cannot contain '*' in production.")
+            if secrets_load.configured and not secrets_load.loaded:
+                # Degrading to the environment is right while the environment
+                # still holds everything — a secret manager having a bad
+                # minute should not take a working deployment with it. Once
+                # the file on the box has been emptied, which is the whole
+                # point of adopting one, that same fallback is no longer a
+                # smaller version of this deployment. It is a different one:
+                # AUTH_ENABLED defaults to false, so the API comes up with no
+                # sign-in at all, publicly readable, and nothing says so.
+                # Refusing to start is the only honest option.
+                raise ValueError(
+                    "Infisical is configured but its secrets could not be read "
+                    f"({secrets_load.error}). Refusing to start in production on partial "
+                    "configuration — the defaults it would fall back to include sign-in "
+                    "being switched off."
+                )
         return self
 
     @property
