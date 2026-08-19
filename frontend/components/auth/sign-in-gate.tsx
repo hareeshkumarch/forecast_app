@@ -1,12 +1,14 @@
 "use client";
 
-import { Clock, LogIn, ShieldX } from "lucide-react";
+import { Clock, ShieldX } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { Button, Card, Skeleton } from "@/components/ui/primitives";
+import { Mark } from "@/components/marketing/mark";
+import { Button, Skeleton } from "@/components/ui/primitives";
 import { useCurrentUser } from "@/hooks/use-dashboard";
 import { signInWithGoogle, signOut } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth-store";
 
 /**
@@ -34,6 +36,37 @@ export function SignInGate({ children }: { children: ReactNode }) {
   return <SignInPrompt />;
 }
 
+/**
+ * The Google mark, drawn rather than fetched.
+ *
+ * Google's brand guidelines ask for their own glyph on a sign-in button, and
+ * people look for it — a generic arrow makes the button read as "next" rather
+ * than "this signs you in with Google". Inline, because a remote asset here
+ * would be a blocking request on the one screen that must always render.
+ */
+function GoogleMark({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden className="shrink-0">
+      <path
+        fill="#4285F4"
+        d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M11.69 28.18c-.44-1.32-.69-2.73-.69-4.18s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"
+      />
+      <path
+        fill="#EA4335"
+        d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"
+      />
+    </svg>
+  );
+}
+
 export function SignInPrompt() {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -50,86 +83,141 @@ export function SignInPrompt() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 py-16">
-      <Card className="w-full p-6 text-center">
-        <h1 className="text-heading font-semibold tracking-[-0.02em] text-text-primary">
-          Sign in to continue
-        </h1>
-        <p className="mt-1.5 text-meta text-text-secondary">
-          Your forecasts, datasets and connectors are behind a Google sign-in.
+    <AuthScreen>
+      <div className="flex items-center gap-2.5">
+        <Mark size={30} />
+        <span className="text-heading font-semibold tracking-[-0.02em] text-text-primary">
+          Forecast Hub
+        </span>
+      </div>
+
+      <h1 className="mt-7 text-[1.55rem] font-semibold leading-[1.2] tracking-[-0.025em] text-text-primary">
+        Plan against a forecast
+        <br />
+        you can question.
+      </h1>
+      <p className="mt-2.5 text-meta leading-relaxed text-text-secondary">
+        Sign in to reach your datasets, runs and connectors.
+      </p>
+
+      <button
+        type="button"
+        onClick={() => void start()}
+        disabled={busy}
+        className={cn(
+          "mt-7 inline-flex h-11 w-full items-center justify-center gap-3 rounded-input",
+          "border border-border-strong bg-surface text-meta font-medium text-text-primary",
+          "transition-colors duration-fast hover:border-accent-border hover:bg-surface-muted",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+          "focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-60",
+        )}
+      >
+        <GoogleMark />
+        {busy ? "Opening Google…" : "Continue with Google"}
+      </button>
+
+      {failed ? (
+        <p className="mt-3 text-caption text-negative" role="alert">
+          {failed}
         </p>
-        <Button
-          variant="primary"
-          icon={LogIn}
-          loading={busy}
-          onClick={() => void start()}
-          className="mt-5 w-full justify-center"
-        >
-          Continue with Google
-        </Button>
-        {failed ? (
-          <p className="mt-3 text-caption text-negative" role="alert">
-            {failed}
-          </p>
-        ) : null}
-      </Card>
-    </div>
+      ) : null}
+
+      <p className="mt-6 border-t border-border pt-4 text-caption leading-relaxed text-text-muted">
+        New accounts are reviewed before they can see anything. You will be told when yours is
+        approved.
+      </p>
+    </AuthScreen>
   );
 }
 
+/**
+ * The frame every one of these screens sits in.
+ *
+ * One column, held above centre rather than in it: a card pinned to the exact
+ * middle of a tall window reads as floating, and the eye expects the first
+ * thing on a page to sit a little high.
+ */
+function AuthScreen({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative flex min-h-[100dvh] w-full items-start justify-center overflow-hidden bg-canvas px-5 pt-[14vh]">
+      {/* A single soft wash behind the card. Enough that the screen is not a
+          blank sheet, faint enough that nothing competes with the button. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[820px] -translate-x-1/2 -translate-y-1/3 rounded-full opacity-[0.55] blur-3xl"
+        style={{
+          background:
+            "radial-gradient(closest-side, var(--accent-soft), transparent 72%)",
+        }}
+      />
+      <div className="relative w-full max-w-[26rem]">
+        <div className="rounded-card border border-border bg-surface p-7 shadow-[var(--shadow-panel,0_1px_2px_rgba(0,0,0,0.04))]">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Signed in, and waiting on somebody.
  *
  * Kept apart from the sign-in prompt because showing "sign in" to a person who
- * has just signed in reads as a failure they can fix by trying again, which
- * they cannot. The request has been made; what is left is to wait.
+ * has just signed in reads as a failure they can retry, which it is not. The
+ * request has been made; what is left is to wait.
  */
 export function AwaitingApproval({ email }: { email: string | null }) {
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 py-16">
-      <Card className="w-full p-6 text-center">
-        <Clock className="mx-auto h-6 w-6 text-text-muted" aria-hidden />
-        <h1 className="mt-3 text-heading font-semibold tracking-[-0.02em] text-text-primary">
-          Waiting for approval
-        </h1>
-        <p className="mt-1.5 text-meta text-text-secondary">
-          {email ? <span className="text-text-primary">{email}</span> : "This account"} has been
-          sent to an administrator. You will be able to sign in as soon as it is approved.
-        </p>
-        <Button
-          variant="secondary"
-          onClick={() => void signOut().then(() => window.location.assign("/"))}
-          className="mt-5 w-full justify-center"
-        >
-          Sign out
-        </Button>
-      </Card>
-    </div>
+    <AuthScreen>
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-warning-soft">
+        <Clock className="h-4 w-4 text-warning" aria-hidden />
+      </span>
+      <h1 className="mt-5 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em] text-text-primary">
+        Waiting for approval
+      </h1>
+      <p className="mt-2 text-meta leading-relaxed text-text-secondary">
+        {email ? (
+          <>
+            <span className="font-medium text-text-primary">{email}</span> has been sent to an
+            administrator.
+          </>
+        ) : (
+          "Your account has been sent to an administrator."
+        )}{" "}
+        You will be able to sign in as soon as it is approved — no need to keep this page open.
+      </p>
+      <SecondaryAction label="Sign out" />
+    </AuthScreen>
   );
 }
 
 export function AccessRefused() {
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-4 py-16">
-      <Card className="w-full p-6 text-center">
-        <ShieldX className="mx-auto h-6 w-6 text-negative" aria-hidden />
-        <h1 className="mt-3 text-heading font-semibold tracking-[-0.02em] text-text-primary">
-          No access to this workspace
-        </h1>
-        <p className="mt-1.5 text-meta text-text-secondary">
-          This account was not approved. If that is unexpected, ask whoever runs this
-          deployment.
-        </p>
-        <Button
-          variant="secondary"
-          onClick={() => void signOut().then(() => window.location.assign("/"))}
-          className="mt-5 w-full justify-center"
-        >
-          Sign out
-        </Button>
-      </Card>
-    </div>
+    <AuthScreen>
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-negative-soft">
+        <ShieldX className="h-4 w-4 text-negative" aria-hidden />
+      </span>
+      <h1 className="mt-5 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em] text-text-primary">
+        No access to this workspace
+      </h1>
+      <p className="mt-2 text-meta leading-relaxed text-text-secondary">
+        This account was not approved. If that is unexpected, ask whoever runs this deployment —
+        signing in again will not change it.
+      </p>
+      <SecondaryAction label="Sign out" />
+    </AuthScreen>
+  );
+}
+
+function SecondaryAction({ label }: { label: string }) {
+  return (
+    <Button
+      variant="secondary"
+      onClick={() => void signOut().then(() => window.location.assign("/"))}
+      className="mt-6 w-full justify-center"
+    >
+      {label}
+    </Button>
   );
 }
 
