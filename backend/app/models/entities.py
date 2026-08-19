@@ -772,6 +772,10 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     invited_by: Mapped[str | None] = mapped_column(String(320))
+    #: When the welcome was sent. A timestamp rather than a flag, because the
+    #: question later is always "when did they actually start", and a boolean
+    #: cannot answer it.
+    welcomed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("subject", name="uq_app_users_subject"),

@@ -22,9 +22,7 @@ SURFACE = "#ffffff"
 CANVAS = "#f1f3ef"
 RULE = "#d8ddd7"
 
-FONT = (
-    "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-)
+FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 PRODUCT = "Forecast Hub"
 
@@ -53,7 +51,7 @@ def _button(action: Action) -> str:
         # different heights and the row reads as a mistake.
         return (
             f'<a href="{action.url}" style="display:inline-block;vertical-align:middle;'
-            f'color:{INK_SOFT};font-size:14px;line-height:40px;text-decoration:underline;'
+            f"color:{INK_SOFT};font-size:14px;line-height:40px;text-decoration:underline;"
             f'padding:0 14px;font-family:{FONT};">{action.label}</a>'
         )
     # A table rather than a padded anchor: Outlook ignores padding on inline
@@ -63,12 +61,26 @@ def _button(action: Action) -> str:
         'style="display:inline-block;vertical-align:middle;"><tr><td '
         f'style="background:{ACCENT};border-radius:4px;">'
         f'<a href="{action.url}" style="display:inline-block;padding:11px 22px;'
-        f'color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;'
+        f"color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;"
         f'font-family:{FONT};">{action.label}</a></td></tr></table>'
     )
 
 
-def layout(heading: str, paragraphs: list[str], actions: list[Action], footnote: str = "") -> str:
+#: Why this message arrived. Not decoration — a message that cannot say why it
+#: was sent is the shape of one people report as spam.
+REASON_ACCESS = "somebody asked for access to it"
+REASON_DECIDED = "you asked for access to it"
+REASON_WELCOME = "your account was approved"
+REASON_INVITED = "somebody invited you to it"
+
+
+def layout(
+    heading: str,
+    paragraphs: list[str],
+    actions: list[Action],
+    footnote: str = "",
+    reason: str = REASON_ACCESS,
+) -> str:
     body = "".join(
         f'<p style="margin:0 0 14px;color:{INK_SOFT};font-size:15px;line-height:1.6;">{p}</p>'
         for p in paragraphs
@@ -106,7 +118,7 @@ def layout(heading: str, paragraphs: list[str], actions: list[Action], footnote:
     </table>
     <p style="max-width:520px;margin:14px auto 0;font-family:{FONT};font-size:11px;
               line-height:1.6;color:{INK_MUTED};text-align:center;">
-      Sent by {PRODUCT} because somebody asked for access to it.
+      Sent by {PRODUCT} because {reason}.
     </p>
   </td></tr>
 </table>
@@ -131,12 +143,17 @@ def _strip(html: str) -> str:
 
 
 def _message(
-    subject: str, heading: str, paragraphs: list[str], actions: list[Action], footnote: str = ""
+    subject: str,
+    heading: str,
+    paragraphs: list[str],
+    actions: list[Action],
+    footnote: str = "",
+    reason: str = REASON_ACCESS,
 ) -> Message:
     return Message(
         subject=subject,
         text=_plain(heading, paragraphs, actions, footnote),
-        html=layout(heading, paragraphs, actions, footnote),
+        html=layout(heading, paragraphs, actions, footnote, reason),
     )
 
 
@@ -166,6 +183,7 @@ def request_received(app_url: str) -> Message:
             "There is nothing else for you to do, and no need to keep the page open.",
         ],
         actions=[Action("Open the app", app_url)],
+        reason=REASON_DECIDED,
     )
 
 
@@ -178,6 +196,7 @@ def access_approved(app_url: str) -> Message:
             "and connectors are waiting.",
         ],
         actions=[Action("Open the app", app_url)],
+        reason=REASON_DECIDED,
     )
 
 
@@ -192,6 +211,25 @@ def access_refused() -> Message:
             "ask.",
         ],
         actions=[],
+        reason=REASON_DECIDED,
+    )
+
+
+def welcome(name: str | None, app_url: str) -> Message:
+    greeting = f"Welcome, {name}." if name else "Welcome."
+    return _message(
+        subject=f"Welcome to {PRODUCT}",
+        heading=greeting,
+        paragraphs=[
+            "You are in. Upload a file and the platform works out what its columns mean, "
+            "splits it into series, and forecasts each one — you do not have to describe the "
+            "shape of your data first.",
+            "Every number it shows you is computed and checked against what actually happened, "
+            "so you can ask it how well it has been doing.",
+        ],
+        actions=[Action("Start with a file", f"{app_url}/datasets")],
+        footnote="This is the only message you will get from us unless something needs you.",
+        reason=REASON_WELCOME,
     )
 
 
@@ -205,4 +243,5 @@ def invitation(inviter: str, app_url: str) -> Message:
         ],
         actions=[Action("Sign in", app_url)],
         footnote="Use the same address this was sent to; the invitation is tied to it.",
+        reason=REASON_INVITED,
     )

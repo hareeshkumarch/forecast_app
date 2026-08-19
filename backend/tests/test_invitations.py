@@ -108,3 +108,78 @@ async def test_an_invitation_is_matched_on_the_address_alone(session: AsyncSessi
     assert claimed is not None
     assert claimed.subject == "whoever-signs-in-first"
     assert claimed.status is AccessStatus.APPROVED
+
+
+async def test_the_welcome_is_sent_once(session: AsyncSession, monkeypatch) -> None:
+    """Once, on the first sign-in that gets through.
+
+    Not on every visit — the stamp is what makes the difference, and it is set
+    before the send so a slow mail server cannot turn one welcome into one per
+    page load.
+    """
+    sent: list[list[str]] = []
+
+    async def record(to, **_kwargs):
+        sent.append(to)
+        return True
+
+    monkeypatch.setattr(user_service.mailer, "send", record)
+    settings.auth_admin_emails_raw = "boss@example.com"
+
+    caller = AuthenticatedUser(id="sub-welcome", email="boss@example.com", name="Boss")
+    first = await user_service.resolve(session, caller)
+
+    assert first is not None
+    assert first.welcomed_at is not None
+    assert sent == [["boss@example.com"]]
+
+    await user_service.resolve(session, caller)
+    await user_service.resolve(session, caller)
+
+    assert sent == [["boss@example.com"]], "the welcome went out again on a later visit"
+
+
+async def test_somebody_still_waiting_is_not_welcomed(session: AsyncSession, monkeypatch) -> None:
+    """A welcome to an account that cannot get in would be a lie."""
+    subjects: list[str] = []
+
+    async def record(_to, subject: str, **_kwargs):
+        subjects.append(subject)
+        return True
+
+    monkeypatch.setattr(user_service.mailer, "send", record)
+    settings.auth_admin_emails_raw = ""
+    settings.auth_require_approval = True
+
+    row = await user_service.resolve(
+        session, AuthenticatedUser(id="sub-waiting", email="waiting@example.com")
+    )
+
+    assert row is not None
+    assert row.status is AccessStatus.PENDING
+    assert row.welcomed_at is None
+    assert not any("Welcome" in s for s in subjects)
+
+
+async def test_an_invited_person_is_welcomed_when_they_arrive(
+    session: AsyncSession, monkeypatch
+) -> None:
+    subjects: list[str] = []
+
+    async def record(_to, subject: str, **_kwargs):
+        subjects.append(subject)
+        return True
+
+    monkeypatch.setattr(user_service.mailer, "send", record)
+    settings.auth_admin_emails_raw = ""
+
+    await user_service.invite(session, "guest@example.com", invited_by="boss@example.com")
+    subjects.clear()
+
+    row = await user_service.resolve(
+        session, AuthenticatedUser(id="sub-guest", email="guest@example.com", name="Guest")
+    )
+
+    assert row is not None
+    assert row.welcomed_at is not None
+    assert any("Welcome" in s for s in subjects)

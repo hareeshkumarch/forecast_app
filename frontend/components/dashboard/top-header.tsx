@@ -177,6 +177,9 @@ export function TopHeader({ section }: { section: AppSection }) {
                   API documentation
                 </a>
               </DropdownMenu.Item>
+              {/* The account menu beside this one is desktop-only, so without
+                  these two there is no way to sign out on a phone at all. */}
+              <MobileAccountItems />
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
@@ -209,6 +212,35 @@ export function TopHeader({ section }: { section: AppSection }) {
  * Renders nothing when this deployment has no sign-in configured, so a local
  * or open install does not grow a menu that cannot do anything.
  */
+function MobileAccountItems() {
+  const { user, configured } = useAuth();
+  if (!configured || !user) return null;
+
+  return (
+    <>
+      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+      <div className="px-2 py-1">
+        <p className="truncate text-caption text-text-muted">{user.email}</p>
+      </div>
+      <DropdownMenu.Item asChild className={MENU_ITEM}>
+        <Link href="/account">
+          <UserRound className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+          Account
+        </Link>
+      </DropdownMenu.Item>
+      <DropdownMenu.Item
+        className={MENU_ITEM}
+        onSelect={() => {
+          void signOut().then(() => window.location.assign("/"));
+        }}
+      >
+        <LogOut className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+        Sign out
+      </DropdownMenu.Item>
+    </>
+  );
+}
+
 function AccountMenu() {
   const { user, configured } = useAuth();
   if (!configured || !user) return null;

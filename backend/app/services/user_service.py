@@ -101,6 +101,14 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     if created and row.status is AccessStatus.PENDING:
         await request_approval(session, row)
         await _tell_requester(row)
+    elif row.status is AccessStatus.APPROVED and row.welcomed_at is None:
+        # The first sign-in that actually gets through, whether they were
+        # invited, approved after asking, or named in the administrator list.
+        # Stamped before sending, so a mail server that hangs cannot turn one
+        # welcome into one per page load.
+        row.welcomed_at = utcnow()
+        await session.flush()
+        await mailer.send([row.email], **_as_mail(email_templates.welcome(row.name, _app_url())))
     elif invited:
         logger.info("%s claimed the invitation waiting for that address.", row.email)
 
