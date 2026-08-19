@@ -8,6 +8,7 @@ import {
   NotConfiguredBanner,
   SignInPrompt,
 } from "@/components/auth/sign-in-gate";
+import { useAccessStream } from "@/hooks/use-access-stream";
 import { useCurrentUser } from "@/hooks/use-dashboard";
 import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
@@ -140,6 +141,10 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
   const SectionWorkspace = WORKSPACES[section];
   const { user, ready, configured } = useAuth();
   const { data: me } = useCurrentUser();
+
+  // Above every early return, because a hook cannot be called conditionally
+  // and because the screen that needs this most is the waiting one below.
+  useAccessStream(Boolean(configured && ready && user));
 
   // One gate for all eight sections, because every page in the app is this
   // shell with a different workspace in it. Put it on the pages instead and

@@ -181,6 +181,7 @@ async def test_a_rejected_account_is_refused(monkeypatch) -> None:
 
 class _Account:
     def __init__(self, email, role, status, subject="s"):
+        self.id = uuid.uuid4()
         self.email = email
         self.role = role
         self.status = status

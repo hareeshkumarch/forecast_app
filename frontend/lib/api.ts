@@ -586,6 +586,11 @@ export function forecastEventsUrl(id: string, token?: string | null): string {
   return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;
 }
 
+export function accessEventsUrl(token?: string | null): string {
+  const base = `${API_BASE_URL}/api/auth/events`;
+  return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;
+}
+
 export const getSummary = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`, { signal });
 

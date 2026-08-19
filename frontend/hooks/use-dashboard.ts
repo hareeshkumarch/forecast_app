@@ -312,12 +312,12 @@ export function useCurrentUser() {
     queryFn: ({ signal }) => api.getCurrentUser(signal),
     staleTime: 60_000,
     retry: false,
-    // Somebody waiting for approval has no way to learn it happened: the
-    // decision is made on another person's screen, and nothing reaches theirs.
-    // Without this they sit on the waiting card until they think to reload,
-    // which is exactly the moment the product feels broken. Polled only while
-    // they are waiting, and stopped the moment they are through.
-    refetchInterval: (query) => (query.state.data?.status === "pending" ? 10_000 : false),
+    // useAccessStream pushes a decision here the moment it is made; this is
+    // the floor under it for a stream that never opened. Unconditional on
+    // purpose — it used to poll only while pending, which meant somebody
+    // already approved never checked again and kept clicking around a page
+    // that had stopped working after their access was removed.
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -327,11 +327,10 @@ export function useManagedUsers(enabled: boolean) {
     queryKey: queryKeys.managedUsers,
     queryFn: ({ signal }) => api.getManagedUsers(signal),
     enabled,
-    // A request arrives while the administrator is looking at this list, and
-    // the list is the place they were told to look. It only runs while the
-    // page is open and only for an administrator, so the cost is a small
-    // query every twenty seconds by one person.
-    refetchInterval: 20_000,
+    // A request arriving now reaches this list over the stream. The poll is
+    // the fallback, and at a minute it costs an administrator with the page
+    // open one small query a minute rather than three.
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }

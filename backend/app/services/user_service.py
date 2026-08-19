@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import approvals, email_templates, mailer
+from app.core import approvals, broadcast, email_templates, mailer
 from app.core.auth import AuthenticatedUser
 from app.core.config import settings
 from app.core.errors import AppError
@@ -101,6 +101,7 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     if created and row.status is AccessStatus.PENDING:
         await request_approval(session, row)
         await _tell_requester(row)
+        _announce(row)
     elif row.status is AccessStatus.APPROVED and row.welcomed_at is None:
         # The first sign-in that actually gets through, whether they were
         # invited, approved after asking, or named in the administrator list.
@@ -252,7 +253,23 @@ async def set_status(
     # them a second "you're in".
     if status is not was:
         await _tell_decision(target, status, was)
+        _announce(target)
     return target
+
+
+def _announce(row: AppUser) -> None:
+    """Tell the person it happened to, and the list the administrators watch.
+
+    Only a topic name goes out. Everything the screens then show is refetched
+    through the endpoints that check permission, so this cannot become a way
+    to learn something about an account you could not already ask about.
+    """
+    _announce_id(row.id)
+
+
+def _announce_id(user_id: object) -> None:
+    broadcast.publish(broadcast.topic_for_user(user_id), broadcast.ACCESS)
+    broadcast.publish(broadcast.PEOPLE, broadcast.PEOPLE)
 
 
 async def _tell_decision(row: AppUser, status: AccessStatus, was: AccessStatus) -> None:
@@ -300,6 +317,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         mailer.send_soon(
             [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
         )
+        _announce(existing)
         return existing
 
     row = AppUser(
@@ -318,6 +336,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
     mailer.send_soon(
         [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
     )
+    _announce(row)
     return row
 
 
@@ -353,6 +372,7 @@ async def set_role(
             else email_templates.demoted(_app_url())
         )
         mailer.send_soon([target.email], **_as_mail(message))
+        _announce(target)
     return target
 
 
@@ -384,12 +404,14 @@ async def remove(session: AsyncSession, target: AppUser) -> None:
     # mistake repeated.
     tell = target.subject is not None and target.status is AccessStatus.APPROVED
     email = target.email
+    identifier = target.id
 
     await session.delete(target)
     await session.flush()
 
     if tell:
         mailer.send_soon([email], **_as_mail(email_templates.access_revoked()))
+    _announce_id(identifier)
 
 
 async def _admin_count(session: AsyncSession) -> int:

@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 from fastapi.responses import HTMLResponse
+from starlette.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core import approvals
+from app.core import approvals, broadcast
 from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
+from app.database.session import session_scope
 from app.models.entities import AppUser
 from app.models.enums import AccessRole, AccessStatus
 from app.schemas.common import StrictModel
@@ -379,6 +382,70 @@ def _managed(row: AppUser, viewer: AuthenticatedUser) -> ManagedUserRead:
         invited_by=row.invited_by,
         subject_pending=row.subject is None,
         is_self=row.subject is not None and row.subject == viewer.id,
+    )
+
+
+#: Long enough that an idle stream costs nothing, short enough that a proxy
+#: which drops silent connections never gets the chance. Vercel's is the one
+#: in the path here.
+KEEPALIVE_SECONDS = 25.0
+
+
+@router.get(
+    "/events",
+    response_class=StreamingResponse,
+    summary="Server-Sent Events stream of access changes",
+    description=(
+        "Opens while an account is still waiting, which is the case it exists for: the "
+        "decision is made on somebody else's screen and has to arrive on this one without "
+        "a reload. Carries a topic name and nothing else — the client answers it by "
+        "refetching through the ordinary endpoints, so the stream can never show anybody "
+        "more than they could already ask for."
+    ),
+)
+async def stream_access(user: CurrentUser) -> StreamingResponse:
+    if not settings.auth_enabled or user.is_anonymous:
+        # Nothing can change, so hold nothing open. An empty stream that closes
+        # at once is a clearer answer to the client than a connection that
+        # never says anything.
+        return StreamingResponse(iter([b"event: idle\ndata: {}\n\n"]), media_type="text/event-stream")
+
+    # Deliberately not SessionDep. A dependency-provided session lives as long
+    # as the request, and this request lives as long as the browser tab — one
+    # open page would hold a pooled connection for hours, and a handful would
+    # exhaust the pool while doing nothing at all. Read what is needed, give
+    # the connection back, then stream.
+    async with session_scope() as session:
+        row = await user_service.status_of(session, user)
+        topics = [broadcast.topic_for_user(row.id)] if row is not None else []
+        is_admin = row is not None and user_service.is_admin(user.email, row.role)
+    # Administrators also watch the list itself, so a request arriving lands on
+    # the page they were told to look at.
+    if is_admin:
+        topics.append(broadcast.PEOPLE)
+
+    async def events() -> AsyncIterator[bytes]:
+        async with broadcast.subscribe(*topics) as queue:
+            # Said once on connect. A client that reconnects after missing a
+            # decision refetches immediately rather than waiting for the next
+            # thing to happen, which may be never.
+            yield b"event: sync\ndata: {}\n\n"
+            while True:
+                try:
+                    topic = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
+                except TimeoutError:
+                    yield b": keep-alive\n\n"
+                    continue
+                yield f"event: {topic}\ndata: {{}}\n\n".encode()
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
