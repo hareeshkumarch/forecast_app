@@ -1043,5 +1043,8 @@ export interface ManagedUser {
   decided_at: string | null;
   decided_by: string | null;
   last_seen_at: string | null;
+  invited_by: string | null;
+  /** True for an invitation nobody has signed in to yet. */
+  subject_pending: boolean;
   is_self: boolean;
 }

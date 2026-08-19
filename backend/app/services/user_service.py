@@ -324,6 +324,31 @@ async def set_role(
     return target
 
 
+async def remove(session: AsyncSession, target: AppUser) -> None:
+    """Forget an account entirely.
+
+    Distinct from refusing one. Refusing is a decision that is kept — the row
+    stays, the reason stays, and a second sign-in is turned away. Removing is
+    for rows that should not be in the list at all: an invitation sent to the
+    wrong address, a duplicate, somebody who never arrived. If they sign in
+    again afterwards they are a new request, not a refused one.
+    """
+    if is_configured_admin(target.email):
+        raise LastAdminError(
+            f"{target.email} is named in this deployment's administrator list. Remove them from "
+            "AUTH_ADMIN_EMAILS first, or they will simply return on their next sign-in."
+        )
+
+    if target.role is AccessRole.ADMIN and await _admin_count(session) <= 1:
+        raise LastAdminError(
+            "This is the only administrator left. Promote somebody else first, or nobody will "
+            "be able to approve anyone again."
+        )
+
+    await session.delete(target)
+    await session.flush()
+
+
 async def _admin_count(session: AsyncSession) -> int:
     return int(
         await session.scalar(

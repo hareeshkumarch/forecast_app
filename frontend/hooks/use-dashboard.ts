@@ -346,6 +346,14 @@ export function useUserRole() {
   });
 }
 
+export function useRemovePerson() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removePerson(id),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
 export function useInvite() {
   const client = useQueryClient();
   return useMutation({

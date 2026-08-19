@@ -1,7 +1,19 @@
 "use client";
 
-import { Check, Shield, ShieldOff, UserPlus, UserRound, X } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  Ban,
+  Check,
+  MoreHorizontal,
+  Shield,
+  ShieldOff,
+  Trash2,
+  UserPlus,
+  UserRound,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 import {
   Badge,
@@ -17,6 +29,7 @@ import {
   useCurrentUser,
   useInvite,
   useManagedUsers,
+  useRemovePerson,
   useUserDecision,
   useUserRole,
 } from "@/hooks/use-dashboard";
@@ -108,7 +121,8 @@ function People() {
   const { data, isPending, isError, error, refetch } = useManagedUsers(true);
   const decision = useUserDecision();
   const role = useUserRole();
-  const busy = decision.isPending || role.isPending;
+  const remove = useRemovePerson();
+  const busy = decision.isPending || role.isPending || remove.isPending;
 
   const waiting = (data ?? []).filter((row) => row.status === "pending").length;
 
@@ -148,14 +162,16 @@ function People() {
               busy={busy}
               onDecide={(status) => decision.mutate({ id: row.id, status })}
               onRole={(next) => role.mutate({ id: row.id, role: next })}
+              onRemove={() => remove.mutate(row.id)}
             />
           ))}
         </div>
       )}
 
-      {decision.isError || role.isError ? (
-        <p className="px-4 py-2 text-caption text-negative" role="alert">
-          {(decision.error ?? role.error)?.message ?? "That change could not be made."}
+      {decision.isError || role.isError || remove.isError ? (
+        <p className="border-t border-border px-4 py-2 text-caption text-negative" role="alert">
+          {(decision.error ?? role.error ?? remove.error)?.message ??
+            "That change could not be made."}
         </p>
       ) : null}
     </Card>
@@ -200,79 +216,169 @@ function InviteForm() {
   );
 }
 
+/**
+ * One person, and everything you can do to them.
+ *
+ * The decision that matters sits on the row as a button; everything else is
+ * behind a menu. A row of five buttons makes "approve" and "delete for ever"
+ * look like equally ordinary choices, which on this screen they are not.
+ */
 function Person({
   row,
   busy,
   onDecide,
   onRole,
+  onRemove,
 }: {
   row: ManagedUser;
   busy: boolean;
   onDecide: (status: AccessStatus) => void;
   onRole: (role: "admin" | "member") => void;
+  onRemove: () => void;
 }) {
   const pending = row.status === "pending";
+  const invited = row.subject_pending;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-      {row.picture ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={row.picture}
-          alt=""
-          className="h-8 w-8 shrink-0 rounded-full object-cover"
-          referrerPolicy="no-referrer"
-        />
-      ) : (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted">
-          <UserRound className="h-4 w-4 text-text-muted" aria-hidden />
-        </span>
-      )}
+    <div className="flex items-center gap-3 px-4 py-2.5">
+      <Avatar src={row.picture} />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-meta font-medium text-text-primary">
-          {row.name || row.email}
-          {row.is_self ? <span className="ml-1.5 text-text-muted">(you)</span> : null}
+        <p className="flex items-center gap-1.5 truncate text-meta font-medium text-text-primary">
+          <span className="truncate">{row.name || row.email}</span>
+          {row.is_self ? <span className="shrink-0 text-text-muted">(you)</span> : null}
+          {row.role === "admin" ? (
+            <Shield className="h-3 w-3 shrink-0 text-accent" aria-label="Administrator" />
+          ) : null}
         </p>
         <p className="truncate text-caption text-text-muted">
           {row.name ? `${row.email} · ` : ""}
-          {pending
-            ? `asked ${formatRelativeTime(row.requested_at)}`
-            : row.decided_by
-              ? `${row.status} by ${row.decided_by}`
-              : row.status}
+          {describe(row)}
         </p>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
-        {row.role === "admin" ? <Badge tone="positive">admin</Badge> : null}
-      </div>
+      <Badge tone={STATUS_TONE[row.status]}>{invited ? "invited" : row.status}</Badge>
 
-      <div className={cn("flex items-center gap-1.5", busy && "pointer-events-none opacity-60")}>
+      <div className={cn("flex items-center gap-1", busy && "pointer-events-none opacity-50")}>
         {pending ? (
-          <>
-            <Button size="sm" variant="primary" icon={Check} onClick={() => onDecide("approved")}>
-              Approve
-            </Button>
-            <Button size="sm" variant="ghost" icon={X} onClick={() => onDecide("rejected")}>
-              Reject
-            </Button>
-          </>
-        ) : row.status === "rejected" ? (
-          <Button size="sm" variant="secondary" icon={Check} onClick={() => onDecide("approved")}>
-            Allow
+          <Button size="sm" variant="primary" icon={Check} onClick={() => onDecide("approved")}>
+            Approve
           </Button>
-        ) : row.is_self ? null : row.role === "admin" ? (
-          <Button size="sm" variant="ghost" icon={ShieldOff} onClick={() => onRole("member")}>
-            Remove admin
-          </Button>
-        ) : (
-          <Button size="sm" variant="ghost" icon={Shield} onClick={() => onRole("admin")}>
-            Make admin
-          </Button>
-        )}
+        ) : null}
+
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              aria-label={`Actions for ${row.email}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-chip text-text-muted transition-colors duration-fast hover:bg-surface-muted hover:text-text-primary"
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={4}
+              className="z-50 min-w-[190px] rounded-card border border-border bg-surface p-1 shadow-[var(--shadow-popover)]"
+            >
+              {row.status !== "approved" ? (
+                <Item icon={Check} onSelect={() => onDecide("approved")}>
+                  {pending ? "Approve" : "Restore access"}
+                </Item>
+              ) : null}
+
+              {row.status === "approved" && !row.is_self ? (
+                <Item icon={Ban} tone="negative" onSelect={() => onDecide("rejected")}>
+                  Remove access
+                </Item>
+              ) : null}
+
+              {pending ? (
+                <Item icon={X} tone="negative" onSelect={() => onDecide("rejected")}>
+                  Reject
+                </Item>
+              ) : null}
+
+              {!row.is_self && row.status === "approved" ? (
+                row.role === "admin" ? (
+                  <Item icon={ShieldOff} onSelect={() => onRole("member")}>
+                    Remove administrator
+                  </Item>
+                ) : (
+                  <Item icon={Shield} onSelect={() => onRole("admin")}>
+                    Make administrator
+                  </Item>
+                )
+              ) : null}
+
+              {!row.is_self ? (
+                <>
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                  <Item icon={Trash2} tone="negative" onSelect={onRemove}>
+                    Forget this account
+                  </Item>
+                </>
+              ) : null}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </div>
   );
+}
+
+function Item({
+  icon: Icon,
+  tone,
+  onSelect,
+  children,
+}: {
+  icon: LucideIcon;
+  tone?: "negative";
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <DropdownMenu.Item
+      onSelect={onSelect}
+      className={cn(
+        "flex cursor-pointer select-none items-center gap-2 rounded-input px-2 py-1.5 text-meta outline-none",
+        "data-[highlighted]:bg-surface-muted",
+        tone === "negative" ? "text-negative" : "text-text-primary",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5 opacity-70" aria-hidden />
+      {children}
+    </DropdownMenu.Item>
+  );
+}
+
+function Avatar({ src }: { src: string | null }) {
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={src}
+        alt=""
+        className="h-8 w-8 shrink-0 rounded-full object-cover"
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted">
+      <UserRound className="h-4 w-4 text-text-muted" aria-hidden />
+    </span>
+  );
+}
+
+/** The one line of history worth showing on a row. */
+function describe(row: ManagedUser): string {
+  if (row.subject_pending) {
+    return `invited by ${row.invited_by ?? "an administrator"} · not signed in yet`;
+  }
+  if (row.status === "pending") return `asked ${formatRelativeTime(row.requested_at)}`;
+  if (row.decided_by) return `${row.status} by ${row.decided_by}`;
+  return row.status;
 }

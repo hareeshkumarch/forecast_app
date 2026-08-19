@@ -314,6 +314,9 @@ export const setUserRole = (id: string, role: AccessRole) =>
     body: JSON.stringify({ role }),
   });
 
+export const removePerson = (id: string) =>
+  request<void>(`/api/auth/users/${id}`, { method: "DELETE" });
+
 export const invitePerson = (email: string) =>
   request<ManagedUser>("/api/auth/invite", {
     method: "POST",

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,6 +63,10 @@ class ManagedUserRead(BaseModel):
     decided_at: str | None
     decided_by: str | None
     last_seen_at: str | None
+    invited_by: str | None
+    #: True for an invitation nobody has signed in to yet — the row exists,
+    #: the person has not arrived.
+    subject_pending: bool
     #: True for the account making the request, so the UI can stop somebody
     #: refusing or demoting themselves by accident.
     is_self: bool
@@ -232,6 +236,29 @@ async def invite_person(
     return _managed(row, user)
 
 
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Forget an account",
+    description=(
+        "Deletes the record rather than refusing it. Refusing is a decision that is kept and "
+        "turns away the next sign-in; removing is for rows that should not be in the list at "
+        "all — an invitation sent to the wrong address, a duplicate. Somebody removed who signs "
+        "in again arrives as a new request."
+    ),
+)
+async def remove_person(user_id: uuid.UUID, session: SessionDep, user: CurrentUser) -> Response:
+    await _assert_admin(session, user)
+    target = await _target(session, user_id)
+
+    if target.subject == user.id:
+        raise ForbiddenError("You cannot remove your own account.")
+
+    await user_service.remove(session, target)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 async def _assert_admin(session: SessionDep, user: CurrentUser) -> None:
     row = await user_service.status_of(session, user)
     if not user_service.is_admin(user.email, row.role if row else None):
@@ -260,7 +287,9 @@ def _managed(row: AppUser, viewer: AuthenticatedUser) -> ManagedUserRead:
         decided_at=when(row.decided_at),
         decided_by=row.decided_by,
         last_seen_at=when(row.last_seen_at),
-        is_self=row.subject == viewer.id,
+        invited_by=row.invited_by,
+        subject_pending=row.subject is None,
+        is_self=row.subject is not None and row.subject == viewer.id,
     )
 
 
