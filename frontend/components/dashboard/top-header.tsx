@@ -7,7 +7,9 @@ import {
   Monitor,
   MoreVertical,
   Moon,
+  LogOut,
   Settings,
+  UserRound,
   Sparkles,
   Sun,
   PanelLeft,
@@ -28,7 +30,9 @@ import {
 import { ICON_BUTTON, IconButton, MENU_CONTENT, MENU_ITEM } from "@/components/ui/primitives";
 import { useInsights, useSummary } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
+import { signOut } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/stores/auth-store";
 import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -140,6 +144,8 @@ export function TopHeader({ section }: { section: AppSection }) {
           <Settings className="h-4 w-4" aria-hidden />
         </Link>
 
+        <AccountMenu />
+
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button type="button" aria-label="More" className={cn(ICON_BUTTON, "sm:hidden")}>
@@ -192,5 +198,64 @@ export function TopHeader({ section }: { section: AppSection }) {
         ) : null}
       </div>
     </header>
+  );
+}
+
+
+/**
+ * Who is signed in, and the way out.
+ *
+ * Renders nothing when this deployment has no sign-in configured, so a local
+ * or open install does not grow a menu that cannot do anything.
+ */
+function AccountMenu() {
+  const { user, configured } = useAuth();
+  if (!configured || !user) return null;
+
+  const label = user.name || user.email;
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label={`Account: ${label}`}
+          title={user.email}
+          className={cn(ICON_BUTTON, "hidden sm:inline-flex")}
+        >
+          {user.picture ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.picture}
+              alt=""
+              className="h-5 w-5 rounded-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <UserRound className="h-4 w-4" aria-hidden />
+          )}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={6} className={MENU_CONTENT}>
+          <div className="px-2 py-1.5">
+            <p className="truncate text-meta text-text-primary">{label}</p>
+            {user.name ? (
+              <p className="truncate text-caption text-text-muted">{user.email}</p>
+            ) : null}
+          </div>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item
+            className={MENU_ITEM}
+            onSelect={() => {
+              void signOut().then(() => window.location.assign("/"));
+            }}
+          >
+            <LogOut className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+            Sign out
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

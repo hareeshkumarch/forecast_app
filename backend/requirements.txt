@@ -25,6 +25,11 @@ statsmodels==0.14.4
 scikit-learn==1.6.0
 scipy==1.14.1
 
+# ---- authentication ------------------------------------------------------
+# Verifying Supabase's Google sign-in tokens. cryptography is already present
+# for credential encryption; this adds the JWT layer over it.
+PyJWT[crypto]==2.10.1
+
 # ---- connectors ----------------------------------------------------------
 psycopg2-binary==2.9.10
 pymysql==1.1.1

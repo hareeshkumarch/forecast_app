@@ -51,6 +51,8 @@ import type {
   SeriesStatus,
 } from "@/types/api";
 
+import { accessToken } from "@/lib/supabase";
+
 export const API_BASE_URL =
   typeof window === "undefined"
     ? process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
@@ -133,6 +135,14 @@ async function request<T>(
 
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
+  // Every call to the API goes through here, so the session travels with all
+  // of them or with none of them. Attaching it per call site is how one gets
+  // forgotten and answers 401 in production only.
+  const token = await accessToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const hasBody = init?.body !== undefined && init.body !== null;
   if (hasBody && !(init?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -496,7 +506,20 @@ export const compareForecastRuns = (
 export const getForecastMonitoring = (signal?: AbortSignal) =>
   request<ForecastMonitoring>("/api/forecasts/monitoring", { signal });
 
-export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/${id}/events`;
+/**
+ * The progress stream's URL, with the session on it.
+ *
+ * The token rides in the query string because `EventSource` cannot set
+ * headers — it is the one place in this client that does so, and the backend
+ * accepts it there for this endpoint alone. The cost is real: a query string
+ * reaches access logs, where an Authorization header does not. It is bounded
+ * by Supabase tokens being short-lived, and by this stream carrying only a
+ * percentage and a stage name.
+ */
+export function forecastEventsUrl(id: string, token?: string | null): string {
+  const base = `${API_BASE_URL}/api/forecasts/${id}/events`;
+  return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;
+}
 
 export const getSummary = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`, { signal });

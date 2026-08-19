@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentUser, SessionDep
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.database.session import session_scope
@@ -51,6 +51,7 @@ from app.services import (
     scenario_service,
     scoring_service,
     series_service,
+    user_service,
 )
 from app.services.job_runner import ProgressEvent, as_utc, progress_bus
 from app.services.progress_relay import latest_from_store
@@ -102,6 +103,7 @@ async def list_runs(
 async def start_run(
     payload: ForecastRunRequest,
     session: SessionDep,
+    user: CurrentUser,
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)
     ] = None,
@@ -112,6 +114,7 @@ async def start_run(
 
     run = await forecast_service.create_run(
         session,
+        created_by_user_id=await user_service.owner_id(session, user),
         dataset_id=payload.dataset_id,
         name=payload.name,
         time_column=payload.time_column,

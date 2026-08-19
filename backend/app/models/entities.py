@@ -92,6 +92,10 @@ def _enum(enum_cls: type, name: str) -> RobustEnum:
 class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "connectors"
 
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
+
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     type: Mapped[ConnectorType] = mapped_column(_enum(ConnectorType, "connector_type"))
     status: Mapped[ConnectorStatus] = mapped_column(
@@ -157,6 +161,12 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     error_message: Mapped[str | None] = mapped_column(Text)
     intake: Mapped[dict] = mapped_column(JSONType, default=dict)
+    #: Who uploaded this, when anybody was signed in. Nullable because every
+    #: row that predates sign-in has no answer, and inventing one would be a
+    #: worse record than admitting the gap.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
 
     connector: Mapped[Connector | None] = relationship(back_populates="datasets")
     columns: Mapped[list[DatasetColumn]] = relationship(
@@ -212,6 +222,12 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "forecast_runs"
+
+    #: Who started this run, when anybody was signed in. Nullable for the same
+    #: reason as on datasets.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
 
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False
@@ -713,4 +729,28 @@ class SchemaMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("fingerprint", name="uq_schema_mappings_fingerprint"),
         Index("ix_schema_mappings_dataset", "accepted_from_dataset_id"),
+    )
+
+
+class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Somebody who has signed in, recorded on the way past.
+
+    Deliberately not the authority on identity — Supabase is, and this table
+    holds no password, no token and nothing that could authenticate anybody.
+    It exists so the platform can say who uploaded a file and who started a
+    run, which nothing in the schema could answer before.
+    """
+
+    __tablename__ = "app_users"
+
+    #: The `sub` claim: stable for the life of the account, unlike the email.
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(200))
+    picture_url: Mapped[str | None] = mapped_column(String(600))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("subject", name="uq_app_users_subject"),
+        Index("ix_app_users_email", "email"),
     )

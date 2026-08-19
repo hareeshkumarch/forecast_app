@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { accessToken, authConfigured } from "@/lib/supabase";
 import { forecastEventsUrl, getForecastProgress } from "@/lib/api";
 import type { ForecastProgressEvent } from "@/types/api";
 
@@ -147,7 +148,26 @@ export function useForecastProgress(
     function connect() {
       if (done) return;
 
-      source = new EventSource(forecastEventsUrl(id));
+      // Without sign-in configured there is no token to wait for, so the
+      // stream opens in the same tick it always did. Deferring that path too
+      // would put a microtask between the run starting and the stream
+      // attaching, for no reason, on every deployment that has no auth.
+      if (!authConfigured) {
+        openStream(forecastEventsUrl(id));
+        return;
+      }
+
+      // Otherwise the session is fetched first, because it may need
+      // refreshing. The fallback to polling still covers a stream that never
+      // opens, so a slow or failed token lookup degrades rather than hangs.
+      void accessToken().then((token) => {
+        if (done) return;
+        openStream(forecastEventsUrl(id, token));
+      });
+    }
+
+    function openStream(url: string) {
+      source = new EventSource(url);
       const openedSource = source;
 
       source.onopen = () => {

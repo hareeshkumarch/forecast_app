@@ -151,6 +151,7 @@ async def create_from_upload(
     *,
     name: str | None = None,
     day_first: bool | None = None,
+    created_by_user_id: uuid.UUID | None = None,
 ) -> tuple[Dataset, DatasetProfileResult]:
     dataset_id = uuid.uuid4()
 
@@ -194,6 +195,7 @@ async def create_from_upload(
         frequency=frequency,
         horizon=_default_horizon(frequency),
         intake=intake_payload(verdict),
+        created_by_user_id=created_by_user_id,
     )
     session.add(dataset)
     await session.flush()

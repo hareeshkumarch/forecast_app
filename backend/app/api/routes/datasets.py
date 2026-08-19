@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.errors import PayloadTooLargeError, ValidationError
 from app.models.enums import ForecastFrequency, GapFill, MeasureAggregation
@@ -24,7 +24,7 @@ from app.schemas.dataset import (
     MappingAcceptRequest,
     MappingProposalRead,
 )
-from app.services import dataset_service, mapping_service
+from app.services import dataset_service, mapping_service, user_service
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -72,6 +72,7 @@ async def list_datasets(
 )
 async def upload_dataset(
     session: SessionDep,
+    user: CurrentUser,
     file: UploadFile = File(..., description="CSV or XLSX, 20 MB maximum."),
     name: str | None = Form(default=None),
     date_order: Literal["auto", "day_first", "month_first"] = Form(default="auto"),
@@ -100,6 +101,7 @@ async def upload_dataset(
         file.filename,
         name=name,
         day_first={"day_first": True, "month_first": False}.get(date_order),
+        created_by_user_id=await user_service.owner_id(session, user),
     )
 
     return DatasetUploadResponse(

@@ -1,6 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+
+import { SignInPrompt } from "@/components/auth/sign-in-gate";
+import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
 
 import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
@@ -127,6 +130,19 @@ function LazyOverlayHost() {
 
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
+  const { user, ready, configured } = useAuth();
+
+  // One gate for all eight sections, because every page in the app is this
+  // shell with a different workspace in it. Put it on the pages instead and
+  // the ninth page is the one that ships unguarded.
+  if (configured && ready && !user) {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <SignInPrompt />
+      </div>
+    );
+  }
+
   return (
     // The run watcher wraps the shell rather than sitting inside the overlay
     // host: it has to outlive the forecast dialog, which is unmounted the

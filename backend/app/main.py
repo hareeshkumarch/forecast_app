@@ -3,10 +3,20 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import connectors, dashboard, datasets, exports, forecasts, health, usage
+from app.api.deps import current_user
+from app.api.routes import (
+    auth,
+    connectors,
+    dashboard,
+    datasets,
+    exports,
+    forecasts,
+    health,
+    usage,
+)
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -87,14 +97,23 @@ app.add_middleware(
 register_error_handlers(app)
 
 api = APIRouter(prefix="/api")
+
+# Health stays open on purpose: the redeploy script polls it to decide whether
+# what came back up is healthy, and a deployment that cannot answer that
+# question cannot be deployed. It reports posture, never data.
 api.include_router(health.router)
-api.include_router(connectors.router)
-api.include_router(datasets.router)
-api.include_router(forecasts.router)
-api.include_router(dashboard.router)
-api.include_router(dashboard.insights_router)
-api.include_router(exports.router)
-api.include_router(usage.router)
+
+# Everything else is gated at the router, not per endpoint, so a route added
+# later is protected by default rather than by whoever remembers to say so.
+guarded = [Depends(current_user)]
+api.include_router(auth.router, dependencies=guarded)
+api.include_router(connectors.router, dependencies=guarded)
+api.include_router(datasets.router, dependencies=guarded)
+api.include_router(forecasts.router, dependencies=guarded)
+api.include_router(dashboard.router, dependencies=guarded)
+api.include_router(dashboard.insights_router, dependencies=guarded)
+api.include_router(exports.router, dependencies=guarded)
+api.include_router(usage.router, dependencies=guarded)
 
 app.include_router(api)
 

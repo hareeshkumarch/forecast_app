@@ -55,8 +55,14 @@ const getForecastRun = vi.fn();
 
 const getForecastProgress = vi.fn();
 
+vi.mock("@/lib/supabase", () => ({
+  authConfigured: false,
+  accessToken: () => Promise.resolve(null),
+}));
+
 vi.mock("@/lib/api", () => ({
-  forecastEventsUrl: (id: string) => `http://api.test/api/forecasts/${id}/events`,
+  forecastEventsUrl: (id: string, token?: string | null) =>
+    `http://api.test/api/forecasts/${id}/events${token ? `?access_token=${token}` : ""}`,
   getForecastRun: (id: string) => getForecastRun(id),
   getForecastProgress: (id: string) => getForecastProgress(id),
 }));

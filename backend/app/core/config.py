@@ -60,6 +60,23 @@ class Settings(BaseSettings):
 
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
+    # ---- Authentication ----------------------------------------------------
+    #: Off by default, and deliberately. Auth cannot work until the Supabase
+    #: Google provider is configured and the keys are in the environment, so a
+    #: deployment that turned it on by default would answer 401 to everything
+    #: the moment it shipped. Turn it on once sign-in has been proven to work.
+    auth_enabled: bool = Field(default=False, alias="AUTH_ENABLED")
+    #: Supabase projects sign either with the project's shared secret (HS256)
+    #: or with a rotating key pair published as JWKS. Which one a project uses
+    #: depends on when it was created, so both are supported and the token's
+    #: own header decides. Set this only if the project signs with HS256.
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+    #: Empty means any Google account. Set to "company.com" to admit only that
+    #: domain — the check is on the verified email in the token, server side.
+    auth_allowed_email_domains_raw: str = Field(default="", alias="AUTH_ALLOWED_EMAIL_DOMAINS")
+    #: Individual addresses admitted whatever the domain rule says.
+    auth_allowlist_raw: str = Field(default="", alias="AUTH_ALLOWLIST")
+
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
     max_upload_bytes: int = 20 * 1024 * 1024
@@ -228,6 +245,32 @@ class Settings(BaseSettings):
             f":{quote(self.supabase_db_password, safe='')}"
             f"@db.{ref}.supabase.co:{self.supabase_db_port}/{self.supabase_db_name}"
         )
+
+    @property
+    def auth_allowed_email_domains(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower().lstrip("@")
+            for part in self.auth_allowed_email_domains_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def auth_allowlist(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower()
+            for part in self.auth_allowlist_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def supabase_jwks_url(self) -> str:
+        ref = self.supabase_project_ref
+        return f"https://{ref}.supabase.co/auth/v1/.well-known/jwks.json" if ref else ""
+
+    @property
+    def supabase_issuer(self) -> str:
+        ref = self.supabase_project_ref
+        return f"https://{ref}.supabase.co/auth/v1" if ref else ""
 
     @property
     def supabase_configured(self) -> bool:

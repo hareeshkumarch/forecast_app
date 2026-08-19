@@ -285,6 +285,7 @@ async def run_for_idempotency_key(
 async def create_run(
     session: AsyncSession,
     *,
+    created_by_user_id: uuid.UUID | None = None,
     dataset_id: uuid.UUID,
     name: str | None = None,
     time_column: str | None = None,
@@ -377,6 +378,7 @@ async def create_run(
 
     run = ForecastRun(
         dataset_id=dataset.id,
+        created_by_user_id=created_by_user_id,
         name=name or f"{dataset.name} forecast",
         status=RunStatus.PENDING,
         progress=0.0,
