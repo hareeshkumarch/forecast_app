@@ -176,19 +176,25 @@ blanks. There are two ways in and neither is better:
 **Paste it.** Infisical → your project → `prod` → *Add Secret* takes a whole
 `.env` at once. Nothing to install, nothing to run.
 
-On a deployment that is already running, do not retype the values — the box
-has them all, correct, and one of them cannot be regenerated. Print the
-pasteable list from the instance:
+On a deployment that is already running, do not retype the values — and do
+not copy them out of a terminal either. Session Manager's browser shell
+treats Ctrl-C as an interrupt, so a thirty-line paste is a fight nobody
+should have. Point the script at the live file instead and let it do the
+transfer:
 
 ```bash
-grep -vE '^[[:space:]]*(#|$)|^INFISICAL_' /opt/forecast/.env
+export INFISICAL_CLIENT_ID=... INFISICAL_CLIENT_SECRET=... INFISICAL_PROJECT_ID=...
+sudo -E python3 /opt/forecast/scripts/push_secrets.py /opt/forecast/.env
 ```
 
-Then paste that output into Infisical, and cut `/opt/forecast/.env` down to
-the four `INFISICAL_*` lines. `CREDENTIAL_SECRET_KEY` is the reason to copy
-rather than regenerate: every connector credential in the database is
-encrypted with it, and a new one does not re-encrypt them, it makes them
-permanently unreadable.
+The `INFISICAL_*` lines in that file are skipped automatically — they are the
+credential that opens Infisical and belong on the instance. Everything else
+goes up exactly as the running service has it, which is also the only way the
+values are guaranteed to match what currently works.
+
+`CREDENTIAL_SECRET_KEY` is the reason to move rather than regenerate: every
+connector credential in the database is encrypted with it, and a new one does
+not re-encrypt them, it makes them permanently unreadable.
 
 **Push it.** From your own machine, so the values go straight from your laptop
 to Infisical and never touch a terminal, a log or a chat window:

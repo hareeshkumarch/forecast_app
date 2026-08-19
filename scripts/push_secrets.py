@@ -4,6 +4,12 @@
     python3 scripts/push_secrets.py secrets.env
     python3 scripts/push_secrets.py secrets.env --environment prod --dry-run
 
+On an instance that is already running, the live file is the best source —
+the values are known-good and nothing has to be retyped or copied out of a
+terminal:
+
+    sudo -E python3 scripts/push_secrets.py /opt/forecast/.env
+
 Reads KEY=VALUE lines, creates what is missing and updates what has changed.
 Nothing is printed but key names — the point of this script is that the values
 go from your machine to Infisical and nowhere else, least of all a terminal
@@ -27,6 +33,15 @@ DEFAULT_ENVIRONMENT = "prod"
 DEFAULT_PATH = "/"
 
 
+#: Never pushed, however they got into the file. These four are the credential
+#: that opens Infisical, so putting them inside it is both circular and a way
+#: to end up with a stale client secret overriding the live one on the box.
+#: Skipped rather than rejected, so the live /opt/forecast/.env can be handed
+#: to this script as-is — which beats copying thirty lines out of a terminal
+#: that treats Ctrl-C as an interrupt.
+BOOTSTRAP_PREFIX = "INFISICAL_"
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for number, raw in enumerate(path.read_text().splitlines(), start=1):
@@ -42,6 +57,8 @@ def read_env_file(path: Path) -> dict[str, str]:
         # part of the value itself.
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        if key.startswith(BOOTSTRAP_PREFIX):
+            continue
         values[key] = value
     return values
 
@@ -283,6 +300,14 @@ def main() -> int:
     values = read_env_file(args.env_file)
     if not values:
         raise SystemExit(f"{args.env_file} holds no values.")
+
+    skipped = sum(
+        1
+        for line in args.env_file.read_text().splitlines()
+        if line.strip().startswith(BOOTSTRAP_PREFIX)
+    )
+    if skipped:
+        print(f"Skipping {skipped} INFISICAL_* line(s) — those stay on the instance.")
 
     print(f"{len(values)} secret(s) from {args.env_file}: {', '.join(sorted(values))}")
 
