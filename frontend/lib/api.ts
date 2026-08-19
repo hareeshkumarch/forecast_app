@@ -45,6 +45,7 @@ import type {
   Scorecard,
   SeriesResponse,
   SeriesSort,
+  SeriesStatus,
 } from "@/types/api";
 
 export const API_BASE_URL =
@@ -398,6 +399,7 @@ export const getForecastSeries = (
     level?: number;
     parent_id?: string;
     search?: string;
+    status?: SeriesStatus;
     limit?: number;
     offset?: number;
   } = {},

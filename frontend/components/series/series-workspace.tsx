@@ -38,7 +38,7 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
-import type { SeriesRow, SeriesSort } from "@/types/api";
+import type { SeriesRow, SeriesSort, SeriesStatus } from "@/types/api";
 
 const PAGE_SIZE = 25;
 
@@ -65,6 +65,36 @@ const LEVELS = [
     hint: "Skip the totals and groups above them",
   },
 ];
+
+const STATES: { value: "all" | SeriesStatus; label: string; hint: string }[] = [
+  { value: "all", label: "Any state", hint: "However the line was arrived at" },
+  {
+    value: "forecast",
+    label: "Fitted",
+    hint: "Forecast from this line's own history",
+  },
+  {
+    value: "estimated",
+    label: "Estimated",
+    hint: "Too little history to fit, so shared out from the level above",
+  },
+  {
+    value: "pooled",
+    label: "Pooled",
+    hint: "The long tail, forecast together as one line",
+  },
+  {
+    value: "blocked",
+    label: "Blocked",
+    hint: "Could not be forecast at all — the reason is on the row",
+  },
+];
+
+const DEFAULTS: { scope: string; state: string; search: string } = {
+  scope: "all",
+  state: "all",
+  search: "",
+};
 
 export function SeriesWorkspace() {
   const filters = useDashboardFilters();
@@ -151,19 +181,23 @@ function SeriesTable({
   leafLevel: number;
 }) {
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
-  const [scope, setScope] = useState("all");
-  const [search, setSearch] = useState("");
+  const [scope, setScope] = useState<string>(DEFAULTS.scope);
+  const [state, setState] = useState<string>(DEFAULTS.state);
+  const [search, setSearch] = useState(DEFAULTS.search);
 
   const settled = useDebounced(search, 250);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<SeriesRow | null>(null);
 
+  const filtered =
+    scope !== DEFAULTS.scope || state !== DEFAULTS.state || search.trim() !== DEFAULTS.search;
+
   const query: SeriesQuery = {
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-
     ...(scope === "leaf" ? { level: leafLevel } : {}),
+    ...(state === "all" ? {} : { status: state as SeriesStatus }),
     ...(settled.trim() ? { search: settled.trim() } : {}),
   };
 
@@ -175,6 +209,13 @@ function SeriesTable({
       set(value);
       setPage(0);
     };
+  }
+
+  function clearFilters() {
+    setScope(DEFAULTS.scope);
+    setState(DEFAULTS.state);
+    setSearch(DEFAULTS.search);
+    setPage(0);
   }
 
   const rows = data?.rows ?? [];
@@ -212,9 +253,8 @@ function SeriesTable({
           }
         />
 
-        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-
-          <div className="relative basis-full sm:basis-auto">
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+          <div className="relative min-w-0 basis-full sm:basis-[180px]">
             <Search
               className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
               aria-hidden
@@ -224,7 +264,7 @@ function SeriesTable({
               onChange={(event) => change(setSearch)(event.target.value)}
               placeholder="Find a series"
               aria-label="Find a series"
-              className="w-full pl-7 sm:w-[160px]"
+              className="w-full pl-7"
             />
           </div>
           <Select
@@ -232,17 +272,30 @@ function SeriesTable({
             onChange={change(setScope)}
             options={LEVELS}
             label="Which levels to show"
-            className="w-[140px]"
-            menuClassName="w-[240px]"
+            className="w-[168px]"
+            menuClassName="w-[260px]"
+          />
+          <Select
+            value={state}
+            onChange={change(setState)}
+            options={STATES}
+            label="How the line was arrived at"
+            className="w-[168px]"
+            menuClassName="w-[300px]"
           />
           <Select
             value={sort}
             onChange={change((value: string) => setSort(value as SeriesSort))}
             options={SORTS}
             label="Order the list by"
-            className="w-[150px]"
+            className="w-[168px]"
             menuClassName="w-[280px]"
           />
+          {filtered ? (
+            <Button size="sm" variant="ghost" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : null}
         </div>
 
         {isError ? (
@@ -258,9 +311,16 @@ function SeriesTable({
             icon={Search}
             title="Nothing matches"
             message={
-              search
-                ? `No series with “${search}” in its name.`
+              filtered
+                ? "No series matches these filters. Widen them, or clear them to see the whole run."
                 : "This run stored no series."
+            }
+            action={
+              filtered ? (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
             }
           />
         ) : (

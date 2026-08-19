@@ -24,6 +24,7 @@ import type {
   MeasureAggregation,
   SavedScenario,
   SeriesSort,
+  SeriesStatus,
 } from "@/types/api";
 
 export interface SeriesQuery {
@@ -31,6 +32,7 @@ export interface SeriesQuery {
   level?: number;
   parentId?: string;
   search?: string;
+  status?: SeriesStatus;
   limit: number;
   offset: number;
 }
@@ -278,6 +280,7 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
         ...(query.level === undefined ? {} : { level: query.level }),
         ...(query.parentId ? { parent_id: query.parentId } : {}),
         ...(query.search ? { search: query.search } : {}),
+        ...(query.status ? { status: query.status } : {}),
       }, signal),
     enabled: Boolean(runId),
     placeholderData: keepPreviousData,

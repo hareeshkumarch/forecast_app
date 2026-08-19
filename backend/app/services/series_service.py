@@ -34,6 +34,7 @@ from app.models.enums import (
     OutlierTreatment,
     PointKind,
     RunStatus,
+    SeriesStatus,
 )
 from app.services.job_runner import ProgressEvent, executors, publish_progress
 from app.services.progress_relay import count_series, forget_series_count
@@ -512,6 +513,7 @@ async def list_series(
     level: int | None = None,
     search: str | None = None,
     parent_id: uuid.UUID | None = None,
+    status: SeriesStatus | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ForecastSeries], int]:
@@ -520,6 +522,8 @@ async def list_series(
         where.append(ForecastSeries.level == level)
     if parent_id is not None:
         where.append(ForecastSeries.parent_id == parent_id)
+    if status is not None:
+        where.append(ForecastSeries.status == status)
     if search:
         where.append(ForecastSeries.label.ilike(f"%{search.strip()}%"))
 

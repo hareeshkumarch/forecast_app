@@ -20,7 +20,7 @@ from app.database.session import session_scope
 from app.datasets.profiler import is_currency_like
 from app.forecasting.selection import scoring_rule
 from app.models.entities import ForecastRun, ModelCandidate
-from app.models.enums import PointKind, RunStatus
+from app.models.enums import PointKind, RunStatus, SeriesStatus
 from app.schemas.forecast import (
     ForecastMetricRead,
     ForecastMetricsResponse,
@@ -471,6 +471,14 @@ async def get_series(
     level: int | None = Query(default=None, ge=0, description="0 is the run's own total."),
     parent_id: uuid.UUID | None = Query(default=None, description="Only this series' children."),
     search: str | None = Query(default=None, max_length=200),
+    status: SeriesStatus | None = Query(
+        default=None,
+        description=(
+            "Only series in this state: 'forecast' was fitted on its own history, "
+            "'estimated' was apportioned from the level above it, 'pooled' is the "
+            "remainder past the series cap, 'blocked' could not be forecast."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=series_service.MAX_PAGE),
     offset: int = Query(default=0, ge=0),
 ) -> SeriesResponse:
@@ -483,6 +491,7 @@ async def get_series(
         level=level,
         parent_id=parent_id,
         search=search,
+        status=status,
         limit=limit,
         offset=offset,
     )
