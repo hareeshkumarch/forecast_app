@@ -213,8 +213,8 @@ async def test_the_configured_admin_cannot_be_locked_out(monkeypatch) -> None:
 
 
 async def test_the_last_administrator_cannot_step_down(monkeypatch) -> None:
-    from app.services import user_service
     from app.models.enums import AccessRole, AccessStatus
+    from app.services import user_service
     from app.services.user_service import LastAdminError
 
     settings.auth_admin_emails_raw = ""
@@ -231,8 +231,8 @@ async def test_the_last_administrator_cannot_step_down(monkeypatch) -> None:
 
 async def test_promoting_somebody_waiting_lets_them_in(monkeypatch) -> None:
     """An administrator who cannot sign in is not one."""
-    from app.services import user_service
     from app.models.enums import AccessRole, AccessStatus
+    from app.services import user_service
 
     settings.auth_admin_emails_raw = ""
     waiting = _Account("new@example.com", AccessRole.MEMBER, AccessStatus.PENDING)
