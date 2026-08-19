@@ -105,9 +105,14 @@ api.include_router(health.router)
 
 # Everything else is gated at the router, not per endpoint, so a route added
 # later is protected by default rather than by whoever remembers to say so.
-# The auth router takes the weaker gate on purpose: it has to be able to
-# answer "you are waiting for approval", which a gate that requires approval
-# could never say.
+# Opened from an email, so it cannot require a session — a link that needs
+# you to be signed in first is not one you can act on from your inbox. It
+# carries a signature instead, which is what it is for.
+api.include_router(auth.unauthenticated_router)
+
+# The rest of the auth router takes the weaker gate on purpose: it has to be
+# able to answer "you are waiting for approval", which a gate that requires
+# approval could never say.
 api.include_router(auth.router, dependencies=[Depends(current_user)])
 
 guarded = [Depends(approved_user)]

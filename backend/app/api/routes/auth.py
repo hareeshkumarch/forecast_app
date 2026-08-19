@@ -20,6 +20,12 @@ from app.services import user_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+#: Mounted without the session guard, because the one endpoint on it is opened
+#: from a mail client that has no session to present. Its authority comes from
+#: the signature on the link instead — which is the entire point of signing it.
+#: Everything else belongs on `router`.
+unauthenticated_router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 class CurrentUserRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -107,7 +113,7 @@ async def get_me(session: SessionDep, user: CurrentUser) -> CurrentUserRead:
     )
 
 
-@router.get(
+@unauthenticated_router.get(
     "/decide",
     response_class=HTMLResponse,
     summary="Approve or reject an account from an emailed link",
