@@ -343,7 +343,7 @@ def _tokens(name: str) -> set[str]:
     return words | {NAME_ABBREVIATIONS[word] for word in words if word in NAME_ABBREVIATIONS}
 
 
-def _name_score(name: str, hints: tuple[str, ...]) -> float:
+def name_score(name: str, hints: tuple[str, ...]) -> float:
     tokens = _tokens(name)
     if tokens & set(hints):
         return 1.0
@@ -450,7 +450,7 @@ def profile_frame(
         # The name only ever gates the readings that would otherwise misfire —
         # a bare 45000 is a date if the column says "date", and a number if it
         # says "revenue".
-        name_suggests_date = _name_score(name, DATE_NAME_HINTS) > 0.0
+        name_suggests_date = name_score(name, DATE_NAME_HINTS) > 0.0
         date_parse = parse_dates(series, day_first=day_first, name_suggests_date=name_suggests_date)
         numeric_parse = None if date_parse is not None else coerce_numeric(series)
 
@@ -635,7 +635,7 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
         score = 0.6
         reasons.append("parses as dates")
 
-        name_signal = _name_score(profile.name, DATE_NAME_HINTS)
+        name_signal = name_score(profile.name, DATE_NAME_HINTS)
         score += 0.25 * name_signal
         if name_signal:
             reasons.append("name suggests a date")
@@ -659,8 +659,8 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
         score = 0.40
         reasons.append("numeric")
 
-        strong = _name_score(profile.name, STRONG_TARGET_HINTS)
-        weak = _name_score(profile.name, WEAK_TARGET_HINTS)
+        strong = name_score(profile.name, STRONG_TARGET_HINTS)
+        weak = name_score(profile.name, WEAK_TARGET_HINTS)
 
         # A word that names the measure beats one that only says it is a sum,
         # so order_revenue wins over line_total instead of losing on file order.
@@ -675,14 +675,14 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
             score += 0.08
             reasons.append("reads as money")
 
-        if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0 and not strong:
+        if name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0 and not strong:
             score -= 0.12
             reasons.append("more likely a weight than a target")
 
         if (
             row_count
             and profile.distinct_count / row_count > 0.98
-            and _name_score(profile.name, ("id", "key", "index", "row", "number", "code"))
+            and name_score(profile.name, ("id", "key", "index", "row", "number", "code"))
         ):
             score -= 0.5
             reasons.append("looks like an identifier")
@@ -728,7 +728,7 @@ def _mixed_measures(frame: pl.DataFrame, target: str, candidates: list[str]) -> 
     for name in candidates:
         if name not in frame.columns:
             continue
-        if _name_score(name, MEASURE_NAME_HINTS) >= 1.0:
+        if name_score(name, MEASURE_NAME_HINTS) >= 1.0:
             flagged.append(name)
             continue
 
@@ -805,7 +805,7 @@ def _assign_roles(profiles: list[ColumnProfile]) -> bool:
         elif profile.kind is ColumnKind.NUMERIC:
             profile.role = (
                 ColumnRole.WEIGHT
-                if _name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0
+                if name_score(profile.name, WEIGHT_NAME_HINTS) >= 1.0
                 else ColumnRole.MEASURE
             )
 
@@ -821,7 +821,7 @@ def suggestions(
         pool = [(p, p.target_score) for p in profiles if p.is_target_candidate]
     else:
         pool = [
-            (p, 0.6 + 0.4 * _name_score(p.name, DIMENSION_NAME_HINTS))
+            (p, 0.6 + 0.4 * name_score(p.name, DIMENSION_NAME_HINTS))
             for p in profiles
             if p.kind is ColumnKind.CATEGORICAL
         ]

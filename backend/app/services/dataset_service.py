@@ -173,8 +173,7 @@ async def create_from_upload(
 
     parquet_path = await asyncio.to_thread(write_parquet, readable, str(dataset_id))
 
-    time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
-    target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
+    time_column, target_column, frequency = await _mapped_columns(session, profile, readable)
 
     dataset = Dataset(
         id=dataset_id,
@@ -192,8 +191,8 @@ async def create_from_upload(
         date_range_end=profile.date_range_end,
         time_column=time_column,
         target_column=target_column,
-        frequency=profile.detected_frequency,
-        horizon=_default_horizon(profile.detected_frequency),
+        frequency=frequency,
+        horizon=_default_horizon(frequency),
         intake=intake_payload(verdict),
     )
     session.add(dataset)
@@ -226,8 +225,7 @@ async def create_from_frame(
 
     parquet_path = await asyncio.to_thread(write_parquet, frame, str(dataset_id))
 
-    time_column = next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None)
-    target_column = next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None)
+    time_column, target_column, frequency = await _mapped_columns(session, profile, frame)
 
     dataset = Dataset(
         id=dataset_id,
@@ -246,8 +244,8 @@ async def create_from_frame(
         date_range_end=profile.date_range_end,
         time_column=time_column,
         target_column=target_column,
-        frequency=profile.detected_frequency,
-        horizon=_default_horizon(profile.detected_frequency),
+        frequency=frequency,
+        horizon=_default_horizon(frequency),
     )
     session.add(dataset)
     await session.flush()
@@ -256,6 +254,35 @@ async def create_from_frame(
     await session.flush()
 
     return await get_dataset(session, dataset.id), profile
+
+
+async def _mapped_columns(
+    session: AsyncSession, profile: DatasetProfileResult, frame: pl.DataFrame
+) -> tuple[str | None, str | None, ForecastFrequency | None]:
+    """The columns to run on: the ones accepted for this schema before, if any.
+
+    A file whose column names and types have been mapped once is mapped that
+    way again, rather than re-inferred and possibly read differently on the
+    second upload of the same monthly export.
+    """
+    from app.services import mapping_service
+
+    inferred = (
+        next((c.name for c in profile.columns if c.role is ColumnRole.TIME), None),
+        next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None),
+        profile.detected_frequency,
+    )
+
+    remembered = await mapping_service.remembered_for(session, frame)
+    if remembered is None:
+        return inferred
+
+    columns = set(frame.columns)
+    date_col, target_col = remembered["date_col"], remembered["target_col"]
+    if date_col not in columns or target_col not in columns:
+        return inferred
+
+    return str(date_col), str(target_col), remembered["frequency"] or profile.detected_frequency  # type: ignore[return-value]
 
 
 def _default_horizon(frequency: ForecastFrequency | None) -> int:

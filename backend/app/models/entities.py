@@ -687,3 +687,30 @@ class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="exports")
 
     __table_args__ = (Index("ix_export_jobs_run", "run_id"),)
+
+
+class SchemaMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "schema_mappings"
+
+    #: Sorted column names and dtypes, hashed. The same export run again next
+    #: month arrives with the same fingerprint and is mapped without asking.
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    date_col: Mapped[str] = mapped_column(String(200), nullable=False)
+    target_col: Mapped[str] = mapped_column(String(200), nullable=False)
+    series_keys: Mapped[list] = mapped_column(JSONType, default=list)
+    covariates: Mapped[list] = mapped_column(JSONType, default=list)
+    frequency: Mapped[ForecastFrequency | None] = mapped_column(
+        _enum(ForecastFrequency, "mapping_frequency")
+    )
+    aggregation: Mapped[MeasureAggregation | None] = mapped_column(
+        _enum(MeasureAggregation, "mapping_aggregation")
+    )
+    columns: Mapped[dict] = mapped_column(JSONType, default=dict)
+    accepted_from_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("datasets.id", ondelete="SET NULL")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_schema_mappings_fingerprint"),
+        Index("ix_schema_mappings_dataset", "accepted_from_dataset_id"),
+    )

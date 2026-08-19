@@ -14,6 +14,7 @@ from app.models.entities import (
     LlmUsageEvent,
     ModelCandidate,
     RegionalForecast,
+    SchemaMapping,
 )
 from app.models.enums import (
     ColumnKind,
@@ -60,4 +61,5 @@ __all__ = [
     "PointKind",
     "RegionalForecast",
     "RunStatus",
+    "SchemaMapping",
 ]

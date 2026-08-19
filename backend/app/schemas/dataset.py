@@ -193,3 +193,62 @@ class DataQualityResponse(BaseModel):
         if any(issue.severity is IssueSeverity.WARNING for issue in self.issues):
             return IssueSeverity.WARNING
         return IssueSeverity.INFO
+
+
+class RoleCandidateRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column: str
+    role: str
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+    evidence: str
+
+
+class MappingWarningRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Identifier
+    message: str
+    columns: list[str] = Field(default_factory=list)
+
+
+class MappingProposalRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: uuid.UUID
+    fingerprint: str
+    source: str
+    layout: str
+
+    date_col: str | None
+    target_col: str | None
+    series_keys: list[str] = Field(default_factory=list)
+    covariates: list[str] = Field(default_factory=list)
+    frequency: ForecastFrequency | None
+    aggregation: MeasureAggregation | None
+    hierarchy: list[str] = Field(default_factory=list)
+
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+    needs_confirmation: bool
+    requires_aggregation_choice: bool
+    series_count: NonNegativeInt
+    warnings: list[MappingWarningRead] = Field(default_factory=list)
+    candidates: dict[str, list[RoleCandidateRead]] = Field(default_factory=dict)
+
+
+class MappingAcceptRequest(StrictModel):
+    date_col: Identifier
+    target_col: Identifier
+    series_keys: list[Identifier] = Field(default_factory=list, max_length=8)
+    covariates: list[Identifier] = Field(default_factory=list, max_length=16)
+    frequency: ForecastFrequency | None = None
+    aggregation: MeasureAggregation | None = None
+
+    @model_validator(mode="after")
+    def _roles_do_not_overlap(self) -> Self:
+        if self.date_col == self.target_col:
+            raise ValueError("The date column and the forecast target must be different columns.")
+        claimed = {self.date_col, self.target_col, *self.series_keys}
+        if claimed & set(self.covariates):
+            raise ValueError("A column cannot be a covariate and a key or role column at once.")
+        return self
