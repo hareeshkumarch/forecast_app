@@ -108,7 +108,9 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
         # welcome into one per page load.
         row.welcomed_at = utcnow()
         await session.flush()
-        await mailer.send([row.email], **_as_mail(email_templates.welcome(row.name, _app_url())))
+        mailer.send_soon(
+            [row.email], **_as_mail(email_templates.welcome(row.name, _app_url()))
+        )
     elif invited:
         logger.info("%s claimed the invitation waiting for that address.", row.email)
 
@@ -122,10 +124,7 @@ async def _tell_requester(row: AppUser) -> None:
     to tell whether anybody was actually told. One message costs nothing and
     removes the whole question.
     """
-    await mailer.send(
-        [row.email],
-        **_as_mail(email_templates.request_received(_app_url())),
-    )
+    mailer.send_soon([row.email], **_as_mail(email_templates.request_received(_app_url())))
 
 
 def _app_url() -> str:
@@ -164,7 +163,7 @@ async def request_approval(session: AsyncSession, row: AppUser) -> bool:
     approve = approvals.link(row.id, approvals.APPROVE)
     reject = approvals.link(row.id, approvals.REJECT)
 
-    sent = await mailer.send(
+    mailer.send_soon(
         admins,
         subject=f"Access request: {row.email}",
         text=(
@@ -182,9 +181,7 @@ async def request_approval(session: AsyncSession, row: AppUser) -> bool:
             f"{settings.auth_approval_link_ttl_hours} hours.</p>"
         ),
     )
-    if not sent:
-        logger.warning("Access request for %s could not be emailed.", row.email)
-    return sent
+    return True
 
 
 async def decide(session: AsyncSession, token: str) -> tuple[AppUser, str]:
@@ -264,7 +261,7 @@ async def _tell_decision(row: AppUser, status: AccessStatus) -> None:
         if status is AccessStatus.APPROVED
         else email_templates.access_refused()
     )
-    await mailer.send([row.email], **_as_mail(message))
+    mailer.send_soon([row.email], **_as_mail(message))
 
 
 async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUser:
@@ -286,7 +283,9 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         existing.invited_at = utcnow()
         existing.invited_by = invited_by
         await session.flush()
-        await mailer.send([address], **_as_mail(email_templates.invitation(invited_by, _app_url())))
+        mailer.send_soon(
+        [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
+    )
         return existing
 
     row = AppUser(
@@ -302,7 +301,9 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
     session.add(row)
     await session.flush()
 
-    await mailer.send([address], **_as_mail(email_templates.invitation(invited_by, _app_url())))
+    mailer.send_soon(
+        [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
+    )
     return row
 
 

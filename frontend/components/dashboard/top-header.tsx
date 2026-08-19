@@ -231,7 +231,7 @@ function MobileAccountItems() {
       <DropdownMenu.Item
         className={MENU_ITEM}
         onSelect={() => {
-          void signOut().then(() => window.location.assign("/"));
+          void signOut().then(() => window.location.assign("/signin"));
         }}
       >
         <LogOut className="h-3.5 w-3.5 text-text-muted" aria-hidden />
@@ -287,7 +287,7 @@ function AccountMenu() {
           <DropdownMenu.Item
             className={MENU_ITEM}
             onSelect={() => {
-              void signOut().then(() => window.location.assign("/"));
+              void signOut().then(() => window.location.assign("/signin"));
             }}
           >
             <LogOut className="h-3.5 w-3.5 text-text-muted" aria-hidden />

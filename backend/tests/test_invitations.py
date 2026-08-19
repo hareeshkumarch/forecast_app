@@ -119,11 +119,10 @@ async def test_the_welcome_is_sent_once(session: AsyncSession, monkeypatch) -> N
     """
     sent: list[list[str]] = []
 
-    async def record(to, **_kwargs):
+    def record(to, *_args, **_kwargs):
         sent.append(to)
-        return True
 
-    monkeypatch.setattr(user_service.mailer, "send", record)
+    monkeypatch.setattr(user_service.mailer, "send_soon", record)
     settings.auth_admin_emails_raw = "boss@example.com"
 
     caller = AuthenticatedUser(id="sub-welcome", email="boss@example.com", name="Boss")
@@ -143,11 +142,10 @@ async def test_somebody_still_waiting_is_not_welcomed(session: AsyncSession, mon
     """A welcome to an account that cannot get in would be a lie."""
     subjects: list[str] = []
 
-    async def record(_to, subject: str, **_kwargs):
+    def record(_to, *, subject: str, **_kwargs):
         subjects.append(subject)
-        return True
 
-    monkeypatch.setattr(user_service.mailer, "send", record)
+    monkeypatch.setattr(user_service.mailer, "send_soon", record)
     settings.auth_admin_emails_raw = ""
     settings.auth_require_approval = True
 
@@ -166,11 +164,10 @@ async def test_an_invited_person_is_welcomed_when_they_arrive(
 ) -> None:
     subjects: list[str] = []
 
-    async def record(_to, subject: str, **_kwargs):
+    def record(_to, *, subject: str, **_kwargs):
         subjects.append(subject)
-        return True
 
-    monkeypatch.setattr(user_service.mailer, "send", record)
+    monkeypatch.setattr(user_service.mailer, "send_soon", record)
     settings.auth_admin_emails_raw = ""
 
     await user_service.invite(session, "guest@example.com", invited_by="boss@example.com")
@@ -183,3 +180,89 @@ async def test_an_invited_person_is_welcomed_when_they_arrive(
     assert row is not None
     assert row.welcomed_at is not None
     assert any("Welcome" in s for s in subjects)
+
+
+async def test_a_bulk_change_still_honours_every_guard(session: AsyncSession, monkeypatch) -> None:
+    """Selecting twelve rows does not suspend the rules that protect one.
+
+    The last administrator does not stop being the last one because somebody
+    ticked a box next to them.
+    """
+    from app.api.routes import auth as auth_routes
+    from app.core.auth import AuthenticatedUser as Caller
+
+    monkeypatch.setattr(user_service.mailer, "send_soon", lambda *a, **k: None)
+    settings.auth_admin_emails_raw = "boss@example.com"
+
+    boss = await user_service.resolve(session, Caller(id="sub-boss", email="boss@example.com"))
+    ordinary = await user_service.invite(session, "ordinary@example.com", invited_by="boss@x.com")
+    assert boss is not None
+
+    result = await auth_routes._each(
+        session,
+        Caller(id="sub-boss", email="boss@example.com"),
+        [boss.id, ordinary.id],
+        lambda target: user_service.set_status(
+            session, target, AccessStatus.REJECTED, decided_by="boss@example.com"
+        ),
+    )
+
+    # The administrator is skipped with a reason; the other one goes through.
+    assert result.changed == 1
+    assert "boss@example.com" in result.skipped
+    assert boss.status is AccessStatus.APPROVED
+    assert ordinary.status is AccessStatus.REJECTED
+
+
+async def test_a_missing_row_in_a_bulk_change_is_reported_not_fatal(
+    session: AsyncSession, monkeypatch
+) -> None:
+    import uuid as uuid_module
+
+    from app.api.routes import auth as auth_routes
+    from app.core.auth import AuthenticatedUser as Caller
+
+    monkeypatch.setattr(user_service.mailer, "send_soon", lambda *a, **k: None)
+    settings.auth_admin_emails_raw = ""
+
+    real = await user_service.invite(session, "real@example.com", invited_by="boss@x.com")
+    ghost = uuid_module.uuid4()
+
+    result = await auth_routes._each(
+        session,
+        Caller(id="sub-admin", email="admin@example.com"),
+        [real.id, ghost],
+        lambda target: user_service.set_status(
+            session, target, AccessStatus.REJECTED, decided_by="admin@example.com"
+        ),
+    )
+
+    assert result.changed == 1
+    assert str(ghost) in result.skipped
+
+
+async def test_mail_does_not_hold_up_the_answer(monkeypatch) -> None:
+    """A decision returns before the mail server has been spoken to.
+
+    This is the difference between an approval that feels instant and one that
+    sits for three seconds while SMTP negotiates TLS.
+    """
+    import asyncio
+
+    from app.core import mailer
+
+    started = asyncio.Event()
+
+    async def slow(*_args, **_kwargs):
+        started.set()
+        await asyncio.sleep(0.2)
+        return True
+
+    monkeypatch.setattr(mailer, "send", slow)
+
+    mailer.send_soon(["someone@example.com"], subject="s", text="t")
+
+    # Scheduled, not awaited: control is back here before it has even begun.
+    assert not started.is_set()
+    await mailer.drain()
+    assert started.is_set()

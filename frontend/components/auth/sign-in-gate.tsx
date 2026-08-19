@@ -2,7 +2,7 @@
 
 import { Clock, ShieldX } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Mark } from "@/components/marketing/mark";
 import { Button, Skeleton } from "@/components/ui/primitives";
@@ -213,7 +213,7 @@ function SecondaryAction({ label }: { label: string }) {
   return (
     <Button
       variant="secondary"
-      onClick={() => void signOut().then(() => window.location.assign("/"))}
+      onClick={() => void signOut().then(() => window.location.assign("/signin"))}
       className="mt-6 w-full justify-center"
     >
       {label}
@@ -284,4 +284,24 @@ function NotConfiguredBanner() {
       </span>
     </div>
   );
+}
+
+
+/**
+ * The sign-in page at its own address.
+ *
+ * /dashboard rendering a sign-in form works, but it is the wrong thing to
+ * link somebody to and the wrong thing to land on after signing out — the
+ * name of the page should say what is on it. Somebody already signed in is
+ * sent along rather than shown a button they do not need.
+ */
+export function SignInScreen() {
+  const { user, ready, configured } = useAuth();
+
+  useEffect(() => {
+    if (!configured || (ready && user)) window.location.replace("/dashboard");
+  }, [configured, ready, user]);
+
+  if (!ready || user) return <GateSkeleton />;
+  return <SignInPrompt />;
 }

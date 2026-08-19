@@ -201,14 +201,23 @@ def access_approved(app_url: str) -> Message:
 
 
 def access_refused() -> Message:
+    """Softened, but not untrue.
+
+    Nothing here says "rejected" or "removed", and nothing blames the reader —
+    a refusal is usually about who a deployment is for rather than about them.
+    What it will not do is invent a fault that does not exist. Telling somebody
+    the service is having problems leaves them waiting for a fix that is not
+    coming, checking back, and asking a colleague who will tell them otherwise.
+    A soft no they can act on beats a warm sentence that wastes their week.
+    """
     return _message(
-        subject="Your access request was not approved",
-        heading="Not approved",
+        subject="About your access request",
+        heading="We can't set you up right now",
         paragraphs=[
-            "Your request to use this workspace was not approved. Signing in again will not "
-            "change that.",
-            "If you think this is a mistake, the person who runs this deployment is the one to "
-            "ask.",
+            "We are not able to give you access to this workspace at the moment. Nothing has "
+            "gone wrong on your side, and there is nothing you need to do.",
+            "If you were expecting access, the person who looks after this is the one to have "
+            "a word with — they can turn it on straight away.",
         ],
         actions=[],
         reason=REASON_DECIDED,

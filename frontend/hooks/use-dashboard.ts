@@ -346,6 +346,23 @@ export function useUserRole() {
   });
 }
 
+export function useBulkDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: AccessStatus }) =>
+      api.decideOnMany(ids, status),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
+export function useBulkRemove() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.removeMany(ids),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
 export function useRemovePerson() {
   const client = useQueryClient();
   return useMutation({

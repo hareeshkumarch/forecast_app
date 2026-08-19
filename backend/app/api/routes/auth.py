@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Annotated
 
@@ -12,7 +13,7 @@ from app.api.deps import CurrentUser, SessionDep
 from app.core import approvals
 from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.models.entities import AppUser
 from app.models.enums import AccessRole, AccessStatus
 from app.schemas.common import StrictModel
@@ -84,6 +85,30 @@ class RoleRequest(StrictModel):
 #: arrives, and a stricter pattern would reject valid addresses to no benefit —
 #: an invitation nobody can receive is self-correcting.
 EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
+#: Capped so one request cannot walk the whole table. Well above any list
+#: somebody selects by hand.
+UserIds = Annotated[list[uuid.UUID], Field(min_length=1, max_length=200)]
+
+
+class BulkRequest(StrictModel):
+    user_ids: UserIds
+
+
+class BulkDecisionRequest(StrictModel):
+    user_ids: UserIds
+    status: AccessStatus
+
+
+class BulkResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    changed: int
+    #: Accounts the request named and did not touch, and why — a guard that
+    #: refused, or an id that is not there. Reported rather than swallowed, so
+    #: selecting twelve and changing nine is visible.
+    skipped: dict[str, str]
 
 
 class InviteRequest(StrictModel):
@@ -234,6 +259,70 @@ async def invite_person(
     await _assert_admin(session, user)
     row = await user_service.invite(session, payload.email, invited_by=user.email)
     return _managed(row, user)
+
+
+@router.post(
+    "/users/decisions",
+    response_model=BulkResult,
+    summary="Approve or refuse several accounts at once",
+)
+async def decide_many(
+    payload: BulkDecisionRequest, session: SessionDep, user: CurrentUser
+) -> BulkResult:
+    await _assert_admin(session, user)
+    return await _each(
+        session,
+        user,
+        payload.user_ids,
+        lambda target: user_service.set_status(
+            session, target, payload.status, decided_by=user.email
+        ),
+    )
+
+
+@router.post(
+    "/users/removals",
+    response_model=BulkResult,
+    summary="Forget several accounts at once",
+)
+async def remove_many(payload: BulkRequest, session: SessionDep, user: CurrentUser) -> BulkResult:
+    await _assert_admin(session, user)
+    return await _each(
+        session, user, payload.user_ids, lambda target: user_service.remove(session, target)
+    )
+
+
+async def _each(
+    session: SessionDep,
+    user: CurrentUser,
+    user_ids: list[uuid.UUID],
+    act: Callable[[AppUser], Awaitable[object]],
+) -> BulkResult:
+    """Apply one action across many accounts, one at a time.
+
+    Not a single UPDATE, because every guard that protects a single account
+    protects it here too — the last administrator does not stop being the last
+    one because twelve rows were selected. A refusal is recorded against that
+    account and the rest carry on.
+    """
+    changed = 0
+    skipped: dict[str, str] = {}
+
+    for user_id in user_ids:
+        target = await session.get(AppUser, user_id)
+        if target is None:
+            skipped[str(user_id)] = "no longer exists"
+            continue
+        if target.subject is not None and target.subject == user.id:
+            skipped[target.email] = "this is your own account"
+            continue
+        try:
+            await act(target)
+            changed += 1
+        except AppError as refused:
+            skipped[target.email] = refused.message
+
+    return BulkResult(changed=changed, skipped=skipped)
 
 
 @router.delete(

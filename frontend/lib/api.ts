@@ -314,6 +314,23 @@ export const setUserRole = (id: string, role: AccessRole) =>
     body: JSON.stringify({ role }),
   });
 
+export interface BulkResult {
+  changed: number;
+  skipped: Record<string, string>;
+}
+
+export const decideOnMany = (userIds: string[], status: AccessStatus) =>
+  request<BulkResult>("/api/auth/users/decisions", {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, status }),
+  });
+
+export const removeMany = (userIds: string[]) =>
+  request<BulkResult>("/api/auth/users/removals", {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds }),
+  });
+
 export const removePerson = (id: string) =>
   request<void>(`/api/auth/users/${id}`, { method: "DELETE" });
 

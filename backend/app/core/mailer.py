@@ -69,3 +69,36 @@ async def send(to: list[str], subject: str, text: str, html: str | None = None) 
 
 def _deliver(to: list[str], subject: str, text: str, html: str | None) -> None:
     _send_blocking(_build(to, subject, text, html))
+
+
+#: Scheduled sends, held so the event loop cannot collect a task nobody is
+#: awaiting. Without this reference the send is cancelled mid-flight, at random,
+#: and the mail simply does not arrive.
+_pending: set[asyncio.Task[bool]] = set()
+
+
+def send_soon(to: list[str], subject: str, text: str, html: str | None = None) -> None:
+    """Send without making the caller wait for it.
+
+    Connecting to an SMTP server, negotiating TLS and logging in takes seconds
+    against a real provider. Nothing about approving somebody should sit behind
+    that: the decision is already recorded and the answer is already known, so
+    the request returns and the mail goes out behind it.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop to schedule on — a script or a test. Send inline rather than
+        # silently dropping it.
+        asyncio.run(send(to, subject, text, html))
+        return
+
+    task = loop.create_task(send(to, subject, text, html))
+    _pending.add(task)
+    task.add_done_callback(_pending.discard)
+
+
+async def drain() -> None:
+    """Wait for everything scheduled. For shutdown, and for tests that assert."""
+    while _pending:
+        await asyncio.gather(*list(_pending), return_exceptions=True)

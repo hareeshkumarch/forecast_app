@@ -28,6 +28,8 @@ import {
 import {
   useCurrentUser,
   useInvite,
+  useBulkDecision,
+  useBulkRemove,
   useManagedUsers,
   useRemovePerson,
   useUserDecision,
@@ -122,9 +124,41 @@ function People() {
   const decision = useUserDecision();
   const role = useUserRole();
   const remove = useRemovePerson();
-  const busy = decision.isPending || role.isPending || remove.isPending;
+  const bulkDecide = useBulkDecision();
+  const bulkRemove = useBulkRemove();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
-  const waiting = (data ?? []).filter((row) => row.status === "pending").length;
+  const busy =
+    decision.isPending ||
+    role.isPending ||
+    remove.isPending ||
+    bulkDecide.isPending ||
+    bulkRemove.isPending;
+
+  const rows = data ?? [];
+  const waiting = rows.filter((row) => row.status === "pending").length;
+  // Your own account is never selectable — every bulk action would refuse it
+  // anyway, and offering a tick box that cannot do anything is a small lie.
+  const selectable = rows.filter((row) => !row.is_self);
+  const allPicked = selectable.length > 0 && picked.size === selectable.length;
+
+  function toggle(id: string) {
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function afterBulk(result: { skipped: Record<string, string> }) {
+    // Keep anything that was refused selected, so the reason on screen still
+    // has the rows it refers to.
+    setPicked(new Set(Object.keys(result.skipped).filter((key) => key.includes("@")) ));
+  }
+
+  const chosen = [...picked];
+  const skipped = bulkDecide.data?.skipped ?? bulkRemove.data?.skipped ?? {};
 
   return (
     <Card className="mt-4 overflow-hidden">
@@ -139,6 +173,66 @@ function People() {
 
       <InviteForm />
 
+      {chosen.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface-muted px-4 py-2.5">
+          <span className="text-caption font-medium text-text-primary">
+            {chosen.length} selected
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Check}
+              loading={bulkDecide.isPending}
+              onClick={() =>
+                bulkDecide.mutate(
+                  { ids: chosen, status: "approved" },
+                  { onSuccess: afterBulk },
+                )
+              }
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Ban}
+              loading={bulkDecide.isPending}
+              onClick={() =>
+                bulkDecide.mutate(
+                  { ids: chosen, status: "rejected" },
+                  { onSuccess: afterBulk },
+                )
+              }
+            >
+              Remove access
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={Trash2}
+              loading={bulkRemove.isPending}
+              onClick={() => bulkRemove.mutate(chosen, { onSuccess: afterBulk })}
+            >
+              Forget
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {Object.keys(skipped).length > 0 ? (
+        <div className="border-t border-border bg-warning-soft px-4 py-2" role="status">
+          {Object.entries(skipped).map(([who, why]) => (
+            <p key={who} className="text-caption text-text-primary">
+              <span className="font-medium">{who}</span> — {why}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       {isError ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : isPending ? (
@@ -147,7 +241,7 @@ function People() {
             <Skeleton key={index} className="h-12 w-full" />
           ))}
         </div>
-      ) : (data?.length ?? 0) === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={UserRound}
           title="Nobody has signed in yet"
@@ -155,11 +249,27 @@ function People() {
         />
       ) : (
         <div className="divide-y divide-border border-t border-border">
-          {data?.map((row) => (
+          {selectable.length > 1 ? (
+            <label className="flex items-center gap-3 px-4 py-2 text-caption text-text-muted">
+              <input
+                type="checkbox"
+                checked={allPicked}
+                onChange={() =>
+                  setPicked(allPicked ? new Set() : new Set(selectable.map((r) => r.id)))
+                }
+                className="h-3.5 w-3.5 accent-accent"
+                aria-label="Select everyone"
+              />
+              Select everyone
+            </label>
+          ) : null}
+          {rows.map((row) => (
             <Person
               key={row.id}
               row={row}
               busy={busy}
+              picked={picked.has(row.id)}
+              onPick={() => toggle(row.id)}
               onDecide={(status) => decision.mutate({ id: row.id, status })}
               onRole={(next) => role.mutate({ id: row.id, role: next })}
               onRemove={() => remove.mutate(row.id)}
@@ -168,9 +278,9 @@ function People() {
         </div>
       )}
 
-      {decision.isError || role.isError || remove.isError ? (
+      {decision.isError || role.isError || remove.isError || bulkDecide.isError ? (
         <p className="border-t border-border px-4 py-2 text-caption text-negative" role="alert">
-          {(decision.error ?? role.error ?? remove.error)?.message ??
+          {(decision.error ?? role.error ?? remove.error ?? bulkDecide.error)?.message ??
             "That change could not be made."}
         </p>
       ) : null}
@@ -226,12 +336,16 @@ function InviteForm() {
 function Person({
   row,
   busy,
+  picked,
+  onPick,
   onDecide,
   onRole,
   onRemove,
 }: {
   row: ManagedUser;
   busy: boolean;
+  picked: boolean;
+  onPick: () => void;
   onDecide: (status: AccessStatus) => void;
   onRole: (role: "admin" | "member") => void;
   onRemove: () => void;
@@ -241,6 +355,17 @@ function Person({
 
   return (
     <div className="flex items-center gap-3 px-4 py-2.5">
+      {row.is_self ? (
+        <span className="w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <input
+          type="checkbox"
+          checked={picked}
+          onChange={onPick}
+          className="h-3.5 w-3.5 shrink-0 accent-accent"
+          aria-label={`Select ${row.email}`}
+        />
+      )}
       <Avatar src={row.picture} />
 
       <div className="min-w-0 flex-1">
