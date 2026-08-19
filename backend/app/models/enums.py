@@ -50,6 +50,19 @@ class AccessStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class AccessRole(StrEnum):
+    """What a signed-in account may do.
+
+    Held in the database rather than only in configuration, so an
+    administrator can promote somebody without an environment change and a
+    redeploy. The configured list stays authoritative as a floor — it is what
+    stops a deployment being left with no administrator at all.
+    """
+
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
 class ColumnRole(StrEnum):
     TIME = "time"
     TARGET = "target"

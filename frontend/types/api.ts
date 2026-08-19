@@ -1019,12 +1019,29 @@ export interface ApiFeatures {
 
 export type AccessStatus = "pending" | "approved" | "rejected";
 
+export type AccessRole = "admin" | "member";
+
 export interface CurrentUserRead {
   authenticated: boolean;
   status: AccessStatus | null;
+  role: AccessRole | null;
   is_admin: boolean;
   id: string | null;
   email: string | null;
   name: string | null;
   picture: string | null;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  status: AccessStatus;
+  role: AccessRole;
+  requested_at: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  last_seen_at: string | null;
+  is_self: boolean;
 }

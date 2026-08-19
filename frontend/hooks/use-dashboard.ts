@@ -17,6 +17,8 @@ import { toast } from "@/stores/toast-store";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { DatasetQuery, RunQuery } from "@/lib/api";
 import type {
+  AccessRole,
+  AccessStatus,
   ApiFeatures,
   DashboardFilters,
   ExportFormat,
@@ -52,6 +54,7 @@ const queryKeys = {
   capabilities: ["capabilities"] as const,
   apiFeatures: ["api-features"] as const,
   currentUser: ["auth", "me"] as const,
+  managedUsers: ["auth", "users"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
@@ -309,6 +312,37 @@ export function useCurrentUser() {
     queryFn: ({ signal }) => api.getCurrentUser(signal),
     staleTime: 60_000,
     retry: false,
+  });
+}
+
+export function useManagedUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.managedUsers,
+    queryFn: ({ signal }) => api.getManagedUsers(signal),
+    enabled,
+  });
+}
+
+export function useUserDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: AccessStatus }) =>
+      api.decideOnUser(id, status),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.managedUsers });
+      void client.invalidateQueries({ queryKey: queryKeys.currentUser });
+    },
+  });
+}
+
+export function useUserRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role }: { id: string; role: AccessRole }) => api.setUserRole(id, role),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.managedUsers });
+      void client.invalidateQueries({ queryKey: queryKeys.currentUser });
+    },
   });
 }
 

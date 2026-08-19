@@ -16,8 +16,11 @@ import type {
   DatasetPage,
   ApiFeatures,
   CoverageResponse,
+  AccessRole,
+  AccessStatus,
   CurrentUserRead,
   DatasetProfile,
+  ManagedUser,
   OpenApiDocument,
   DatasetSort,
   DatasetUploadResponse,
@@ -295,6 +298,21 @@ export const getDatasetQuality = (
 
 export const getCurrentUser = (signal?: AbortSignal) =>
   request<CurrentUserRead>("/api/auth/me", { signal });
+
+export const getManagedUsers = (signal?: AbortSignal) =>
+  request<ManagedUser[]>("/api/auth/users", { signal });
+
+export const decideOnUser = (id: string, status: AccessStatus) =>
+  request<ManagedUser>(`/api/auth/users/${id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+export const setUserRole = (id: string, role: AccessRole) =>
+  request<ManagedUser>(`/api/auth/users/${id}/role`, {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
 
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });

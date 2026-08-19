@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import (
+    AccessRole,
     AccessStatus,
     ColumnKind,
     ColumnRole,
@@ -753,6 +754,9 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     status: Mapped[AccessStatus] = mapped_column(
         _enum(AccessStatus, "access_status"), default=AccessStatus.PENDING, nullable=False
+    )
+    role: Mapped[AccessRole] = mapped_column(
+        _enum(AccessRole, "access_role"), default=AccessRole.MEMBER, nullable=False
     )
     #: Who decided, and when. Kept because "why does this person have access?"
     #: is a question that gets asked months later, and an audit trail nobody

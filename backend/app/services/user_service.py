@@ -2,22 +2,34 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import approvals, mailer
 from app.core.auth import AuthenticatedUser
 from app.core.config import settings
+from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.database.base import utcnow
 from app.models.entities import AppUser
-from app.models.enums import AccessStatus
+from app.models.enums import AccessRole, AccessStatus
 
 logger = get_logger(__name__)
 
 
-def is_admin(email: str) -> bool:
+def is_configured_admin(email: str) -> bool:
+    """Named in AUTH_ADMIN_EMAILS.
+
+    The floor under the role column: whatever the database says, these
+    accounts are administrators. It is what makes it impossible to end up with
+    a deployment nobody can administer — demote everyone in the UI and the
+    configured account still gets in on its next sign-in.
+    """
     return bool(email) and email.lower() in settings.auth_admin_emails
+
+
+def is_admin(email: str, role: AccessRole | None = None) -> bool:
+    return role is AccessRole.ADMIN or is_configured_admin(email)
 
 
 async def status_of(session: AsyncSession, user: AuthenticatedUser) -> AppUser | None:
@@ -46,7 +58,12 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     created = row is None
 
     if row is None:
-        row = AppUser(subject=user.id, email=user.email, status=_initial_status(user.email))
+        row = AppUser(
+            subject=user.id,
+            email=user.email,
+            status=_initial_status(user.email),
+            role=AccessRole.ADMIN if is_configured_admin(user.email) else AccessRole.MEMBER,
+        )
         session.add(row)
 
     # Refreshed every time: a display name or avatar changed at Google should
@@ -57,12 +74,14 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     row.picture_url = user.picture or row.picture_url
     row.last_seen_at = utcnow()
 
-    # An administrator added to the list after they first signed in is let
-    # through on their next visit, rather than having to approve themselves.
-    if row.status is AccessStatus.PENDING and is_admin(row.email):
-        row.status = AccessStatus.APPROVED
-        row.decided_at = utcnow()
-        row.decided_by = "administrator list"
+    # An account added to the configured list after it first signed in is let
+    # through on its next visit, rather than having to approve itself.
+    if is_configured_admin(row.email):
+        row.role = AccessRole.ADMIN
+        if row.status is not AccessStatus.APPROVED:
+            row.status = AccessStatus.APPROVED
+            row.decided_at = utcnow()
+            row.decided_by = "administrator list"
 
     await session.flush()
 
@@ -150,3 +169,76 @@ async def pending(session: AsyncSession) -> list[AppUser]:
 async def owner_id(session: AsyncSession, user: AuthenticatedUser) -> uuid.UUID | None:
     row = await resolve(session, user)
     return row.id if row is not None else None
+
+
+async def everyone(session: AsyncSession) -> list[AppUser]:
+    """All accounts, most recently seen first.
+
+    Pending ones lead, because the list exists to be acted on rather than
+    browsed — somebody waiting is the only row that needs a decision.
+    """
+    result = await session.execute(
+        select(AppUser).order_by(
+            (AppUser.status != AccessStatus.PENDING),
+            AppUser.created_at.desc(),
+        )
+    )
+    return list(result.scalars().all())
+
+
+class LastAdminError(AppError):
+    status_code = 409
+    code = "last_administrator"
+
+
+async def set_status(
+    session: AsyncSession, target: AppUser, status: AccessStatus, *, decided_by: str
+) -> AppUser:
+    if status is not AccessStatus.APPROVED and is_configured_admin(target.email):
+        raise LastAdminError(
+            f"{target.email} is named in this deployment's administrator list and cannot be "
+            "refused from here. Remove them from AUTH_ADMIN_EMAILS first."
+        )
+
+    target.status = status
+    target.decided_at = utcnow()
+    target.decided_by = decided_by
+    await session.flush()
+    return target
+
+
+async def set_role(
+    session: AsyncSession, target: AppUser, role: AccessRole, *, decided_by: str
+) -> AppUser:
+    if role is not AccessRole.ADMIN and is_configured_admin(target.email):
+        raise LastAdminError(
+            f"{target.email} is named in this deployment's administrator list, so removing the "
+            "role here would not take effect. Remove them from AUTH_ADMIN_EMAILS instead."
+        )
+
+    if role is not AccessRole.ADMIN and await _admin_count(session) <= 1:
+        raise LastAdminError(
+            "This is the only administrator left. Promote somebody else before stepping down, "
+            "or nobody will be able to approve anyone again."
+        )
+
+    target.role = role
+    # Promoting somebody who is still waiting approves them: an administrator
+    # who cannot get in is not one.
+    if role is AccessRole.ADMIN and target.status is not AccessStatus.APPROVED:
+        target.status = AccessStatus.APPROVED
+        target.decided_at = utcnow()
+    target.decided_by = decided_by
+    await session.flush()
+    return target
+
+
+async def _admin_count(session: AsyncSession) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(AppUser)
+            .where(AppUser.role == AccessRole.ADMIN, AppUser.status == AccessStatus.APPROVED)
+        )
+        or 0
+    )

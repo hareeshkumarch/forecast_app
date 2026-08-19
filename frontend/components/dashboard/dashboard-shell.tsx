@@ -6,6 +6,7 @@ import { AccessGate, SignInPrompt } from "@/components/auth/sign-in-gate";
 import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
 
+import { AccountWorkspace } from "@/components/account/account-workspace";
 import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
 import {
@@ -105,6 +106,7 @@ const WORKSPACES: Record<AppSection, ComponentType> = {
   scenarios: ScenariosWorkspace,
   connectors: ConnectorsWorkspace,
   usage: UsageWorkspace,
+  account: AccountWorkspace,
   settings: SettingsWorkspace,
 };
 

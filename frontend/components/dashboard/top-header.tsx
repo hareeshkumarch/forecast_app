@@ -46,6 +46,7 @@ const SECTION_LABEL: Record<AppSection, string> = {
   scenarios: "Scenarios",
   connectors: "Connectors",
   usage: "LLM Usage",
+  account: "Account",
   settings: "Settings",
 };
 
@@ -245,6 +246,12 @@ function AccountMenu() {
             ) : null}
           </div>
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item asChild className={MENU_ITEM}>
+            <Link href="/account">
+              <UserRound className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+              Account
+            </Link>
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             className={MENU_ITEM}
             onSelect={() => {

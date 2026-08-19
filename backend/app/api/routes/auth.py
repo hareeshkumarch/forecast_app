@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core import approvals
-from app.core.auth import ForbiddenError
+from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
-from app.models.enums import AccessStatus
+from app.core.errors import NotFoundError
+from app.models.entities import AppUser
+from app.models.enums import AccessRole, AccessStatus
+from app.schemas.common import StrictModel
 from app.services import user_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -20,6 +26,7 @@ class CurrentUserRead(BaseModel):
     authenticated: bool
     #: pending, approved or rejected. Null when nobody is signed in.
     status: AccessStatus | None = None
+    role: AccessRole | None = None
     is_admin: bool = False
     id: str | None = None
     email: str | None = None
@@ -34,6 +41,32 @@ class PendingUserRead(BaseModel):
     email: str
     name: str | None
     requested_at: str | None
+
+
+class ManagedUserRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    email: str
+    name: str | None
+    picture: str | None
+    status: AccessStatus
+    role: AccessRole
+    requested_at: str | None
+    decided_at: str | None
+    decided_by: str | None
+    last_seen_at: str | None
+    #: True for the account making the request, so the UI can stop somebody
+    #: refusing or demoting themselves by accident.
+    is_self: bool
+
+
+class DecisionRequest(StrictModel):
+    status: AccessStatus
+
+
+class RoleRequest(StrictModel):
+    role: AccessRole
 
 
 @router.get(
@@ -54,7 +87,8 @@ async def get_me(session: SessionDep, user: CurrentUser) -> CurrentUserRead:
     return CurrentUserRead(
         authenticated=True,
         status=row.status if row else AccessStatus.APPROVED,
-        is_admin=user_service.is_admin(user.email),
+        role=row.role if row else None,
+        is_admin=user_service.is_admin(user.email, row.role if row else None),
         id=user.id,
         email=user.email,
         name=user.name,
@@ -94,8 +128,7 @@ async def decide(session: SessionDep, token: str = Query(min_length=8)) -> HTMLR
     ),
 )
 async def list_pending(session: SessionDep, user: CurrentUser) -> list[PendingUserRead]:
-    if not user_service.is_admin(user.email):
-        raise ForbiddenError("Only an administrator can see who is waiting.")
+    await _assert_admin(session, user)
 
     return [
         PendingUserRead(
@@ -106,6 +139,92 @@ async def list_pending(session: SessionDep, user: CurrentUser) -> list[PendingUs
         )
         for row in await user_service.pending(session)
     ]
+
+
+@router.get(
+    "/users",
+    response_model=list[ManagedUserRead],
+    summary="Everyone who has ever signed in",
+    description=(
+        "Pending accounts first, because the list exists to be acted on rather than browsed. "
+        "Administrators only."
+    ),
+)
+async def list_users(session: SessionDep, user: CurrentUser) -> list[ManagedUserRead]:
+    await _assert_admin(session, user)
+    return [_managed(row, user) for row in await user_service.everyone(session)]
+
+
+@router.post(
+    "/users/{user_id}/decision",
+    response_model=ManagedUserRead,
+    summary="Approve or refuse an account",
+)
+async def decide_in_app(
+    user_id: uuid.UUID, payload: DecisionRequest, session: SessionDep, user: CurrentUser
+) -> ManagedUserRead:
+    await _assert_admin(session, user)
+    target = await _target(session, user_id)
+
+    if target.subject == user.id and payload.status is not AccessStatus.APPROVED:
+        raise ForbiddenError(
+            "You cannot refuse your own account. Ask another administrator if you mean to."
+        )
+
+    updated = await user_service.set_status(session, target, payload.status, decided_by=user.email)
+    return _managed(updated, user)
+
+
+@router.post(
+    "/users/{user_id}/role",
+    response_model=ManagedUserRead,
+    summary="Make somebody an administrator, or stop them being one",
+)
+async def change_role(
+    user_id: uuid.UUID, payload: RoleRequest, session: SessionDep, user: CurrentUser
+) -> ManagedUserRead:
+    await _assert_admin(session, user)
+    target = await _target(session, user_id)
+
+    if target.subject == user.id and payload.role is not AccessRole.ADMIN:
+        raise ForbiddenError(
+            "You cannot remove your own administrator role. Promote somebody else and ask them."
+        )
+
+    updated = await user_service.set_role(session, target, payload.role, decided_by=user.email)
+    return _managed(updated, user)
+
+
+async def _assert_admin(session: SessionDep, user: CurrentUser) -> None:
+    row = await user_service.status_of(session, user)
+    if not user_service.is_admin(user.email, row.role if row else None):
+        raise ForbiddenError("Only an administrator can manage who has access.")
+
+
+async def _target(session: SessionDep, user_id: uuid.UUID):
+    row = await session.get(AppUser, user_id)
+    if row is None:
+        raise NotFoundError(f"No account with id {user_id}.")
+    return row
+
+
+def _managed(row: AppUser, viewer: AuthenticatedUser) -> ManagedUserRead:
+    def when(value: datetime | None) -> str | None:
+        return value.isoformat() if value else None
+
+    return ManagedUserRead(
+        id=str(row.id),
+        email=row.email,
+        name=row.name,
+        picture=row.picture_url,
+        status=row.status,
+        role=row.role,
+        requested_at=when(row.requested_at),
+        decided_at=when(row.decided_at),
+        decided_by=row.decided_by,
+        last_seen_at=when(row.last_seen_at),
+        is_self=row.subject == viewer.id,
+    )
 
 
 def _page(headline: str, body: str) -> str:

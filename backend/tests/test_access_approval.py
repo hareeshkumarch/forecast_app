@@ -177,3 +177,87 @@ async def test_a_rejected_account_is_refused(monkeypatch) -> None:
 
     with pytest.raises(ForbiddenError):
         await deps.approved_user(request=object(), session=object())
+
+
+class _Account:
+    def __init__(self, email, role, status, subject="s"):
+        self.email = email
+        self.role = role
+        self.status = status
+        self.subject = subject
+        self.decided_at = None
+        self.decided_by = None
+
+
+async def test_the_configured_admin_cannot_be_locked_out(monkeypatch) -> None:
+    """The floor under the role column.
+
+    Demote or refuse everyone through the UI and the account named in the
+    environment must still get back in, or a deployment can be left with
+    nobody able to approve anybody — a state with no way out but a shell.
+    """
+    from app.models.enums import AccessRole, AccessStatus
+    from app.services import user_service
+    from app.services.user_service import LastAdminError
+
+    settings.auth_admin_emails_raw = "boss@example.com"
+    boss = _Account("boss@example.com", AccessRole.ADMIN, AccessStatus.APPROVED)
+
+    with pytest.raises(LastAdminError):
+        await user_service.set_status(None, boss, AccessStatus.REJECTED, decided_by="x")
+    with pytest.raises(LastAdminError):
+        await user_service.set_role(None, boss, AccessRole.MEMBER, decided_by="x")
+
+    assert boss.status is AccessStatus.APPROVED
+    assert boss.role is AccessRole.ADMIN
+
+
+async def test_the_last_administrator_cannot_step_down(monkeypatch) -> None:
+    from app.services import user_service
+    from app.models.enums import AccessRole, AccessStatus
+    from app.services.user_service import LastAdminError
+
+    settings.auth_admin_emails_raw = ""
+    only = _Account("only@example.com", AccessRole.ADMIN, AccessStatus.APPROVED)
+
+    async def one(_session):
+        return 1
+
+    monkeypatch.setattr(user_service, "_admin_count", one)
+
+    with pytest.raises(LastAdminError):
+        await user_service.set_role(None, only, AccessRole.MEMBER, decided_by="x")
+
+
+async def test_promoting_somebody_waiting_lets_them_in(monkeypatch) -> None:
+    """An administrator who cannot sign in is not one."""
+    from app.services import user_service
+    from app.models.enums import AccessRole, AccessStatus
+
+    settings.auth_admin_emails_raw = ""
+    waiting = _Account("new@example.com", AccessRole.MEMBER, AccessStatus.PENDING)
+
+    class _Session:
+        async def flush(self):
+            return None
+
+    async def two(_session):
+        return 2
+
+    monkeypatch.setattr(user_service, "_admin_count", two)
+
+    await user_service.set_role(_Session(), waiting, AccessRole.ADMIN, decided_by="boss")
+
+    assert waiting.role is AccessRole.ADMIN
+    assert waiting.status is AccessStatus.APPROVED
+
+
+def test_a_role_in_the_database_grants_admin_without_the_config() -> None:
+    from app.models.enums import AccessRole
+    from app.services import user_service
+
+    settings.auth_admin_emails_raw = "boss@example.com"
+
+    assert user_service.is_admin("boss@example.com")
+    assert user_service.is_admin("promoted@example.com", AccessRole.ADMIN)
+    assert not user_service.is_admin("member@example.com", AccessRole.MEMBER)
