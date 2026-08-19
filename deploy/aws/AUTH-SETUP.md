@@ -167,6 +167,39 @@ afternoon.
 Fetched once, at startup, before any setting is read — so a change in Infisical
 needs a restart, the same as an environment variable did.
 
+## Getting the values in
+
+Fill in `secrets.env` from `secrets.env.example`, then, **from your own
+machine** — the values go straight from your laptop to Infisical and never
+touch a terminal, a log or a chat window:
+
+```bash
+export INFISICAL_CLIENT_ID=...
+export INFISICAL_CLIENT_SECRET=...
+export INFISICAL_PROJECT_ID=...      # the id in the project URL
+python3 scripts/push_secrets.py --check      # proves the identity works
+python3 scripts/push_secrets.py secrets.env  # sends them
+```
+
+The script needs nothing installed — it uses the Infisical SDK if it happens
+to be there and the HTTP API if it is not. `--check` exists because the
+failure everybody hits is an identity created at the organisation and never
+added to the project: the login succeeds and every read comes back empty.
+Finding that out in one command beats finding it out from a backend that
+quietly fell back to environment variables.
+
+The project id is in the address bar with the project open:
+`https://app.infisical.com/project/<THIS>/secrets/prod`, or under
+**Project Settings → General**.
+
+Then on EC2, put only the four bootstrap variables in `/opt/forecast/.env`
+and restart:
+
+```bash
+sudo systemctl restart forecast
+curl -s localhost:8000/api/health | grep secrets_source
+```
+
 `GET /api/health` reports `"secrets_source": "infisical"` or `"environment"`,
 so which one is in force is answerable without a shell.
 

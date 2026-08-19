@@ -261,3 +261,44 @@ def test_a_role_in_the_database_grants_admin_without_the_config() -> None:
     assert user_service.is_admin("boss@example.com")
     assert user_service.is_admin("promoted@example.com", AccessRole.ADMIN)
     assert not user_service.is_admin("member@example.com", AccessRole.MEMBER)
+
+
+async def test_each_decision_sends_the_message_that_fits_it(monkeypatch) -> None:
+    """Losing access is not the same event as being turned away at the door.
+
+    Sending "we can't set you up right now" to somebody who has been working
+    here for a month reads as a bug, and sends them looking for one.
+    """
+    from app.models.enums import AccessRole, AccessStatus
+    from app.services import user_service
+
+    settings.auth_admin_emails_raw = ""
+    sent: list[str] = []
+
+    def capture(_to, subject, **_rest):
+        sent.append(subject)
+
+    monkeypatch.setattr(user_service.mailer, "send_soon", capture)
+
+    class _Session:
+        async def flush(self):
+            return None
+
+    async def decide(was, now):
+        sent.clear()
+        row = _Account("someone@example.com", AccessRole.MEMBER, was)
+        await user_service.set_status(_Session(), row, now, decided_by="boss")
+        return sent[0] if sent else None
+
+    approved = await decide(AccessStatus.PENDING, AccessStatus.APPROVED)
+    restored = await decide(AccessStatus.REJECTED, AccessStatus.APPROVED)
+    refused = await decide(AccessStatus.PENDING, AccessStatus.REJECTED)
+    revoked = await decide(AccessStatus.APPROVED, AccessStatus.REJECTED)
+
+    assert len({approved, restored, refused, revoked}) == 4
+    assert "approved" in approved
+    assert "restored" in restored
+    assert "turned off" in revoked
+
+    # And no message at all when nothing changed.
+    assert await decide(AccessStatus.APPROVED, AccessStatus.APPROVED) is None

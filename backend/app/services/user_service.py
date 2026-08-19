@@ -251,16 +251,30 @@ async def set_status(
     # Only on a change. Re-approving somebody already approved should not send
     # them a second "you're in".
     if status is not was:
-        await _tell_decision(target, status)
+        await _tell_decision(target, status, was)
     return target
 
 
-async def _tell_decision(row: AppUser, status: AccessStatus) -> None:
-    message = (
-        email_templates.access_approved(_app_url())
-        if status is AccessStatus.APPROVED
-        else email_templates.access_refused()
-    )
+async def _tell_decision(row: AppUser, status: AccessStatus, was: AccessStatus) -> None:
+    """Four outcomes, not two.
+
+    Losing access you were using is a different event from being turned away
+    at the door, and being let back in is different from being let in for the
+    first time. Sending the door message to somebody mid-way through their
+    work reads as a bug and sends them looking for one.
+    """
+    if status is AccessStatus.APPROVED:
+        message = (
+            email_templates.access_restored(_app_url())
+            if was is AccessStatus.REJECTED
+            else email_templates.access_approved(_app_url())
+        )
+    else:
+        message = (
+            email_templates.access_revoked()
+            if was is AccessStatus.APPROVED
+            else email_templates.access_refused()
+        )
     mailer.send_soon([row.email], **_as_mail(message))
 
 
@@ -284,8 +298,8 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         existing.invited_by = invited_by
         await session.flush()
         mailer.send_soon(
-        [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
-    )
+            [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
+        )
         return existing
 
     row = AppUser(
@@ -322,6 +336,7 @@ async def set_role(
             "or nobody will be able to approve anyone again."
         )
 
+    was = target.role
     target.role = role
     # Promoting somebody who is still waiting approves them: an administrator
     # who cannot get in is not one.
@@ -330,6 +345,14 @@ async def set_role(
         target.decided_at = utcnow()
     target.decided_by = decided_by
     await session.flush()
+
+    if role is not was:
+        message = (
+            email_templates.promoted(_app_url())
+            if role is AccessRole.ADMIN
+            else email_templates.demoted(_app_url())
+        )
+        mailer.send_soon([target.email], **_as_mail(message))
     return target
 
 
@@ -354,8 +377,19 @@ async def remove(session: AsyncSession, target: AppUser) -> None:
             "be able to approve anyone again."
         )
 
+    # Somebody who was actually using this deployment should hear that it
+    # stopped, exactly as they would on a refusal. An invitation sent to the
+    # wrong address is the case this skips: that row has no subject because
+    # nobody ever signed in with it, and mailing it would be the original
+    # mistake repeated.
+    tell = target.subject is not None and target.status is AccessStatus.APPROVED
+    email = target.email
+
     await session.delete(target)
     await session.flush()
+
+    if tell:
+        mailer.send_soon([email], **_as_mail(email_templates.access_revoked()))
 
 
 async def _admin_count(session: AsyncSession) -> int:

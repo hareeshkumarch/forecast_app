@@ -72,6 +72,7 @@ REASON_ACCESS = "somebody asked for access to it"
 REASON_DECIDED = "you asked for access to it"
 REASON_WELCOME = "your account was approved"
 REASON_INVITED = "somebody invited you to it"
+REASON_ACCOUNT = "it concerns your account"
 
 
 def layout(
@@ -189,14 +190,33 @@ def request_received(app_url: str) -> Message:
 
 def access_approved(app_url: str) -> Message:
     return _message(
-        subject="You have access",
+        subject="Your access has been approved",
         heading="You're in",
         paragraphs=[
-            "Your account has been approved. Everything is ready — your datasets, forecast runs "
-            "and connectors are waiting.",
+            "An administrator has approved your account, so the workspace is open to you now.",
+            "Sign in with the same address you asked with and everything is where you left it.",
         ],
         actions=[Action("Open the app", app_url)],
         reason=REASON_DECIDED,
+    )
+
+
+def access_restored(app_url: str) -> Message:
+    """For somebody let back in after being turned away.
+
+    "You're in" reads oddly to a person who was told no last week, and worse
+    to one who never knew they had been refused. Naming the change is the
+    honest version and costs one sentence.
+    """
+    return _message(
+        subject="Your access has been restored",
+        heading="You're back in",
+        paragraphs=[
+            "Your access to this workspace has been turned back on. Nothing was lost while it "
+            "was off — your datasets and forecast runs are exactly as you left them.",
+        ],
+        actions=[Action("Open the app", app_url)],
+        reason=REASON_ACCOUNT,
     )
 
 
@@ -221,6 +241,60 @@ def access_refused() -> Message:
         ],
         actions=[],
         reason=REASON_DECIDED,
+    )
+
+
+def access_revoked() -> Message:
+    """A different message from a refusal, because it is a different event.
+
+    This person had access and was using it. Sending them "we can't set you up
+    right now" would read as a mistake, and leave them wondering whether their
+    work is still there. So: say plainly that it was turned off, say the work
+    is untouched, and point them at somebody who can turn it back on.
+    """
+    return _message(
+        subject="Your access has been turned off",
+        heading="Your access has been turned off",
+        paragraphs=[
+            "An administrator has switched off your access to this workspace, so signing in "
+            "will no longer let you through.",
+            "Nothing has been deleted. Your datasets and forecast runs are kept as they are, "
+            "and they come back with you if your access is turned on again.",
+            "If this is not what you expected, ask whoever looks after this workspace — they "
+            "can restore it in one click.",
+        ],
+        actions=[],
+        reason=REASON_ACCOUNT,
+    )
+
+
+def promoted(app_url: str) -> Message:
+    return _message(
+        subject="You are now an administrator",
+        heading="You can approve people now",
+        paragraphs=[
+            "You have been made an administrator of this workspace. Alongside everything you "
+            "could already do, you can now approve or turn away people asking for access, "
+            "invite somebody by email, and change what others are allowed to do.",
+            "All of it lives on the Account page.",
+        ],
+        actions=[Action("Open the Account page", f"{app_url}/account")],
+        reason=REASON_ACCOUNT,
+    )
+
+
+def demoted(app_url: str) -> Message:
+    return _message(
+        subject="A change to what you can do",
+        heading="You are no longer an administrator",
+        paragraphs=[
+            "Your administrator role for this workspace has been handed back, so approving "
+            "people and changing what others can do has moved to somebody else.",
+            "Your own access has not changed — your datasets, forecast runs and connectors are "
+            "all still yours.",
+        ],
+        actions=[Action("Open the app", app_url)],
+        reason=REASON_ACCOUNT,
     )
 
 

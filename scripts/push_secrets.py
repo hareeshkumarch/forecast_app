@@ -9,7 +9,7 @@ Nothing is printed but key names — the point of this script is that the values
 go from your machine to Infisical and nowhere else, least of all a terminal
 someone is screen-sharing.
 
-Needs the same four bootstrap variables the backend uses:
+Runs on a bare python3 — it uses the Infisical SDK if it is installed and\nits HTTP API if it is not, so there is nothing to install first.\n\nNeeds the same four bootstrap variables the backend uses:
 
     INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID
     INFISICAL_HOST (optional, defaults to Infisical Cloud)
@@ -46,6 +46,103 @@ def read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+class _Rest:
+    """Infisical over its HTTP API, using nothing but the standard library.
+
+    The SDK is one pip install away, but this script exists to be run once, on
+    a laptop, by somebody who wants their secrets in and their evening back.
+    Requiring a virtualenv first is how a two-minute job becomes a twenty
+    minute one, so the SDK is used when it happens to be there and this is
+    used when it is not. Same three calls either way.
+    """
+
+    def __init__(self, host: str, client_id: str, client_secret: str) -> None:
+        self.host = host.rstrip("/")
+        self.token = self._post(
+            "/api/v1/auth/universal-auth/login",
+            {"clientId": client_id, "clientSecret": client_secret},
+        )["accessToken"]
+
+    def _request(self, method: str, path: str, body: dict | None = None) -> dict:
+        import json
+        import urllib.error
+        import urllib.request
+
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(self.host + path, data=data, method=method)
+        request.add_header("Content-Type", "application/json")
+        if getattr(self, "token", None):
+            request.add_header("Authorization", f"Bearer {self.token}")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:400]
+            raise RuntimeError(f"HTTP {exc.code} from {path}: {detail}") from None
+
+    def _post(self, path: str, body: dict) -> dict:
+        return self._request("POST", path, body)
+
+    def list(self, project: str, environment: str, path: str) -> list[dict]:
+        import urllib.parse
+
+        query = urllib.parse.urlencode(
+            {"workspaceId": project, "environment": environment, "secretPath": path}
+        )
+        return self._request("GET", f"/api/v3/secrets/raw?{query}").get("secrets") or []
+
+    def put(self, name: str, value: str, project: str, environment: str, path: str) -> None:
+        body = {
+            "workspaceId": project,
+            "environment": environment,
+            "secretPath": path,
+            "secretValue": value,
+        }
+        quoted = name.replace("/", "%2F")
+        try:
+            self._request("PATCH", f"/api/v3/secrets/raw/{quoted}", body)
+        except RuntimeError:
+            # Not there yet, which on a first run is every one of them.
+            self._request("POST", f"/api/v3/secrets/raw/{quoted}", body)
+
+
+class _Sdk:
+    def __init__(self, host: str, client_id: str, client_secret: str) -> None:
+        from infisical_sdk import InfisicalSDKClient
+
+        self.client = InfisicalSDKClient(host=host)
+        self.client.auth.universal_auth.login(
+            client_id=client_id, client_secret=client_secret
+        )
+
+    def list(self, project: str, environment: str, path: str) -> list:
+        response = self.client.secrets.list_secrets(
+            project_id=project, environment_slug=environment, secret_path=path
+        )
+        return getattr(response, "secrets", None) or getattr(response, "data", None) or []
+
+    def put(self, name: str, value: str, project: str, environment: str, path: str) -> None:
+        common = {
+            "project_id": project,
+            "environment_slug": environment,
+            "secret_path": path,
+        }
+        try:
+            self.client.secrets.update_secret_by_name(
+                current_secret_name=name, secret_value=value, **common
+            )
+        except Exception:
+            self.client.secrets.create_secret_by_name(
+                secret_name=name, secret_value=value, **common
+            )
+
+
+def _key_of(secret) -> str:
+    if isinstance(secret, dict):
+        return str(secret.get("secretKey") or secret.get("secret_key") or "")
+    return str(getattr(secret, "secretKey", None) or getattr(secret, "secret_key", "") or "")
+
+
 def _client():
     missing = [
         name
@@ -53,19 +150,22 @@ def _client():
         if not os.environ.get(name)
     ]
     if missing:
-        raise SystemExit(f"Set {', '.join(missing)} before running this.")
+        hint = ""
+        if "INFISICAL_PROJECT_ID" in missing:
+            # The one nobody has to hand, and the one with a findable answer.
+            hint = (
+                "\n\nINFISICAL_PROJECT_ID is the id in the address bar when the project is "
+                "open:\n  https://app.infisical.com/project/<THIS>/secrets/prod\n"
+                "It is also under Project Settings -> General -> Project ID."
+            )
+        raise SystemExit(f"Set {', '.join(missing)} before running this.{hint}")
 
+    host = os.environ.get("INFISICAL_HOST") or DEFAULT_HOST
+    credentials = (host, os.environ["INFISICAL_CLIENT_ID"], os.environ["INFISICAL_CLIENT_SECRET"])
     try:
-        from infisical_sdk import InfisicalSDKClient
+        return _Sdk(*credentials)
     except ImportError:
-        raise SystemExit("pip install infisicalsdk") from None
-
-    client = InfisicalSDKClient(host=os.environ.get("INFISICAL_HOST") or DEFAULT_HOST)
-    client.auth.universal_auth.login(
-        client_id=os.environ["INFISICAL_CLIENT_ID"],
-        client_secret=os.environ["INFISICAL_CLIENT_SECRET"],
-    )
-    return client
+        return _Rest(*credentials)
 
 
 def check() -> int:
@@ -84,11 +184,7 @@ def check() -> int:
     print(f"Logged in. Reading {environment}{path} ...")
 
     try:
-        response = client.secrets.list_secrets(
-            project_id=os.environ["INFISICAL_PROJECT_ID"],
-            environment_slug=environment,
-            secret_path=path,
-        )
+        secrets = client.list(os.environ["INFISICAL_PROJECT_ID"], environment, path)
     except Exception as exc:
         print(f"\nCould not read the project: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(
@@ -98,13 +194,9 @@ def check() -> int:
         )
         return 1
 
-    secrets = getattr(response, "secrets", None) or getattr(response, "data", None) or []
-    names = sorted(
-        str(getattr(s, "secretKey", None) or getattr(s, "secret_key", ""))
-        for s in secrets
-    )
+    names = sorted(name for name in (_key_of(s) for s in secrets) if name)
     if names:
-        print(f"{len(names)} secret(s) already there: {', '.join(n for n in names if n)}")
+        print(f"{len(names)} secret(s) already there: {', '.join(names)}")
     else:
         print("Reachable, and empty. Push an env file to fill it.")
     return 0
@@ -162,33 +254,17 @@ def main() -> int:
     client = _client()
     project = os.environ["INFISICAL_PROJECT_ID"]
 
-    created = updated = failed = 0
+    pushed = failed = 0
     for key in sorted(values):
-        common = {
-            "project_id": project,
-            "environment_slug": args.environment,
-            "secret_path": args.path,
-        }
         try:
-            client.secrets.update_secret_by_name(
-                current_secret_name=key, secret_value=values[key], **common
-            )
-            updated += 1
-            print(f"  updated {key}")
-        except Exception:
-            # An update fails when the secret is not there yet, which is not an
-            # error worth stopping for — it is the first run.
-            try:
-                client.secrets.create_secret_by_name(
-                    secret_name=key, secret_value=values[key], **common
-                )
-                created += 1
-                print(f"  created {key}")
-            except Exception as exc:
-                failed += 1
-                print(f"  FAILED  {key}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            client.put(key, values[key], project, args.environment, args.path)
+            pushed += 1
+            print(f"  pushed  {key}")
+        except Exception as exc:
+            failed += 1
+            print(f"  FAILED  {key}: {type(exc).__name__}: {exc}", file=sys.stderr)
 
-    print(f"\n{created} created, {updated} updated, {failed} failed.")
+    print(f"\n{pushed} pushed, {failed} failed.")
     if failed:
         return 1
     print("Restart the backend for these to take effect.")
