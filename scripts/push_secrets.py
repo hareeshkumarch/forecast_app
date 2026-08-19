@@ -250,8 +250,13 @@ def check() -> int:
     except Exception as exc:
         print(f"\nCould not read the project: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(
-            "\nThe usual cause is the identity not being a member of the project. Add it under\n"
-            "Project -> Access Control -> Identities, with a role that can read secrets.",
+            "\nPermissionDenied here means the identity authenticated but has no rights on this\n"
+            "project. Logging in is organisation-wide; reading secrets is per project, and they\n"
+            "are two different screens.\n\n"
+            "Project -> Access Control -> Identities -> add this identity with the Admin role.\n"
+            "Viewer cannot create secrets, and a custom role has to grant create, read and edit\n"
+            "on the environment at the path being written, which is four things to get right\n"
+            "when one will do. Tighten it once this works.",
             file=sys.stderr,
         )
         return 1
