@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 
 import { Mark } from "@/components/marketing/mark";
 import { Button, Skeleton } from "@/components/ui/primitives";
-import { useCurrentUser } from "@/hooks/use-dashboard";
 import { signInWithGoogle, signOut } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth-store";
@@ -221,38 +220,6 @@ function SecondaryAction({ label }: { label: string }) {
   );
 }
 
-/**
- * The whole decision: signed out, waiting, refused, or through.
- *
- * `/auth/me` is the authority rather than the token, because approval is a
- * fact about the account that Google knows nothing about.
- */
-export function AccessGate({ children }: { children: ReactNode }) {
-  const { user, ready, configured } = useAuth();
-  const { data, isPending } = useCurrentUser();
-
-  // A build without Supabase keys and a deployment with sign-in switched off
-  // look identical from the outside: both simply show the app. That is right
-  // for local development and dangerous anywhere else, because a build that
-  // lost its keys is silently an open one — and the symptom is a missing
-  // button, which reads as a bug in the button.
-  if (!configured) {
-    return (
-      <div className="flex min-w-0 flex-1 flex-col">
-        <NotConfiguredBanner />
-        {children}
-      </div>
-    );
-  }
-  if (!ready) return <GateSkeleton />;
-  if (!user) return <SignInPrompt />;
-  if (isPending) return <GateSkeleton />;
-
-  if (data?.status === "pending") return <AwaitingApproval email={data.email} />;
-  if (data?.status === "rejected") return <AccessRefused />;
-  return <>{children}</>;
-}
-
 function GateSkeleton() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
@@ -270,7 +237,7 @@ function GateSkeleton() {
  * time and nothing at runtime can recover from it. Naming the two variables is
  * the whole message: whoever sees this needs to set them and rebuild.
  */
-function NotConfiguredBanner() {
+export function NotConfiguredBanner() {
   return (
     <div
       role="status"

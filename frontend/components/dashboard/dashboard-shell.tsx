@@ -2,7 +2,13 @@
 
 import dynamic from "next/dynamic";
 
-import { AccessGate, SignInPrompt } from "@/components/auth/sign-in-gate";
+import {
+  AccessRefused,
+  AwaitingApproval,
+  NotConfiguredBanner,
+  SignInPrompt,
+} from "@/components/auth/sign-in-gate";
+import { useCurrentUser } from "@/hooks/use-dashboard";
 import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
 
@@ -133,14 +139,38 @@ function LazyOverlayHost() {
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
   const { user, ready, configured } = useAuth();
+  const { data: me } = useCurrentUser();
 
   // One gate for all eight sections, because every page in the app is this
   // shell with a different workspace in it. Put it on the pages instead and
   // the ninth page is the one that ships unguarded.
+  //
+  // It sits above the shell rather than inside it, and that matters. Wrapping
+  // only the workspace left somebody waiting for approval looking at a full
+  // sidebar, a header and an insights panel — none of which they can use, all
+  // of which fire requests that come back 403, and one of which rendered the
+  // refusal as an error where a stranger could read it. Somebody who is not in
+  // yet should see one card and nothing else.
   if (configured && ready && !user) {
     return (
       <div className="min-h-[100dvh] bg-canvas">
         <SignInPrompt />
+      </div>
+    );
+  }
+
+  if (me?.status === "pending") {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <AwaitingApproval email={me.email} />
+      </div>
+    );
+  }
+
+  if (me?.status === "rejected") {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <AccessRefused />
       </div>
     );
   }
@@ -157,12 +187,11 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
         >
           Skip to main content
         </a>
+        {configured ? null : <NotConfiguredBanner />}
         <TopHeader section={section} />
         <div className="flex min-h-0 flex-1">
           <AppSidebar />
-          <AccessGate>
-            <SectionWorkspace />
-          </AccessGate>
+          <SectionWorkspace />
           {section === "dashboard" ? <InsightsRail /> : null}
         </div>
         <CommandPalette />
