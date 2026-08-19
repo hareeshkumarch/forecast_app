@@ -143,6 +143,51 @@ def _key_of(secret) -> str:
     return str(getattr(secret, "secretKey", None) or getattr(secret, "secret_key", "") or "")
 
 
+#: Anything still carrying one of these is a line nobody filled in. Pushing it
+#: turns a blank into a value that looks deliberate, and the failure surfaces
+#: days later as mail that never arrives or a bucket that was never written.
+PLACEHOLDERS = ("YOUR-PROJECT-REF", "YOUR-SITE", "YOUR_", "CHANGE-ME", "changeme", "<")
+
+
+def audit(values: dict[str, str]) -> list[str]:
+    """What is missing, said before anything is sent.
+
+    Conditional on purpose: SMTP only matters if mail is wanted, storage keys
+    only if a bucket is named, the JWT secret only if sign-in is on. A checker
+    that demands everything gets ignored, which is worse than not having one.
+    """
+    problems = []
+
+    def on(key: str) -> bool:
+        return values.get(key, "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def need(keys, because: str) -> None:
+        for key in keys:
+            if not values.get(key, "").strip():
+                problems.append(f"{key} is empty — {because}")
+
+    for key, value in sorted(values.items()):
+        if any(mark in value for mark in PLACEHOLDERS):
+            problems.append(f"{key} still holds the template text, not a value")
+
+    need(["CREDENTIAL_SECRET_KEY"], "every stored credential is encrypted with it")
+    need(["SUPABASE_DB_URL"], "the API has nowhere to read or write")
+
+    if on("AUTH_ENABLED"):
+        need(["SUPABASE_JWT_SECRET"], "no token can be verified, so every request is 401")
+        need(["AUTH_ADMIN_EMAILS"], "nobody could approve anybody, including themselves")
+        need(["PUBLIC_API_BASE_URL"], "the approve and reject links in the mail go nowhere")
+        need(["SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM"], "no mail is sent")
+
+    if values.get("STORAGE_BUCKET", "").strip():
+        need(
+            ["STORAGE_ENDPOINT", "STORAGE_ACCESS_KEY_ID", "STORAGE_SECRET_ACCESS_KEY"],
+            "a bucket is named but nothing can be written to it",
+        )
+
+    return problems
+
+
 def _client():
     missing = [
         name
@@ -213,7 +258,12 @@ def main() -> int:
         "--path", default=os.environ.get("INFISICAL_SECRET_PATH") or DEFAULT_PATH
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="List what would change and stop."
+        "--dry-run", action="store_true", help="Check the file and stop, sending nothing."
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Push anyway when the file is incomplete. Rarely what you want.",
     )
     parser.add_argument(
         "--check",
@@ -230,23 +280,24 @@ def main() -> int:
     if not args.env_file.exists():
         raise SystemExit(f"{args.env_file} does not exist.")
 
-    missing = [
-        name
-        for name in (
-            "INFISICAL_CLIENT_ID",
-            "INFISICAL_CLIENT_SECRET",
-            "INFISICAL_PROJECT_ID",
-        )
-        if not os.environ.get(name)
-    ]
-    if missing:
-        raise SystemExit(f"Set {', '.join(missing)} before running this.")
-
     values = read_env_file(args.env_file)
     if not values:
         raise SystemExit(f"{args.env_file} holds no values.")
 
     print(f"{len(values)} secret(s) from {args.env_file}: {', '.join(sorted(values))}")
+
+    problems = audit(values)
+    if problems:
+        print(f"\n{len(problems)} thing(s) to fix in {args.env_file}:", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        if not args.force:
+            print("\nNothing was sent. Fill those in, or --force past this.", file=sys.stderr)
+            return 1
+        print("\nPushing anyway because --force was given.", file=sys.stderr)
+    elif args.dry_run:
+        print("\nNothing missing.")
+
     if args.dry_run:
         print("Dry run — nothing was sent.")
         return 0

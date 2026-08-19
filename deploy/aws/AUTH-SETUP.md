@@ -169,17 +169,30 @@ needs a restart, the same as an environment variable did.
 
 ## Getting the values in
 
-Fill in `secrets.env` from `secrets.env.example`, then, **from your own
-machine** — the values go straight from your laptop to Infisical and never
-touch a terminal, a log or a chat window:
+`secrets.env.example` is the whole list — every variable the backend reads,
+with the non-secret ones already set. Copy it to `secrets.env` and fill in the
+blanks. There are two ways in and neither is better:
+
+**Paste it.** Infisical → your project → `prod` → *Add Secret* takes a whole
+`.env` at once. Nothing to install, nothing to run.
+
+**Push it.** From your own machine, so the values go straight from your laptop
+to Infisical and never touch a terminal, a log or a chat window:
 
 ```bash
 export INFISICAL_CLIENT_ID=...
 export INFISICAL_CLIENT_SECRET=...
 export INFISICAL_PROJECT_ID=...      # the id in the project URL
-python3 scripts/push_secrets.py --check      # proves the identity works
-python3 scripts/push_secrets.py secrets.env  # sends them
+python3 scripts/push_secrets.py secrets.env --dry-run  # checks the file
+python3 scripts/push_secrets.py --check               # checks the identity
+python3 scripts/push_secrets.py secrets.env           # sends them
 ```
+
+`--dry-run` needs no credentials and no network. It refuses a file with a
+blank where something load-bearing goes, and says what breaks if you push it
+anyway — an empty `SMTP_PASSWORD` is mail that never arrives, an empty
+`SUPABASE_JWT_SECRET` with sign-in on is 401 on every request. Both are
+failures that surface hours later, in a container, as something else.
 
 The script needs nothing installed — it uses the Infisical SDK if it happens
 to be there and the HTTP API if it is not. `--check` exists because the
