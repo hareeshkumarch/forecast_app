@@ -100,7 +100,7 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
 
     if created and row.status is AccessStatus.PENDING:
         await request_approval(session, row)
-        await _tell_requester(row)
+        await _tell_requester(session, row)
         _announce(row)
     elif row.status is AccessStatus.APPROVED and row.welcomed_at is None:
         # The first sign-in that actually gets through, whether they were
@@ -109,8 +109,8 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
         # welcome into one per page load.
         row.welcomed_at = utcnow()
         await session.flush()
-        mailer.send_soon(
-            [row.email], **_as_mail(email_templates.welcome(row.name, _app_url()))
+        mailer.queue(
+            session, [row.email], **_as_mail(email_templates.welcome(row.name, _app_url()))
         )
     elif invited:
         logger.info("%s claimed the invitation waiting for that address.", row.email)
@@ -118,14 +118,14 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     return row
 
 
-async def _tell_requester(row: AppUser) -> None:
+async def _tell_requester(session: AsyncSession, row: AppUser) -> None:
     """Acknowledge to the person who just asked.
 
     Without it they sign in, are told to wait, and hear nothing — with no way
     to tell whether anybody was actually told. One message costs nothing and
     removes the whole question.
     """
-    mailer.send_soon([row.email], **_as_mail(email_templates.request_received(_app_url())))
+    mailer.queue(session, [row.email], **_as_mail(email_templates.request_received(_app_url())))
 
 
 def _app_url() -> str:
@@ -164,7 +164,8 @@ async def request_approval(session: AsyncSession, row: AppUser) -> bool:
     approve = approvals.link(row.id, approvals.APPROVE)
     reject = approvals.link(row.id, approvals.REJECT)
 
-    mailer.send_soon(
+    mailer.queue(
+        session,
         admins,
         subject=f"Access request: {row.email}",
         text=(
@@ -252,7 +253,7 @@ async def set_status(
     # Only on a change. Re-approving somebody already approved should not send
     # them a second "you're in".
     if status is not was:
-        await _tell_decision(target, status, was)
+        await _tell_decision(session, target, status, was)
         _announce(target)
     return target
 
@@ -272,7 +273,9 @@ def _announce_id(user_id: object) -> None:
     broadcast.publish(broadcast.PEOPLE, broadcast.PEOPLE)
 
 
-async def _tell_decision(row: AppUser, status: AccessStatus, was: AccessStatus) -> None:
+async def _tell_decision(
+    session: AsyncSession, row: AppUser, status: AccessStatus, was: AccessStatus
+) -> None:
     """Four outcomes, not two.
 
     Losing access you were using is a different event from being turned away
@@ -292,7 +295,7 @@ async def _tell_decision(row: AppUser, status: AccessStatus, was: AccessStatus) 
             if was is AccessStatus.APPROVED
             else email_templates.access_refused()
         )
-    mailer.send_soon([row.email], **_as_mail(message))
+    mailer.queue(session, [row.email], **_as_mail(message))
 
 
 async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUser:
@@ -314,8 +317,8 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         existing.invited_at = utcnow()
         existing.invited_by = invited_by
         await session.flush()
-        mailer.send_soon(
-            [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
+        mailer.queue(
+            session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
         )
         _announce(existing)
         return existing
@@ -333,8 +336,8 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
     session.add(row)
     await session.flush()
 
-    mailer.send_soon(
-        [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
+    mailer.queue(
+        session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
     )
     _announce(row)
     return row
@@ -371,7 +374,7 @@ async def set_role(
             if role is AccessRole.ADMIN
             else email_templates.demoted(_app_url())
         )
-        mailer.send_soon([target.email], **_as_mail(message))
+        mailer.queue(session, [target.email], **_as_mail(message))
         _announce(target)
     return target
 
@@ -410,7 +413,7 @@ async def remove(session: AsyncSession, target: AppUser) -> None:
     await session.flush()
 
     if tell:
-        mailer.send_soon([email], **_as_mail(email_templates.access_revoked()))
+        mailer.queue(session, [email], **_as_mail(email_templates.access_revoked()))
     _announce_id(identifier)
 
 

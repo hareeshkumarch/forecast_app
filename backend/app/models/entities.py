@@ -19,6 +19,8 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine.interfaces import Dialect
@@ -781,4 +783,42 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("subject", name="uq_app_users_subject"),
         UniqueConstraint("email", name="uq_app_users_email"),
         Index("ix_app_users_email", "email"),
+    )
+
+
+class MailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Mail written down before it is sent.
+
+    The row goes in inside the same transaction as whatever caused it, so an
+    approval and its email cannot disagree: the decision does not commit
+    without the message, and a rolled-back decision leaves no message behind.
+    Sending then happens on its own, out of the request's way, and a restart
+    mid-flight costs a retry rather than the message.
+    """
+
+    __tablename__ = "mail_outbox"
+
+    #: Comma separated, as the header itself is. Every message this platform
+    #: sends today goes to one address or to the administrator list.
+    recipients: Mapped[str] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_mail_outbox_due",
+            "next_attempt_at",
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
     )

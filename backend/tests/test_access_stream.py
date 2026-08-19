@@ -46,7 +46,7 @@ async def test_a_decision_announces_to_the_person_and_the_list(monkeypatch) -> N
 
     from tests.test_access_approval import _Account
 
-    monkeypatch.setattr(user_service.mailer, "send_soon", lambda *a, **k: None)
+    monkeypatch.setattr(user_service.mailer, "queue", lambda *a, **k: None)
     user_service.settings.auth_admin_emails_raw = ""
 
     target = _Account("someone@example.com", AccessRole.MEMBER, AccessStatus.PENDING)
@@ -54,6 +54,9 @@ async def test_a_decision_announces_to_the_person_and_the_list(monkeypatch) -> N
 
     class _Session:
         async def flush(self):
+            return None
+
+        def add(self, _row):
             return None
 
     async with (
@@ -80,6 +83,9 @@ async def test_re_approving_announces_nothing() -> None:
 
     class _Session:
         async def flush(self):
+            return None
+
+        def add(self, _row):
             return None
 
     async with broadcast.subscribe(broadcast.topic_for_user("user-2")) as theirs:

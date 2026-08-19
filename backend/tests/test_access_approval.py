@@ -242,6 +242,9 @@ async def test_promoting_somebody_waiting_lets_them_in(monkeypatch) -> None:
         async def flush(self):
             return None
 
+        def add(self, _row):
+            return None
+
     async def two(_session):
         return 2
 
@@ -276,13 +279,16 @@ async def test_each_decision_sends_the_message_that_fits_it(monkeypatch) -> None
     settings.auth_admin_emails_raw = ""
     sent: list[str] = []
 
-    def capture(_to, subject, **_rest):
+    def capture(_session, _to, subject, **_rest):
         sent.append(subject)
 
-    monkeypatch.setattr(user_service.mailer, "send_soon", capture)
+    monkeypatch.setattr(user_service.mailer, "queue", capture)
 
     class _Session:
         async def flush(self):
+            return None
+
+        def add(self, _row):
             return None
 
     async def decide(was, now):

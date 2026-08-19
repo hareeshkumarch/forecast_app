@@ -29,6 +29,7 @@ from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
+from app.services.mail_sender import sender as mail_sender
 from app.services.progress_relay import relay
 
 logger = get_logger(__name__)
@@ -41,6 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     executors.start()
     relay.start()
+    mail_sender.start()
     interrupted = await recover_interrupted_runs()
     if interrupted:
         logger.warning(
@@ -63,6 +65,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
     await relay.stop()
+    await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()
     logger.info("Shutdown complete.")
