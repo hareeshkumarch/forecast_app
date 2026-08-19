@@ -176,6 +176,20 @@ blanks. There are two ways in and neither is better:
 **Paste it.** Infisical → your project → `prod` → *Add Secret* takes a whole
 `.env` at once. Nothing to install, nothing to run.
 
+On a deployment that is already running, do not retype the values — the box
+has them all, correct, and one of them cannot be regenerated. Print the
+pasteable list from the instance:
+
+```bash
+grep -vE '^[[:space:]]*(#|$)|^INFISICAL_' /opt/forecast/.env
+```
+
+Then paste that output into Infisical, and cut `/opt/forecast/.env` down to
+the four `INFISICAL_*` lines. `CREDENTIAL_SECRET_KEY` is the reason to copy
+rather than regenerate: every connector credential in the database is
+encrypted with it, and a new one does not re-encrypt them, it makes them
+permanently unreadable.
+
 **Push it.** From your own machine, so the values go straight from your laptop
 to Infisical and never touch a terminal, a log or a chat window:
 
