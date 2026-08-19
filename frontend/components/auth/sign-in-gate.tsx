@@ -143,7 +143,19 @@ export function AccessGate({ children }: { children: ReactNode }) {
   const { user, ready, configured } = useAuth();
   const { data, isPending } = useCurrentUser();
 
-  if (!configured) return <>{children}</>;
+  // A build without Supabase keys and a deployment with sign-in switched off
+  // look identical from the outside: both simply show the app. That is right
+  // for local development and dangerous anywhere else, because a build that
+  // lost its keys is silently an open one — and the symptom is a missing
+  // button, which reads as a bug in the button.
+  if (!configured) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col">
+        <NotConfiguredBanner />
+        {children}
+      </div>
+    );
+  }
   if (!ready) return <GateSkeleton />;
   if (!user) return <SignInPrompt />;
   if (isPending) return <GateSkeleton />;
@@ -158,6 +170,30 @@ function GateSkeleton() {
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6">
       <Skeleton className="h-5 w-48" />
       <Skeleton className="mt-3 h-40 w-full" />
+    </div>
+  );
+}
+
+
+/**
+ * Says out loud that this build cannot sign anybody in.
+ *
+ * The keys are compiled into the bundle, so their absence is decided at build
+ * time and nothing at runtime can recover from it. Naming the two variables is
+ * the whole message: whoever sees this needs to set them and rebuild.
+ */
+function NotConfiguredBanner() {
+  return (
+    <div
+      role="status"
+      className="border-b border-warning-border bg-warning-soft px-4 py-2 text-caption text-text-primary"
+    >
+      <strong className="font-medium">Sign-in is not configured in this build.</strong>{" "}
+      <span className="text-text-secondary">
+        NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY were missing when it was
+        compiled. Set them and redeploy without the build cache — they are baked in at build
+        time, so setting them alone changes nothing.
+      </span>
     </div>
   );
 }
