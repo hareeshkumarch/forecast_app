@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     #: from wherever the administrator opens their mail.
     public_api_base_url: str = Field(default="", alias="PUBLIC_API_BASE_URL")
 
+    #: Off is for a load test or a local script, never for a deployment facing
+    #: the internet. The limits themselves live in app/core/ratelimit.py, where
+    #: each one carries the reason it is the number it is.
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
     max_upload_bytes: int = 20 * 1024 * 1024

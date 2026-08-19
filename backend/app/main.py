@@ -20,7 +20,11 @@ from app.api.routes import (
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import CompressExceptStreams, RequestContextMiddleware
+from app.core.middleware import (
+    CompressExceptStreams,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
@@ -83,6 +87,12 @@ app = FastAPI(
     },
 )
 
+# Order matters and reads backwards: add_middleware prepends, so the last one
+# added is the outermost. RequestContextMiddleware therefore wraps the limiter,
+# which is what lets a 429 carry a request id like every other answer. The
+# limiter in turn wraps routing, so a request over its limit costs a dictionary
+# lookup rather than a database round trip.
+app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(CompressExceptStreams)
 app.add_middleware(
