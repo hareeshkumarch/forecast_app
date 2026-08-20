@@ -6,98 +6,30 @@ import uuid
 
 import pytest
 
-from app.core import approvals
-from app.core.approvals import InvalidApprovalLink, mint, verify
 from app.core.config import settings
 
 
 @pytest.fixture(autouse=True)
-def _short_lived():
-    """Restore every setting these tests touch, not only the ones they set.
+def _settings_restored():
+    """`settings` is one object for the whole session.
 
-    `settings` is one object for the whole session. A test that switches
-    authentication on and leaves it on does not fail — it fails every test that
-    runs after it, in files it has never heard of, with a 401 that looks like a
-    bug in the endpoint.
+    A test that switches authentication on and leaves it on does not fail —
+    it fails every test that runs after it, in files it has never heard of.
     """
     original = (
         settings.credential_secret_key,
-        settings.auth_approval_link_ttl_hours,
         settings.auth_enabled,
         settings.auth_require_approval,
         settings.auth_admin_emails_raw,
     )
     settings.credential_secret_key = "test-signing-key"
-    settings.auth_approval_link_ttl_hours = 24
     yield
     (
         settings.credential_secret_key,
-        settings.auth_approval_link_ttl_hours,
         settings.auth_enabled,
         settings.auth_require_approval,
         settings.auth_admin_emails_raw,
     ) = original
-
-
-def test_a_link_carries_one_decision_about_one_account() -> None:
-    account = uuid.uuid4()
-
-    decision = verify(mint(account, approvals.APPROVE))
-
-    assert decision.user_id == account
-    assert decision.action == approvals.APPROVE
-
-
-def test_a_rejection_link_cannot_be_read_as_an_approval() -> None:
-    account = uuid.uuid4()
-    assert verify(mint(account, approvals.REJECT)).action == approvals.REJECT
-
-
-def test_an_altered_link_is_refused() -> None:
-    """The signature is the whole control: without it the link is a user id."""
-    token = mint(uuid.uuid4(), approvals.APPROVE)
-    body, _, signature = token.partition(".")
-    forged = mint(uuid.uuid4(), approvals.APPROVE).partition(".")[0]
-
-    with pytest.raises(InvalidApprovalLink):
-        verify(f"{forged}.{signature}")
-    with pytest.raises(InvalidApprovalLink):
-        verify(f"{body}.{'a' * len(signature)}")
-
-
-def test_a_link_signed_with_another_key_is_refused() -> None:
-    token = mint(uuid.uuid4(), approvals.APPROVE)
-    settings.credential_secret_key = "a-different-key"
-
-    with pytest.raises(InvalidApprovalLink):
-        verify(token)
-
-
-def test_an_expired_link_is_refused() -> None:
-    settings.auth_approval_link_ttl_hours = 1
-    token = mint(uuid.uuid4(), approvals.APPROVE)
-    settings.auth_approval_link_ttl_hours = 24
-
-    import time as clock
-
-    real = clock.time
-    clock.time = lambda: real() + 7200  # type: ignore[assignment]
-    try:
-        with pytest.raises(InvalidApprovalLink):
-            verify(token)
-    finally:
-        clock.time = real  # type: ignore[assignment]
-
-
-@pytest.mark.parametrize("token", ["", ".", "garbage", "a.b.c", "notbase64!.sig"])
-def test_nonsense_is_refused_rather_than_crashing(token: str) -> None:
-    with pytest.raises(InvalidApprovalLink):
-        verify(token)
-
-
-def test_a_decision_the_link_does_not_carry_is_refused() -> None:
-    with pytest.raises(ValueError):
-        mint(uuid.uuid4(), "delete-everything")
 
 
 def test_administrators_are_recognised_by_email() -> None:

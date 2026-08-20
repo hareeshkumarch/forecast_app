@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import approvals, broadcast, email_templates, mailer
+from app.core import broadcast, email_templates, mailer
 from app.core.auth import AuthenticatedUser
 from app.core.config import settings
 from app.core.errors import AppError
@@ -138,21 +138,6 @@ async def mark_requested(session: AsyncSession, row: AppUser) -> None:
     row.requested_at = utcnow()
     await session.flush()
     mailer.queue(session, [row.email], **_as_mail(email_templates.request_received(_app_url())))
-
-
-async def decide(session: AsyncSession, token: str) -> tuple[AppUser, str]:
-    decision = approvals.verify(token)
-    row = await session.get(AppUser, decision.user_id)
-    if row is None:
-        raise approvals.InvalidApprovalLink("This link is for an account that no longer exists.")
-
-    row.status = (
-        AccessStatus.APPROVED if decision.action == approvals.APPROVE else AccessStatus.REJECTED
-    )
-    row.decided_at = utcnow()
-    row.decided_by = row.decided_by or "approval link"
-    await session.flush()
-    return row, decision.action
 
 
 async def pending(session: AsyncSession) -> list[AppUser]:

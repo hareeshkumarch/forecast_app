@@ -63,6 +63,7 @@ cryptography==44.0.0
 # ---- dev / test ----------------------------------------------------------
 pytest==8.3.4
 pytest-asyncio==0.25.0
+pytest-xdist==3.6.1
 aiosqlite==0.20.0
 # Reads the generated PDF back, so the report tests assert what a reader sees
 # rather than that the writer returned without raising.

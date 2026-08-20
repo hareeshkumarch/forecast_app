@@ -12,7 +12,7 @@ const line = (s) => console.log(s);
 line("\nA2 — anchor targets clear the nav");
 for (const width of [1366, 1920]) {
   for (const mode of ["click", "cold-hash"]) {
-    for (const id of ["how-it-works", "features", "compare", "accuracy"]) {
+    for (const id of ["how-it-works", "features", "accuracy"]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       if (mode === "cold-hash") {
         await page.goto(`${BASE}/#${id}`, { waitUntil: "networkidle" });

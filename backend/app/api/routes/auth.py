@@ -7,12 +7,11 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
-from fastapi.responses import HTMLResponse
 from starlette.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core import approvals, broadcast
+from app.core import broadcast
 from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
@@ -28,7 +27,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 #: from a mail client that has no session to present. Its authority comes from
 #: the signature on the link instead — which is the entire point of signing it.
 #: Everything else belongs on `router`.
-unauthenticated_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class CurrentUserRead(BaseModel):
@@ -143,28 +141,6 @@ async def get_me(session: SessionDep, user: CurrentUser) -> CurrentUserRead:
         name=user.name,
         picture=user.picture,
     )
-
-
-@unauthenticated_router.get(
-    "/decide",
-    response_class=HTMLResponse,
-    summary="Approve or reject an account from an emailed link",
-    description=(
-        "The link carries its own authority, signed with the deployment's key, so an "
-        "administrator can act on a request from their mail without holding a session. It "
-        "grants nothing beyond the one decision it names, and expires."
-    ),
-)
-async def decide(session: SessionDep, token: str = Query(min_length=8)) -> HTMLResponse:
-    row, action = await user_service.decide(session, token)
-    approved = action == approvals.APPROVE
-    headline = "Access approved" if approved else "Access refused"
-    body = (
-        f"{row.email} can now sign in."
-        if approved
-        else f"{row.email} has been refused, and will be told to contact you."
-    )
-    return HTMLResponse(_page(headline, body))
 
 
 @router.get(
@@ -485,21 +461,4 @@ async def stream_access(user: CurrentUser) -> StreamingResponse:
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
-    )
-
-
-def _page(headline: str, body: str) -> str:
-    """A plain page, because this one is opened in a mail client's browser.
-
-    No stylesheet to fetch and no script to run: whatever opens it may be an
-    in-app webview with neither.
-    """
-    return (
-        "<!doctype html><meta charset=utf-8>"
-        "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        f"<title>{headline}</title>"
-        '<div style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;'
-        'margin:16vh auto;padding:0 1.5rem;color:#111512">'
-        f'<h1 style="font-size:1.25rem;margin:0 0 .5rem">{headline}</h1>'
-        f'<p style="color:#4e554e;margin:0">{body}</p></div>'
     )

@@ -22,7 +22,6 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
-node audits/sections.mjs   # compare, accuracy, proof band, hero demo and its two product lines
 node audits/theme.mjs      # light and dark: contrast against the real ground, and no surface left behind
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
@@ -67,15 +66,6 @@ page precisely so it can be the lightest thing on a dark one.
 resizes the viewport instead of scrolling, so `IntersectionObserver` never
 fires and every revealed section photographs blank — an artifact that looks
 exactly like content failing to appear.
-
-**sections.mjs** samples the wipe rects and the bars frame by frame rather than
-reading the timings the components asked for. The two disagree exactly where the
-bugs live: a clip whose `transform-box` the browser did not honour still reports
-the animation it was given while wiping from the wrong origin, and a bar that
-overshoots its value does so between the keyframes rather than at them. It also
-loads the page twice more — once under `prefers-reduced-motion`, once with
-JavaScript switched off — because both of those paths render through CSS that
-the normal path never reaches, and the failure they produce is a blank chart.
 
 For the hero's self-demonstration it asserts that a still pointer stops the
 walk, rather than asserting which week ends up under the cursor. The prisms are

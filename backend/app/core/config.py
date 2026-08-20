@@ -85,8 +85,6 @@ class Settings(BaseSettings):
     #: Off means anyone who can sign in is in. On means a new account waits for
     #: an administrator, which is the point of the approval mail.
     auth_require_approval: bool = Field(default=True, alias="AUTH_REQUIRE_APPROVAL")
-    #: How long an approve/reject link in an email stays usable.
-    auth_approval_link_ttl_hours: int = Field(default=168, ge=1, le=8760)
 
     # ---- Outbound email ----------------------------------------------------
     # Plain SMTP rather than a provider SDK, so this works on a Gmail app

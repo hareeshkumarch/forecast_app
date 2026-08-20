@@ -673,6 +673,7 @@ class SarimaxForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     order: tuple[int, int, int] | None = None
+    shape_cache: dict[str, object] | None = None
     drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.SARIMAX, init=False)
     _fitted: FittedModel = field(default=None, init=False)
@@ -751,7 +752,8 @@ class SarimaxForecaster:
 
         for with_drivers in driver_choices:
             exog = self._exog(y.size, with_drivers=with_drivers)
-            for order in self._search_space(y):
+            remembered = (self.shape_cache or {}).get("sarimax_order")
+            for order in [remembered] if remembered else self._search_space(y):
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
@@ -786,6 +788,9 @@ class SarimaxForecaster:
 
         self._fitted = best_fit
         self._uses_drivers = best_drivers
+        if self.shape_cache is not None:
+            self.shape_cache["sarimax_order"] = best_order
+
         self._config = {
             "order": list(best_order),
             "seasonal_order": list(seasonal_order),
@@ -1165,7 +1170,7 @@ def build_candidates(
         HoltWintersForecaster(frequency, profile, shape_cache),
         AutoEtsForecaster(frequency, profile, shape_cache),
         ThetaForecaster(frequency, profile),
-        SarimaxForecaster(frequency, profile, order=order_tuple, drivers=panel),  # type: ignore[arg-type]
+        SarimaxForecaster(frequency, profile, order=order_tuple, shape_cache=shape_cache, drivers=panel),  # type: ignore[arg-type]
         GradientBoostingForecaster(
             frequency,
             profile,

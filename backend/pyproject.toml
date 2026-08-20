@@ -75,6 +75,9 @@ follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 22 minutes serial, under four in parallel. A suite nobody waits for is a
+# suite that gets run. `-n0` puts it back on one process for a debugger.
+addopts = "-n auto"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore::DeprecationWarning"]
