@@ -141,6 +141,7 @@ const MARKS: Record<string, Mark> = {
   gemini: GeminiMark,
   xai: XaiMark,
   groq: monogram("groq", "#F55036"),
+  nvidia: monogram("nv", "#76B900"),
   openrouter: monogram("OR", "#6467F2"),
   custom: OllamaMark,
 };

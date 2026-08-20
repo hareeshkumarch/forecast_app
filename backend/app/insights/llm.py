@@ -66,6 +66,11 @@ PROVIDER_BASE_URLS: dict[str, str] = {
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "openrouter": "https://openrouter.ai/api/v1",
+    #: NVIDIA's hosted catalogue from build.nvidia.com, OpenAI-shaped like the
+    #: rest. Keys are issued free and look like nvapi-…, which is the reason it
+    #: is here: it is the one provider on this list a deployment with no budget
+    #: can actually turn on.
+    "nvidia": "https://integrate.api.nvidia.com/v1",
 }
 
 

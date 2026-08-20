@@ -276,20 +276,34 @@ export function SettingsPanel({ className }: { className?: string }) {
               />
             </Field>
 
-            <Field label="Model">
+            {/* Typed, with the known names offered rather than imposed. A
+                dropdown here meant a provider retiring a model left everybody
+                holding a name that no longer resolves and no way to enter the
+                replacement — which is exactly how both Groq entries went
+                stale. */}
+            <Field
+              label="Model"
+              hint={
+                models.length > 0
+                  ? "Suggestions — any name the provider serves works."
+                  : undefined
+              }
+            >
+              <Input
+                value={config.model}
+                onChange={(event) => update({ model: event.target.value })}
+                placeholder="model-name"
+                list={models.length > 0 ? `${config.provider}-models` : undefined}
+                autoComplete="off"
+                spellCheck={false}
+              />
               {models.length > 0 ? (
-                <Select
-                  value={config.model}
-                  onChange={(model) => update({ model })}
-                  options={models.map((model) => ({ value: model, label: model }))}
-                />
-              ) : (
-                <Input
-                  value={config.model}
-                  onChange={(event) => update({ model: event.target.value })}
-                  placeholder="model-name"
-                />
-              )}
+                <datalist id={`${config.provider}-models`}>
+                  {models.map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              ) : null}
             </Field>
           </div>
 

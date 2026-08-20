@@ -15,17 +15,35 @@ export const PROVIDERS: { value: string; label: string; hint: string }[] = [
   { value: "gemini", label: "Google Gemini", hint: "Gemini models, from Google AI Studio" },
   { value: "xai", label: "xAI", hint: "Grok models, from console.x.ai" },
   { value: "groq", label: "Groq", hint: "Open models, served fast" },
+  { value: "nvidia", label: "NVIDIA", hint: "Free key from build.nvidia.com" },
   { value: "openrouter", label: "OpenRouter", hint: "One key for many providers" },
   { value: "custom", label: "Ollama or self-hosted", hint: "Anything with an OpenAI-shaped API" },
 ];
 
+/**
+ * Suggestions, not a menu of the only valid answers.
+ *
+ * Provider catalogues turn over every few months — both Groq entries that
+ * used to be here were retired, one of them in September 2025 and the other
+ * in June 2026, and the field they were listed in was a dropdown, so nobody
+ * using this could type the replacement. The list is now what the input
+ * offers rather than what it permits: a name that is not here can still be
+ * entered, so a deprecation costs the reader one paste instead of waiting
+ * for a deploy.
+ */
 export const PROVIDER_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o"],
   anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5"],
-  groq: ["llama-3.3-70b-versatile", "deepseek-r1-distill-llama-70b"],
+  // The two Groq's own deprecation notice names as the migration targets.
+  groq: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
   xai: ["grok-2-latest", "grok-beta"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
   openrouter: ["anthropic/claude-haiku-4.5", "openai/gpt-4o-mini", "google/gemini-2.5-flash"],
+  nvidia: [
+    "openai/gpt-oss-120b",
+    "meta/llama-3.3-70b-instruct",
+    "qwen/qwen3-coder-480b-a35b-instruct",
+  ],
   custom: [],
 };
 
