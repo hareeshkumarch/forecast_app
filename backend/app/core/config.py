@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     currency_symbol: str = "$"
 
     forecast_workers: int = 2
+    #: Candidates backtested at once inside one run. Above 1 this multiplies
+    #: with forecast_workers, so a two-core box wants one of them set to 1 —
+    #: oversubscribing the cores is slower than not parallelising at all.
+    forecast_candidate_workers: int = Field(default=1, ge=1, le=8)
 
     celery_broker_url: str = ""
     celery_result_backend: str = ""

@@ -161,6 +161,7 @@ class SeasonalNaiveForecaster:
 class HoltWintersForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    shape_cache: dict[str, object] | None = None
     kind: ModelKind = field(default=ModelKind.HOLT_WINTERS, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -201,7 +202,8 @@ class HoltWintersForecaster:
         best_score = float("inf")
         errors: list[str] = []
 
-        for config in self._configurations(y):
+        remembered = (self.shape_cache or {}).get("hw_config")
+        for config in [remembered] if remembered else self._configurations(y):
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -236,6 +238,9 @@ class HoltWintersForecaster:
             )
 
         self._fitted = best_fit
+        if self.shape_cache is not None:
+            self.shape_cache["hw_config"] = best_config
+
         self._config = {**best_config, "aicc": round(best_score, 3)}
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
@@ -256,6 +261,7 @@ class HoltWintersForecaster:
 class AutoEtsForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    shape_cache: dict[str, object] | None = None
     kind: ModelKind = field(default=ModelKind.ETS, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -298,7 +304,10 @@ class AutoEtsForecaster:
         best_spec: tuple[str, str | None, str | None, bool] | None = None
         best_score = float("inf")
 
-        for error, trend, season, damped in self._taxonomy(y):
+        remembered = (self.shape_cache or {}).get("ets_spec")
+        space = [remembered] if remembered else self._taxonomy(y)
+
+        for error, trend, season, damped in space:
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -325,6 +334,9 @@ class AutoEtsForecaster:
 
         if best_fit is None or best_spec is None:
             raise ValueError("No ETS specification converged on this history.")
+
+        if self.shape_cache is not None:
+            self.shape_cache["ets_spec"] = best_spec
 
         error, trend, season, damped = best_spec
         self._fitted = best_fit
@@ -1130,6 +1142,7 @@ def build_candidates(
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
     drivers: DriverPanel | None = None,
+    shape_cache: dict[str, object] | None = None,
 ) -> list[Forecaster]:
     opts = options or {}
     panel = drivers or DriverPanel()
@@ -1149,8 +1162,8 @@ def build_candidates(
     candidates: list[Forecaster] = [
         NaiveForecaster(frequency, profile),
         SeasonalNaiveForecaster(frequency, profile),
-        HoltWintersForecaster(frequency, profile),
-        AutoEtsForecaster(frequency, profile),
+        HoltWintersForecaster(frequency, profile, shape_cache),
+        AutoEtsForecaster(frequency, profile, shape_cache),
         ThetaForecaster(frequency, profile),
         SarimaxForecaster(frequency, profile, order=order_tuple, drivers=panel),  # type: ignore[arg-type]
         GradientBoostingForecaster(
@@ -1281,8 +1294,9 @@ def build_candidate(
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
     drivers: DriverPanel | None = None,
+    shape_cache: dict[str, object] | None = None,
 ) -> Forecaster:
-    for candidate in build_candidates(frequency, options, profile, drivers):
+    for candidate in build_candidates(frequency, options, profile, drivers, shape_cache):
         if candidate.kind == kind:
             return candidate
     raise ValueError(f"Unknown candidate kind: {kind}")

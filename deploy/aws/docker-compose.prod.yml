@@ -103,9 +103,12 @@ services:
       # wanted all along.
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
-      # One pool worker per vCPU. On a 2-vCPU instance leave this at 2: the
-      # fit stage has a 28-second budget and a single worker will miss it.
-      FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
+      # These two multiply, so on a two-core box only one of them may be
+      # above 1. One run at a time using both cores beats two runs each on
+      # one core: the person waiting sees their own run finish sooner, and a
+      # second run is rare on a single-team deployment.
+      FORECAST_WORKERS: ${FORECAST_WORKERS:-1}
+      FORECAST_CANDIDATE_WORKERS: ${FORECAST_CANDIDATE_WORKERS:-2}
       # Off by default here, unlike the dev compose. Seeding writes a demo
       # dataset into whatever this deployment calls its store of record, and
       # on this file that is somebody's real Supabase project. A default that
