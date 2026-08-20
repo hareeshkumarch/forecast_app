@@ -68,7 +68,6 @@ def _button(action: Action) -> str:
 
 #: Why this message arrived. Not decoration — a message that cannot say why it
 #: was sent is the shape of one people report as spam.
-REASON_ACCESS = "somebody asked for access to it"
 REASON_DECIDED = "you asked for access to it"
 REASON_INVITED = "somebody invited you to it"
 REASON_ACCOUNT = "it concerns your account"
@@ -79,7 +78,7 @@ def layout(
     paragraphs: list[str],
     actions: list[Action],
     footnote: str = "",
-    reason: str = REASON_ACCESS,
+    reason: str = REASON_DECIDED,
 ) -> str:
     body = "".join(
         f'<p style="margin:0 0 14px;color:{INK_SOFT};font-size:15px;line-height:1.6;">{p}</p>'
@@ -148,7 +147,7 @@ def _message(
     paragraphs: list[str],
     actions: list[Action],
     footnote: str = "",
-    reason: str = REASON_ACCESS,
+    reason: str = REASON_DECIDED,
 ) -> Message:
     return Message(
         subject=subject,
@@ -157,19 +156,24 @@ def _message(
     )
 
 
-def access_request(who: str, email: str, approve_url: str, reject_url: str, hours: int) -> Message:
+def request_received(app_url: str) -> Message:
+    """The only message a request produces, and the only one it needs.
+
+    Nobody is emailed about somebody else's request any more. The person who
+    can act on it sees it on the People page, live, the moment it arrives —
+    so the one message worth sending is to the person who asked, telling them
+    it landed and that they do not have to do anything else.
+    """
     return _message(
-        subject=f"{who} is asking for access",
-        heading="Someone wants in",
+        subject="Your access request is with an administrator",
+        heading="Thanks — your request is in",
         paragraphs=[
-            f"<strong style='color:{INK};'>{who}</strong> signed in with {email} and is waiting "
-            "for you to let them in. They cannot see anything until you do.",
+            "Somebody has to approve your account before you can see anything. We have passed "
+            "it on, and you will get an email the moment it is decided.",
+            "There is nothing else for you to do, and no need to keep the page open.",
         ],
-        actions=[Action("Approve", approve_url), Action("Reject", reject_url, primary=False)],
-        footnote=(
-            f"These links work without signing in and expire in {hours} hours. You can also "
-            "decide from the Account page in the app."
-        ),
+        actions=[Action("Open the app", app_url)],
+        reason=REASON_DECIDED,
     )
 
 

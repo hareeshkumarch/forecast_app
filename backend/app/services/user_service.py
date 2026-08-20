@@ -101,7 +101,7 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
 
     if created and row.status is AccessStatus.PENDING:
         _record(session, REQUESTED, row)
-        await request_approval(session, row)
+        await mark_requested(session, row)
         _announce(row)
     elif invited:
         logger.info("%s claimed the invitation waiting for that address.", row.email)
@@ -123,48 +123,21 @@ def _initial_status(email: str) -> AccessStatus:
     return AccessStatus.PENDING
 
 
-async def request_approval(session: AsyncSession, row: AppUser) -> bool:
-    """Ask an administrator to let this person in.
+async def mark_requested(session: AsyncSession, row: AppUser) -> None:
+    """Stamp when this person asked, and tell them it landed.
 
-    Best effort by design. If the mail cannot be sent the account still exists
-    and still shows up in the pending list, so a failure here delays access
-    rather than losing the request.
+    Nobody is emailed about somebody else's request. An administrator sees it
+    on the People page the moment it arrives — the list is pushed, not polled,
+    so a request appears on an open page without anybody reloading anything —
+    and the stamp here is what that page shows as "asked 5 minutes ago".
+
+    The one message worth sending goes to the person who asked. They are the
+    one who cannot see what is happening, and they are the one who will
+    otherwise sign in again tomorrow to find out.
     """
-    admins = list(settings.auth_admin_emails)
-    if not admins:
-        logger.warning(
-            "%s is waiting for approval but no AUTH_ADMIN_EMAILS is set, so nobody was told.",
-            row.email,
-        )
-        return False
-
     row.requested_at = utcnow()
     await session.flush()
-
-    who = f"{row.name} <{row.email}>" if row.name else row.email
-    approve = approvals.link(row.id, approvals.APPROVE)
-    reject = approvals.link(row.id, approvals.REJECT)
-
-    mailer.queue(
-        session,
-        admins,
-        subject=f"Access request: {row.email}",
-        text=(
-            f"{who} signed in and is waiting for access.\n\n"
-            f"Approve: {approve}\n"
-            f"Reject:  {reject}\n\n"
-            "These links work once each and expire in "
-            f"{settings.auth_approval_link_ttl_hours} hours."
-        ),
-        html=(
-            f"<p><strong>{who}</strong> signed in and is waiting for access.</p>"
-            f'<p><a href="{approve}">Approve</a> &nbsp;|&nbsp; '
-            f'<a href="{reject}">Reject</a></p>'
-            f'<p style="color:#666;font-size:12px">These links expire in '
-            f"{settings.auth_approval_link_ttl_hours} hours.</p>"
-        ),
-    )
-    return True
+    mailer.queue(session, [row.email], **_as_mail(email_templates.request_received(_app_url())))
 
 
 async def decide(session: AsyncSession, token: str) -> tuple[AppUser, str]:

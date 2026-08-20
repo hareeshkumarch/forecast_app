@@ -134,14 +134,15 @@ async def test_signing_in_again_sends_nothing(session: AsyncSession, monkeypatch
     assert sent == [], f"signing in should send nothing, sent {sent}"
 
 
-async def test_asking_for_access_tells_the_administrator_and_nobody_else(
+async def test_asking_for_access_tells_the_asker_and_nobody_else(
     session: AsyncSession, monkeypatch
 ) -> None:
-    """One message per request, to the only person who can act on it.
+    """One message per request, and it goes to the person who asked.
 
-    The requester used to get an acknowledgement as well, which told them what
-    the screen in front of them already said — and that screen now updates
-    itself the moment a decision is made.
+    Administrators are not emailed about somebody else's request: they see it
+    on the People page the moment it arrives, pushed rather than polled. The
+    person who cannot see anything is the one who asked, so they are the one
+    who gets told.
     """
     recipients: list[list[str]] = []
 
@@ -158,7 +159,8 @@ async def test_asking_for_access_tells_the_administrator_and_nobody_else(
 
     assert row is not None
     assert row.status is AccessStatus.PENDING
-    assert recipients == [["boss@example.com"]]
+    assert recipients == [["waiting@example.com"]]
+    assert ["boss@example.com"] not in recipients
 
 
 async def test_an_invited_person_arriving_gets_no_second_message(
@@ -265,3 +267,39 @@ async def test_mail_does_not_hold_up_the_answer(session, monkeypatch) -> None:
 
     mailer.queue(session, ["someone@example.com"], subject="s", text="t")
     await session.flush()
+
+
+async def test_no_administrator_is_emailed_about_anybody_else(
+    session: AsyncSession, monkeypatch
+) -> None:
+    """Every message this platform sends goes to the person it is about.
+
+    Written as a sweep rather than one assertion per event, because the way
+    this comes back is somebody adding a notification to a new event and
+    nobody noticing it went to the wrong inbox.
+    """
+    recipients: list[str] = []
+
+    def record(_session, to, **_kwargs):
+        recipients.extend(to)
+
+    monkeypatch.setattr(user_service.mailer, "queue", record)
+    settings.auth_admin_emails_raw = "boss@example.com"
+    settings.auth_require_approval = True
+
+    row = await user_service.resolve(
+        session, AuthenticatedUser(id="sub-sweep", email="asker@example.com")
+    )
+    assert row is not None
+    await user_service.set_status(
+        session, row, AccessStatus.APPROVED, decided_by="boss@example.com"
+    )
+    await user_service.set_status(
+        session, row, AccessStatus.REJECTED, decided_by="boss@example.com"
+    )
+    await user_service.invite(session, "guest@example.com", invited_by="boss@example.com")
+    await session.flush()
+
+    assert recipients, "something should have been sent"
+    assert "boss@example.com" not in recipients, f"an administrator was emailed: {recipients}"
+    assert set(recipients) == {"asker@example.com", "guest@example.com"}
