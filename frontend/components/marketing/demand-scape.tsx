@@ -192,6 +192,50 @@ export function DemandScape() {
     return () => observer.disconnect();
   }, []);
 
+  /*
+   * The scene leans very slightly towards the pointer.
+   *
+   * An isometric drawing is a still picture of a solid; what convinces
+   * somebody it is solid is seeing it respond to where they are. A degree and
+   * a half is enough — past about three the prisms start to look like they are
+   * on a hinge, and the illusion goes the other way.
+   *
+   * Written to a custom property rather than to React state: this fires on
+   * every pointer move, and re-rendering four hundred polygons at 120Hz to
+   * turn the scene by one degree would be the most expensive thing on the
+   * page.
+   */
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !motionReady) return;
+    if (window.matchMedia("(hover: none)").matches) return;
+
+    let frame = 0;
+    const onMove = (event: PointerEvent) => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const box = node.getBoundingClientRect();
+        const x = (event.clientX - box.left) / box.width - 0.5;
+        const y = (event.clientY - box.top) / box.height - 0.5;
+        node.style.setProperty("--scape-tilt-x", `${(-y * 1.5).toFixed(3)}deg`);
+        node.style.setProperty("--scape-tilt-y", `${(x * 1.5).toFixed(3)}deg`);
+      });
+    };
+    const onLeave = () => {
+      node.style.setProperty("--scape-tilt-x", "0deg");
+      node.style.setProperty("--scape-tilt-y", "0deg");
+    };
+
+    node.addEventListener("pointermove", onMove);
+    node.addEventListener("pointerleave", onLeave);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      node.removeEventListener("pointermove", onMove);
+      node.removeEventListener("pointerleave", onLeave);
+    };
+  }, [motionReady]);
+
   // Once built, the chart walks its own forecast and shows what the readout
   // gives, rather than only asking to be hovered. See `lib/scape-motion.ts`.
   useEffect(() => {

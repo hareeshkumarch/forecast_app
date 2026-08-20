@@ -1,43 +1,34 @@
 "use client";
 
-import { BarChart3, CirclePlay, FileUp, Gauge, Layers3, Table2 } from "lucide-react";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { CheckDiagram } from "@/components/marketing/check-diagram";
 import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
-import { PlanBand } from "@/components/marketing/plan-band";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
-import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { SplitWords } from "@/components/marketing/split-words";
-import { BAND_GROW, MARK_LAND } from "@/lib/plan-motion";
 import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
 
 const STEPS = [
   {
-    icon: FileUp,
     title: "Bring in some data",
     body: "Drop in a spreadsheet of what you have sold. That is the only thing we need from you.",
     foot: "A spreadsheet is enough",
   },
   {
-    icon: Table2,
     title: "Say what to forecast",
     body: "We work out which column holds the date and which holds the sales, and show you before running.",
     foot: "You confirm before anything runs",
   },
   {
-    icon: CirclePlay,
     title: "Run it",
     body: "Your forecast appears, week by week, with a range around every number.",
     foot: "About a minute",
-    active: true,
   },
 ];
 
@@ -55,24 +46,24 @@ const PROOF = [
   { value: 1, unit: "", count: false, label: "Spreadsheet to begin. Nothing else" },
 ];
 
+/*
+ * Each of these is a sentence, not a tile. They used to be three bordered
+ * boxes with a number and a small icon in the corner — the arrangement every
+ * product page uses, which is why it reads as furniture rather than as
+ * something worth stopping on. Set large, on their own line, they are read.
+ */
 const FEATURES = [
   {
-    icon: BarChart3,
-    number: "01",
-    title: "A forecast you can read",
-    body: "See the number, its likely range, and the history behind it in one view.",
+    lede: "A forecast you can read.",
+    body: "The number, its likely range, and the history behind it — in one view, without a manual.",
   },
   {
-    icon: Layers3,
-    number: "02",
-    title: "Every level of the plan",
-    body: "Move from the whole business to a product, region, or channel without losing the story.",
+    lede: "Every level of the plan.",
+    body: "Move from the whole business down to a product, a region, or a channel without losing the story.",
   },
   {
-    icon: Gauge,
-    number: "03",
-    title: "Accuracy you can inspect",
-    body: "The same test runs on your own past, so the score belongs to your data—not a benchmark.",
+    lede: "Accuracy you can inspect.",
+    body: "The same test runs against your own past, so the score belongs to your data and not to a benchmark.",
   },
 ];
 
@@ -88,8 +79,6 @@ export function Landing() {
         <Hero />
         <HowItWorks />
         <Features />
-        <Compare />
-        <Decision />
         <Accuracy />
         <Closing />
       </main>
@@ -185,23 +174,15 @@ function Hero() {
  */
 function Proof() {
   return (
-    <div className="page-shell mt-12 sm:mt-14">
-      <dl className="grid border-l border-t border-land-rule sm:grid-cols-2 xl:grid-cols-4">
+    <div className="page-shell mt-14 sm:mt-16">
+      <dl className="grid gap-y-10 border-t border-land-rule pt-10 sm:grid-cols-2 xl:grid-cols-4">
         {PROOF.map((stat, index) => (
-          <Reveal
-            key={stat.label}
-            delay={index * 70}
-            duration={560}
-            // Glow only, no lift: shared borders with the tile next door.
-            className="card-edge border-b border-r border-land-rule bg-surface/70 p-6 sm:p-7"
-          >
-            <dt className="text-stat font-bold text-text-primary">
+          <Reveal key={stat.label} delay={index * 90} duration={620} className="proof-figure">
+            <dt className="font-display text-proof font-normal leading-[0.9] tracking-[-0.02em] text-text-primary">
               {stat.count ? <CountUp value={stat.value} /> : stat.value}
               <span className="text-accent">{stat.unit}</span>
             </dt>
-            <dd className="mt-2 max-w-[26ch] font-mono text-site-caption text-land-dim">
-              {stat.label}
-            </dd>
+            <dd className="mt-3 max-w-[24ch] text-site-body text-text-secondary">{stat.label}</dd>
           </Reveal>
         ))}
       </dl>
@@ -212,44 +193,47 @@ function Proof() {
 function HowItWorks() {
   return (
     <section id="how-it-works" className="section-pad border-t border-border">
-      <div className={cn(SHELL, "grid gap-10 xl:grid-cols-[minmax(0,0.5fr)_minmax(0,1fr)] xl:gap-12")}>
+      <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>01 — Getting started</Eyebrow>
           <SplitWords
             text="From a spreadsheet to a plan in three steps."
             className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
           />
-          <p className="mt-5 max-w-[36ch] text-site-lead text-text-secondary">Nothing to configure. Nothing to maintain.</p>
+          <p className="mt-5 max-w-[42ch] text-site-lead text-text-secondary">
+            Nothing to configure. Nothing to maintain.
+          </p>
         </Reveal>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* The rule is the animation. It draws itself down the page as the
+            section arrives, and each step fades in as the line reaches it —
+            so the sequence is shown by the movement rather than stated by
+            three numbered boxes. */}
+        <ol className="step-rail mt-14 sm:mt-16">
           {STEPS.map((step, index) => (
             <Reveal
               key={step.title}
-              delay={index * 90}
-              variant={step.active ? "scale" : "from-right"}
-              duration={620}
-              className={cn(
-                // card-lift as well as card-edge: these three sit in a gapped
-                // grid, so raising one does not pull on a shared border.
-                "card-edge card-lift flex flex-col border bg-surface p-6 sm:p-7",
-                step.active
-                  ? "border-text-primary bg-surface-muted sm:col-span-2"
-                  : "border-land-rule",
-              )}
+              as="li"
+              delay={index * 150}
+              duration={700}
+              variant="from-left"
+              className="step-row"
             >
-              <div className="flex items-center justify-between">
-                <span className={cn("step-badge flex size-10 items-center justify-center border text-site-body", step.active ? "border-land-cta bg-land-cta text-land-cta-ink" : "border-border-strong text-land-dim")}>
-                  {index + 1}
-                </span>
-                <step.icon className="motion-icon size-5 text-land-dim" strokeWidth={1.8} aria-hidden />
+              <span aria-hidden className="step-ordinal font-mono text-site-caption text-land-dim">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="step-body">
+                <h3 className="font-display text-site-h3-display font-normal text-text-primary">
+                  {step.title}
+                </h3>
+                <p className="mt-3 max-w-[52ch] text-site-lead text-text-secondary">{step.body}</p>
+                <p className="mt-4 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
+                  {step.foot}
+                </p>
               </div>
-              <h3 className="mt-5 text-site-h3 font-bold">{step.title}</h3>
-              <p className="mt-2 max-w-[42ch] text-site-body text-text-secondary">{step.body}</p>
-              <p className="mt-auto pt-6 font-mono text-site-caption text-land-dim">{step.foot}</p>
             </Reveal>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   );
@@ -261,21 +245,25 @@ function Features() {
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>What you get</Eyebrow>
-          <SplitWords
-            text="Everything a planner needs, and nothing they do not."
-            className="mt-4 max-w-[26ch] text-balance font-display text-site-h2 font-normal"
-          />
         </Reveal>
 
-        <div className="mt-10 grid border-l border-t border-land-rule sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-10 sm:mt-12">
           {FEATURES.map((feature, index) => (
-            <Reveal key={feature.title} delay={index * 100} variant="scale" duration={640} className="card-edge flex flex-col border-b border-r border-land-rule bg-surface/70 p-6 sm:p-8">
-              <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-land-dim">
-                {feature.number}
-                <feature.icon className="motion-icon size-5" strokeWidth={1.6} aria-hidden />
+            <Reveal
+              key={feature.lede}
+              delay={index * 140}
+              duration={720}
+              variant="from-left"
+              className="feature-line border-t border-land-rule py-10 first:border-t-0 first:pt-0 sm:py-12"
+            >
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-14">
+                <h3 className="text-balance font-display text-site-h2 font-normal leading-[1.05] text-text-primary">
+                  {feature.lede}
+                </h3>
+                <p className="max-w-[46ch] self-end text-site-lead text-text-secondary">
+                  {feature.body}
+                </p>
               </div>
-              <h3 className="mt-10 text-site-h3 font-bold">{feature.title}</h3>
-              <p className="mt-2 max-w-[42ch] text-site-body text-text-secondary">{feature.body}</p>
             </Reveal>
           ))}
         </div>
@@ -284,98 +272,40 @@ function Features() {
   );
 }
 
-function Compare() {
-  return (
-    <section id="compare" className="section-pad border-t border-border">
-      <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
-        <Reveal variant="from-left" duration={680}>
-          <Eyebrow>Built for a real decision</Eyebrow>
-          <SplitWords
-            text="A range tells you more than a perfect-looking line."
-            className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal"
-          />
-          <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
-            Forecast Hub shows what is most likely, how far it could move, and what changed since the last run.
-          </p>
-          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
-            One answer, with the uncertainty left in
-          </p>
-        </Reveal>
-        <Reveal delay={120} variant="from-right" duration={720}>
-          <RangeVsLine />
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
-function Decision() {
-  return (
-    <section id="decision" className="section-pad border-t border-border">
-      <div className={SHELL}>
-        <Reveal variant="from-left" duration={640}>
-          <Eyebrow>From forecast to plan</Eyebrow>
-          <SplitWords
-            text="Three numbers, not one."
-            className="mt-4 max-w-[20ch] text-balance font-display text-site-h2 font-normal"
-          />
-          <p className="mt-5 max-w-[42ch] text-site-lead text-text-secondary">
-            What to commit to, what to be ready for, and how far ahead both hold.
-          </p>
-        </Reveal>
-
-        <Reveal delay={120} variant="scale" duration={720} className="mt-10 sm:mt-12">
-          <div
-            className="hero-stage"
-            style={
-              {
-                "--band-grow": `${BAND_GROW}ms`,
-                "--mark-land": `${MARK_LAND}ms`,
-              } as CSSProperties
-            }
-          >
-            <PlanBand />
-          </div>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
 function Accuracy() {
   return (
     <section id="accuracy" className="section-pad bg-land-invert text-land-invert-ink">
-      <div className={cn(SHELL, "grid gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:gap-16")}>
-        <Reveal variant="from-left" duration={680}>
+      <div className={cn(SHELL, "max-w-[62rem]")}>
+        <Reveal variant="fade" duration={680}>
           <Eyebrow light>Accuracy</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
-            Right about{" "}
-            <span className="whitespace-nowrap text-land-invert-accent">
-              <CountUp value={94} />%
-            </span>{" "}
-            of the sales it had never seen.
-          </h2>
-          <p className="mt-5 max-w-[52ch] text-site-lead text-land-invert-secondary">
-            That figure comes from your own history, not a benchmark. You can see it for any product,
-            any region, any week — and watch it change as your sales change.
+        </Reveal>
+
+        <Reveal delay={80} duration={760} className="mt-6">
+          <p className="font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
+            <CountUp value={94} />%
           </p>
         </Reveal>
 
-        <Reveal delay={140} variant="from-right" duration={720}>
-          <CheckDiagram />
-          <div className="mt-10 border border-land-invert-border">
-            <div className="p-6 sm:p-7">
-              <h3 className="text-site-h3 font-bold">It is measured, not claimed</h3>
-              <p className="mt-3 max-w-[62ch] text-site-body text-land-invert-muted">
-                Before you ever see a number, we hide part of your own sales history and check whether the forecast would have got it right.
-              </p>
-            </div>
-            <div className="border-t border-land-invert-rule p-6 sm:p-7">
-              <h3 className="text-site-h3 font-bold">It keeps being checked</h3>
-              <p className="mt-3 max-w-[62ch] text-site-body text-land-invert-muted">Every new run adds another real result to the score.</p>
-            </div>
-          </div>
+        <Reveal delay={200} duration={720}>
+          <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
+            of the sales it had never seen.
+          </h2>
         </Reveal>
+
+        <div className="mt-12 grid gap-10 border-t border-land-invert-rule pt-10 sm:grid-cols-2 sm:gap-14">
+          <Reveal delay={280} duration={700}>
+            <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
+              That figure comes from your own history, not a benchmark — we hide part of your past
+              and check whether the forecast would have got it right.
+            </p>
+          </Reveal>
+          <Reveal delay={380} duration={700}>
+            <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
+              And it keeps being checked. Every run adds another real result to the score, for any
+              product, any region, any week.
+            </p>
+          </Reveal>
+        </div>
       </div>
     </section>
   );
