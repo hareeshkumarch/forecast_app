@@ -267,11 +267,13 @@ def test_a_role_in_the_database_grants_admin_without_the_config() -> None:
     assert not user_service.is_admin("member@example.com", AccessRole.MEMBER)
 
 
-async def test_each_decision_sends_the_message_that_fits_it(monkeypatch) -> None:
-    """Losing access is not the same event as being turned away at the door.
+async def test_only_being_let_in_sends_anything(monkeypatch) -> None:
+    """The yes is the only message a decision produces.
 
-    Sending "we can't set you up right now" to somebody who has been working
-    here for a month reads as a bug, and sends them looking for one.
+    A refusal and a revocation used to send one each. Both told somebody they
+    had lost or been denied something, with nothing in them to act on, and the
+    app says either the moment they next look. The approval is the one
+    somebody is actually waiting for.
     """
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
@@ -295,20 +297,19 @@ async def test_each_decision_sends_the_message_that_fits_it(monkeypatch) -> None
         sent.clear()
         row = _Account("someone@example.com", AccessRole.MEMBER, was)
         await user_service.set_status(_Session(), row, now, decided_by="boss")
-        return sent[0] if sent else None
+        return sent
 
-    approved = await decide(AccessStatus.PENDING, AccessStatus.APPROVED)
-    restored = await decide(AccessStatus.REJECTED, AccessStatus.APPROVED)
-    refused = await decide(AccessStatus.PENDING, AccessStatus.REJECTED)
-    revoked = await decide(AccessStatus.APPROVED, AccessStatus.REJECTED)
+    assert await decide(AccessStatus.PENDING, AccessStatus.APPROVED) == [
+        "You have access to Forecast Hub"
+    ]
+    assert await decide(AccessStatus.REJECTED, AccessStatus.APPROVED) == [
+        "You have access to Forecast Hub"
+    ]
+    assert await decide(AccessStatus.PENDING, AccessStatus.REJECTED) == []
+    assert await decide(AccessStatus.APPROVED, AccessStatus.REJECTED) == []
 
-    assert len({approved, restored, refused, revoked}) == 4
-    assert "approved" in approved
-    assert "restored" in restored
-    assert "turned off" in revoked
-
-    # And no message at all when nothing changed.
-    assert await decide(AccessStatus.APPROVED, AccessStatus.APPROVED) is None
+    # And nothing at all when nothing changed.
+    assert await decide(AccessStatus.APPROVED, AccessStatus.APPROVED) == []
 
 
 def test_production_refuses_to_start_on_a_secret_manager_it_cannot_read() -> None:

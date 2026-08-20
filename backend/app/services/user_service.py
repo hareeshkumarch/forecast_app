@@ -278,26 +278,16 @@ def _announce_id(user_id: object) -> None:
 async def _tell_decision(
     session: AsyncSession, row: AppUser, status: AccessStatus, was: AccessStatus
 ) -> None:
-    """Four outcomes, not two.
+    """Only the yes.
 
-    Losing access you were using is a different event from being turned away
-    at the door, and being let back in is different from being let in for the
-    first time. Sending the door message to somebody mid-way through their
-    work reads as a bug and sends them looking for one.
+    A refusal, a revocation and a demotion all used to send something. Each
+    was a message telling somebody they had lost or been denied a thing, with
+    nothing in it for them to act on — and the app says all three the moment
+    they next look. What is left is the mail somebody is waiting for.
     """
-    if status is AccessStatus.APPROVED:
-        message = (
-            email_templates.access_restored(_app_url())
-            if was is AccessStatus.REJECTED
-            else email_templates.access_approved(_app_url())
-        )
-    else:
-        message = (
-            email_templates.access_revoked()
-            if was is AccessStatus.APPROVED
-            else email_templates.access_refused()
-        )
-    mailer.queue(session, [row.email], **_as_mail(message))
+    if status is not AccessStatus.APPROVED:
+        return
+    mailer.queue(session, [row.email], **_as_mail(email_templates.access_approved(_app_url())))
 
 
 async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUser:
@@ -320,9 +310,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
         existing.invited_by = invited_by
         await session.flush()
         _record(session, INVITED, existing, actor=invited_by, detail="re-invited")
-        mailer.queue(
-            session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
-        )
+        mailer.queue(session, [address], **_as_mail(email_templates.access_approved(_app_url())))
         _announce(existing)
         return existing
 
@@ -340,9 +328,7 @@ async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUs
     await session.flush()
 
     _record(session, INVITED, row, actor=invited_by)
-    mailer.queue(
-        session, [address], **_as_mail(email_templates.invitation(invited_by, _app_url()))
-    )
+    mailer.queue(session, [address], **_as_mail(email_templates.access_approved(_app_url())))
     _announce(row)
     return row
 
@@ -380,12 +366,6 @@ async def set_role(
             actor=decided_by,
             detail=f"{was.value} -> {role.value}",
         )
-        # Only the promotion. Being told you have gained powers you did not
-        # know about is worth an email; being told you have lost some is an
-        # indignity with nothing attached for the reader to do, and the app
-        # shows it either way the moment it happens.
-        if role is AccessRole.ADMIN:
-            mailer.queue(session, [target.email], **_as_mail(email_templates.promoted(_app_url())))
         _announce(target)
     return target
 
@@ -411,13 +391,6 @@ async def remove(session: AsyncSession, target: AppUser, *, removed_by: str | No
             "be able to approve anyone again."
         )
 
-    # Somebody who was actually using this deployment should hear that it
-    # stopped, exactly as they would on a refusal. An invitation sent to the
-    # wrong address is the case this skips: that row has no subject because
-    # nobody ever signed in with it, and mailing it would be the original
-    # mistake repeated.
-    tell = target.subject is not None and target.status is AccessStatus.APPROVED
-    email = target.email
     identifier = target.id
 
     # Recorded before the delete, and the record outlives it: an audit trail
@@ -427,8 +400,6 @@ async def remove(session: AsyncSession, target: AppUser, *, removed_by: str | No
     await session.delete(target)
     await session.flush()
 
-    if tell:
-        mailer.queue(session, [email], **_as_mail(email_templates.access_revoked()))
     _announce_id(identifier)
 
 

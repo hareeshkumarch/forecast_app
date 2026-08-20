@@ -269,6 +269,68 @@ async def test_mail_does_not_hold_up_the_answer(session, monkeypatch) -> None:
     await session.flush()
 
 
+async def test_two_messages_exist_and_no_more(session: AsyncSession, monkeypatch) -> None:
+    """The whole mail contract, in one place.
+
+    Ten templates once, then seven, now two. Written as one test over a whole
+    journey rather than one per event, because the way a third comes back is
+    somebody wiring a notification to a new event and every existing test
+    still passing.
+    """
+    from app.core import email_templates
+
+    assert sorted(
+        name
+        for name, value in vars(email_templates).items()
+        if callable(value) and not name.startswith("_") and name not in {"layout", "Action", "Message", "dataclass"}
+    ) == ["access_approved", "request_received"]
+
+    subjects: list[str] = []
+
+    def record(_session, _to, *, subject: str, **_kwargs):
+        subjects.append(subject)
+
+    monkeypatch.setattr(user_service.mailer, "queue", record)
+    settings.auth_admin_emails_raw = ""
+    settings.auth_require_approval = True
+
+    row = await user_service.resolve(
+        session, AuthenticatedUser(id="sub-contract", email="asker@example.com")
+    )
+    assert row is not None
+    assert subjects == ["Your access request is with an administrator"]
+
+    await user_service.set_status(session, row, AccessStatus.APPROVED, decided_by="boss@x.com")
+    assert subjects[-1] == "You have access to Forecast Hub"
+
+    before = len(subjects)
+    await user_service.set_status(session, row, AccessStatus.REJECTED, decided_by="boss@x.com")
+    await user_service.set_role(session, row, AccessRole.ADMIN, decided_by="boss@x.com")
+    await session.flush()
+    assert len(subjects) == before, "revoking and changing a role send nothing"
+
+
+async def test_an_invitation_sends_the_same_message_as_an_approval(
+    session: AsyncSession, monkeypatch
+) -> None:
+    """An invitation is an approval that skipped the asking.
+
+    Two templates saying you are in would be two things to keep true, and the
+    second one is always the one that goes stale.
+    """
+    subjects: list[str] = []
+
+    def record(_session, _to, *, subject: str, **_kwargs):
+        subjects.append(subject)
+
+    monkeypatch.setattr(user_service.mailer, "queue", record)
+    settings.auth_admin_emails_raw = ""
+
+    await user_service.invite(session, "guest@example.com", invited_by="boss@example.com")
+
+    assert subjects == ["You have access to Forecast Hub"]
+
+
 async def test_no_administrator_is_emailed_about_anybody_else(
     session: AsyncSession, monkeypatch
 ) -> None:

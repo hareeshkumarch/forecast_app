@@ -69,8 +69,6 @@ def _button(action: Action) -> str:
 #: Why this message arrived. Not decoration — a message that cannot say why it
 #: was sent is the shape of one people report as spam.
 REASON_DECIDED = "you asked for access to it"
-REASON_INVITED = "somebody invited you to it"
-REASON_ACCOUNT = "it concerns your account"
 
 
 def layout(
@@ -178,122 +176,24 @@ def request_received(app_url: str) -> Message:
 
 
 def access_approved(app_url: str) -> Message:
-    """The only message an approved account gets.
+    """The one message that says you are in, however you got here.
 
-    It used to be one of three to the same person: an acknowledgement when
-    they asked, this, and a welcome on their first sign-in — each a version of
-    the same news. The one part of the welcome worth keeping was the sentence
-    telling them what to do next, so it is here.
+    Sent to somebody approved after asking and to somebody invited without
+    asking, so the wording carries neither assumption — no "the address you
+    asked with" for a person who never asked, and no "somebody invited you"
+    for a person who did. Two templates saying the same thing would be two
+    things to keep true.
     """
     return _message(
-        subject="Your access has been approved",
+        subject="You have access to Forecast Hub",
         heading="You're in",
         paragraphs=[
-            "An administrator has approved your account, so the workspace is open to you now. "
-            "Sign in with the same address you asked with.",
+            "Your account has been approved and the workspace is open to you. Sign in with "
+            "this email address and you are straight through.",
             "Upload a file and the platform works out what its columns mean, splits it into "
             "series and forecasts each one — you do not have to describe the shape of your "
             "data first.",
         ],
         actions=[Action("Start with a file", f"{app_url}/datasets")],
         reason=REASON_DECIDED,
-    )
-
-
-def access_restored(app_url: str) -> Message:
-    """For somebody let back in after being turned away.
-
-    "You're in" reads oddly to a person who was told no last week, and worse
-    to one who never knew they had been refused. Naming the change is the
-    honest version and costs one sentence.
-    """
-    return _message(
-        subject="Your access has been restored",
-        heading="You're back in",
-        paragraphs=[
-            "Your access to this workspace has been turned back on. Nothing was lost while it "
-            "was off — your datasets and forecast runs are exactly as you left them.",
-        ],
-        actions=[Action("Open the app", app_url)],
-        reason=REASON_ACCOUNT,
-    )
-
-
-def access_refused() -> Message:
-    """Softened, but not untrue.
-
-    Nothing here says "rejected" or "removed", and nothing blames the reader —
-    a refusal is usually about who a deployment is for rather than about them.
-    What it will not do is invent a fault that does not exist. Telling somebody
-    the service is having problems leaves them waiting for a fix that is not
-    coming, checking back, and asking a colleague who will tell them otherwise.
-    A soft no they can act on beats a warm sentence that wastes their week.
-    """
-    return _message(
-        subject="About your access request",
-        heading="We can't set you up right now",
-        paragraphs=[
-            "We are not able to give you access to this workspace at the moment. Nothing has "
-            "gone wrong on your side, and there is nothing you need to do.",
-            "If you were expecting access, the person who looks after this is the one to have "
-            "a word with — they can turn it on straight away.",
-        ],
-        actions=[],
-        reason=REASON_DECIDED,
-    )
-
-
-def access_revoked() -> Message:
-    """A different message from a refusal, because it is a different event.
-
-    This person had access and was using it. Sending them "we can't set you up
-    right now" would read as a mistake, and leave them wondering whether their
-    work is still there. So: say plainly that it was turned off, say the work
-    is untouched, and point them at somebody who can turn it back on.
-    """
-    return _message(
-        subject="Your access has been turned off",
-        heading="Your access has been turned off",
-        paragraphs=[
-            "An administrator has switched off your access to this workspace, so signing in "
-            "will no longer let you through.",
-            "Nothing has been deleted. Your datasets and forecast runs are kept as they are, "
-            "and they come back with you if your access is turned on again.",
-            "If this is not what you expected, ask whoever looks after this workspace — they "
-            "can restore it in one click.",
-        ],
-        actions=[],
-        reason=REASON_ACCOUNT,
-    )
-
-
-def promoted(app_url: str) -> Message:
-    return _message(
-        subject="You are now an administrator",
-        heading="You can approve people now",
-        paragraphs=[
-            "You have been made an administrator of this workspace. Alongside everything you "
-            "could already do, you can now approve or turn away people asking for access, "
-            "invite somebody by email, and change what others are allowed to do.",
-            "All of it lives on the Account page.",
-        ],
-        actions=[Action("Open the Account page", f"{app_url}/account")],
-        reason=REASON_ACCOUNT,
-    )
-
-
-def invitation(inviter: str, app_url: str) -> Message:
-    return _message(
-        subject=f"{inviter} invited you to {PRODUCT}",
-        heading=f"You have been invited to {PRODUCT}",
-        paragraphs=[
-            f"<strong style='color:{INK};'>{inviter}</strong> has given you access. Sign in with "
-            "this email address and you are straight in — no approval to wait for.",
-            "Upload a file and the platform works out what its columns mean, splits it into "
-            "series and forecasts each one — you do not have to describe the shape of your "
-            "data first.",
-        ],
-        actions=[Action("Sign in", app_url)],
-        footnote="Use the same address this was sent to; the invitation is tied to it.",
-        reason=REASON_INVITED,
     )
