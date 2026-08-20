@@ -4,6 +4,26 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
+# One BLAS thread per process, and it is worth about three and a half times
+# the speed of a model search.
+#
+# Left alone, OpenBLAS and OpenMP each start a thread per core inside every
+# matrix operation. That pays on the large dense matrices those libraries are
+# tuned for; a weekly time series is a few hundred numbers, so the work in
+# each call is smaller than the cost of waking the threads to do it. With a
+# pool worker per core already running its own fit, the threads then contend
+# for the same cores and spend their time being switched rather than
+# computing. Measured on a five-model search over five folds: 76 seconds
+# unpinned, 22 seconds pinned.
+#
+# Set here rather than in the application because the pools are built when
+# numpy is first imported — by then a variable set in Python is too late.
+ENV OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1
+
 # libgomp1 is required by scikit-learn's HistGradientBoostingRegressor (OpenMP).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libgomp1 \
