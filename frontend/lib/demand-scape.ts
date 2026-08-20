@@ -87,12 +87,19 @@ export type Scape = {
 
 const DEPTH_X = 940;
 const DEPTH_Y = 190;
-const PLOT_HEIGHT = 208;
+/* Taller than it was. At 208 the prisms were shorter than they were wide and
+   the drawing read as a strip of texture; the height is what lets a bar look
+   like an object standing on a floor rather than a tick on an axis. */
+const PLOT_HEIGHT = 268;
 
-const ROW_DX = 38;
-const ROW_DY = 34;
+/* A deeper step between rows. The two product lines used to sit close enough
+   that the near row's top face touched the far row's front, which is exactly
+   where an isometric drawing stops reading as depth and starts reading as one
+   flat silhouette. */
+const ROW_DX = 46;
+const ROW_DY = 42;
 
-const MAX_BAR = 34;
+const MAX_BAR = 46;
 const BAR_FILL = 0.78;
 const EXTRUDE_X_RATIO = 0.48;
 const EXTRUDE_Y_RATIO = 0.24;
@@ -127,7 +134,10 @@ const GUTTER = {
   bottom: 62,
 };
 
-const GUIDE_COUNT = 7;
+/* Three, not seven. The floor lines are there so the bars have something to
+   stand on; at seven they were a hatch pattern behind the subject, and the
+   pale ones nearest the top were the first thing the eye found. */
+const GUIDE_COUNT = 3;
 
 /** Text sits a touch under the line it names, so it reads as sitting on it. */
 const LABEL_DROP = 5;

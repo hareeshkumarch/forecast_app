@@ -120,6 +120,22 @@ const config: Config = {
           { lineHeight: "1.12", letterSpacing: "-0.025em" },
         ],
         "site-h3": ["clamp(1.125rem, calc(1rem + 0.4vw), 1.3125rem)", { lineHeight: "1.3", letterSpacing: "-0.02em" }],
+        // A step title, set in the display face rather than the UI one — the
+        // steps carry the section now that the cards around them are gone.
+        "site-h3-display": [
+          "clamp(1.5rem, calc(1.25rem + 1vw), 2.125rem)",
+          { lineHeight: "1.15", letterSpacing: "-0.025em" },
+        ],
+        // The proof figures and the accuracy figure. Large enough to be the
+        // thing on the screen, which is the whole reason the tiles went.
+        proof: [
+          "clamp(2.75rem, calc(2rem + 3vw), 4rem)",
+          { lineHeight: "0.9", letterSpacing: "-0.03em" },
+        ],
+        accuracy: [
+          "clamp(5rem, calc(2.5rem + 11vw), 11rem)",
+          { lineHeight: "0.86", letterSpacing: "-0.035em" },
+        ],
         "site-lead": [
           "clamp(1.0625rem, calc(0.98rem + 0.36vw), 1.1875rem)",
           { lineHeight: "1.55" },

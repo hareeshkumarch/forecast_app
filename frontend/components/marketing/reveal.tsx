@@ -56,7 +56,10 @@ export function Reveal({
 }: RevealProps) {
   const ref = useRef<HTMLElement>(null);
   const [shown, setShown] = useState(false);
-  const revealDelay = Math.max(0, Math.min(delay, 420));
+  // Clamped at 420 a three-item stagger collapsed: the second and third
+  // arrived together, so a sequence read as a single pop. 900 is still short
+  // enough that nobody waits for the last one.
+  const revealDelay = Math.max(0, Math.min(delay, 900));
   const revealDuration = Math.max(180, Math.min(duration, 900));
 
   useEffect(() => {

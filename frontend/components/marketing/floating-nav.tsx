@@ -11,8 +11,6 @@ import { cn } from "@/lib/utils";
 const SECTIONS = [
   { id: "how-it-works", label: "How it works" },
   { id: "features", label: "Features" },
-  { id: "compare", label: "Compare" },
-  { id: "decision", label: "Decide" },
   { id: "accuracy", label: "Accuracy" },
 ];
 

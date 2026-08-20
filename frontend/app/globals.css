@@ -824,10 +824,15 @@ body {
  * blank one waiting to be revealed.
  */
 .motion-ready .reveal {
+  /* Far enough to be seen arriving. At 18px the movement was real but below
+     the threshold anybody notices — the section simply appeared, and the work
+     of animating it was spent without being spent on anything. */
   --reveal-x: 0px;
-  --reveal-y: 18px;
+  --reveal-y: 44px;
   --reveal-scale: 1;
+  --reveal-blur: 6px;
   opacity: 0;
+  filter: blur(var(--reveal-blur));
   transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(var(--reveal-scale));
   /* Opacity over three quarters of the travel rather than a flat 400ms. Fixed,
      it finished at wildly different points depending on how long the element
@@ -835,28 +840,30 @@ body {
      arrival was fully opaque and still visibly moving. */
   transition:
     opacity calc(var(--reveal-duration, 520ms) * 0.75) var(--ease-out),
+    filter calc(var(--reveal-duration, 520ms) * 0.6) var(--ease-out),
     transform var(--reveal-duration, 520ms) var(--ease-out);
   transition-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
 }
 
 .motion-ready .reveal[data-reveal="scale"] {
-  --reveal-y: 10px;
-  --reveal-scale: 0.982;
+  --reveal-y: 28px;
+  --reveal-scale: 0.94;
 }
 
 .motion-ready .reveal[data-reveal="from-left"] {
-  --reveal-x: -22px;
+  --reveal-x: -64px;
   --reveal-y: 0px;
 }
 
 .motion-ready .reveal[data-reveal="from-right"] {
-  --reveal-x: 22px;
+  --reveal-x: 64px;
   --reveal-y: 0px;
 }
 
 .motion-ready .reveal[data-reveal="fade"] {
   --reveal-y: 0px;
+  --reveal-blur: 3px;
 }
 
 /* The words do the moving, so the container must not: a parent fading from 0
@@ -871,6 +878,7 @@ body {
 
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
+  filter: blur(0);
   transform: translate3d(0, 0, 0);
   will-change: auto;
 }
@@ -889,22 +897,22 @@ body {
 
 .motion-ready .split-words .split-word {
   opacity: 0;
-  transform: translate3d(0, 0.42em, 0);
+  transform: translate3d(0, 0.9em, 0);
 }
 
 .motion-ready .split-words[data-shown="true"] .split-word {
-  animation: word-rise 560ms var(--ease-out) calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms))
-    both;
+  animation: word-rise 760ms cubic-bezier(0.16, 1.06, 0.3, 1)
+    calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms)) both;
 }
 
 @keyframes word-rise {
   from {
     opacity: 0;
-    transform: translate3d(0, 0.42em, 0);
+    transform: translate3d(0, 0.9em, 0) rotate(1.2deg);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) rotate(0deg);
   }
 }
 
@@ -1582,4 +1590,128 @@ svg[role="img"]:focus-visible {
   transition-delay: 0s !important;
   caret-color: transparent !important;
   scroll-behavior: auto !important;
+}
+
+/* ------------------------------------------------- landing: steps + lines */
+
+/*
+ * The three steps hang off one rule that draws itself down the page. It
+ * replaces three bordered cards, and it does the job the cards could not:
+ * a card grid states that there are three things, where a line being drawn
+ * through them shows that they happen in an order.
+ *
+ * The rule is a pseudo-element rather than a border so it can be scaled from
+ * the top — a border cannot be animated along its length, and animating
+ * height would reflow every row beneath it on each frame.
+ */
+.step-rail {
+  position: relative;
+  display: grid;
+  gap: clamp(2.5rem, 5vw, 4rem);
+  padding-left: clamp(2.25rem, 5vw, 4.5rem);
+}
+
+.step-rail::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.35rem 0.5rem;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--accent) 0%,
+    var(--land-rule) 55%,
+    transparent 100%
+  );
+  transform-origin: top;
+  transform: scaleY(1);
+}
+
+.motion-ready .step-rail::before {
+  transform: scaleY(0);
+  transition: transform 1400ms cubic-bezier(0.22, 1, 0.36, 1) 120ms;
+}
+
+.motion-ready .step-rail:has([data-shown="true"])::before {
+  transform: scaleY(1);
+}
+
+.step-row {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* The tick where a step meets the rule. Small, and the only ornament left. */
+.step-row::before {
+  content: "";
+  position: absolute;
+  top: 0.6rem;
+  left: calc(clamp(2.25rem, 5vw, 4.5rem) * -1);
+  width: clamp(1.25rem, 2.5vw, 2rem);
+  height: 1px;
+  background: var(--land-rule);
+}
+
+.step-row[data-shown="true"]::before {
+  background: var(--accent);
+}
+
+.motion-ready .step-row::before {
+  transition: background-color 520ms ease 260ms;
+}
+
+.step-ordinal {
+  display: block;
+  letter-spacing: 0.22em;
+}
+
+/*
+ * A feature is a sentence on a rule now, so the only hover affordance left is
+ * the rule itself brightening — enough to say the page is alive, not enough to
+ * suggest the row is a link, because it is not one.
+ */
+.motion-ready .feature-line {
+  transition: border-color 400ms ease;
+}
+
+.feature-line:hover {
+  border-color: var(--border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .step-rail::before {
+    transform: scaleY(1);
+  }
+}
+
+/* ------------------------------------------------- landing: the 3D scene */
+
+/*
+ * The lean towards the pointer, driven by two custom properties the component
+ * writes on pointermove. Perspective sits on the frame and the transform on
+ * the drawing inside it, which is the only arrangement where the far end of
+ * the scene recedes rather than the whole picture skewing.
+ *
+ * The transition is long and eased out on purpose: matching the pointer
+ * frame-for-frame reads as a jitter, while a second of catching up reads as
+ * weight.
+ */
+.scape-frame {
+  --scape-tilt-x: 0deg;
+  --scape-tilt-y: 0deg;
+  perspective: 1400px;
+}
+
+.motion-ready .scape-frame > .relative {
+  transform: rotateX(var(--scape-tilt-x)) rotateY(var(--scape-tilt-y));
+  transform-style: preserve-3d;
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .scape-frame > .relative {
+    transform: none;
+  }
 }
