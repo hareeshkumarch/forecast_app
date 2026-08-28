@@ -34,8 +34,8 @@ export function AllInsightsModal() {
     <Modal
       open={open}
       onClose={closeModal}
-      title="AI Insights"
-      description={`${items.length} generated from the current run`}
+      title="Decision Brief"
+      description={`${items.length} ranked signals computed from the current run`}
       size="lg"
     >
       {isError ? (

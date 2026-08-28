@@ -22,6 +22,7 @@ from app.core.budget import (
     percentile,
 )
 from app.core.errors import ValidationError
+from app.forecasting import engine as engine_module
 from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
 from app.models.enums import ForecastFrequency
 from app.services import dataset_service, forecast_service
@@ -193,6 +194,28 @@ class TestPercentile:
 
     def test_an_empty_sample_has_no_percentile(self) -> None:
         assert np.isnan(percentile([], 0.95))
+
+
+def test_backtest_windows_are_profiled_once_across_candidates(monkeypatch) -> None:
+    original = engine_module.profile_series
+    calls: list[int] = []
+
+    def tracked(values, frequency):
+        calls.append(len(values))
+        return original(values, frequency)
+
+    monkeypatch.setattr(engine_module, "profile_series", tracked)
+    output = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=weeks(72), values=reference_series(72)),
+            frequency=WEEKLY,
+            horizon=6,
+            max_folds=3,
+            model_options={"candidate_models": ["naive", "theta"]},
+        )
+    )
+
+    assert len(calls) <= int(output.metrics["backtest_folds"]) + 1
 
 
 class TestTheReferenceRunFitsTheBudget:

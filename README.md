@@ -329,6 +329,15 @@ refused with a message saying so — a count that high is almost always a grain
 that accidentally includes an order or transaction reference. Both numbers live
 in `app/core/budget.py` and are enforced by `admission()`, not left as a note.
 
+The run dialog starts in **Fast** mode: five routed candidates over three
+backtest folds. **Balanced** adds the heavier statistical and boosting models,
+and **Thorough** uses the full roster over eight folds. Candidate backtests are
+evaluated concurrently while their results are restored to the original model
+order before scoring, so concurrency cannot change a tie or the reported rank.
+`FORECAST_MODEL_CONCURRENCY` controls that per-run parallelism. Keep
+`FORECAST_WORKERS × FORECAST_MODEL_CONCURRENCY` close to the machine's available
+CPU cores; on a four-core host, `2 × 2` is the practical starting point.
+
 ### Where an accuracy figure comes from
 
 `GET /api/forecasts/{id}/accuracy` returns WAPE and signed bias by horizon and

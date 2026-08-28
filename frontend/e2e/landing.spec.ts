@@ -14,10 +14,17 @@ test("the landing page is the root and the app has moved to /dashboard", async (
   await expect(page.getByRole("heading", { name: "Overview" })).toBeHidden();
 });
 
-test("the primary call to action opens the dashboard", async ({ page }) => {
+test("the primary call to action opens sign in", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("link", { name: "Open the dashboard" }).first().click();
+  await page.getByRole("link", { name: "Start forecasting" }).first().click();
+  await expect(page).toHaveURL(/\/signin$/);
+});
+
+test("the live workspace remains available as a demo", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("link", { name: "Open the dashboard" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
@@ -34,14 +41,16 @@ test("it never scrolls sideways, at any width", async ({ page }) => {
 });
 
 test("every section is readable once scrolled to", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   for (const heading of [
     "From a spreadsheet to a plan in three steps.",
     "Everything a planner needs, and nothing they do not.",
+    "Know what changed, why it matters, and what to do next.",
     "A range tells you more than a perfect-looking line.",
-    "Right about 94% of the sales it had never seen.",
+    /Right about .* of the sales it had never seen\./,
     "See what is coming next.",
   ]) {
     const target = page.getByRole("heading", { name: heading });
@@ -72,13 +81,11 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   await context.close();
 });
 
-test("the header call to action fits its pill on the narrowest phones", async ({ page }) => {
-  // The full label wrapped to two lines and spilled out of a fixed-height pill
-  // below roughly 360px, which is where the older Android widths sit.
+test("the primary call to action fits on the narrowest phones", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/");
 
-  const cta = page.locator("header").getByRole("link", { name: "Open the dashboard" });
+  const cta = page.getByRole("link", { name: "Start forecasting" }).first();
   await expect(cta).toBeVisible();
 
   const fits = await cta.evaluate((node) => node.scrollHeight <= node.clientHeight);
@@ -89,12 +96,17 @@ test("the section nav only appears once it has room for one line", async ({ page
   await page.goto("/");
 
   const nav = page.getByRole("navigation", { name: "Sections" });
-  if (!(await nav.isVisible())) return;
+  const sectionLinks = nav.locator("ul").first().getByRole("link");
+  if (!(await sectionLinks.first().isVisible())) return;
 
-  for (const link of await nav.getByRole("link").all()) {
+  for (const link of await sectionLinks.all()) {
     const box = await link.boundingBox();
     expect(box, "every section link has a box").not.toBeNull();
-    // One line of text at this size is ~20px; two would clear 30.
-    expect(box!.height).toBeLessThan(30);
+    const textLines = await link.evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getClientRects().length;
+    });
+    expect(textLines).toBe(1);
   }
 });

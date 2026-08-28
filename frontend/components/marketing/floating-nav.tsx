@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const SECTIONS = [
   { id: "how-it-works", label: "How it works" },
   { id: "features", label: "Features" },
+  { id: "insights", label: "Insights" },
   { id: "compare", label: "Compare" },
   { id: "accuracy", label: "Accuracy" },
 ];
@@ -168,6 +169,12 @@ export function FloatingNav() {
 
         <div className="ml-auto flex items-center gap-2">
           <Link
+            href="/signin"
+            className="hidden h-[40px] items-center px-2 text-site-body font-medium text-[#3f443f] transition-colors hover:text-[#111512] min-[430px]:inline-flex sm:h-[42px] sm:px-3"
+          >
+            Sign in
+          </Link>
+          <Link
             href="/dashboard"
             aria-label="Open the dashboard"
             aria-hidden={!pastHero}
@@ -229,6 +236,10 @@ export function FloatingNav() {
             </li>
           ))}
         </ul>
+        <div className="mt-2 grid grid-cols-2 gap-1 border-t border-[#d8ddd7] pt-2">
+          <Link href="/signin" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-center border border-[#c9d0c9] px-3 text-site-body font-medium text-[#111512]">Sign in</Link>
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-center bg-[#111512] px-3 text-site-body font-medium text-white">Live workspace</Link>
+        </div>
       </div>
     </div>
   );

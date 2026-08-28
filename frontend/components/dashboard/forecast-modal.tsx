@@ -76,6 +76,7 @@ const OUTLIER_TREATMENTS: SelectOption<OutlierTreatment>[] = [
 ];
 
 type MetricFocus = "balanced" | "wmape" | "smape" | "rmse";
+type RunMode = "fast" | "balanced" | "thorough" | "custom";
 
 const METRIC_FOCUS: SelectOption<MetricFocus>[] = [
   { value: "balanced", label: "Balanced", hint: "wMAPE 50 · sMAPE 30 · RMSE 20" },
@@ -88,6 +89,40 @@ const METRIC_WEIGHTS: Record<Exclude<MetricFocus, "balanced">, Record<string, nu
   wmape: { wmape: 0.7, smape: 0.2, rmse: 0.1 },
   smape: { wmape: 0.2, smape: 0.7, rmse: 0.1 },
   rmse: { wmape: 0.2, smape: 0.1, rmse: 0.7 },
+};
+
+const ALL_MODELS: { value: ModelKind; label: string }[] = [
+  { value: "naive", label: "Naive" },
+  { value: "seasonal_naive", label: "Seasonal Naive" },
+  { value: "holt_winters", label: "Holt-Winters" },
+  { value: "ets", label: "Auto-ETS" },
+  { value: "theta", label: "Theta" },
+  { value: "croston", label: "Croston (Intermittent)" },
+  { value: "sarimax", label: "SARIMAX" },
+  { value: "prophet", label: "Prophet" },
+  { value: "gradient_boosting", label: "Gradient Boosting" },
+  { value: "ensemble", label: "Ensemble" },
+];
+
+const RUN_MODELS: Record<Exclude<RunMode, "custom">, ModelKind[]> = {
+  fast: ["naive", "seasonal_naive", "ets", "theta", "croston"],
+  balanced: [
+    "naive",
+    "seasonal_naive",
+    "holt_winters",
+    "ets",
+    "theta",
+    "croston",
+    "sarimax",
+    "gradient_boosting",
+  ],
+  thorough: ALL_MODELS.map((model) => model.value),
+};
+
+const RUN_MODE_COPY: Record<Exclude<RunMode, "custom">, { label: string; hint: string; folds: number }> = {
+  fast: { label: "Fast", hint: "5 models · 3 checks", folds: 3 },
+  balanced: { label: "Balanced", hint: "8 models · 5 checks", folds: 5 },
+  thorough: { label: "Thorough", hint: "All models · 8 checks", folds: 8 },
 };
 
 export function ForecastModal() {
@@ -131,26 +166,12 @@ export function ForecastModal() {
 
   const providerLabel =
     PROVIDERS.find((provider) => provider.value === llmProvider)?.label ?? llmProvider;
-  const [maxFolds, setMaxFolds] = useState(5);
+  const [maxFolds, setMaxFolds] = useState(3);
   const [seriesLimit, setSeriesLimit] = useState(500);
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
-  const ALL_MODELS: { value: ModelKind; label: string }[] = [
-    { value: "naive", label: "Naive" },
-    { value: "seasonal_naive", label: "Seasonal Naive" },
-    { value: "holt_winters", label: "Holt-Winters" },
-    { value: "ets", label: "Auto-ETS" },
-    { value: "theta", label: "Theta" },
-    { value: "croston", label: "Croston (Intermittent)" },
-    { value: "sarimax", label: "SARIMAX" },
-    { value: "prophet", label: "Prophet" },
-    { value: "gradient_boosting", label: "Gradient Boosting" },
-    { value: "ensemble", label: "Ensemble" },
-  ];
-
-  const [selectedModels, setSelectedModels] = useState<ModelKind[]>(
-    ALL_MODELS.map((m) => m.value)
-  );
+  const [runMode, setRunMode] = useState<RunMode>("fast");
+  const [selectedModels, setSelectedModels] = useState<ModelKind[]>(RUN_MODELS.fast);
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [prophetCps, setProphetCps] = useState(0.05);
   const [prophetIw, setProphetIw] = useState(0.8);
@@ -305,6 +326,12 @@ export function ForecastModal() {
         onError: (mutationError) => setError(errorMessage(mutationError)),
       },
     );
+  }
+
+  function applyRunMode(mode: Exclude<RunMode, "custom">) {
+    setRunMode(mode);
+    setSelectedModels(RUN_MODELS[mode]);
+    setMaxFolds(RUN_MODE_COPY[mode].folds);
   }
 
   function handleClose() {
@@ -579,45 +606,44 @@ export function ForecastModal() {
 
           <Section
             title="Candidate algorithms"
-            note={`${selectedModels.length} of ${ALL_MODELS.length} selected`}
+            note={runMode === "custom" ? `${selectedModels.length} selected` : `${RUN_MODE_COPY[runMode].label} mode`}
           >
-            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <p className="text-caption text-text-muted">
-                Unticked algorithms are left out of the backtest.
-              </p>
-              <div className="flex shrink-0 items-center gap-2">
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {(Object.keys(RUN_MODE_COPY) as Array<Exclude<RunMode, "custom">>).map((mode) => (
                 <button
+                  key={mode}
                   type="button"
-                  onClick={() => setSelectedModels(ALL_MODELS.map((m) => m.value))}
-                  className="text-caption font-medium text-accent hover:underline"
+                  onClick={() => applyRunMode(mode)}
+                  aria-pressed={runMode === mode}
+                  className={cn(
+                    "min-h-12 border px-3 py-2 text-left transition-colors",
+                    runMode === mode
+                      ? "border-accent-border bg-accent-soft text-text-primary"
+                      : "border-border bg-surface text-text-secondary hover:bg-surface-muted",
+                  )}
                 >
-                  Select all
+                  <span className="block text-meta font-semibold">{RUN_MODE_COPY[mode].label}{mode === "fast" ? " · Recommended" : ""}</span>
+                  <span className="mt-0.5 block text-caption text-text-muted">{RUN_MODE_COPY[mode].hint}</span>
                 </button>
-                <span className="text-caption text-text-muted" aria-hidden>
-                  ·
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedModels([])}
-                  className="text-caption font-medium text-text-muted hover:underline"
-                >
-                  Clear all
-                </button>
-              </div>
+              ))}
             </div>
+            <p className="mb-2 text-caption text-text-muted">
+              The engine still removes algorithms that do not fit the series shape. Change any tick to create a custom run.
+            </p>
             <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
               {ALL_MODELS.map((m) => (
                 <CheckRow
                   key={m.value}
                   label={m.label}
                   checked={selectedModels.includes(m.value)}
-                  onChange={(next) =>
+                  onChange={(next) => {
+                    setRunMode("custom");
                     setSelectedModels(
                       next
                         ? [...selectedModels, m.value]
                         : selectedModels.filter((val) => val !== m.value),
-                    )
-                  }
+                    );
+                  }}
                 />
               ))}
             </div>
@@ -678,7 +704,10 @@ export function ForecastModal() {
                     min={1}
                     max={10}
                     value={maxFolds}
-                    onChange={(e) => setMaxFolds(Number(e.target.value) || 5)}
+                    onChange={(e) => {
+                      setRunMode("custom");
+                      setMaxFolds(Number(e.target.value) || 5);
+                    }}
                   />
                 </Field>
 

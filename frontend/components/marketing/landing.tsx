@@ -1,6 +1,17 @@
 "use client";
 
-import { BarChart3, CirclePlay, FileUp, Gauge, Layers3, Table2 } from "lucide-react";
+import {
+  BarChart3,
+  CheckCircle2,
+  CirclePlay,
+  FileUp,
+  Gauge,
+  Layers3,
+  ShieldCheck,
+  Sparkles,
+  Table2,
+  Target,
+} from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -83,6 +94,7 @@ export function Landing() {
         <Hero />
         <HowItWorks />
         <Features />
+        <InsightsPreview />
         <Compare />
         <Accuracy />
         <Closing />
@@ -128,19 +140,24 @@ function Hero() {
 
         <Reveal delay={240} duration={620} className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <Link
-            href="/dashboard"
+            href="/signin"
             className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[56px] sm:px-8"
           >
-            Open the dashboard
+            Start forecasting
             <Arrow />
           </Link>
           <Link
-            href="#how-it-works"
+            href="/dashboard"
+            aria-label="Open the dashboard"
             className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-[#bfc7bf] bg-[#fafbf9]/75 px-6 text-site-body font-medium text-[#343a35] backdrop-blur-sm hover:border-[#8f9a90] hover:bg-white sm:h-[56px]"
           >
-            See how it works
-            <span className="ml-2" aria-hidden>↓</span>
+            Explore the live workspace
           </Link>
+        </Reveal>
+        <Reveal delay={300} duration={520} className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-[#646b65]">
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-[#287b59]" aria-hidden /> No setup project</span>
+          <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[#287b59]" aria-hidden /> Figures stay traceable</span>
+          <Link href="#how-it-works" className="text-[#287b59] hover:text-[#175a3e]">See how it works ↓</Link>
         </Reveal>
       </div>
 
@@ -264,6 +281,63 @@ function Features() {
   );
 }
 
+function InsightsPreview() {
+  return (
+    <section id="insights" className="section-pad border-t border-[#d8ddd7] bg-[#e8ebe6]">
+      <div className={cn(SHELL, "grid items-start gap-10 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:gap-16")}>
+        <Reveal variant="from-left" duration={680}>
+          <Eyebrow>Decision brief</Eyebrow>
+          <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
+            Know what changed, why it matters, and what to do next.
+          </h2>
+          <p className="mt-5 max-w-[46ch] text-site-lead text-[#444b45]">
+            Forecast Hub ranks the signals that deserve attention and keeps every conclusion tied to the computed evidence behind it.
+          </p>
+          <div className="mt-7 grid gap-3 text-site-body text-[#444b45] sm:grid-cols-2 lg:grid-cols-1">
+            <p className="flex gap-3"><Target className="mt-1 size-4 shrink-0 text-[#287b59]" aria-hidden /><span><strong className="text-[#111512]">Prioritised.</strong> Risks and opportunities appear in decision order.</span></p>
+            <p className="flex gap-3"><ShieldCheck className="mt-1 size-4 shrink-0 text-[#287b59]" aria-hidden /><span><strong className="text-[#111512]">Grounded.</strong> AI may refine the wording; it never invents the figures.</span></p>
+          </div>
+        </Reveal>
+
+        <Reveal delay={120} variant="from-right" duration={720}>
+          <div className="border border-[#bdc5bd] bg-[#fafbf9] shadow-[0_28px_70px_-52px_rgba(17,22,18,.7)]">
+            <div className="flex items-center justify-between gap-4 border-b border-[#d8ddd7] px-5 py-4 sm:px-6">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-[#6a716b]">Decision brief · this run</p>
+                <p className="mt-1 text-site-h3 font-bold">Three signals need attention</p>
+              </div>
+              <Sparkles className="size-5 text-[#287b59]" strokeWidth={1.7} aria-hidden />
+            </div>
+
+            <div className="grid gap-px bg-[#d8ddd7] sm:grid-cols-3">
+              <div className="bg-[#fafbf9] p-5 sm:p-6">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#8a6a31]">What changed</p>
+                <p className="mt-4 text-site-h3 font-bold">West demand is softening</p>
+                <p className="mt-2 text-site-body text-[#525953]">The next six weeks sit 8.4% below the recent baseline.</p>
+              </div>
+              <div className="bg-[#fafbf9] p-5 sm:p-6">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#59605a]">Why it matters</p>
+                <p className="mt-4 text-site-h3 font-bold">Inventory may run long</p>
+                <p className="mt-2 text-site-body text-[#525953]">The downside falls outside the normal planning range.</p>
+              </div>
+              <div className="bg-[#eef4f0] p-5 sm:p-6">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#287b59]">Next move</p>
+                <p className="mt-4 text-site-h3 font-bold">Review the West order</p>
+                <p className="mt-2 text-site-body text-[#425047]">Model a lower-receipts scenario before the buying cutoff.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#d8ddd7] px-5 py-3 font-mono text-[0.68rem] text-[#697069] sm:px-6">
+              <span>Computed from 5 backtest folds</span>
+              <span className="inline-flex items-center gap-1.5 text-[#287b59]"><span className="size-1.5 bg-[#287b59]" aria-hidden /> Figures verified</span>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 function Compare() {
   return (
     <section id="compare" className="section-pad border-t border-[#d8ddd7]">
@@ -333,8 +407,8 @@ function Closing() {
       <Reveal variant="scale" duration={700} className="page-shell max-w-[46ch] text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
         <h2 className="mt-4 text-balance font-display text-site-h2 font-normal">See what is coming next.</h2>
-        <Link href="/dashboard" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] min-[430px]:w-auto sm:h-[56px] sm:px-8">
-          Open the dashboard
+        <Link href="/signin" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] min-[430px]:w-auto sm:h-[56px] sm:px-8">
+          Start forecasting
           <Arrow />
         </Link>
       </Reveal>
@@ -351,7 +425,10 @@ function Footer() {
           <span className="text-site-h3 font-bold">Forecast Hub</span>
         </div>
         <p className="text-site-body text-[#737a73] sm:ml-auto">Demand forecasting for planning teams.</p>
-        <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Open dashboard →</Link>
+        <div className="flex items-center gap-5">
+          <Link href="/signin" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Sign in</Link>
+          <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Live workspace →</Link>
+        </div>
       </div>
     </footer>
   );

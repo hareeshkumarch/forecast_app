@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date
+from threading import Lock
 from typing import Any, TypedDict
 
 import numpy as np
 import numpy.typing as npt
 
 from app.core.budget import RunTimings, Stage
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.forecasting import combination
 from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
@@ -174,12 +177,49 @@ TRANSFORMABLE = {
     ModelKind.GRADIENT_BOOSTING,
 }
 
+WindowKey = tuple[int, date, date]
+
+
+@dataclass(slots=True)
+class WindowFeatureCache:
+    profiles: dict[WindowKey, SeriesProfile] = field(default_factory=dict)
+    panels: dict[WindowKey, DriverPanel] = field(default_factory=dict)
+    lock: Lock = field(default_factory=Lock)
+
+    def profile_for(
+        self,
+        key: WindowKey,
+        values: FloatArray,
+        frequency: ForecastFrequency,
+    ) -> SeriesProfile:
+        with self.lock:
+            cached = self.profiles.get(key)
+            if cached is None:
+                cached = profile_series(values, frequency)
+                self.profiles[key] = cached
+            return cached
+
+    def panel_for(
+        self,
+        key: WindowKey,
+        source: DriverSource,
+        values: FloatArray,
+        periods: list[date],
+    ) -> DriverPanel:
+        with self.lock:
+            cached = self.panels.get(key)
+            if cached is None:
+                cached = source.panel_for(values, periods)
+                self.panels[key] = cached
+            return cached
+
 
 def _make_factory(
     kind: ModelKind,
     frequency: ForecastFrequency,
     options: dict[str, object] | None,
     drivers: DriverSource | None = None,
+    feature_cache: WindowFeatureCache | None = None,
 ) -> ModelFactory:
     """A model built from the window it is about to be fitted on.
 
@@ -190,8 +230,19 @@ def _make_factory(
     """
 
     def factory(y_train: FloatArray, periods_train: list[date]) -> Forecaster:
-        window_profile = profile_series(y_train, frequency)
-        panel = drivers.panel_for(y_train, periods_train) if drivers else None
+        key = (len(periods_train), periods_train[0], periods_train[-1])
+        window_profile = (
+            feature_cache.profile_for(key, y_train, frequency)
+            if feature_cache is not None
+            else profile_series(y_train, frequency)
+        )
+        panel = (
+            feature_cache.panel_for(key, drivers, y_train, periods_train)
+            if feature_cache is not None and drivers is not None
+            else drivers.panel_for(y_train, periods_train)
+            if drivers is not None
+            else None
+        )
         model = build_candidate(kind, frequency, options, window_profile, panel)
         if kind in TRANSFORMABLE:
             return TransformedForecaster(model, build_transform(y_train, window_profile))
@@ -264,6 +315,12 @@ def run_forecast(
     with timings.measure(Stage.FEATURES):
         panel = source.panel_for(values, periods)
 
+    full_window = (len(periods), periods[0], periods[-1])
+    feature_cache = WindowFeatureCache(
+        profiles={full_window: profile},
+        panels={full_window: panel},
+    )
+
     used_fallback = False
     fallback_reason: str | None = None
 
@@ -293,35 +350,67 @@ def run_forecast(
     results: list[BacktestResult] = []
     candidate_total = len(candidates)
     fit_started = time.perf_counter()
-    for candidate_index, candidate in enumerate(candidates, start=1):
+
+    def evaluate_candidate(candidate: Forecaster) -> BacktestResult:
         kind = candidate.kind
-        if progress_callback is not None:
-            progress_callback(
-                "backtesting",
-                candidate_index - 1,
-                candidate_total,
-                f"Backtesting {kind.value.replace('_', ' ')} ({candidate_index} of {candidate_total})...",
-            )
-        results.append(
-            run_backtest(
-                _make_factory(kind, frequency, model_options, source),
-                kind,
-                observed,
-                periods,
-                plan,
-                frequency,
-                weights,
-                payload.confidence_level,
-                prepare=payload.preparation,
-            )
+        return run_backtest(
+            _make_factory(kind, frequency, model_options, source, feature_cache),
+            kind,
+            observed,
+            periods,
+            plan,
+            frequency,
+            weights,
+            payload.confidence_level,
+            prepare=payload.preparation,
         )
+
+    model_workers = min(settings.forecast_model_concurrency, candidate_total)
+    if model_workers <= 1:
+        for candidate_index, candidate in enumerate(candidates, start=1):
+            if progress_callback is not None:
+                progress_callback(
+                    "backtesting",
+                    candidate_index - 1,
+                    candidate_total,
+                    f"Backtesting {candidate.kind.value.replace('_', ' ')} ({candidate_index} of {candidate_total})...",
+                )
+            results.append(evaluate_candidate(candidate))
+            if progress_callback is not None:
+                progress_callback(
+                    "backtesting",
+                    candidate_index,
+                    candidate_total,
+                    f"Backtested {candidate_index} of {candidate_total} candidate models.",
+                )
+    else:
+        indexed: dict[int, BacktestResult] = {}
         if progress_callback is not None:
             progress_callback(
                 "backtesting",
-                candidate_index,
+                0,
                 candidate_total,
-                f"Backtested {candidate_index} of {candidate_total} candidate models.",
+                f"Backtesting {candidate_total} candidate models with {model_workers} workers...",
             )
+        with ThreadPoolExecutor(
+            max_workers=model_workers,
+            thread_name_prefix="forecast-model",
+        ) as pool:
+            futures = {
+                pool.submit(evaluate_candidate, candidate): (index, candidate.kind)
+                for index, candidate in enumerate(candidates)
+            }
+            for completed, future in enumerate(as_completed(futures), start=1):
+                index, kind = futures[future]
+                indexed[index] = future.result()
+                if progress_callback is not None:
+                    progress_callback(
+                        "backtesting",
+                        completed,
+                        candidate_total,
+                        f"Backtested {kind.value.replace('_', ' ')} ({completed} of {candidate_total}).",
+                    )
+        results = [indexed[index] for index in range(candidate_total)]
 
     combined = combination.blend(
         results,
@@ -367,7 +456,13 @@ def run_forecast(
             frequency, profile, members=combined.members, weights=combined.weights
         )
     else:
-        final_model = _make_factory(winner_kind, frequency, model_options, source)(values, periods)
+        final_model = _make_factory(
+            winner_kind,
+            frequency,
+            model_options,
+            source,
+            feature_cache,
+        )(values, periods)
 
     try:
         final_model.fit(values, periods)

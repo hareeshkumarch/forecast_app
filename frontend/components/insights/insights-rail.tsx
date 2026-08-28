@@ -19,7 +19,6 @@ import {
 import { useEffect, useState } from "react";
 
 import {
-  Badge,
   Button,
   EmptyState,
   ErrorState,
@@ -47,6 +46,26 @@ const TYPE_ICONS: Record<InsightType, LucideIcon> = {
   driver_positive: TrendingUp,
   driver_negative: TrendingDown,
   recommendation: Lightbulb,
+};
+
+const TYPE_LABELS: Record<InsightType, string> = {
+  accuracy_change: "Accuracy",
+  forecast_gap: "Plan gap",
+  regional_growth: "Region",
+  category_decline: "Category",
+  anomaly: "Anomaly",
+  confidence_widening: "Uncertainty",
+  worst_case_risk: "Downside risk",
+  driver_positive: "Positive driver",
+  driver_negative: "Negative driver",
+  recommendation: "Recommendation",
+};
+
+const SEVERITY_LABELS: Record<InsightSeverity, string> = {
+  positive: "Opportunity",
+  info: "Monitor",
+  warning: "Review",
+  critical: "Act now",
 };
 
 const SEVERITY_STYLES: Record<
@@ -148,7 +167,7 @@ export function InsightsRailBody({ onCollapse }: { onCollapse?: () => void } = {
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />
-          <h2 className="text-subhead font-semibold text-text-primary">Forecast Insights</h2>
+          <h2 className="text-subhead font-semibold text-text-primary">Decision Brief</h2>
           {items.length > 0 ? (
             <span className="ml-auto text-caption text-text-muted num">{items.length}</span>
           ) : null}
@@ -219,12 +238,12 @@ export function InsightsRailBody({ onCollapse }: { onCollapse?: () => void } = {
             {rewritten > 0 && provider ? (
               <>
                 <ProviderLogo provider={provider.id} className="h-3 w-3" />
-                <span>Worded by {provider.label}. The figures are the platform&apos;s.</span>
+                <span>{provider.label} refined the wording. Forecast Hub computed every figure.</span>
               </>
             ) : (
               <span>
-                Written by the platform.
-                {provider ? "" : " Add a provider in Settings to have them reworded."}
+                Ranked by urgency from computed forecast signals.
+                {provider ? "" : " Add a provider only if you want the wording refined."}
               </span>
             )}
           </p>
@@ -267,7 +286,7 @@ export function InsightsRailBody({ onCollapse }: { onCollapse?: () => void } = {
           disabled={items.length === 0}
           onClick={() => openModal("all-insights")}
         >
-          View All Insights
+          Open Decision Brief
         </Button>
       </div>
     </>
@@ -279,39 +298,52 @@ export function InsightCard({ insight, onOpen }: { insight: Insight; onOpen: () 
   const style = SEVERITY_STYLES[insight.severity];
 
   return (
-    <article className={cn("rounded-card border bg-surface p-3", style.border)}>
-      <div className="flex items-start gap-2">
+    <article className={cn("rounded-card border bg-surface p-3.5", style.border)}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className={cn("font-mono text-micro font-medium uppercase tracking-[0.11em]", style.title)}>
+          {SEVERITY_LABELS[insight.severity]} · {TYPE_LABELS[insight.type]}
+        </span>
+        <span className="shrink-0 text-caption font-semibold text-text-primary num">
+          {formatMetric(insight.metric_value, insight.metric_unit)}
+        </span>
+      </div>
+
+      <div className="flex items-start gap-2.5">
         <span
           className={cn(
-            "mt-px flex h-5 w-5 shrink-0 items-center justify-center",
+            "mt-px flex h-6 w-6 shrink-0 items-center justify-center",
             style.iconBg,
           )}
           aria-hidden
         >
-          <Icon className={cn("h-3 w-3", style.iconText)} />
+          <Icon className={cn("h-3.5 w-3.5", style.iconText)} />
         </span>
-        <h3 className={cn("text-body font-semibold", style.title)}>
+        <h3 className="text-body font-semibold text-text-primary">
           {insight.title}
         </h3>
       </div>
 
-      <p className="mt-1.5 line-clamp-3 text-caption text-text-secondary">
+      <p className="mt-2 line-clamp-3 text-caption text-text-secondary">
         {insight.explanation}
       </p>
 
-   <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span className="truncate text-caption font-medium text-text-muted num">
-          {formatMetric(insight.metric_value, insight.metric_unit)}
+      <div className="mt-3 border-l-2 border-accent-border bg-accent-soft/50 px-2.5 py-2">
+        <p className="font-mono text-micro font-medium uppercase tracking-[0.1em] text-accent">Next move</p>
+        <p className="mt-1 line-clamp-2 text-caption text-text-primary">{insight.suggested_action}</p>
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <span className="text-micro text-text-muted">
+          {insight.llm_rewritten ? "AI-refined wording · computed facts" : "Computed by Forecast Hub"}
         </span>
-    <button
+        <button
           type="button"
           onClick={onOpen}
           className="shrink-0 text-caption font-medium text-accent transition-colors duration-fast hover:text-accent-hover"
         >
-     View Details →
-    </button>
-   </div>
-   {insight.llm_rewritten ? <Badge tone="accent" className="mt-2">LLM enhanced</Badge> : null}
-  </article>
+          View analysis →
+        </button>
+      </div>
+    </article>
   );
 }

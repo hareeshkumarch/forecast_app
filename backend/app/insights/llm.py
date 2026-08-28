@@ -53,7 +53,9 @@ Absolute rules:
 - Reuse every figure exactly as written in the input.
 - Do not add figures that are not in the input.
 - Keep the same meaning and direction.
-- Title: at most 6 words. Explanation: 2-3 sentences. Action: 1 sentence, imperative.
+- Use plain business language. Avoid model jargon, filler, hype and vague hedging.
+- Lead the explanation with the decision-relevant change, then state why it matters.
+- Title: at most 6 words. Explanation: exactly 2 short sentences. Action: 1 sentence beginning with a clear verb.
 
 Reply with exactly three lines, no labels, no markdown, no emojis:
 line 1 = title

@@ -101,6 +101,7 @@ def test_metric_weights_that_rank_nothing_are_refused() -> None:
         ("interval_weight", -0.1),
         ("metric_weight_wmape", 1.5),
         ("forecast_max_folds", 0),
+        ("forecast_model_concurrency", 0),
         ("ensemble_max_members", 1),
         ("ensemble_min_improvement", 1.0),
         ("divergence_sigmas", 0.0),
@@ -136,6 +137,7 @@ def test_the_defaults_are_the_ones_the_platform_shipped_with() -> None:
     assert settings.tuning_min_validation_rows == 6
     assert settings.min_gbm_rows == 8
     assert settings.api_max_page_size == 200
+    assert settings.forecast_model_concurrency == 2
 
 
 def test_the_metric_weights_property_matches_its_fields() -> None:

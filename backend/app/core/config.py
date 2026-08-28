@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     currency_symbol: str = "$"
 
     forecast_workers: int = 2
+    forecast_model_concurrency: int = Field(default=2, ge=1, le=8)
 
     celery_broker_url: str = ""
     celery_result_backend: str = ""
