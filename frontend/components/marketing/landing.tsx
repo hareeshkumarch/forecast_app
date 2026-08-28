@@ -1,15 +1,9 @@
 "use client";
 
 import {
-  BarChart3,
   CheckCircle2,
-  CirclePlay,
-  FileUp,
-  Gauge,
-  Layers3,
   ShieldCheck,
   Sparkles,
-  Table2,
   Target,
 } from "lucide-react";
 import Link from "next/link";
@@ -21,6 +15,7 @@ import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
 import { cn } from "@/lib/utils";
 
