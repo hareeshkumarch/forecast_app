@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Mark } from "@/components/marketing/mark";
+import { ThemeToggle } from "@/components/marketing/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const SECTIONS = [
@@ -18,7 +19,6 @@ const SECTIONS = [
 export function FloatingNav() {
   const [lifted, setLifted] = useState(false);
   const [pastHero, setPastHero] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [active, setActive] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
@@ -67,8 +67,6 @@ export function FloatingNav() {
     const update = () => {
       setLifted(window.scrollY > 40);
       setPastHero(window.scrollY > 520);
-      const scrollable = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
-      setScrollProgress(Math.min(Math.max(window.scrollY / scrollable, 0), 1));
     };
     const onScroll = () => {
       if (frame) return;
@@ -126,15 +124,15 @@ export function FloatingNav() {
       <nav
         aria-label="Sections"
         className={cn(
-          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden border border-[#d8ddd7] bg-[#fafbf9]/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
+          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
           lifted
-            ? "shadow-[0_18px_38px_-22px_rgba(17,22,18,.4),0_1px_2px_rgba(17,22,18,.08)]"
-            : "shadow-[0_4px_14px_-10px_rgba(17,22,18,.25)]",
+            ? "shadow-[0_18px_38px_-22px_var(--land-nav-shadow)]"
+            : "shadow-[0_4px_14px_-10px_var(--land-nav-shadow)]",
         )}
       >
         <Link href="#top" aria-label="Forecast Hub, back to top" className="flex shrink-0 items-center gap-2.5">
           <Mark size={24} />
-          <span className="hidden text-site-h3 font-bold text-[#111512] min-[360px]:inline">Forecast Hub</span>
+          <span className="hidden text-site-h3 font-bold text-text-primary min-[360px]:inline">Forecast Hub</span>
         </Link>
 
         <ul ref={listRef} className="relative mx-auto hidden items-center gap-0.5 lg:flex">
@@ -143,7 +141,7 @@ export function FloatingNav() {
           <span
             aria-hidden
             data-placing={placed.current ? undefined : "true"}
-            className="nav-indicator pointer-events-none absolute inset-y-1 left-0 bg-[#e6e9e4]"
+            className="nav-indicator pointer-events-none absolute inset-y-1 left-0 bg-surface-muted"
             style={{
               width: indicator?.width ?? 0,
               transform: `translate3d(${indicator?.left ?? 0}px, 0, 0)`,
@@ -157,8 +155,8 @@ export function FloatingNav() {
                 data-section={section.id}
                 aria-current={active === section.id ? "location" : undefined}
                 className={cn(
-                  "relative inline-flex px-3.5 py-2 text-site-body text-[#3f443f] transition-colors hover:text-[#111512]",
-                  active === section.id && "text-[#111512]",
+                  "relative inline-flex px-3.5 py-2 text-site-body text-text-secondary transition-colors hover:text-text-primary",
+                  active === section.id && "text-text-primary",
                 )}
               >
                 {section.label}
@@ -168,6 +166,8 @@ export function FloatingNav() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
+
           <Link
             href="/signin"
             className="hidden h-[40px] items-center px-2 text-site-body font-medium text-[#3f443f] transition-colors hover:text-[#111512] min-[430px]:inline-flex sm:h-[42px] sm:px-3"
@@ -179,11 +179,25 @@ export function FloatingNav() {
             aria-label="Open the dashboard"
             aria-hidden={!pastHero}
             tabIndex={pastHero ? 0 : -1}
+            /*
+             * Hidden by `visibility`, not by collapsing to nothing.
+             *
+             * The pill used to animate from `w-0`, which grew the group it
+             * sits in from 48px to 260px the moment the hero scrolled past
+             * and shoved the section list sideways — a layout shift, small
+             * but real, and the only one on the page. Reserving the width
+             * costs an empty slot at the right of the nav that nobody can
+             * see, and buys a nav that never moves.
+             *
+             * `visibility: hidden` rather than `opacity: 0` alone: it takes
+             * the pill out of the tab order and out of hit-testing while
+             * keeping its box, which is exactly the pair of things wanted.
+             */
             className={cn(
-              "cta-nudge group inline-flex h-[40px] shrink-0 items-center justify-center overflow-hidden border-2 border-[#111512] bg-[#111512] text-site-body font-medium text-white hover:border-[#287b59] sm:h-[42px]",
+              "cta-nudge group inline-flex h-[40px] w-[40px] shrink-0 items-center justify-center overflow-hidden border-2 border-land-cta bg-land-cta text-site-body font-medium text-land-cta-ink hover:border-accent sm:h-[42px] sm:w-auto sm:px-4",
               pastHero
-                ? "w-[40px] translate-y-0 opacity-100 sm:w-auto sm:px-4"
-                : "pointer-events-none w-0 translate-y-1 border-x-0 opacity-0",
+                ? "visible translate-y-0 opacity-100"
+                : "pointer-events-none invisible translate-y-1 opacity-0",
             )}
           >
             <span className="hidden whitespace-nowrap sm:inline">Open the dashboard</span>
@@ -197,23 +211,18 @@ export function FloatingNav() {
             aria-controls="mobile-section-navigation"
             aria-label={mobileOpen ? "Close section navigation" : "Open section navigation"}
             onClick={() => setMobileOpen((open) => !open)}
-            className="inline-flex size-10 shrink-0 items-center justify-center border border-[#c9d0c9] bg-[#f7f9f6] text-[#111512] transition-colors hover:border-[#8f9a90] hover:bg-white lg:hidden"
+            className="nav-control inline-flex size-10 shrink-0 items-center justify-center border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted lg:hidden"
           >
             {mobileOpen ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
           </button>
         </div>
-        <span
-          aria-hidden
-          className="nav-progress absolute inset-x-0 bottom-0 h-px bg-[#287b59]"
-          style={{ transform: `scaleX(${scrollProgress})` }}
-        />
       </nav>
 
       <div
         id="mobile-section-navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "page-shell mt-2 border border-[#d8ddd7] bg-[#fafbf9]/98 p-2 shadow-[0_20px_45px_-24px_rgba(17,22,18,.45)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 lg:hidden",
+          "page-shell mt-2 border border-border bg-surface/98 p-2 shadow-[0_20px_45px_-24px_var(--land-nav-shadow)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 lg:hidden",
           mobileOpen
             ? "visible translate-y-0 opacity-100"
             : "pointer-events-none invisible -translate-y-2 opacity-0",
@@ -227,8 +236,8 @@ export function FloatingNav() {
                 aria-current={active === section.id ? "location" : undefined}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex min-h-11 items-center px-3 py-2 text-site-body text-[#414841] transition-colors hover:bg-[#e9ede8] hover:text-[#111512]",
-                  active === section.id && "bg-[#e6e9e4] text-[#111512]",
+                  "flex min-h-11 items-center px-3 py-2 text-site-body text-text-secondary transition-colors hover:bg-surface-muted hover:text-text-primary",
+                  active === section.id && "bg-surface-muted text-text-primary",
                 )}
               >
                 {section.label}

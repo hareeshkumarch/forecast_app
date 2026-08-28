@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
-import { SignIn } from "@/components/auth/sign-in";
+import { SignInScreen } from "@/components/auth/sign-in-gate";
 
 export const metadata: Metadata = {
   title: "Sign in · Forecast Hub",
@@ -14,5 +14,5 @@ export const viewport: Viewport = {
 };
 
 export default function SignInPage() {
-  return <SignIn />;
+  return <SignInScreen />;
 }

@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
 from app.database.base import utcnow
+from app.forecasting.hierarchy import leaf_depth
 from app.models.entities import (
     CategoryForecast,
     ExportJob,
@@ -114,14 +115,7 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
         select(ForecastDriver).where(ForecastDriver.run_id == run.id).order_by(ForecastDriver.rank)
     )
 
-    series = await session.execute(
-        select(ForecastSeries)
-        .where(ForecastSeries.run_id == run.id, ForecastSeries.level > 0)
-        .order_by(
-            ForecastSeries.wmape.is_(None).asc(),
-            (func.abs(ForecastSeries.forecast_total) * ForecastSeries.wmape).desc(),
-        )
-    )
+    series = await _leaf_series(session, run)
 
     return {
         "series": [
@@ -134,7 +128,7 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
                 ),
                 "measured": s.accuracy_measured,
             }
-            for s in series.scalars().all()
+            for s in series
         ],
         "metrics": [
             {"name": m.name, "value": m.value, "unit": m.unit, "previous_value": m.previous_value}
@@ -170,6 +164,24 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
             for d in drivers.scalars().all()
         ],
     }
+
+
+async def _leaf_series(session: AsyncSession, run: ForecastRun) -> list[ForecastSeries]:
+    # Leaves only: a roll-up cannot be smaller than what rolls up into it, so
+    # ranking every level together puts each parent above its own children.
+    leaves = leaf_depth(run.group_by)
+    if leaves == 0:
+        return []
+
+    result = await session.execute(
+        select(ForecastSeries)
+        .where(ForecastSeries.run_id == run.id, ForecastSeries.level == leaves)
+        .order_by(
+            ForecastSeries.wmape.is_(None).asc(),
+            (func.abs(ForecastSeries.forecast_total) * ForecastSeries.wmape).desc(),
+        )
+    )
+    return list(result.scalars().all())
 
 
 def _write(

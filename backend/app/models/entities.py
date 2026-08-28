@@ -19,13 +19,17 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 from app.models.enums import (
+    AccessRole,
+    AccessStatus,
     ColumnKind,
     ColumnRole,
     ConnectorStatus,
@@ -92,6 +96,10 @@ def _enum(enum_cls: type, name: str) -> RobustEnum:
 class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "connectors"
 
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
+
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     type: Mapped[ConnectorType] = mapped_column(_enum(ConnectorType, "connector_type"))
     status: Mapped[ConnectorStatus] = mapped_column(
@@ -157,6 +165,12 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     error_message: Mapped[str | None] = mapped_column(Text)
     intake: Mapped[dict] = mapped_column(JSONType, default=dict)
+    #: Who uploaded this, when anybody was signed in. Nullable because every
+    #: row that predates sign-in has no answer, and inventing one would be a
+    #: worse record than admitting the gap.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
 
     connector: Mapped[Connector | None] = relationship(back_populates="datasets")
     columns: Mapped[list[DatasetColumn]] = relationship(
@@ -212,6 +226,12 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "forecast_runs"
+
+    #: Who started this run, when anybody was signed in. Nullable for the same
+    #: reason as on datasets.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_users.id", ondelete="SET NULL")
+    )
 
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False
@@ -687,3 +707,143 @@ class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     run: Mapped[ForecastRun] = relationship(back_populates="exports")
 
     __table_args__ = (Index("ix_export_jobs_run", "run_id"),)
+
+
+class SchemaMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "schema_mappings"
+
+    #: Sorted column names and dtypes, hashed. The same export run again next
+    #: month arrives with the same fingerprint and is mapped without asking.
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    date_col: Mapped[str] = mapped_column(String(200), nullable=False)
+    target_col: Mapped[str] = mapped_column(String(200), nullable=False)
+    series_keys: Mapped[list] = mapped_column(JSONType, default=list)
+    covariates: Mapped[list] = mapped_column(JSONType, default=list)
+    frequency: Mapped[ForecastFrequency | None] = mapped_column(
+        _enum(ForecastFrequency, "mapping_frequency")
+    )
+    aggregation: Mapped[MeasureAggregation | None] = mapped_column(
+        _enum(MeasureAggregation, "mapping_aggregation")
+    )
+    columns: Mapped[dict] = mapped_column(JSONType, default=dict)
+    accepted_from_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("datasets.id", ondelete="SET NULL")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_schema_mappings_fingerprint"),
+        Index("ix_schema_mappings_dataset", "accepted_from_dataset_id"),
+    )
+
+
+class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Somebody who has signed in, recorded on the way past.
+
+    Deliberately not the authority on identity — Supabase is, and this table
+    holds no password, no token and nothing that could authenticate anybody.
+    It exists so the platform can say who uploaded a file and who started a
+    run, which nothing in the schema could answer before.
+    """
+
+    __tablename__ = "app_users"
+
+    #: The `sub` claim: stable for the life of the account, unlike the email.
+    #: Null on an invitation, which exists before the person it names has ever
+    #: signed in — the row is claimed, and the subject filled, the first time
+    #: somebody arrives with that address.
+    subject: Mapped[str | None] = mapped_column(String(200))
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(200))
+    picture_url: Mapped[str | None] = mapped_column(String(600))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    status: Mapped[AccessStatus] = mapped_column(
+        _enum(AccessStatus, "access_status"), default=AccessStatus.PENDING, nullable=False
+    )
+    role: Mapped[AccessRole] = mapped_column(
+        _enum(AccessRole, "access_role"), default=AccessRole.MEMBER, nullable=False
+    )
+    #: Who decided, and when. Kept because "why does this person have access?"
+    #: is a question that gets asked months later, and an audit trail nobody
+    #: wrote down is one nobody can answer.
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[str | None] = mapped_column(String(320))
+    #: When the request to approve them was last emailed out, so a reminder can
+    #: be sent without spamming on every page load.
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invited_by: Mapped[str | None] = mapped_column(String(320))
+    __table_args__ = (
+        UniqueConstraint("subject", name="uq_app_users_subject"),
+        UniqueConstraint("email", name="uq_app_users_email"),
+        Index("ix_app_users_email", "email"),
+    )
+
+
+class MailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Mail written down before it is sent.
+
+    The row goes in inside the same transaction as whatever caused it, so an
+    approval and its email cannot disagree: the decision does not commit
+    without the message, and a rolled-back decision leaves no message behind.
+    Sending then happens on its own, out of the request's way, and a restart
+    mid-flight costs a retry rather than the message.
+    """
+
+    __tablename__ = "mail_outbox"
+
+    #: Comma separated, as the header itself is. Every message this platform
+    #: sends today goes to one address or to the administrator list.
+    recipients: Mapped[str] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, nullable=False)
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_mail_outbox_due",
+            "next_attempt_at",
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+
+class AccessAudit(UUIDPrimaryKeyMixin, Base):
+    """An append-only record of who changed whose access.
+
+    app_users holds `decided_by` and `decided_at`, which is the last thing that
+    happened and nothing before it — the second decision overwrites the first,
+    so "why did this person lose access in March" has no answer.
+
+    The subject's email is copied rather than joined. Removing an account must
+    not turn the record of removing it into a row about nobody.
+    """
+
+    __tablename__ = "access_audit"
+
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=func.now()
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_email: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    #: Null when the platform acted on its own — an invitation claimed, an
+    #: account admitted because it is named in AUTH_ADMIN_EMAILS.
+    actor_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_access_audit_at", "at"),
+        Index("ix_access_audit_subject", "subject_email"),
+    )

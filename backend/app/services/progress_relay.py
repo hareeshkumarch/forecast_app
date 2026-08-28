@@ -5,12 +5,6 @@ import contextlib
 import json
 import time
 import uuid
-from datetime import datetime, timezone
-
-try:
-    from datetime import UTC
-except ImportError:
-    UTC = timezone.utc  # noqa: UP017
 from typing import Any
 
 from app.core.config import settings
@@ -52,19 +46,7 @@ return 1
 
 def _decode(raw: str | bytes) -> ProgressEvent | None:
     try:
-        payload = json.loads(raw)
-        return ProgressEvent(
-            run_id=uuid.UUID(payload["run_id"]),
-            status=RunStatus(payload["status"]),
-            progress=float(payload["progress"]),
-            stage=str(payload["stage"]),
-            message=payload.get("message"),
-            selected_model=payload.get("selected_model"),
-            error=payload.get("error"),
-            updated_at=_aware(datetime.fromisoformat(payload["updated_at"]))
-            if payload.get("updated_at")
-            else datetime.now(UTC),
-        )
+        return ProgressEvent.from_dict(json.loads(raw))
     except (ValueError, KeyError, TypeError):
         logger.warning("Discarded a malformed progress frame")
         return None
@@ -142,10 +124,6 @@ async def latest_from_store(run_id: uuid.UUID) -> ProgressEvent | None:
         _publisher_failed()
         logger.warning("Could not restore progress for run %s", run_id, exc_info=True)
         return None
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 async def forget_progress(run_id: uuid.UUID) -> None:

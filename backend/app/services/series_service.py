@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sqlalchemy import delete, func, null, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -34,6 +34,7 @@ from app.models.enums import (
     OutlierTreatment,
     PointKind,
     RunStatus,
+    SeriesStatus,
 )
 from app.services.job_runner import ProgressEvent, executors, publish_progress
 from app.services.progress_relay import count_series, forget_series_count
@@ -481,6 +482,29 @@ DEFAULT_SORT = "value_at_risk"
 MAX_PAGE = settings.api_max_page_size
 
 
+def order_terms(sort: str) -> list[Any]:
+    """The ORDER BY for a requested sort, worst first, ties broken by name.
+
+    Series that were never scored sort last, whatever the chosen order is
+    measuring — except by name, where "no accuracy yet" is not a reason to come
+    after Z.
+
+    That term is left out for the name order rather than passed as a no-op. It
+    was `null()`, which renders as `ORDER BY NULL`: legal in SQLite, where the
+    tests run, and rejected outright by Postgres, where the product runs, with
+    "non-integer constant in ORDER BY". Every request for the name order was a
+    500 and nothing in the suite could see it — so this lives out here where a
+    test can compile it against the dialect that actually matters.
+    """
+    ordering = SORTS.get(sort, SORTS[DEFAULT_SORT])
+    unscored_last = sort != "label"
+    return [
+        *([ForecastSeries.wmape.is_(None).asc()] if unscored_last else []),
+        ordering,
+        ForecastSeries.label.asc(),
+    ]
+
+
 async def list_series(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -489,6 +513,7 @@ async def list_series(
     level: int | None = None,
     search: str | None = None,
     parent_id: uuid.UUID | None = None,
+    status: SeriesStatus | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ForecastSeries], int]:
@@ -497,20 +522,17 @@ async def list_series(
         where.append(ForecastSeries.level == level)
     if parent_id is not None:
         where.append(ForecastSeries.parent_id == parent_id)
+    if status is not None:
+        where.append(ForecastSeries.status == status)
     if search:
         where.append(ForecastSeries.label.ilike(f"%{search.strip()}%"))
 
     total = await session.scalar(select(func.count()).select_from(ForecastSeries).where(*where))
 
-    ordering = SORTS.get(sort, SORTS[DEFAULT_SORT])
     result = await session.execute(
         select(ForecastSeries)
         .where(*where)
-        .order_by(
-            ForecastSeries.wmape.is_(None).asc() if sort != "label" else null(),
-            ordering,
-            ForecastSeries.label.asc(),
-        )
+        .order_by(*order_terms(sort))
         .limit(max(1, min(limit, settings.api_max_page_size)))
         .offset(max(0, offset))
     )

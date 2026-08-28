@@ -1,5 +1,22 @@
 export type Tone = "history" | "future" | "range";
 
+/**
+ * One row of the drawing: a product line with its own sales and its own
+ * forecast, given front to back.
+ *
+ * The depth in this chart is the plan's second level, not an effect. Every row
+ * is plotted on one shared vertical scale, so a bar in the back row and a bar
+ * in the front row can be compared by eye and the two together add up to the
+ * week the readout quotes. A row scaled to look good would make the third
+ * dimension a decoration, and there is nothing to read in a decoration.
+ */
+export type Layer = {
+  id: string;
+  label: string;
+  history: number[];
+  future: number[];
+};
+
 export type Prism = {
   key: string;
   row: number;
@@ -27,7 +44,29 @@ export type Label = {
 
 export type Boundary = { x1: number; y1: number; x2: number; y2: number };
 
-export type Column = { step: number; x: number; y1: number; y2: number; width: number };
+/** One row's slice of a week: the vertical band standing over that row's bar. */
+export type Band = { key: string; x: number; y1: number; y2: number; width: number };
+
+export type Column = {
+  step: number;
+  x: number;
+  y1: number;
+  y2: number;
+  width: number;
+  /*
+   * A band per row, rather than one rectangle spanning both.
+   *
+   * The rows are offset along the depth axis, so a single upright rectangle
+   * wide enough to cover the far row also covers the floor beside the near
+   * one — a pale slab standing next to the week instead of behind it.
+   *
+   * Each band runs from its own row's baseline to just over the top of what
+   * that row draws in that week, rather than to the top of the frame. A band
+   * of fixed height is mostly empty sky above a short week, which reads as a
+   * marker floating near the bar instead of one standing behind it.
+   */
+  bands: Band[];
+};
 
 export type Scape = {
   viewBox: string;
@@ -36,21 +75,31 @@ export type Scape = {
   prisms: Prism[];
   guides: Guide[];
   labels: Label[];
+  /** One name per row, written where that row begins. */
+  rowLabels: Label[];
   boundary: Boundary;
   columns: Column[];
   rows: number;
   steps: number;
+  historyLength: number;
+  futureLength: number;
 };
 
 const DEPTH_X = 940;
 const DEPTH_Y = 190;
-const PLOT_HEIGHT = 208;
+/* Taller than it was. At 208 the prisms were shorter than they were wide and
+   the drawing read as a strip of texture; the height is what lets a bar look
+   like an object standing on a floor rather than a tick on an axis. */
+const PLOT_HEIGHT = 268;
 
-const ROW_DX = 38;
-const ROW_DY = 34;
-const ROW_SCALE = [0.54, 0.72];
+/* A deeper step between rows. The two product lines used to sit close enough
+   that the near row's top face touched the far row's front, which is exactly
+   where an isometric drawing stops reading as depth and starts reading as one
+   flat silhouette. */
+const ROW_DX = 46;
+const ROW_DY = 42;
 
-const MAX_BAR = 34;
+const MAX_BAR = 46;
 const BAR_FILL = 0.78;
 const EXTRUDE_X_RATIO = 0.48;
 const EXTRUDE_Y_RATIO = 0.24;
@@ -73,28 +122,42 @@ const LABEL_ADVANCE = 10.2;
 const LABEL_PAD = 10;
 const LONGEST_LEFT = "120 weeks ago".length;
 const LONGEST_RIGHT = "+111 weeks".length;
+/** The left gutter holds the row names as well as the oldest week, so it is
+ *  sized for whichever of the two runs longer. A row named past this is not
+ *  wrong, it is simply wider than the space reserved for it. */
+export const LONGEST_ROW_NAME = 12;
 
 const GUTTER = {
-  left: Math.ceil(LONGEST_LEFT * LABEL_ADVANCE) + LABEL_PAD * 2,
+  left: Math.ceil(Math.max(LONGEST_LEFT, LONGEST_ROW_NAME) * LABEL_ADVANCE) + LABEL_PAD * 2,
   right: Math.ceil(LONGEST_RIGHT * LABEL_ADVANCE) + LABEL_PAD * 2,
   top: 34,
   bottom: 62,
 };
 
-const GUIDE_COUNT = 7;
+/* Three, not seven. The floor lines are there so the bars have something to
+   stand on; at seven they were a hatch pattern behind the subject, and the
+   pale ones nearest the top were the first thing the eye found. */
+const GUIDE_COUNT = 3;
+
+/** Text sits a touch under the line it names, so it reads as sitting on it. */
+const LABEL_DROP = 5;
+/** How far the oldest-week caption clears the name of the back row. */
+const PAST_LIFT = 26;
+
+/** Air over the tallest mark in a week, so its band reads as standing behind
+ *  the bar rather than being clipped to it. */
+const BAND_HEADROOM = 12;
 
 function extent(values: number[]): number {
   const peak = Math.max(...values, 0);
   return peak > 0 ? peak : 1;
 }
 
-export function buildScape(
-  history: number[],
-  future: number[],
-  growth: number = RANGE_GROWTH,
-): Scape {
-  const steps = history.length + future.length;
-  const rows = ROW_SCALE.length;
+export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scape {
+  const rows = Math.max(layers.length, 1);
+  const historyLength = Math.max(0, ...layers.map((layer) => layer.history.length));
+  const futureLength = Math.max(0, ...layers.map((layer) => layer.future.length));
+  const steps = historyLength + futureLength;
 
   const span = Math.max(steps - 1, 1);
 
@@ -106,25 +169,29 @@ export function buildScape(
   const dx = (DEPTH_X - ROW_DX - width - extrudeX) / span;
   const dy = (DEPTH_Y - ROW_DY) / span;
 
-  const tallestRow = Math.max(...ROW_SCALE);
+  // One scale for every row, taken from the tallest thing any row has to
+  // draw — which is a range shell, not a bar, wherever the forecast reaches
+  // further than the history did.
   const scale =
     (PLOT_HEIGHT - extrudeY) /
-    (extent([
-      ...history,
-      ...future.map((value, index) => value * rangeLift(index + 1, growth)),
-    ]) *
-      tallestRow);
+    extent(
+      layers.flatMap((layer) => [
+        ...layer.history,
+        ...layer.future.map((value, index) => value * rangeLift(index + 1, growth)),
+      ]),
+    );
 
   const prisms: Prism[] = [];
 
   for (let row = rows - 1; row >= 0; row--) {
-    const rowScale = ROW_SCALE[row] ?? 1;
+    const layer = layers[row];
     for (let step = 0; step < steps; step++) {
       const x = step * dx + row * ROW_DX;
       const baseY = step * dy - row * ROW_DY;
-      const historical = step < history.length;
-      const horizon = historical ? 0 : step - history.length + 1;
-      const value = (historical ? history[step] : future[step - history.length]) ?? 0;
+      const historical = step < historyLength;
+      const horizon = historical ? 0 : step - historyLength + 1;
+      const value =
+        (historical ? layer?.history[step] : layer?.future[step - historyLength]) ?? 0;
       const lift = historical ? 1 : rangeLift(horizon, growth);
 
       if (!historical) {
@@ -137,7 +204,7 @@ export function buildScape(
           x,
           baseY,
           width,
-          height: value * lift * scale * rowScale,
+          height: value * lift * scale,
           extrudeX,
           extrudeY,
           shellFloor: 1 / lift,
@@ -153,7 +220,7 @@ export function buildScape(
         x,
         baseY,
         width,
-        height: value * scale * rowScale,
+        height: value * scale,
         extrudeX,
         extrudeY,
         shellFloor: 0,
@@ -165,12 +232,18 @@ export function buildScape(
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
+  // The highest point each row reaches in each week, shells included — what a
+  // band has to clear to stand behind everything drawn there.
+  const ceilings = new Map<string, number>();
   for (const prism of prisms) {
-    const top = prism.baseY - prism.height;
+    const top = prism.baseY - prism.height - prism.extrudeY;
     minX = Math.min(minX, prism.x);
     maxX = Math.max(maxX, prism.x + prism.width + prism.extrudeX);
-    minY = Math.min(minY, top - prism.extrudeY);
+    minY = Math.min(minY, top);
     maxY = Math.max(maxY, prism.baseY);
+
+    const key = `${prism.row}-${prism.step}`;
+    ceilings.set(key, Math.min(ceilings.get(key) ?? Infinity, top));
   }
 
   minX = Math.min(minX, 0);
@@ -183,8 +256,8 @@ export function buildScape(
   const boxWidth = maxX - minX + GUTTER.left + GUTTER.right;
   const boxHeight = maxY - minY + GUTTER.top + GUTTER.bottom;
 
-  const todayX = history.length * dx - dx / 2;
-  const todayY = history.length * dy - dy / 2 - (rows - 1) * ROW_DY;
+  const todayX = historyLength * dx - dx / 2;
+  const todayY = historyLength * dy - dy / 2 - (rows - 1) * ROW_DY;
 
   const boundary: Boundary = {
     x1: todayX,
@@ -206,12 +279,23 @@ export function buildScape(
     });
   }
 
+  /*
+   * Time runs down the diagonal, so the oldest week is at the top left and the
+   * horizon at the bottom right — the two captions sit at the ends of that
+   * diagonal rather than along the bottom of the frame, where they would point
+   * at empty floor. "today" is the exception: it belongs under the line that
+   * divides the two, which is the one place in the frame that is horizontal.
+   *
+   * The oldest-week caption clears the rows by sitting above the back one. The
+   * left gutter below it belongs to the row names, and the two competing for
+   * the same baseline is what the lift is buying.
+   */
   const labels: Label[] = [
     {
       key: "past",
       x: left + LABEL_PAD,
-      y: 0,
-      text: `${history.length} weeks ago`,
+      y: -(rows - 1) * ROW_DY - PAST_LIFT,
+      text: `${historyLength} weeks ago`,
       anchor: "start",
     },
     {
@@ -225,10 +309,21 @@ export function buildScape(
       key: "horizon",
       x: left + boxWidth - LABEL_PAD,
       y: maxY - GUTTER.bottom * 0.06,
-      text: `+${future.length} weeks`,
+      text: `+${futureLength} weeks`,
       anchor: "end",
     },
   ];
+
+  // Written against the left edge of the plot rather than each row's own first
+  // bar: staggering them along the depth axis puts the back row's name over the
+  // front row's opening weeks, which is exactly where its bars are.
+  const rowLabels: Label[] = layers.map((layer, row) => ({
+    key: `row-${layer.id}`,
+    x: -LABEL_PAD,
+    y: -row * ROW_DY + LABEL_DROP,
+    text: layer.label,
+    anchor: "end",
+  }));
 
   const columns: Column[] = Array.from({ length: steps }, (_, step) => {
     const front = step * dx;
@@ -239,6 +334,17 @@ export function buildScape(
       width: back - front,
       y1: minY,
       y2: step * dy,
+      bands: Array.from({ length: rows }, (_, row) => {
+        const floor = step * dy - row * ROW_DY;
+        const ceiling = ceilings.get(`${row}-${step}`) ?? floor;
+        return {
+          key: `band-${row}`,
+          x: front + row * ROW_DX,
+          width: width + extrudeX,
+          y1: ceiling - BAND_HEADROOM,
+          y2: floor,
+        };
+      }),
     };
   });
 
@@ -249,10 +355,13 @@ export function buildScape(
     prisms,
     guides,
     labels,
+    rowLabels,
     boundary,
     columns,
     rows,
     steps,
+    historyLength,
+    futureLength,
   };
 }
 

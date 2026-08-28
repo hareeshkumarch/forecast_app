@@ -15,36 +15,32 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { CheckDiagram } from "@/components/marketing/check-diagram";
 import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
-import { RangeVsLine } from "@/components/marketing/range-vs-line";
+import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { SplitWords } from "@/components/marketing/split-words";
 import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
 
 const STEPS = [
   {
-    icon: FileUp,
     title: "Bring in some data",
     body: "Drop in a spreadsheet of what you have sold. That is the only thing we need from you.",
     foot: "A spreadsheet is enough",
   },
   {
-    icon: Table2,
     title: "Say what to forecast",
     body: "We work out which column holds the date and which holds the sales, and show you before running.",
     foot: "You confirm before anything runs",
   },
   {
-    icon: CirclePlay,
     title: "Run it",
     body: "Your forecast appears, week by week, with a range around every number.",
     foot: "About a minute",
-    active: true,
   },
 ];
 
@@ -62,24 +58,24 @@ const PROOF = [
   { value: 1, unit: "", count: false, label: "Spreadsheet to begin. Nothing else" },
 ];
 
+/*
+ * Each of these is a sentence, not a tile. They used to be three bordered
+ * boxes with a number and a small icon in the corner — the arrangement every
+ * product page uses, which is why it reads as furniture rather than as
+ * something worth stopping on. Set large, on their own line, they are read.
+ */
 const FEATURES = [
   {
-    icon: BarChart3,
-    number: "01",
-    title: "A forecast you can read",
-    body: "See the number, its likely range, and the history behind it in one view.",
+    lede: "A forecast you can read.",
+    body: "The number, its likely range, and the history behind it — in one view, without a manual.",
   },
   {
-    icon: Layers3,
-    number: "02",
-    title: "Every level of the plan",
-    body: "Move from the whole business to a product, region, or channel without losing the story.",
+    lede: "Every level of the plan.",
+    body: "Move from the whole business down to a product, a region, or a channel without losing the story.",
   },
   {
-    icon: Gauge,
-    number: "03",
-    title: "Accuracy you can inspect",
-    body: "The same test runs on your own past, so the score belongs to your data—not a benchmark.",
+    lede: "Accuracy you can inspect.",
+    body: "The same test runs against your own past, so the score belongs to your data and not to a benchmark.",
   },
 ];
 
@@ -87,8 +83,9 @@ export function Landing() {
   const motionReady = useMotionReady();
 
   return (
-    <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-[#f1f3ef] text-[#111512]", motionReady && "motion-ready")}>
+    <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-canvas text-text-primary", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <PointerGlow />
       <FloatingNav />
       <main id="main-content">
         <Hero />
@@ -104,9 +101,23 @@ export function Landing() {
   );
 }
 
-function Eyebrow({ children, light = false }: { children: ReactNode; light?: boolean }) {
+function Eyebrow({
+  children,
+  light = false,
+  rule = true,
+}: {
+  children: ReactNode;
+  light?: boolean;
+  /** Off in the hero, where a pulsing status dot already sits to the left. */
+  rule?: boolean;
+}) {
   return (
-    <div className={cn("font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-[#858b86]" : "text-[#626862]")}>
+    // inline-flex, not flex: the closing section centres its content with
+    // `text-align`, which only moves an inline-level box.
+    <div className={cn("inline-flex items-center gap-3 font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-land-invert-muted" : "text-land-dim")}>
+      {rule ? (
+        <span aria-hidden className={cn("eyebrow-rule h-px w-7 shrink-0", light ? "bg-land-invert-accent" : "bg-accent")} />
+      ) : null}
       {children}
     </div>
   );
@@ -119,21 +130,19 @@ function Hero() {
 
       <div className="page-shell flex flex-col items-center text-center">
         <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
-          <span className="status-dot size-2 bg-[#287b59]" aria-hidden />
-          <Eyebrow>Demand forecasting for planning teams</Eyebrow>
+          <span className="status-dot size-2 bg-accent" aria-hidden />
+          <Eyebrow rule={false}>Demand forecasting for planning teams</Eyebrow>
         </Reveal>
 
-        <Reveal
+        <SplitWords
           as="h1"
+          text="See your demand before it arrives."
           delay={70}
-          variant="scale"
-          duration={720}
+          stagger={78}
           className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
-        >
-          See your demand before it arrives.
-        </Reveal>
+        />
 
-        <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-[#3f463f]">
+        <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-text-secondary">
           Connect your sales history and see how much you will sell, week by week, with an honest
           range around every number.
         </Reveal>
@@ -141,7 +150,7 @@ function Hero() {
         <Reveal delay={240} duration={620} className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <Link
             href="/signin"
-            className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] sm:h-[56px] sm:px-8"
+            className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px] sm:px-8"
           >
             Start forecasting
             <Arrow />
@@ -149,7 +158,7 @@ function Hero() {
           <Link
             href="/dashboard"
             aria-label="Open the dashboard"
-            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-[#bfc7bf] bg-[#fafbf9]/75 px-6 text-site-body font-medium text-[#343a35] backdrop-blur-sm hover:border-[#8f9a90] hover:bg-white sm:h-[56px]"
+            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-border-strong bg-surface/75 px-6 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
           >
             Explore the live workspace
           </Link>
@@ -163,11 +172,8 @@ function Hero() {
 
       <Reveal delay={330} variant="scale" duration={760} className="page-shell mt-10 sm:mt-12">
         <div className="hero-stage">
-          <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#dbe0da] pb-4">
-            <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-[#5c635d]">Interactive forecast preview</p>
-            <span className="flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-[#287b59]">
-              <span className="status-dot size-1.5 bg-[#287b59]" aria-hidden /> Live example
-            </span>
+          <div className="mb-5 border-b border-land-rule-soft pb-4">
+            <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">Interactive forecast preview</p>
           </div>
           <DemandScape />
         </div>
@@ -187,22 +193,15 @@ function Hero() {
  */
 function Proof() {
   return (
-    <div className="page-shell mt-12 sm:mt-14">
-      <dl className="grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-4">
+    <div className="page-shell mt-14 sm:mt-16">
+      <dl className="grid gap-y-10 border-t border-land-rule pt-10 sm:grid-cols-2 xl:grid-cols-4">
         {PROOF.map((stat, index) => (
-          <Reveal
-            key={stat.label}
-            delay={index * 70}
-            duration={560}
-            className="border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 sm:p-7"
-          >
-            <dt className="text-stat font-bold text-[#111512]">
+          <Reveal key={stat.label} delay={index * 90} duration={620} className="proof-figure">
+            <dt className="font-display text-proof font-normal leading-[0.9] tracking-[-0.02em] text-text-primary">
               {stat.count ? <CountUp value={stat.value} /> : stat.value}
-              <span className="text-[#287b59]">{stat.unit}</span>
+              <span className="text-accent">{stat.unit}</span>
             </dt>
-            <dd className="mt-2 max-w-[26ch] font-mono text-site-caption text-[#5d645e]">
-              {stat.label}
-            </dd>
+            <dd className="mt-3 max-w-[24ch] text-site-body text-text-secondary">{stat.label}</dd>
           </Reveal>
         ))}
       </dl>
@@ -212,42 +211,48 @@ function Proof() {
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" className="section-pad border-t border-[#d8ddd7]">
-      <div className={cn(SHELL, "grid gap-10 xl:grid-cols-[minmax(0,0.5fr)_minmax(0,1fr)] xl:gap-12")}>
+    <section id="how-it-works" className="section-pad border-t border-border">
+      <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>01 — Getting started</Eyebrow>
-          <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
-            From a spreadsheet to a plan in three steps.
-          </h2>
-          <p className="mt-5 max-w-[36ch] text-site-lead text-[#4e554e]">Nothing to configure. Nothing to maintain.</p>
+          <SplitWords
+            text="From a spreadsheet to a plan in three steps."
+            className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
+          />
+          <p className="mt-5 max-w-[42ch] text-site-lead text-text-secondary">
+            Nothing to configure. Nothing to maintain.
+          </p>
         </Reveal>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* The rule is the animation. It draws itself down the page as the
+            section arrives, and each step fades in as the line reaches it —
+            so the sequence is shown by the movement rather than stated by
+            three numbered boxes. */}
+        <ol className="step-rail mt-14 sm:mt-16">
           {STEPS.map((step, index) => (
             <Reveal
               key={step.title}
-              delay={index * 90}
-              variant={step.active ? "scale" : "from-right"}
-              duration={620}
-              className={cn(
-                "card-hover flex flex-col border bg-[#fafbf9] p-6 sm:p-7",
-                step.active
-                  ? "border-[#111512] bg-[#e5e8e3] sm:col-span-2"
-                  : "border-[#cfd5cf] hover:border-[#8f9a90]",
-              )}
+              as="li"
+              delay={index * 150}
+              duration={700}
+              variant="from-left"
+              className="step-row"
             >
-              <div className="flex items-center justify-between">
-                <span className={cn("flex size-10 items-center justify-center border text-site-body", step.active ? "border-[#111512] bg-[#111512] text-white" : "border-[#bcc4bc] text-[#59605a]")}>
-                  {index + 1}
-                </span>
-                <step.icon className="motion-icon size-5 text-[#59605a]" strokeWidth={1.8} aria-hidden />
+              <span aria-hidden className="step-ordinal font-mono text-site-caption text-land-dim">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="step-body">
+                <h3 className="font-display text-site-h3-display font-normal text-text-primary">
+                  {step.title}
+                </h3>
+                <p className="mt-3 max-w-[52ch] text-site-lead text-text-secondary">{step.body}</p>
+                <p className="mt-4 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
+                  {step.foot}
+                </p>
               </div>
-              <h3 className="mt-5 text-site-h3 font-bold">{step.title}</h3>
-              <p className="mt-2 max-w-[42ch] text-site-body text-[#495049]">{step.body}</p>
-              <p className="mt-auto pt-6 font-mono text-site-caption text-[#626862]">{step.foot}</p>
             </Reveal>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   );
@@ -255,24 +260,29 @@ function HowItWorks() {
 
 function Features() {
   return (
-    <section id="features" className="section-pad border-t border-[#d8ddd7]">
+    <section id="features" className="section-pad border-t border-border">
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>What you get</Eyebrow>
-          <h2 className="mt-4 max-w-[26ch] text-balance font-display text-site-h2 font-normal">
-            Everything a planner needs, and nothing they do not.
-          </h2>
         </Reveal>
 
-        <div className="mt-10 grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-10 sm:mt-12">
           {FEATURES.map((feature, index) => (
-            <Reveal key={feature.title} delay={index * 100} variant="scale" duration={640} className="card-hover flex flex-col border-b border-r border-[#cfd5cf] bg-[#fafbf9]/70 p-6 hover:border-[#8f9a90] sm:p-8">
-              <div className="flex items-center justify-between font-mono text-site-caption uppercase tracking-[0.16em] text-[#697069]">
-                {feature.number}
-                <feature.icon className="motion-icon size-5" strokeWidth={1.6} aria-hidden />
+            <Reveal
+              key={feature.lede}
+              delay={index * 140}
+              duration={720}
+              variant="from-left"
+              className="feature-line border-t border-land-rule py-10 first:border-t-0 first:pt-0 sm:py-12"
+            >
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-14">
+                <h3 className="text-balance font-display text-site-h2 font-normal leading-[1.05] text-text-primary">
+                  {feature.lede}
+                </h3>
+                <p className="max-w-[46ch] self-end text-site-lead text-text-secondary">
+                  {feature.body}
+                </p>
               </div>
-              <h3 className="mt-10 text-site-h3 font-bold">{feature.title}</h3>
-              <p className="mt-2 max-w-[42ch] text-site-body text-[#4c534d]">{feature.body}</p>
             </Reveal>
           ))}
         </div>
@@ -364,38 +374,38 @@ function Compare() {
 
 function Accuracy() {
   return (
-    <section id="accuracy" className="section-pad bg-[#111512] text-[#f2f3f1]">
-      <div className={cn(SHELL, "grid gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:gap-16")}>
-        <Reveal variant="from-left" duration={680}>
+    <section id="accuracy" className="section-pad bg-land-invert text-land-invert-ink">
+      <div className={cn(SHELL, "max-w-[62rem]")}>
+        <Reveal variant="fade" duration={680}>
           <Eyebrow light>Accuracy</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
-            Right about{" "}
-            <span className="whitespace-nowrap text-[#287b59]">
-              <CountUp value={94} />%
-            </span>{" "}
-            of the sales it had never seen.
-          </h2>
-          <p className="mt-5 max-w-[52ch] text-site-lead text-[#b9bdb9]">
-            That figure comes from your own history, not a benchmark. You can see it for any product,
-            any region, any week — and watch it change as your sales change.
+        </Reveal>
+
+        <Reveal delay={80} duration={760} className="mt-6">
+          <p className="font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
+            <CountUp value={94} />%
           </p>
         </Reveal>
 
-        <Reveal delay={140} variant="from-right" duration={720}>
-          <CheckDiagram />
-          <div className="mt-10 border border-white/20">
-            <div className="p-6 sm:p-7">
-              <h3 className="text-site-h3 font-bold">It is measured, not claimed</h3>
-              <p className="mt-3 max-w-[62ch] text-site-body text-[#afb4af]">
-                Before you ever see a number, we hide part of your own sales history and check whether the forecast would have got it right.
-              </p>
-            </div>
-            <div className="border-t border-white/15 p-6 sm:p-7">
-              <h3 className="text-site-h3 font-bold">It keeps being checked</h3>
-              <p className="mt-3 max-w-[62ch] text-site-body text-[#afb4af]">Every new run adds another real result to the score.</p>
-            </div>
-          </div>
+        <Reveal delay={200} duration={720}>
+          <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
+            of the sales it had never seen.
+          </h2>
         </Reveal>
+
+        <div className="mt-12 grid gap-10 border-t border-land-invert-rule pt-10 sm:grid-cols-2 sm:gap-14">
+          <Reveal delay={280} duration={700}>
+            <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
+              That figure comes from your own history, not a benchmark — we hide part of your past
+              and check whether the forecast would have got it right.
+            </p>
+          </Reveal>
+          <Reveal delay={380} duration={700}>
+            <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
+              And it keeps being checked. Every run adds another real result to the score, for any
+              product, any region, any week.
+            </p>
+          </Reveal>
+        </div>
       </div>
     </section>
   );
@@ -406,8 +416,12 @@ function Closing() {
     <section className="section-pad">
       <Reveal variant="scale" duration={700} className="page-shell max-w-[46ch] text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
-        <h2 className="mt-4 text-balance font-display text-site-h2 font-normal">See what is coming next.</h2>
-        <Link href="/signin" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-[#111512] bg-[#111512] px-7 text-site-body font-medium text-white hover:border-[#287b59] hover:bg-[#242a25] min-[430px]:w-auto sm:h-[56px] sm:px-8">
+        <SplitWords
+          text="See what is coming next."
+          stagger={80}
+          className="mt-4 text-balance font-display text-site-h2 font-normal"
+        />
+        <Link href="/signin" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover min-[430px]:w-auto sm:h-[56px] sm:px-8">
           Start forecasting
           <Arrow />
         </Link>
@@ -418,18 +432,22 @@ function Closing() {
 
 function Footer() {
   return (
-    <footer className="border-t border-[#cfd5cf] bg-[#fafbf9]/75">
-      <div className={cn(SHELL, "flex flex-col gap-6 py-8 sm:flex-row sm:items-center")}>
+    <footer className="border-t border-land-rule bg-surface/75">
+      <Reveal
+        variant="fade"
+        duration={520}
+        className={cn(SHELL, "flex flex-col gap-6 py-8 sm:flex-row sm:items-center")}
+      >
         <div className="flex items-center gap-3">
           <Mark size={28} />
           <span className="text-site-h3 font-bold">Forecast Hub</span>
         </div>
-        <p className="text-site-body text-[#737a73] sm:ml-auto">Demand forecasting for planning teams.</p>
+        <p className="text-site-body text-land-dim sm:ml-auto">Demand forecasting for planning teams.</p>
         <div className="flex items-center gap-5">
-          <Link href="/signin" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Sign in</Link>
-          <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-[#287b59] hover:text-[#175a3e]">Live workspace →</Link>
+          <Link href="/signin" className="font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Sign in</Link>
+          <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Live workspace →</Link>
         </div>
-      </div>
+      </Reveal>
     </footer>
   );
 }

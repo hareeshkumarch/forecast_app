@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { AccuracyScatter } from "@/components/charts/accuracy-scatter";
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { AccuracyCell } from "@/components/dashboard/accuracy-cell";
 import {
@@ -25,6 +26,7 @@ import {
 import { Select } from "@/components/ui/select";
 import { useDebounced } from "@/hooks/use-debounced";
 import {
+  useApiFeatures,
   useForecastRuns,
   PICKER_LIMIT,
   useForecastSeries,
@@ -38,9 +40,10 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
-import type { SeriesRow, SeriesSort } from "@/types/api";
+import type { SeriesRow, SeriesSort, SeriesStatus } from "@/types/api";
 
 const PAGE_SIZE = 25;
+const CHART_LIMIT = 200;
 
 const SORTS: { value: SeriesSort; label: string; hint: string }[] = [
   {
@@ -65,6 +68,36 @@ const LEVELS = [
     hint: "Skip the totals and groups above them",
   },
 ];
+
+const STATES: { value: "all" | SeriesStatus; label: string; hint: string }[] = [
+  { value: "all", label: "Any state", hint: "However the line was arrived at" },
+  {
+    value: "forecast",
+    label: "Fitted",
+    hint: "Forecast from this line's own history",
+  },
+  {
+    value: "estimated",
+    label: "Estimated",
+    hint: "Too little history to fit, so shared out from the level above",
+  },
+  {
+    value: "pooled",
+    label: "Pooled",
+    hint: "The long tail, forecast together as one line",
+  },
+  {
+    value: "blocked",
+    label: "Blocked",
+    hint: "Could not be forecast at all — the reason is on the row",
+  },
+];
+
+const DEFAULTS: { scope: string; state: string; search: string } = {
+  scope: "all",
+  state: "all",
+  search: "",
+};
 
 export function SeriesWorkspace() {
   const filters = useDashboardFilters();
@@ -151,30 +184,58 @@ function SeriesTable({
   leafLevel: number;
 }) {
   const [sort, setSort] = useState<SeriesSort>("value_at_risk");
-  const [scope, setScope] = useState("all");
-  const [search, setSearch] = useState("");
+  const [scope, setScope] = useState<string>(DEFAULTS.scope);
+  const [requestedState, setState] = useState<string>(DEFAULTS.state);
+  const [search, setSearch] = useState(DEFAULTS.search);
+
+  const features = useApiFeatures();
+  // An older backend does not declare `status` and FastAPI drops parameters it
+  // does not know, so sending it would filter nothing and look like it had.
+  const state = features.seriesStatusFilter ? requestedState : DEFAULTS.state;
 
   const settled = useDebounced(search, 250);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<SeriesRow | null>(null);
 
+  const filtered =
+    scope !== DEFAULTS.scope || state !== DEFAULTS.state || search.trim() !== DEFAULTS.search;
+
   const query: SeriesQuery = {
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-
     ...(scope === "leaf" ? { level: leafLevel } : {}),
+    ...(state === "all" ? {} : { status: state as SeriesStatus }),
     ...(settled.trim() ? { search: settled.trim() } : {}),
   };
 
   const { data, isLoading, isError, error, refetch, isPlaceholderData } =
     useForecastSeries(runId, query);
 
+  // The chart plots the run, not the page. It shares the filters so the two
+  // never disagree, but takes the leaves in one go — a scatter of 25 rows at a
+  // time would move under you every time the table paged.
+  const { data: population } = useForecastSeries(runId, {
+    sort: "value_at_risk",
+    limit: CHART_LIMIT,
+    offset: 0,
+    level: leafLevel,
+    ...(state === "all" ? {} : { status: state as SeriesStatus }),
+    ...(settled.trim() ? { search: settled.trim() } : {}),
+  });
+
   function change<T>(set: (value: T) => void) {
     return (value: T) => {
       set(value);
       setPage(0);
     };
+  }
+
+  function clearFilters() {
+    setScope(DEFAULTS.scope);
+    setState(DEFAULTS.state);
+    setSearch(DEFAULTS.search);
+    setPage(0);
   }
 
   const rows = data?.rows ?? [];
@@ -202,6 +263,26 @@ function SeriesTable({
         />
       ) : null}
 
+      {population && population.rows.length > 1 ? (
+        <Card>
+          <PanelHeader
+            title="Where the error actually is"
+            subtitle={
+              population.total > population.rows.length
+                ? `The ${population.rows.length} biggest of ${population.total.toLocaleString()} lines, by what is at stake`
+                : "Every line, by size against how wrong it tends to be"
+            }
+          />
+          <div className="px-2 pb-2">
+            <AccuracyScatter
+              rows={population.rows}
+              currency={population.currency}
+              onSelect={setSelected}
+            />
+          </div>
+        </Card>
+      ) : null}
+
       <Card className="overflow-hidden">
         <PanelHeader
           title="Where to look first"
@@ -212,9 +293,8 @@ function SeriesTable({
           }
         />
 
-        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-
-          <div className="relative basis-full sm:basis-auto">
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+          <div className="relative min-w-0 basis-full sm:basis-[180px]">
             <Search
               className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted"
               aria-hidden
@@ -224,7 +304,7 @@ function SeriesTable({
               onChange={(event) => change(setSearch)(event.target.value)}
               placeholder="Find a series"
               aria-label="Find a series"
-              className="w-full pl-7 sm:w-[160px]"
+              className="w-full pl-7"
             />
           </div>
           <Select
@@ -232,17 +312,40 @@ function SeriesTable({
             onChange={change(setScope)}
             options={LEVELS}
             label="Which levels to show"
-            className="w-[140px]"
-            menuClassName="w-[240px]"
+            className="w-[168px]"
+            menuClassName="w-[260px]"
           />
+          <Select
+            value={state}
+            onChange={change(setState)}
+            options={STATES}
+            disabled={!features.seriesStatusFilter}
+            label={
+              features.seriesStatusFilter
+                ? "How the line was arrived at"
+                : "Filtering by state needs a newer backend than this one"
+            }
+            className="w-[168px]"
+            menuClassName="w-[300px]"
+          />
+          {features.seriesStatusFilter ? null : (
+            <span className="text-caption text-text-muted">
+              State filter needs a newer backend
+            </span>
+          )}
           <Select
             value={sort}
             onChange={change((value: string) => setSort(value as SeriesSort))}
             options={SORTS}
             label="Order the list by"
-            className="w-[150px]"
+            className="w-[168px]"
             menuClassName="w-[280px]"
           />
+          {filtered ? (
+            <Button size="sm" variant="ghost" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : null}
         </div>
 
         {isError ? (
@@ -258,9 +361,16 @@ function SeriesTable({
             icon={Search}
             title="Nothing matches"
             message={
-              search
-                ? `No series with “${search}” in its name.`
+              filtered
+                ? "No series matches these filters. Widen them, or clear them to see the whole run."
                 : "This run stored no series."
+            }
+            action={
+              filtered ? (
+                <Button size="sm" variant="secondary" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
             }
           />
         ) : (

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { accessToken, authConfigured } from "@/lib/supabase";
 import { forecastEventsUrl, getForecastProgress } from "@/lib/api";
 import type { ForecastProgressEvent } from "@/types/api";
 
@@ -147,7 +148,26 @@ export function useForecastProgress(
     function connect() {
       if (done) return;
 
-      source = new EventSource(forecastEventsUrl(id));
+      // Without sign-in configured there is no token to wait for, so the
+      // stream opens in the same tick it always did. Deferring that path too
+      // would put a microtask between the run starting and the stream
+      // attaching, for no reason, on every deployment that has no auth.
+      if (!authConfigured) {
+        openStream(forecastEventsUrl(id));
+        return;
+      }
+
+      // Otherwise the session is fetched first, because it may need
+      // refreshing. The fallback to polling still covers a stream that never
+      // opens, so a slow or failed token lookup degrades rather than hangs.
+      void accessToken().then((token) => {
+        if (done) return;
+        openStream(forecastEventsUrl(id, token));
+      });
+    }
+
+    function openStream(url: string) {
+      source = new EventSource(url);
       const openedSource = source;
 
       source.onopen = () => {
@@ -200,6 +220,53 @@ export function useForecastProgress(
   }, [runId]);
 
   return state;
+}
+
+/** The steps every run passes through, in the order the backend reports them. */
+export const RUN_STAGES = [
+  "aggregating",
+  "backtesting",
+  "fitting",
+  "building_outputs",
+  "persisting",
+  "generating_insights",
+];
+
+/** Only a run with a grain fits per-series models, after the total is stored. */
+export const GRAIN_STAGES = ["fitting_series", "storing_series"];
+
+/** The checklist for one run.
+ *
+ * Showing the grain steps to a run that has no grain leaves two rows that can
+ * never light up, which reads as a run that stopped short of finishing.
+ */
+export function stagesFor(grouped: boolean): string[] {
+  return grouped ? [...RUN_STAGES, ...GRAIN_STAGES] : RUN_STAGES;
+}
+
+/** Time on the clock since `startedAt`, as `0:42` or `3:07`.
+ *
+ * A percentage answers "how far", never "how long" — and the model search is
+ * the part of a run whose duration is hardest to guess from the data alone.
+ * The clock stops when the run does, leaving the total on screen.
+ */
+export function useElapsed(startedAt: number | null, running: boolean): string | null {
+  const [seconds, setSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (startedAt === null) {
+      setSeconds(null);
+      return;
+    }
+    const read = () => setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    read();
+    if (!running) return;
+    const tick = setInterval(read, 1000);
+    return () => clearInterval(tick);
+  }, [startedAt, running]);
+
+  if (seconds === null) return null;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export const STAGE_LABELS: Record<string, string> = {

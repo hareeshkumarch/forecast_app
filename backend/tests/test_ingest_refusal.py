@@ -257,9 +257,9 @@ class TestNothingIsEverSilent:
 
         verdict = judge(frame)
 
-        assert verdict.verdict is Verdict.PROCEED, (
-            f"a clean file was queried: {[q.question for q in verdict.questions]}"
-        )
+        assert (
+            verdict.verdict is Verdict.PROCEED
+        ), f"a clean file was queried: {[q.question for q in verdict.questions]}"
         assert verdict.refusals == []
         assert verdict.rows_quarantined == 0
 

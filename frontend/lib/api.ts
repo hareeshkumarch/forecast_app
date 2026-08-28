@@ -1,6 +1,8 @@
 import type {
+  AccuracyReport,
   ApiErrorBody,
   BreakdownResponse,
+  CapabilitiesResponse,
   Connector,
   ConnectorSchemaList,
   ConnectorTestResult,
@@ -12,9 +14,17 @@ import type {
   Dataset,
   DatasetDetail,
   DatasetPage,
+  ApiFeatures,
+  CoverageResponse,
+  AccessRole,
+  AccessStatus,
+  CurrentUserRead,
   DatasetProfile,
+  ManagedUser,
+  OpenApiDocument,
   DatasetSort,
   DatasetUploadResponse,
+  DecisionResponse,
   DriverResponse,
   ExportFormat,
   ForecastFrequency,
@@ -42,7 +52,10 @@ import type {
   Scorecard,
   SeriesResponse,
   SeriesSort,
+  SeriesStatus,
 } from "@/types/api";
+
+import { accessToken } from "@/lib/supabase";
 
 export const API_BASE_URL =
   typeof window === "undefined"
@@ -126,6 +139,14 @@ async function request<T>(
 
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
+  // Every call to the API goes through here, so the session travels with all
+  // of them or with none of them. Attaching it per call site is how one gets
+  // forgotten and answers 401 in production only.
+  const token = await accessToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const hasBody = init?.body !== undefined && init.body !== null;
   if (hasBody && !(init?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -184,6 +205,9 @@ async function request<T>(
 
 export const getHealth = (signal?: AbortSignal) =>
   request<HealthResponse>("/api/health", { signal });
+
+export const getCapabilities = (signal?: AbortSignal) =>
+  request<CapabilitiesResponse>("/api/health/capabilities", { signal });
 
 export const listConnectors = (signal?: AbortSignal) =>
   request<Connector[]>("/api/connectors", { signal });
@@ -272,8 +296,100 @@ export const getDatasetQuality = (
   signal?: AbortSignal,
 ) => request<DataQualityResponse>(`/api/datasets/${id}/quality${buildQuery(params)}`, { signal });
 
+export const getCurrentUser = (signal?: AbortSignal) =>
+  request<CurrentUserRead>("/api/auth/me", { signal });
+
+export const getManagedUsers = (signal?: AbortSignal) =>
+  request<ManagedUser[]>("/api/auth/users", { signal });
+
+export const decideOnUser = (id: string, status: AccessStatus) =>
+  request<ManagedUser>(`/api/auth/users/${id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+
+export const setUserRole = (id: string, role: AccessRole) =>
+  request<ManagedUser>(`/api/auth/users/${id}/role`, {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+
+export interface BulkResult {
+  changed: number;
+  skipped: Record<string, string>;
+}
+
+export const decideOnMany = (userIds: string[], status: AccessStatus) =>
+  request<BulkResult>("/api/auth/users/decisions", {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, status }),
+  });
+
+export const removeMany = (userIds: string[]) =>
+  request<BulkResult>("/api/auth/users/removals", {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds }),
+  });
+
+export const removePerson = (id: string) =>
+  request<void>(`/api/auth/users/${id}`, { method: "DELETE" });
+
+export const invitePerson = (email: string) =>
+  request<ManagedUser>("/api/auth/invite", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
+
+/**
+ * What the backend actually serves, read from its own OpenAPI document.
+ *
+ * The frontend deploys from a push and the backend from a command on the box,
+ * so for a window after every release one is newer than the other. Most of
+ * that mismatch is harmless — a missing endpoint 404s and says so. The one
+ * that is not is a query parameter the older backend has never heard of:
+ * FastAPI ignores undeclared parameters rather than rejecting them, so a
+ * filter the user set is dropped in transit and the answer comes back looking
+ * like a filtered one. Asking first is the only way not to lie about it.
+ *
+ * The spec is ~128KB, so it is reduced to booleans here and only those reach
+ * the query cache.
+ */
+export const getApiFeatures = async (signal?: AbortSignal): Promise<ApiFeatures> => {
+  // The cheap answer first: a few bytes against 158 KB, which on a phone is
+  // over a second of the session's first paint spent learning two booleans.
+  try {
+    const features = await request<{
+      series_status_filter: boolean;
+      dataset_coverage: boolean;
+    }>("/api/health/features", { signal });
+
+    return {
+      seriesStatusFilter: features.series_status_filter,
+      datasetCoverage: features.dataset_coverage,
+    };
+  } catch {
+    // A backend older than this frontend has no such endpoint. Reading its
+    // OpenAPI document is slow but it is the only source that is true of
+    // whatever version is actually running, which is the whole point.
+    const spec = await request<OpenApiDocument>("/openapi.json", { signal });
+    const paths = spec.paths ?? {};
+    const seriesParams = paths["/api/forecasts/{run_id}/series"]?.get?.parameters ?? [];
+
+    return {
+      seriesStatusFilter: seriesParams.some((parameter) => parameter.name === "status"),
+      datasetCoverage: "/api/datasets/{dataset_id}/coverage" in paths,
+    };
+  }
+};
+
+export const getDatasetCoverage = (
+  id: string,
+  params: { max_series?: number; max_periods?: number } = {},
+  signal?: AbortSignal,
+) => request<CoverageResponse>(`/api/datasets/${id}/coverage${buildQuery(params)}`, { signal });
 
 export type DateOrder = "auto" | "day_first" | "month_first";
 
@@ -392,6 +508,7 @@ export const getForecastSeries = (
     level?: number;
     parent_id?: string;
     search?: string;
+    status?: SeriesStatus;
     limit?: number;
     offset?: number;
   } = {},
@@ -454,7 +571,25 @@ export const compareForecastRuns = (
 export const getForecastMonitoring = (signal?: AbortSignal) =>
   request<ForecastMonitoring>("/api/forecasts/monitoring", { signal });
 
-export const forecastEventsUrl = (id: string) => `${API_BASE_URL}/api/forecasts/${id}/events`;
+/**
+ * The progress stream's URL, with the session on it.
+ *
+ * The token rides in the query string because `EventSource` cannot set
+ * headers — it is the one place in this client that does so, and the backend
+ * accepts it there for this endpoint alone. The cost is real: a query string
+ * reaches access logs, where an Authorization header does not. It is bounded
+ * by Supabase tokens being short-lived, and by this stream carrying only a
+ * percentage and a stage name.
+ */
+export function forecastEventsUrl(id: string, token?: string | null): string {
+  const base = `${API_BASE_URL}/api/forecasts/${id}/events`;
+  return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;
+}
+
+export function accessEventsUrl(token?: string | null): string {
+  const base = `${API_BASE_URL}/api/auth/events`;
+  return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;
+}
 
 export const getSummary = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<DashboardSummary>(`/api/dashboard/summary${buildQuery(filterParams(filters))}`, { signal });
@@ -467,6 +602,14 @@ export const getBreakdown = (filters: DashboardFilters, column: string, signal?:
 
 export const getDrivers = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<DriverResponse>(`/api/dashboard/drivers${buildQuery(filterParams(filters))}`, { signal });
+
+export const getDecision = (filters: DashboardFilters, signal?: AbortSignal) =>
+  request<DecisionResponse>(`/api/dashboard/decision${buildQuery(filterParams(filters))}`, {
+    signal,
+  });
+
+export const getAccuracyReport = (runId: string, signal?: AbortSignal) =>
+  request<AccuracyReport>(`/api/forecasts/${runId}/accuracy`, { signal });
 
 export const getInsights = (filters: DashboardFilters, signal?: AbortSignal) =>
   request<InsightResponse>(`/api/insights${buildQuery(filterParams(filters))}`, { signal });

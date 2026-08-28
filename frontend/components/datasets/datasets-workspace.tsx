@@ -1,8 +1,9 @@
 "use client";
 
-import { Database, FileSpreadsheet, Plus, Search, Trash2 } from "lucide-react";
+import { Database, FileSpreadsheet, Grid3x3, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { CoverageModal } from "@/components/datasets/coverage-modal";
 import {
   Badge,
   Button,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/primitives";
 import { RefreshButton } from "@/components/ui/refresh-button";
 import { SortableHeader, type SortState } from "@/components/ui/sortable-header";
-import { useDatasets, useDeleteDataset } from "@/hooks/use-dashboard";
+import { useApiFeatures, useDatasets, useDeleteDataset } from "@/hooks/use-dashboard";
 import { useDebounced } from "@/hooks/use-debounced";
 import { formatBytes, formatDateRange, formatRelativeTime, humanizeKey } from "@/lib/format";
 import { labelGranularity } from "@/lib/periods";
@@ -51,6 +52,8 @@ export function DatasetsWorkspace() {
     direction: "desc",
   });
   const [page, setPage] = useState(0);
+  const [inspecting, setInspecting] = useState<Dataset | null>(null);
+  const features = useApiFeatures();
   const search = useDebounced(query, 250);
 
   const {
@@ -285,6 +288,26 @@ export function DatasetsWorkspace() {
 
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
+                        {/* The title sits on the wrapper, not the button: a
+                            disabled button takes no pointer events, so a
+                            tooltip on it is one nobody can read. */}
+                        <span
+                          title={
+                            features.datasetCoverage
+                              ? undefined
+                              : "Coverage needs a newer backend than the one this is talking to"
+                          }
+                        >
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={Grid3x3}
+                            disabled={dataset.status !== "ready" || !features.datasetCoverage}
+                            onClick={() => setInspecting(dataset)}
+                          >
+                            Coverage
+                          </Button>
+                        </span>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -347,6 +370,8 @@ export function DatasetsWorkspace() {
           ) : null}
         </Card>
       )}
+
+      <CoverageModal dataset={inspecting} onClose={() => setInspecting(null)} />
     </main>
   );
 }

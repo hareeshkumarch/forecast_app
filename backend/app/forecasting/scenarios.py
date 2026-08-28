@@ -18,6 +18,12 @@ FALLBACK_VOLATILITY_WEIGHT = 0.75
 
 MIN_RELATIVE_SIGMA = 1e-9
 
+# The least of the band's width that has to fall on each side of the forecast.
+# Residuals that all point one way — a model that has run low in every fold —
+# otherwise flatten the other side onto the point forecast, and an interval
+# with no room below it says demand cannot come in under the number.
+MIN_SIDE_SHARE = 0.1
+
 
 @dataclass(slots=True)
 class IntervalBands:
@@ -33,9 +39,7 @@ class IntervalBands:
 def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]]:
     buckets: list[list[float]] = [[] for _ in range(horizon)]
     for fold in result.folds:
-        for step, actual, predicted in zip(
-            fold.steps(), fold.y_true, fold.y_pred, strict=False
-        ):
+        for step, actual, predicted in zip(fold.steps(), fold.y_true, fold.y_pred, strict=False):
             if step > horizon:
                 continue
             if np.isfinite(actual) and np.isfinite(predicted):
@@ -120,8 +124,9 @@ def _quantile_offsets(
             spread = np.sqrt(step + 1)
             step_low, step_high = pooled_low * spread, pooled_high * spread
 
-        lower[step] = min(step_low, 0.0)
-        upper[step] = max(step_high, 0.0)
+        side = (step_high - step_low) * MIN_SIDE_SHARE
+        lower[step] = min(step_low, -side)
+        upper[step] = max(step_high, side)
 
     lower = -np.maximum.accumulate(-lower)
     upper = np.maximum.accumulate(upper)

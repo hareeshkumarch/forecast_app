@@ -5,27 +5,22 @@ import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Annotated
-
-try:
-    from datetime import UTC
-except ImportError:
-    UTC = timezone.utc  # noqa: UP017
 
 from fastapi import APIRouter, Header, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
-from app.api.deps import SessionDep
+from app.api.deps import CurrentUser, SessionDep
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.database.session import session_scope
 from app.datasets.profiler import is_currency_like
 from app.forecasting.selection import scoring_rule
 from app.models.entities import ForecastRun, ModelCandidate
-from app.models.enums import PointKind, RunStatus
+from app.models.enums import PointKind, RunStatus, SeriesStatus
 from app.schemas.forecast import (
     ForecastMetricRead,
     ForecastMetricsResponse,
@@ -56,8 +51,9 @@ from app.services import (
     scenario_service,
     scoring_service,
     series_service,
+    user_service,
 )
-from app.services.job_runner import ProgressEvent, progress_bus
+from app.services.job_runner import ProgressEvent, as_utc, progress_bus
 from app.services.progress_relay import latest_from_store
 
 logger = get_logger(__name__)
@@ -107,6 +103,7 @@ async def list_runs(
 async def start_run(
     payload: ForecastRunRequest,
     session: SessionDep,
+    user: CurrentUser,
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)
     ] = None,
@@ -117,6 +114,7 @@ async def start_run(
 
     run = await forecast_service.create_run(
         session,
+        created_by_user_id=await user_service.owner_id(session, user),
         dataset_id=payload.dataset_id,
         name=payload.name,
         time_column=payload.time_column,
@@ -211,9 +209,7 @@ async def retry_run(
     existing = await forecast_service.run_for_idempotency_key(session, idempotency_key)
     if existing is not None:
         return ForecastRunRead.model_validate(existing)
-    run = await forecast_service.retry_run(
-        session, run_id, idempotency_key=idempotency_key
-    )
+    run = await forecast_service.retry_run(session, run_id, idempotency_key=idempotency_key)
     await session.commit()
     await forecast_service.dispatch_run(session, run)
     return ForecastRunRead.model_validate(run)
@@ -394,9 +390,7 @@ async def simulate_run(
     response_model=list[SavedScenarioRead],
     summary="List saved scenarios for a forecast",
 )
-async def list_scenarios(
-    run_id: uuid.UUID, session: SessionDep
-) -> list[SavedScenarioRead]:
+async def list_scenarios(run_id: uuid.UUID, session: SessionDep) -> list[SavedScenarioRead]:
     rows = await scenario_service.list_scenarios(session, run_id)
     return [SavedScenarioRead.model_validate(row) for row in rows]
 
@@ -480,6 +474,14 @@ async def get_series(
     level: int | None = Query(default=None, ge=0, description="0 is the run's own total."),
     parent_id: uuid.UUID | None = Query(default=None, description="Only this series' children."),
     search: str | None = Query(default=None, max_length=200),
+    status: SeriesStatus | None = Query(
+        default=None,
+        description=(
+            "Only series in this state: 'forecast' was fitted on its own history, "
+            "'estimated' was apportioned from the level above it, 'pooled' is the "
+            "remainder past the series cap, 'blocked' could not be forecast."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=series_service.MAX_PAGE),
     offset: int = Query(default=0, ge=0),
 ) -> SeriesResponse:
@@ -492,6 +494,7 @@ async def get_series(
         level=level,
         parent_id=parent_id,
         search=search,
+        status=status,
         limit=limit,
         offset=offset,
     )
@@ -529,7 +532,7 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
             subscription.__anext__()
         )
-        last_updated = _aware(initial.updated_at)
+        last_updated = as_utc(initial.updated_at)
 
         try:
             while next_event is not None:
@@ -543,9 +546,9 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
                 except StopAsyncIteration:
                     break
 
-                if _aware(event.updated_at) > last_updated:
+                if as_utc(event.updated_at) > last_updated:
                     yield _sse(event.to_dict())
-                    last_updated = _aware(event.updated_at)
+                    last_updated = as_utc(event.updated_at)
                 if event.status in (RunStatus.COMPLETED, RunStatus.FAILED):
                     break
                 next_event = asyncio.create_task(subscription.__anext__())
@@ -579,7 +582,7 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         stage=run.stage,
         selected_model=run.selected_model.value if run.selected_model else None,
         error=run.error_message,
-        updated_at=_aware(run.updated_at),
+        updated_at=as_utc(run.updated_at),
     )
     if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
         return database
@@ -595,12 +598,8 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         event for event in candidates if event.status in (RunStatus.COMPLETED, RunStatus.FAILED)
     ]
     if terminal:
-        return max(terminal, key=lambda event: _aware(event.updated_at))
-    return max(candidates, key=lambda event: (event.progress, _aware(event.updated_at)))
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return max(terminal, key=lambda event: as_utc(event.updated_at))
+    return max(candidates, key=lambda event: (event.progress, as_utc(event.updated_at)))
 
 
 async def _latest_run_id(session: AsyncSession) -> uuid.UUID | None:

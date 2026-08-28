@@ -3,18 +3,33 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import connectors, dashboard, datasets, exports, forecasts, health, usage
+from app.api.deps import current_user, permitted
+from app.api.routes import (
+    auth,
+    connectors,
+    dashboard,
+    datasets,
+    exports,
+    forecasts,
+    health,
+    usage,
+)
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import (
+    CompressExceptStreams,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
+from app.services.mail_sender import sender as mail_sender
 from app.services.progress_relay import relay
 
 logger = get_logger(__name__)
@@ -27,6 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     executors.start()
     relay.start()
+    mail_sender.start()
     interrupted = await recover_interrupted_runs()
     if interrupted:
         logger.warning(
@@ -49,6 +65,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
     await relay.stop()
+    await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()
     logger.info("Shutdown complete.")
@@ -73,7 +90,14 @@ app = FastAPI(
     },
 )
 
+# Order matters and reads backwards: add_middleware prepends, so the last one
+# added is the outermost. RequestContextMiddleware therefore wraps the limiter,
+# which is what lets a 429 carry a request id like every other answer. The
+# limiter in turn wraps routing, so a request over its limit costs a dictionary
+# lookup rather than a database round trip.
+app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(CompressExceptStreams)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -86,14 +110,32 @@ app.add_middleware(
 register_error_handlers(app)
 
 api = APIRouter(prefix="/api")
+
+# Health stays open on purpose: the redeploy script polls it to decide whether
+# what came back up is healthy, and a deployment that cannot answer that
+# question cannot be deployed. It reports posture, never data.
 api.include_router(health.router)
-api.include_router(connectors.router)
-api.include_router(datasets.router)
-api.include_router(forecasts.router)
-api.include_router(dashboard.router)
-api.include_router(dashboard.insights_router)
-api.include_router(exports.router)
-api.include_router(usage.router)
+
+# Everything else is gated at the router, not per endpoint, so a route added
+# later is protected by default rather than by whoever remembers to say so.
+# The rest of the auth router takes the weaker gate on purpose: it has to be
+# able to answer "you are waiting for approval", which a gate that requires
+# approval could never say.
+api.include_router(auth.router, dependencies=[Depends(current_user)])
+
+# `permitted` wraps `approved_user`, so this is still one gate rather than
+# two: being let in at all is checked first, then what this particular
+# request needs. The mapping from route to permission lives in
+# app/core/permissions.py, so a route added later is covered by a table
+# rather than by somebody remembering to decorate it.
+guarded = [Depends(permitted)]
+api.include_router(connectors.router, dependencies=guarded)
+api.include_router(datasets.router, dependencies=guarded)
+api.include_router(forecasts.router, dependencies=guarded)
+api.include_router(dashboard.router, dependencies=guarded)
+api.include_router(dashboard.insights_router, dependencies=guarded)
+api.include_router(exports.router, dependencies=guarded)
+api.include_router(usage.router, dependencies=guarded)
 
 app.include_router(api)
 

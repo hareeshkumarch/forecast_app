@@ -264,3 +264,62 @@ async def test_a_bad_grain_is_refused_before_the_run_starts(
     )
 
     assert response.status_code in (400, 422), f"{reason}: {response.text}"
+
+
+async def test_every_offered_order_actually_answers(client: AsyncClient) -> None:
+    """Each sort the UI offers returns rows, in that order, without erroring.
+
+    `label` is the one that mattered. Its ORDER BY carried a literal `NULL` as
+    a stand-in for the "unscored last" term the other orders use, which SQLite
+    accepts and Postgres rejects outright — so the name order was a 500 in
+    production and a pass in this suite, which runs on SQLite. The compiled-SQL
+    check below is the part that would have caught it; this one is here because
+    an endpoint should be asked for what the interface can ask it for.
+    """
+    run = await _grouped_run(client, GRAIN)
+
+    for sort in ("value_at_risk", "wmape", "forecast_total", "label"):
+        response = await client.get(
+            f"/api/forecasts/{run['id']}/series", params={"sort": sort, "limit": 50}
+        )
+        assert response.status_code == 200, f"{sort}: {response.text}"
+        body = response.json()
+        assert body["sort"] == sort
+        assert body["rows"], f"{sort} returned nothing"
+
+    by_name = (
+        await client.get(
+            f"/api/forecasts/{run['id']}/series", params={"sort": "label", "limit": 50}
+        )
+    ).json()["rows"]
+    labels = [row["label"] for row in by_name]
+    assert labels == sorted(labels), labels
+
+
+def test_no_order_asks_the_database_to_sort_by_a_constant() -> None:
+    """The name order compiled to `ORDER BY NULL`, which only Postgres refuses.
+
+    Compiled from `series_service.order_terms` itself, against the dialect the
+    product runs on rather than the one this suite runs on. A term that is a
+    bare constant can never order anything, so finding one is finding a bug
+    whichever database is asked to execute it.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.entities import ForecastSeries
+    from app.services import series_service
+
+    for sort in series_service.SORTS:
+        statement = (
+            select(ForecastSeries)
+            .where(ForecastSeries.run_id == _uuid.uuid4())
+            .order_by(*series_service.order_terms(sort))
+        )
+        clause = str(statement.compile(dialect=postgresql.dialect())).split("ORDER BY", 1)[1]
+
+        for term in clause.split(","):
+            bare = term.strip().removesuffix(" ASC").removesuffix(" DESC").strip()
+            assert bare.upper() != "NULL", f"{sort} orders by a constant: {clause.strip()}"

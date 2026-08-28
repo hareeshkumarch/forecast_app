@@ -597,7 +597,47 @@ def parse_dates(
                     order_evidence=evidence if label == ordered[1] else "",
                 )
 
+    mixed = _mixed_formats(text, non_null_count, resolved_day_first)
+    if mixed is not None:
+        return mixed
+
     return _period_dates(text, non_null_count, fiscal_start_month)
+
+
+#: How much of a column one format has to read before it counts as one of the
+#: formats the column is written in, rather than a format that happens to fit a
+#: few of its values.
+MIXED_FORMAT_SHARE = 0.1
+
+
+def _mixed_formats(text: pl.Series, total: int, day_first: bool) -> DateParse | None:
+    """One column, written in more than one format.
+
+    An export stitched together from two systems, or edited by hand halfway
+    down, holds ISO dates in some rows and slash dates in others. No single
+    format reads enough of it to clear the bar, and the column was refused as
+    not being dates at all — so the file lost its time axis over a formatting
+    inconsistency the reader could see through.
+    """
+    candidates = [fmt for fmt, _label in UNAMBIGUOUS_FORMATS]
+    candidates += DAY_FIRST_FORMATS if day_first else MONTH_FIRST_FORMATS
+
+    readings = [
+        parsed
+        for fmt in candidates
+        if (parsed := _try_format(text, fmt)) is not None
+        and _rate(parsed, total) >= MIXED_FORMAT_SHARE
+    ]
+    if len(readings) < 2:
+        return None
+
+    merged = readings[0]
+    for other in readings[1:]:
+        merged = merged.fill_null(other)
+
+    if _rate(merged, total) < AGREEMENT:
+        return None
+    return DateParse(merged.rename(text.name), "mixed formats", int(merged.drop_nulls().len()))
 
 
 # ------------------------------------------------------------------- reshaping

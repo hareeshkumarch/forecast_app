@@ -1,10 +1,25 @@
 "use client";
 
 import dynamic from "next/dynamic";
+
+import {
+  AccessRefused,
+  AwaitingApproval,
+  NotConfiguredBanner,
+  SignInPrompt,
+} from "@/components/auth/sign-in-gate";
+import { useAccessStream } from "@/hooks/use-access-stream";
+import { useCurrentUser } from "@/hooks/use-dashboard";
+import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
 
+import { AccountWorkspace } from "@/components/account/account-workspace";
 import { AppSidebar, type AppSection } from "@/components/dashboard/app-sidebar";
 import { CommandPalette } from "@/components/dashboard/command-palette";
+import {
+  ForecastRunPill,
+  ForecastRunProvider,
+} from "@/components/dashboard/forecast-run-watcher";
 import { TopHeader } from "@/components/dashboard/top-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/primitives";
@@ -98,6 +113,7 @@ const WORKSPACES: Record<AppSection, ComponentType> = {
   scenarios: ScenariosWorkspace,
   connectors: ConnectorsWorkspace,
   usage: UsageWorkspace,
+  account: AccountWorkspace,
   settings: SettingsWorkspace,
 };
 
@@ -123,24 +139,72 @@ function LazyOverlayHost() {
 
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
-  return (
-    <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
-      <a
-        href="#main-content"
-        className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"
-      >
-        Skip to main content
-      </a>
-      <TopHeader section={section} />
-      <div className="flex min-h-0 flex-1">
-        <AppSidebar />
-        <SectionWorkspace />
-        {section === "dashboard" ? <InsightsRail /> : null}
+  const { user, ready, configured } = useAuth();
+  const { data: me } = useCurrentUser();
+
+  // Above every early return, because a hook cannot be called conditionally
+  // and because the screen that needs this most is the waiting one below.
+  useAccessStream(Boolean(configured && ready && user));
+
+  // One gate for all eight sections, because every page in the app is this
+  // shell with a different workspace in it. Put it on the pages instead and
+  // the ninth page is the one that ships unguarded.
+  //
+  // It sits above the shell rather than inside it, and that matters. Wrapping
+  // only the workspace left somebody waiting for approval looking at a full
+  // sidebar, a header and an insights panel — none of which they can use, all
+  // of which fire requests that come back 403, and one of which rendered the
+  // refusal as an error where a stranger could read it. Somebody who is not in
+  // yet should see one card and nothing else.
+  if (configured && ready && !user) {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <SignInPrompt />
       </div>
-      <CommandPalette />
-      <Toaster />
-      <LazyOverlayHost />
-      <ConfirmDialog />
-    </div>
+    );
+  }
+
+  if (me?.status === "pending") {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <AwaitingApproval email={me.email} />
+      </div>
+    );
+  }
+
+  if (me?.status === "rejected") {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <AccessRefused />
+      </div>
+    );
+  }
+
+  return (
+    // The run watcher wraps the shell rather than sitting inside the overlay
+    // host: it has to outlive the forecast dialog, which is unmounted the
+    // moment that dialog closes.
+    <ForecastRunProvider>
+      <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
+        <a
+          href="#main-content"
+          className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-input bg-accent px-3 py-2 text-on-accent focus:translate-y-0"
+        >
+          Skip to main content
+        </a>
+        {configured ? null : <NotConfiguredBanner />}
+        <TopHeader section={section} />
+        <div className="flex min-h-0 flex-1">
+          <AppSidebar />
+          <SectionWorkspace />
+          {section === "dashboard" ? <InsightsRail /> : null}
+        </div>
+        <CommandPalette />
+        <Toaster />
+        <LazyOverlayHost />
+        <ForecastRunPill />
+        <ConfirmDialog />
+      </div>
+    </ForecastRunProvider>
   );
 }

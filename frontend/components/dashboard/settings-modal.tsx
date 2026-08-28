@@ -33,6 +33,7 @@ import {
 } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
 import { usePrefsStore, type Density, type ThemeChoice } from "@/stores/prefs-store";
+import { useCurrentUser } from "@/hooks/use-dashboard";
 import { useUiStore } from "@/stores/ui-store";
 
 const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
@@ -159,6 +160,14 @@ function parseRate(value: string): number | null {
 }
 
 export function SettingsPanel({ className }: { className?: string }) {
+  // The provider key and token rates are one setting for the whole
+  // deployment. A member changing them changes them for everybody, which is
+  // not a thing a member should be able to do by wandering into Settings.
+  // Not signed in is not the same as not permitted. A deployment with no
+  // sign-in configured answers `authenticated: false` for everybody, and
+  // hiding the provider settings there would leave nowhere to set them at all.
+  const { data: me } = useCurrentUser();
+  const isAdmin = me === undefined || !me.authenticated || me.is_admin;
   const theme = usePrefsStore((state) => state.theme);
   const density = usePrefsStore((state) => state.density);
   const setTheme = usePrefsStore((state) => state.setTheme);
@@ -208,6 +217,7 @@ export function SettingsPanel({ className }: { className?: string }) {
           </div>
         </Card>
 
+        {isAdmin ? (
         <Card className="p-4">
           <h2 className="panel-title">Application API</h2>
           <div className="mt-3 rounded-card border border-border bg-surface-muted px-3 py-2.5">
@@ -218,10 +228,21 @@ export function SettingsPanel({ className }: { className?: string }) {
             Configured at build time with NEXT_PUBLIC_API_BASE_URL.
           </p>
         </Card>
+        ) : null}
 
-        <StorageCard />
+        {isAdmin ? <StorageCard /> : null}
       </div>
 
+      {!isAdmin ? (
+        <Card className="p-4">
+          <h2 className="panel-title">Everything else here is deployment-wide</h2>
+          <p className="mt-1.5 max-w-[60ch] text-caption text-text-muted">
+            The language provider, its key and the token rates apply to everybody using this
+            deployment, so they are changed by an administrator rather than per person. Nothing
+            you do on this page affects anyone else.
+          </p>
+        </Card>
+      ) : (
       <Card className="p-4">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-input bg-accent-soft">
@@ -255,20 +276,34 @@ export function SettingsPanel({ className }: { className?: string }) {
               />
             </Field>
 
-            <Field label="Model">
+            {/* Typed, with the known names offered rather than imposed. A
+                dropdown here meant a provider retiring a model left everybody
+                holding a name that no longer resolves and no way to enter the
+                replacement — which is exactly how both Groq entries went
+                stale. */}
+            <Field
+              label="Model"
+              hint={
+                models.length > 0
+                  ? "Suggestions — any name the provider serves works."
+                  : undefined
+              }
+            >
+              <Input
+                value={config.model}
+                onChange={(event) => update({ model: event.target.value })}
+                placeholder="model-name"
+                list={models.length > 0 ? `${config.provider}-models` : undefined}
+                autoComplete="off"
+                spellCheck={false}
+              />
               {models.length > 0 ? (
-                <Select
-                  value={config.model}
-                  onChange={(model) => update({ model })}
-                  options={models.map((model) => ({ value: model, label: model }))}
-                />
-              ) : (
-                <Input
-                  value={config.model}
-                  onChange={(event) => update({ model: event.target.value })}
-                  placeholder="model-name"
-                />
-              )}
+                <datalist id={`${config.provider}-models`}>
+                  {models.map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+              ) : null}
             </Field>
           </div>
 
@@ -362,6 +397,7 @@ export function SettingsPanel({ className }: { className?: string }) {
           </div>
         </div>
       </Card>
+      )}
     </div>
   );
 }

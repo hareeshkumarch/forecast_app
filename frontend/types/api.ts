@@ -595,6 +595,97 @@ export interface DriverResponse {
   rows: DriverRow[];
 }
 
+export type DecisionGrade = "plannable" | "directional" | "indicative";
+
+export interface DecisionAction {
+  headline: string;
+  detail: string;
+}
+
+export interface DecisionHorizon {
+  periods: number;
+  through: string | null;
+  covers_run: boolean;
+}
+
+export interface DecisionConcentration {
+  count: number;
+  total: number;
+  share: number;
+  leaders: string[];
+  lopsided: boolean;
+}
+
+export interface DecisionResponse {
+  run_id: string | null;
+  has_decision: boolean;
+  grade: DecisionGrade | null;
+  meaning: string | null;
+  accuracy: number | null;
+  confidence_level: number | null;
+  commit: number | null;
+  base: number | null;
+  prepare: number | null;
+  spread_pct: number | null;
+  commit_display: string | null;
+  base_display: string | null;
+  prepare_display: string | null;
+  exposure: number | null;
+  downside_pct: number | null;
+  lean_pct: number | null;
+  horizon: DecisionHorizon | null;
+  concentration: DecisionConcentration | null;
+  actions: DecisionAction[];
+}
+
+export interface HorizonAccuracy {
+  horizon: number;
+  wape: number | null;
+  bias_pct: number | null;
+  observations: number;
+}
+
+export interface ClassAccuracy {
+  demand_class: string;
+  wape: number | null;
+  bias_pct: number | null;
+  series: number;
+  point_forecast_claimed: boolean;
+}
+
+export interface CoveragePoint {
+  nominal: number;
+  horizon: number;
+  observed: number;
+  gap_pp: number;
+  n_observations: number;
+  measurable: boolean;
+  holds: boolean;
+}
+
+export interface ValueAdd {
+  model: string;
+  model_error: number | null;
+  baseline: string | null;
+  baseline_error: number | null;
+  improvement_pct: number | null;
+  beats_baseline: boolean;
+}
+
+export interface AccuracyReport {
+  run_id: string;
+  dataset_id: string;
+  scored_at: string | null;
+  measured_against_outcomes: boolean;
+  backtest: Record<string, number | null>;
+  by_horizon: HorizonAccuracy[];
+  by_class: ClassAccuracy[];
+  coverage: CoveragePoint[];
+  coverage_tolerance_pp: number;
+  forecast_value_add: ValueAdd | null;
+  caveats: string[];
+}
+
 export interface Insight {
   id: string;
   run_id: string;
@@ -697,7 +788,22 @@ export interface HealthResponse {
   queued_forecast_runs: number;
   running_forecast_runs: number;
   failed_forecast_runs: number;
+  /** Model kinds this deployment cannot fit. Empty on a complete install. */
+  unavailable_models: ModelKind[];
   timestamp: string;
+}
+
+export interface ModelCapability {
+  model: ModelKind;
+  label: string;
+  available: boolean;
+  /** Set only when `available` is false, and written to be shown to a user. */
+  reason: string | null;
+}
+
+export interface CapabilitiesResponse {
+  models: ModelCapability[];
+  unavailable_models: ModelKind[];
 }
 
 export interface ScenarioPoint {
@@ -875,4 +981,70 @@ export interface DashboardFilters {
   start?: string | null;
   end?: string | null;
   view: ForecastView;
+}
+
+export interface CoverageRow {
+  series_id: string;
+  observations: number;
+  gaps: number;
+  zeros: number;
+  status: "ok" | "warn" | "reject";
+  route: "model" | "fallback" | "none";
+  /** One entry per period, null where the series has no row for that period. */
+  values: (number | null)[];
+}
+
+export interface CoverageResponse {
+  dataset_id: string;
+  frequency: ForecastFrequency;
+  periods: string[];
+  rows: CoverageRow[];
+  series_total: number;
+  series_shown: number;
+  periods_total: number;
+  required_history: number;
+  series_truncated: boolean;
+  periods_truncated: boolean;
+}
+
+export interface OpenApiDocument {
+  paths?: Record<string, { get?: { parameters?: { name: string }[] } }>;
+}
+
+/** Endpoints and parameters the running backend declares. */
+export interface ApiFeatures {
+  seriesStatusFilter: boolean;
+  datasetCoverage: boolean;
+}
+
+export type AccessStatus = "pending" | "approved" | "rejected";
+
+export type AccessRole = "admin" | "member" | "viewer";
+
+export interface CurrentUserRead {
+  authenticated: boolean;
+  status: AccessStatus | null;
+  role: AccessRole | null;
+  is_admin: boolean;
+  id: string | null;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  status: AccessStatus;
+  role: AccessRole;
+  requested_at: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  last_seen_at: string | null;
+  invited_by: string | null;
+  /** True for an invitation nobody has signed in to yet. */
+  subject_pending: boolean;
+  is_self: boolean;
 }

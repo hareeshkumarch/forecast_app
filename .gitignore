@@ -1,6 +1,11 @@
 # Environment variables
 .env
 .env.local
+# The file scripts/push_secrets.py reads. It holds real values on the way to
+# the secret manager, and must never be the thing that puts them in git.
+secrets.env
+secrets*.env
+*.secrets.env
 .env.*.local
 
 # Python / FastAPI

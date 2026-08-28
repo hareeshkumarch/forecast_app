@@ -70,6 +70,53 @@ function writeWorkspace(workspace: StoredWorkspace): void {
   }
 }
 
+/**
+ * The in-flight run, kept apart from the workspace above.
+ *
+ * A forecast runs on the server for the better part of a minute, and a reload
+ * in the middle of one used to lose every trace of it — no progress, no
+ * completion toast, no way back. Persisting the id lets the watcher pick the
+ * run back up where it left off.
+ *
+ * Only ever holds a run that has not finished; `finishActiveRun` clears it the
+ * moment one does. Otherwise a reload long after the fact would re-attach to a
+ * terminal run and announce a completion the user was told about already.
+ * Session storage, so it is per tab and does not outlive it.
+ */
+const ACTIVE_RUN_STORAGE_KEY = "forecast_hub_active_run";
+
+interface StoredActiveRun {
+  id: string;
+  startedAt: number;
+}
+
+function readActiveRun(): StoredActiveRun | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredActiveRun>;
+    const id = storedRunId(parsed.id);
+    if (!id) return null;
+    const startedAt =
+      typeof parsed.startedAt === "number" && Number.isFinite(parsed.startedAt)
+        ? parsed.startedAt
+        : Date.now();
+    return { id, startedAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveRun(run: StoredActiveRun | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (run) window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, JSON.stringify(run));
+    else window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+  } catch {
+  }
+}
+
 interface UiState {
   view: ForecastView;
   rangeStart: string | null;
@@ -83,6 +130,10 @@ interface UiState {
   mobileRail: MobileRail;
 
   activeRunId: string | null;
+
+  /** When `activeRunId` was set, so a reopened modal reports the run's own
+   *  elapsed time rather than restarting the clock at zero. */
+  activeRunStartedAt: number | null;
 
   setView: (view: ForecastView) => void;
   setRange: (start: string | null, end: string | null) => void;
@@ -98,6 +149,8 @@ interface UiState {
   closeRail: () => void;
 
   setActiveRun: (runId: string | null) => void;
+  /** Stop a reload from resuming this run, without clearing it from the UI. */
+  finishActiveRun: () => void;
   hydrateWorkspace: () => void;
   resetDashboardFilters: () => void;
 }
@@ -110,6 +163,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   insightDrawer: null,
   mobileRail: null,
   activeRunId: null,
+  activeRunStartedAt: null,
 
   setView: (view) => {
     const state = get();
@@ -174,10 +228,23 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   setActiveRun: (activeRunId) => {
     if (get().activeRunId === activeRunId) return;
-    set({ activeRunId });
+    const activeRunStartedAt = activeRunId ? Date.now() : null;
+    writeActiveRun(activeRunId ? { id: activeRunId, startedAt: activeRunStartedAt! } : null);
+    set({ activeRunId, activeRunStartedAt });
+  },
+
+  finishActiveRun: () => {
+    // The run stays on screen — the pill reports it and offers a way back in.
+    // It just stops being something a reload should resume.
+    writeActiveRun(null);
   },
 
   hydrateWorkspace: () => {
+    const activeRun = readActiveRun();
+    if (activeRun && get().activeRunId === null) {
+      set({ activeRunId: activeRun.id, activeRunStartedAt: activeRun.startedAt });
+    }
+
     const stored = readWorkspace();
     if (!stored) return;
     const state = get();

@@ -8,6 +8,8 @@ from urllib.parse import quote, urlparse
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.secrets import hydrate
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
@@ -38,7 +40,70 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path("./storage")
 
+    # ---- Off-box archival of uploads --------------------------------------
+    #: A Supabase Storage bucket that finished uploads are copied into. Left
+    #: empty the copy is skipped entirely and everything stays on local disk,
+    #: which is the single-node default. This is a backup of the one artifact
+    #: that cannot be regenerated, not a relocation of the read path — see
+    #: app/core/object_store.py.
+    storage_bucket: str = Field(default="", alias="STORAGE_BUCKET")
+    #: Supabase exposes an S3-compatible endpoint per project, of the form
+    #: https://<ref>.storage.supabase.co/storage/v1/s3. Any other
+    #: S3-compatible endpoint works here too, real S3 included.
+    storage_endpoint: str = Field(default="", alias="STORAGE_ENDPOINT")
+    #: A storage-scoped S3 access key, from Supabase's Project Settings ->
+    #: Storage. Deliberately not the service role key: that one bypasses
+    #: row-level security across the whole database, where this needs only
+    #: "may write one bucket".
+    storage_access_key_id: str = Field(default="", alias="STORAGE_ACCESS_KEY_ID")
+    storage_secret_access_key: str = Field(default="", alias="STORAGE_SECRET_ACCESS_KEY")
+    #: Supabase reports the project's region; SigV4 needs it to match.
+    storage_region: str = Field(default="ap-south-1", alias="STORAGE_REGION")
+
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+
+    # ---- Authentication ----------------------------------------------------
+    #: Off by default, and deliberately. Auth cannot work until the Supabase
+    #: Google provider is configured and the keys are in the environment, so a
+    #: deployment that turned it on by default would answer 401 to everything
+    #: the moment it shipped. Turn it on once sign-in has been proven to work.
+    auth_enabled: bool = Field(default=False, alias="AUTH_ENABLED")
+    #: Supabase projects sign either with the project's shared secret (HS256)
+    #: or with a rotating key pair published as JWKS. Which one a project uses
+    #: depends on when it was created, so both are supported and the token's
+    #: own header decides. Set this only if the project signs with HS256.
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+    #: Empty means any Google account. Set to "company.com" to admit only that
+    #: domain — the check is on the verified email in the token, server side.
+    auth_allowed_email_domains_raw: str = Field(default="", alias="AUTH_ALLOWED_EMAIL_DOMAINS")
+    #: Individual addresses admitted whatever the domain rule says.
+    auth_allowlist_raw: str = Field(default="", alias="AUTH_ALLOWLIST")
+    #: Who is told when somebody new signs in, and who may approve them. These
+    #: accounts are approved on sight — without that the first administrator
+    #: would be waiting on themselves for access.
+    auth_admin_emails_raw: str = Field(default="", alias="AUTH_ADMIN_EMAILS")
+    #: Off means anyone who can sign in is in. On means a new account waits for
+    #: an administrator, which is the point of the approval mail.
+    auth_require_approval: bool = Field(default=True, alias="AUTH_REQUIRE_APPROVAL")
+
+    # ---- Outbound email ----------------------------------------------------
+    # Plain SMTP rather than a provider SDK, so this works on a Gmail app
+    # password, a Brevo free tier or a paid service without a code change.
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str = Field(default="", alias="SMTP_USERNAME")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", alias="SMTP_FROM")
+    smtp_starttls: bool = Field(default=True, alias="SMTP_STARTTLS")
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0.0)
+    #: Where the approve/reject links point. The API's own address, reachable
+    #: from wherever the administrator opens their mail.
+    public_api_base_url: str = Field(default="", alias="PUBLIC_API_BASE_URL")
+
+    #: Off is for a load test or a local script, never for a deployment facing
+    #: the internet. The limits themselves live in app/core/ratelimit.py, where
+    #: each one carries the reason it is the number it is.
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
 
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
@@ -48,6 +113,10 @@ class Settings(BaseSettings):
 
     forecast_workers: int = 2
     forecast_model_concurrency: int = Field(default=2, ge=1, le=8)
+    #: Candidates backtested at once inside one run. Above 1 this multiplies
+    #: with forecast_workers, so a two-core box wants one of them set to 1 —
+    #: oversubscribing the cores is slower than not parallelising at all.
+    forecast_candidate_workers: int = Field(default=1, ge=1, le=8)
 
     celery_broker_url: str = ""
     celery_result_backend: str = ""
@@ -168,6 +237,22 @@ class Settings(BaseSettings):
                 )
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS cannot contain '*' in production.")
+            if secrets_load.configured and not secrets_load.loaded:
+                # Degrading to the environment is right while the environment
+                # still holds everything — a secret manager having a bad
+                # minute should not take a working deployment with it. Once
+                # the file on the box has been emptied, which is the whole
+                # point of adopting one, that same fallback is no longer a
+                # smaller version of this deployment. It is a different one:
+                # AUTH_ENABLED defaults to false, so the API comes up with no
+                # sign-in at all, publicly readable, and nothing says so.
+                # Refusing to start is the only honest option.
+                raise ValueError(
+                    "Infisical is configured but its secrets could not be read "
+                    f"({secrets_load.error}). Refusing to start in production on partial "
+                    "configuration — the defaults it would fall back to include sign-in "
+                    "being switched off."
+                )
         return self
 
     @property
@@ -209,6 +294,44 @@ class Settings(BaseSettings):
             f":{quote(self.supabase_db_password, safe='')}"
             f"@db.{ref}.supabase.co:{self.supabase_db_port}/{self.supabase_db_name}"
         )
+
+    @property
+    def auth_allowed_email_domains(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower().lstrip("@")
+            for part in self.auth_allowed_email_domains_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def auth_admin_emails(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower()
+            for part in self.auth_admin_emails_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from)
+
+    @property
+    def auth_allowlist(self) -> tuple[str, ...]:
+        return tuple(
+            part.strip().lower()
+            for part in self.auth_allowlist_raw.split(",")
+            if part.strip()
+        )
+
+    @property
+    def supabase_jwks_url(self) -> str:
+        ref = self.supabase_project_ref
+        return f"https://{ref}.supabase.co/auth/v1/.well-known/jwks.json" if ref else ""
+
+    @property
+    def supabase_issuer(self) -> str:
+        ref = self.supabase_project_ref
+        return f"https://{ref}.supabase.co/auth/v1" if ref else ""
 
     @property
     def supabase_configured(self) -> bool:
@@ -253,6 +376,12 @@ class Settings(BaseSettings):
     def ensure_directories(self) -> None:
         for directory in (self.uploads_dir, self.parquet_dir, self.exports_dir):
             directory.mkdir(parents=True, exist_ok=True)
+
+
+#: Pulled in before any Settings is built. Every field is read from the
+#: environment as the object is constructed, so a secret fetched afterwards
+#: would arrive too late for anything to see it.
+secrets_load = hydrate()
 
 
 @lru_cache

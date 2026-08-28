@@ -16,17 +16,20 @@ const config: Config = {
     extend: {
       colors: {
         canvas: "var(--canvas)",
-        surface: "var(--surface)",
-        "surface-muted": "var(--surface-muted)",
+        // rgb(channels / <alpha-value>) for the five tokens used at a
+        // fraction: Tailwind cannot inject an alpha into a bare var(), and
+        // emits nothing at all when asked to. See globals.css.
+        surface: "rgb(var(--surface-rgb) / <alpha-value>)",
+        "surface-muted": "rgb(var(--surface-muted-rgb) / <alpha-value>)",
         border: "var(--border)",
         "border-strong": "var(--border-strong)",
 
         "text-primary": "var(--text-primary)",
         "text-secondary": "var(--text-secondary)",
-        "text-muted": "var(--text-muted)",
+        "text-muted": "rgb(var(--text-muted-rgb) / <alpha-value>)",
 
         accent: "var(--accent)",
-        "accent-soft": "var(--accent-soft)",
+        "accent-soft": "rgb(var(--accent-soft-rgb) / <alpha-value>)",
         "accent-hover": "var(--accent-hover)",
         "accent-border": "var(--accent-border)",
         "accent-disabled": "var(--accent-disabled)",
@@ -39,7 +42,7 @@ const config: Config = {
         sand: "var(--sand)",
 
         positive: "var(--positive)",
-        "positive-soft": "var(--positive-soft)",
+        "positive-soft": "rgb(var(--positive-soft-rgb) / <alpha-value>)",
         "positive-border": "var(--positive-border)",
         negative: "var(--negative)",
         "negative-soft": "var(--negative-soft)",
@@ -48,6 +51,31 @@ const config: Config = {
         "warning-soft": "var(--warning-soft)",
         "warning-border": "var(--warning-border)",
         overlay: "var(--overlay)",
+
+        /* Landing-page tokens. Everything the marketing page shares with the
+         * product — surfaces, borders, body text, the accent — is above; these
+         * are the ones only it has. See the `--land-*` block in globals.css. */
+        "land-dim": "var(--land-dim)",
+        "land-rule": "var(--land-rule)",
+        "land-rule-soft": "var(--land-rule-soft)",
+        "land-cta": "var(--land-cta-bg)",
+        "land-cta-hover": "var(--land-cta-hover-bg)",
+        "land-cta-ink": "var(--land-cta-text)",
+        "land-invert": "var(--land-invert-bg)",
+        "land-invert-ink": "var(--land-invert-text)",
+        "land-invert-secondary": "var(--land-invert-secondary)",
+        "land-invert-muted": "var(--land-invert-muted)",
+        "land-invert-dim": "var(--land-invert-dim)",
+        "land-invert-border": "var(--land-invert-border)",
+        "land-invert-rule": "var(--land-invert-rule)",
+        "land-invert-accent": "var(--land-invert-accent)",
+        "plan-commit": "var(--plan-commit)",
+        "plan-prepare": "var(--plan-prepare)",
+        "check-actual": "var(--check-actual)",
+        "check-predicted": "var(--check-predicted)",
+        "check-outcome": "var(--check-outcome)",
+        "check-held": "rgb(var(--check-held-rgb) / <alpha-value>)",
+        "scape-shell-key": "var(--scape-shell-key)",
       },
       borderRadius: {
         card: "0px",
@@ -92,6 +120,22 @@ const config: Config = {
           { lineHeight: "1.12", letterSpacing: "-0.025em" },
         ],
         "site-h3": ["clamp(1.125rem, calc(1rem + 0.4vw), 1.3125rem)", { lineHeight: "1.3", letterSpacing: "-0.02em" }],
+        // A step title, set in the display face rather than the UI one — the
+        // steps carry the section now that the cards around them are gone.
+        "site-h3-display": [
+          "clamp(1.5rem, calc(1.25rem + 1vw), 2.125rem)",
+          { lineHeight: "1.15", letterSpacing: "-0.025em" },
+        ],
+        // The proof figures and the accuracy figure. Large enough to be the
+        // thing on the screen, which is the whole reason the tiles went.
+        proof: [
+          "clamp(2.75rem, calc(2rem + 3vw), 4rem)",
+          { lineHeight: "0.9", letterSpacing: "-0.03em" },
+        ],
+        accuracy: [
+          "clamp(5rem, calc(2.5rem + 11vw), 11rem)",
+          { lineHeight: "0.86", letterSpacing: "-0.035em" },
+        ],
         "site-lead": [
           "clamp(1.0625rem, calc(0.98rem + 0.36vw), 1.1875rem)",
           { lineHeight: "1.55" },

@@ -285,6 +285,7 @@ async def run_for_idempotency_key(
 async def create_run(
     session: AsyncSession,
     *,
+    created_by_user_id: uuid.UUID | None = None,
     dataset_id: uuid.UUID,
     name: str | None = None,
     time_column: str | None = None,
@@ -377,6 +378,7 @@ async def create_run(
 
     run = ForecastRun(
         dataset_id=dataset.id,
+        created_by_user_id=created_by_user_id,
         name=name or f"{dataset.name} forecast",
         status=RunStatus.PENDING,
         progress=0.0,
@@ -863,12 +865,15 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
         return RunStatus.FAILED
 
     try:
-        if settings.distributed:
-            output: ForecastOutput = await executors.run(
-                _run_forecast_with_progress, payload, run_id, grouped
-            )
-        else:
-            output = await executors.run(run_forecast, payload)
+        # The reporting variant used to be reserved for the distributed
+        # deployment, on the assumption that only a Celery worker had a way to
+        # report back. A pool worker has one too, so the single-node path used
+        # the silent variant and sat at 30% for the whole model search — the
+        # slowest and least predictable part of a run, and the one stretch a
+        # watching user most needs to see moving.
+        output: ForecastOutput = await executors.run(
+            _run_forecast_with_progress, payload, run_id, grouped
+        )
     except InsufficientDataError as exc:
         raise ForecastError(str(exc)) from exc
 

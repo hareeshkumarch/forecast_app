@@ -3,7 +3,9 @@
 import { ChevronRight, Plus, Upload } from "lucide-react";
 
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
+import { AccuracyPanel } from "@/components/dashboard/accuracy-panel";
 import { BreakdownPanel } from "@/components/dashboard/breakdown-panel";
+import { DecisionPanel } from "@/components/dashboard/decision-panel";
 import { DriverTable } from "@/components/dashboard/driver-table";
 import { GettingStarted } from "@/components/dashboard/getting-started";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
@@ -108,6 +110,8 @@ export function Workspace() {
 
           <ModelHealthStrip />
 
+          <DecisionPanel className="mt-3" />
+
           <div className="grid-charts stagger mt-3">
             <ForecastVsActual />
             {breakdowns[0] ? (
@@ -126,6 +130,8 @@ export function Workspace() {
               <DriverTable className={breakdowns.length % 2 === 1 ? "panel-span" : undefined} />
             </div>
           ) : null}
+
+          <AccuracyPanel className="mt-3" />
         </div>
       )}
     </main>

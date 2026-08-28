@@ -71,6 +71,58 @@ class DashboardSummary(BaseModel):
     breakdowns: list[BreakdownRef] = Field(default_factory=list)
 
 
+class DecisionAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headline: str
+    detail: str
+
+
+class DecisionHorizon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    periods: NonNegativeInt
+    through: date | None
+    covers_run: bool
+
+
+class DecisionConcentration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    count: NonNegativeInt
+    total: NonNegativeInt
+    share: float
+    leaders: list[str] = Field(default_factory=list)
+    lopsided: bool
+
+
+class DecisionResponse(BaseModel):
+    run_id: uuid.UUID | None
+    has_decision: bool = False
+
+    grade: str | None = None
+    meaning: str | None = None
+    accuracy: float | None = None
+    confidence_level: float | None = None
+
+    commit: float | None = None
+    base: float | None = None
+    prepare: float | None = None
+    spread_pct: float | None = None
+
+    commit_display: str | None = None
+    base_display: str | None = None
+    prepare_display: str | None = None
+
+    exposure: float | None = None
+    downside_pct: float | None = None
+    lean_pct: float | None = None
+
+    horizon: DecisionHorizon | None = None
+    concentration: DecisionConcentration | None = None
+    actions: list[DecisionAction] = Field(default_factory=list)
+
+
 class DriverRow(ORMModel):
     driver: str
     impact_value: float

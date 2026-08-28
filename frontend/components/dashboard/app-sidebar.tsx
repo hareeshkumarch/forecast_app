@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Layers,
   Settings,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +30,7 @@ const APP_NAV: { href: string; label: string; description: string; icon: LucideI
   { href: "/scenarios", label: "Scenarios", description: "What-if, compare and monitor", icon: FlaskConical },
   { href: "/connectors", label: "Connectors", description: "Data sources", icon: Database },
   { href: "/usage", label: "LLM Usage", description: "Tokens and cost", icon: Activity },
+  { href: "/account", label: "Account", description: "You, and who else may sign in", icon: UserRound },
   { href: "/settings", label: "Settings", description: "Theme and providers", icon: Settings },
 ];
 
@@ -40,6 +42,7 @@ export type AppSection =
   | "scenarios"
   | "connectors"
   | "usage"
+  | "account"
   | "settings";
 
 const RAIL_WIDTH = { expanded: "w-rail", collapsed: "w-[60px]" } as const;

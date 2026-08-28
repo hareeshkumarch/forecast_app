@@ -37,6 +37,37 @@ class SeriesStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class AccessStatus(StrEnum):
+    """Whether a signed-in account is allowed to use the platform.
+
+    Signing in with Google proves who somebody is. It does not say they were
+    meant to have an account here, so a new identity lands in PENDING and waits
+    for a human to say otherwise.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class AccessRole(StrEnum):
+    """What a signed-in account may do.
+
+    Held in the database rather than only in configuration, so an
+    administrator can promote somebody without an environment change and a
+    redeploy. The configured list stays authoritative as a floor — it is what
+    stops a deployment being left with no administrator at all.
+    """
+
+    ADMIN = "admin"
+    MEMBER = "member"
+    #: Read the numbers, change nothing. Stored as a plain string like every
+    #: other enum here, so adding it needed no migration — and nobody holds it
+    #: until an administrator gives it to them, so nothing anybody can do today
+    #: changes because it exists.
+    VIEWER = "viewer"
+
+
 class ColumnRole(StrEnum):
     TIME = "time"
     TARGET = "target"

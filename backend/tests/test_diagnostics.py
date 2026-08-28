@@ -235,7 +235,12 @@ def test_missing_optional_models_are_reported_not_hidden() -> None:
         assert ModelKind.PROPHET not in missing
     else:
         assert ModelKind.PROPHET in missing
-        assert "requirements-optional" in missing[ModelKind.PROPHET]
+        # Reported to the user in terms of their forecast, and to whoever runs
+        # the deployment in terms of the install. See test_optional_models.py.
+        status = missing[ModelKind.PROPHET]
+        assert "Prophet" in status.reason
+        assert "requirements-optional" not in status.reason
+        assert "requirements-optional" in status.operator_hint
 
 
 def test_demand_pattern_uses_syntetos_boylan_not_a_flat_zero_share() -> None:

@@ -17,6 +17,9 @@ import { toast } from "@/stores/toast-store";
 import { useDashboardFilters, useUiStore } from "@/stores/ui-store";
 import type { DatasetQuery, RunQuery } from "@/lib/api";
 import type {
+  AccessRole,
+  AccessStatus,
+  ApiFeatures,
   DashboardFilters,
   ExportFormat,
   ForecastFrequency,
@@ -24,6 +27,7 @@ import type {
   MeasureAggregation,
   SavedScenario,
   SeriesSort,
+  SeriesStatus,
 } from "@/types/api";
 
 export interface SeriesQuery {
@@ -31,6 +35,7 @@ export interface SeriesQuery {
   level?: number;
   parentId?: string;
   search?: string;
+  status?: SeriesStatus;
   limit: number;
   offset: number;
 }
@@ -46,6 +51,10 @@ function filterKey(filters: DashboardFilters) {
 
 const queryKeys = {
   health: ["health"] as const,
+  capabilities: ["capabilities"] as const,
+  apiFeatures: ["api-features"] as const,
+  currentUser: ["auth", "me"] as const,
+  managedUsers: ["auth", "users"] as const,
   connectors: ["connectors"] as const,
   connectorTypes: ["connectors", "types"] as const,
   connectorSchemas: (id: string) => ["connectors", id, "schemas"] as const,
@@ -54,6 +63,7 @@ const queryKeys = {
   dataset: (id: string) => ["datasets", id] as const,
   datasetProfile: (id: string) => ["datasets", id, "profile"] as const,
   datasetQuality: (id: string, key: string) => ["datasets", id, "quality", key] as const,
+  datasetCoverage: (id: string) => ["datasets", id, "coverage"] as const,
   runs: (query: RunQuery = {}) => ["forecasts", "list", query] as const,
   allRuns: ["forecasts"] as const,
   run: (id: string) => ["forecasts", id] as const,
@@ -70,6 +80,8 @@ const queryKeys = {
   breakdown: (f: DashboardFilters, column: string) =>
     ["dashboard", "breakdown", column, filterKey(f)] as const,
   drivers: (f: DashboardFilters) => ["dashboard", "drivers", filterKey(f)] as const,
+  decision: (f: DashboardFilters) => ["dashboard", "decision", filterKey(f)] as const,
+  accuracyReport: (id: string) => ["forecasts", id, "accuracy"] as const,
   insights: (f: DashboardFilters) => ["dashboard", "insights", filterKey(f)] as const,
   llmUsage: (days: number) => ["usage", "llm", days] as const,
 };
@@ -79,6 +91,21 @@ export function useHealth() {
     queryKey: queryKeys.health,
     queryFn: ({ signal }) => api.getHealth(signal),
     refetchInterval: 60_000,
+  });
+}
+
+/**
+ * Which models this deployment can fit. Effectively static — it only changes
+ * when the image is rebuilt — so it is cached hard and never refetched on a
+ * window focus, unlike health.
+ */
+export function useCapabilities() {
+  return useQuery({
+    queryKey: queryKeys.capabilities,
+    queryFn: ({ signal }) => api.getCapabilities(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -132,6 +159,22 @@ export function useDrivers() {
   return useQuery({
     queryKey: queryKeys.drivers(filters),
     queryFn: ({ signal }) => api.getDrivers(filters, signal),
+  });
+}
+
+export function useDecision() {
+  const filters = useDashboardFilters();
+  return useQuery({
+    queryKey: queryKeys.decision(filters),
+    queryFn: ({ signal }) => api.getDecision(filters, signal),
+  });
+}
+
+export function useAccuracyReport(runId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.accuracyReport(runId ?? "none"),
+    queryFn: ({ signal }) => api.getAccuracyReport(runId as string, signal),
+    enabled: Boolean(runId),
   });
 }
 
@@ -244,9 +287,128 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
         ...(query.level === undefined ? {} : { level: query.level }),
         ...(query.parentId ? { parent_id: query.parentId } : {}),
         ...(query.search ? { search: query.search } : {}),
+        ...(query.status ? { status: query.status } : {}),
       }, signal),
     enabled: Boolean(runId),
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Which of this frontend's features the deployed backend can actually serve.
+ *
+ * Optimistic when it cannot tell: a probe that fails is not a reason to take
+ * away controls that probably work. Matched versions are the normal case, and
+ * this only earns its place in the window where they are not.
+ */
+/**
+ * What the backend says about this session, including whether it has been
+ * approved. Asked of the server rather than read off the token, because the
+ * token proves identity and says nothing about admission.
+ */
+export function useCurrentUser() {
+  return useQuery({
+    queryKey: queryKeys.currentUser,
+    queryFn: ({ signal }) => api.getCurrentUser(signal),
+    staleTime: 60_000,
+    retry: false,
+    // useAccessStream pushes a decision here the moment it is made; this is
+    // the floor under it for a stream that never opened. Unconditional on
+    // purpose — it used to poll only while pending, which meant somebody
+    // already approved never checked again and kept clicking around a page
+    // that had stopped working after their access was removed.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useManagedUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.managedUsers,
+    queryFn: ({ signal }) => api.getManagedUsers(signal),
+    enabled,
+    // A request arriving now reaches this list over the stream. The poll is
+    // the fallback, and at a minute it costs an administrator with the page
+    // open one small query a minute rather than three.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useUserDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: AccessStatus }) =>
+      api.decideOnUser(id, status),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.managedUsers });
+      void client.invalidateQueries({ queryKey: queryKeys.currentUser });
+    },
+  });
+}
+
+export function useUserRole() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role }: { id: string; role: AccessRole }) => api.setUserRole(id, role),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.managedUsers });
+      void client.invalidateQueries({ queryKey: queryKeys.currentUser });
+    },
+  });
+}
+
+export function useBulkDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: AccessStatus }) =>
+      api.decideOnMany(ids, status),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
+export function useBulkRemove() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.removeMany(ids),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
+export function useRemovePerson() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removePerson(id),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
+export function useInvite() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (email: string) => api.invitePerson(email),
+    onSuccess: () => void client.invalidateQueries({ queryKey: queryKeys.managedUsers }),
+  });
+}
+
+export function useApiFeatures(): ApiFeatures {
+  const { data } = useQuery({
+    queryKey: queryKeys.apiFeatures,
+    queryFn: ({ signal }) => api.getApiFeatures(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  return data ?? { seriesStatusFilter: true, datasetCoverage: true };
+}
+
+export function useDatasetCoverage(datasetId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.datasetCoverage(datasetId ?? "none"),
+    queryFn: ({ signal }) => api.getDatasetCoverage(datasetId as string, {}, signal),
+    enabled: Boolean(datasetId),
   });
 }
 

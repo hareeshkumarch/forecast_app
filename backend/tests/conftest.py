@@ -28,9 +28,48 @@ from app.database.session import SessionFactory, engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _authentication_stays_off():
+    """No test leaves the auth switches flipped for the next one.
+
+    `settings` is a single object for the whole session, so a test that turns
+    authentication on and forgets to turn it off does not fail itself — it
+    fails every test that runs after it, in files it has nothing to do with,
+    with a 401 that reads as a broken endpoint. That cost an afternoon once;
+    it does not get to cost another.
+    """
+    from app.core.config import settings
+
+    before = (settings.auth_enabled, settings.auth_require_approval)
+    yield
+    settings.auth_enabled, settings.auth_require_approval = before
+
+
 @pytest.fixture(scope="session")
 def storage_root() -> Path:
     return _STORAGE
+
+
+@pytest.fixture(autouse=True)
+def _rate_limits_start_fresh():
+    """Each test gets its own allowance.
+
+    Every request in this suite arrives from the same place as far as the
+    limiter is concerned, so without this they all share one window: the run
+    is fine for the first two hundred and forty requests and then fails
+    whatever happens to be running when the allowance runs out. That is a
+    different set of tests each time, in files that have nothing to do with
+    rate limiting, answering 429 where they expected a result — the same shape
+    of afternoon as the auth switches above.
+
+    Cleared rather than switched off, so the middleware stays in the path and
+    the tests that assert on its headers still have something to assert about.
+    """
+    from app.core.ratelimit import limiter
+
+    limiter.forget_all()
+    yield
+    limiter.forget_all()
 
 
 @pytest.fixture(autouse=True)

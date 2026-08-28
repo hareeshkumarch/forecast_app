@@ -1,62 +1,152 @@
 "use client";
 
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { buildScape, prismFaces, type Prism, type Tone } from "@/lib/demand-scape";
 import {
-  DEFAULT_SCENARIO,
-  SCENARIOS,
+  FUTURE_WEEKS,
+  HISTORY_WEEKS,
+  SERIES,
   columned,
   readoutFor,
-  scenarioById,
+  seriesDescription,
 } from "@/lib/scape-data";
-import {
-  REPLAY_PACE,
-  barDelay,
-  demoWalk,
-  scapeTiming,
-  shellDelay,
-  type ScapeTiming,
-} from "@/lib/scape-motion";
+import { barDelay, demoWalk, scapeTiming, shellDelay, type ScapeTiming } from "@/lib/scape-motion";
 import { useMotionReady } from "@/components/marketing/reveal";
-import { cn } from "@/lib/utils";
 
 const HINT = "Hover any week, or focus the chart and use the arrow keys";
 const TOUCH_HINT = "Tap any week to inspect its forecast";
 
-const PALETTE: Record<Tone, { front: string; side: string; top: string; stroke: string }> = {
-  history: { front: "#151a16", side: "#3d433e", top: "#4a504b", stroke: "none" },
-  future: { front: "#287b59", side: "#4b9478", top: "#74ad96", stroke: "none" },
-  range: {
-    front: "rgba(40,123,89,.08)",
-    side: "rgba(40,123,89,.10)",
-    top: "rgba(40,123,89,.12)",
-    stroke: "#9ebfaf",
-  },
+/* One series, drawn one way: nothing here depends on state, so it is measured
+   once for the module rather than on every render. */
+const SCAPE = buildScape(SERIES.layers, SERIES.growth);
+const TIMING = scapeTiming(HISTORY_WEEKS, FUTURE_WEEKS, SCAPE.rows);
+const WALK = demoWalk(HISTORY_WEEKS, FUTURE_WEEKS, TIMING);
+
+type Face = { front: string; side: string; top: string; stroke: string };
+
+/*
+ * One colour per tone, at one weight per row.
+ *
+ * The rows overlap by design — that is what makes the drawing read as depth —
+ * and two rows painted identically collapse into a single silhouette the
+ * moment they touch. The near line is at full strength and the line behind it
+ * steps back, which is the depth cue the eye already knows and the only thing
+ * that lets a visitor see there are two product lines here at all.
+ *
+ * The values live in the stylesheet. An SVG presentation attribute is a CSS
+ * declaration and takes a custom property like any other, so the chart follows
+ * the theme without this file knowing there is one — which matters most for
+ * the near row of sold weeks: it is the heaviest ink on a light page and has
+ * to become the brightest on a dark one, and that is not a colour a component
+ * can work out for itself.
+ */
+const PALETTE: Record<Tone, Face[]> = {
+  history: [
+    {
+      front: "var(--scape-sold-near)",
+      side: "var(--scape-sold-near-side)",
+      top: "var(--scape-sold-near-top)",
+      stroke: "none",
+    },
+    {
+      front: "var(--scape-sold-far)",
+      side: "var(--scape-sold-far-side)",
+      top: "var(--scape-sold-far-top)",
+      stroke: "none",
+    },
+  ],
+  future: [
+    {
+      front: "var(--scape-next-near)",
+      side: "var(--scape-next-near-side)",
+      top: "var(--scape-next-near-top)",
+      stroke: "none",
+    },
+    {
+      front: "var(--scape-next-far)",
+      side: "var(--scape-next-far-side)",
+      top: "var(--scape-next-far-top)",
+      stroke: "none",
+    },
+  ],
+  range: [
+    {
+      front: "var(--scape-shell-near)",
+      side: "var(--scape-shell-near-side)",
+      top: "var(--scape-shell-near-top)",
+      stroke: "var(--scape-shell-near-line)",
+    },
+    {
+      front: "var(--scape-shell-far)",
+      side: "var(--scape-shell-far-side)",
+      top: "var(--scape-shell-far-top)",
+      stroke: "var(--scape-shell-far-line)",
+    },
+  ],
 };
+
+const FALLBACK: Face = {
+  front: "var(--scape-sold-near)",
+  side: "var(--scape-sold-near-side)",
+  top: "var(--scape-sold-near-top)",
+  stroke: "none",
+};
+
+/** The nearest row's weight is the one a row beyond the palette falls back to,
+ *  so a third product line would still draw rather than disappear. */
+function faceFor(tone: Tone, row: number): Face {
+  const weights = PALETTE[tone];
+  return weights[Math.min(row, weights.length - 1)] ?? FALLBACK;
+}
+
+/* One entry in the key. The swatch carries a stripe per row, so a colour the
+   chart shows in two weights is named once rather than twice. */
+function Key({ weights, children }: { weights: string[]; children: ReactNode }) {
+  return (
+    <span className="flex items-center gap-2.5">
+      <span className="flex size-3 shrink-0" aria-hidden>
+        {weights.map((weight) => (
+          <span key={weight} className="h-full flex-1" style={{ background: weight }} />
+        ))}
+      </span>
+      {children}
+    </span>
+  );
+}
 
 function Bar({
   prism,
-  historyLength,
   timing,
+  active,
   onEnter,
 }: {
   prism: Prism;
-  historyLength: number;
   timing: ScapeTiming;
+  /** The week under the pointer, which this bar is part of. */
+  active: boolean;
   onEnter: () => void;
 }) {
   const faces = prismFaces(prism);
-  const palette = PALETTE[prism.tone];
+  const palette = faceFor(prism.tone, prism.row);
   const shell = prism.tone === "range";
   const delay = shell
-    ? shellDelay(prism.step, historyLength, timing)
-    : barDelay(prism.step, historyLength, timing);
+    ? shellDelay(prism.step, HISTORY_WEEKS, timing, prism.row, SCAPE.rows)
+    : barDelay(prism.step, HISTORY_WEEKS, timing, prism.row, SCAPE.rows);
 
   return (
     <g
       className={shell ? "scape-bar scape-shell cursor-default" : "scape-bar cursor-default"}
+      /* The readout names the week; this shows which one it is talking about
+         on the drawing itself, in both rows at once. */
+      data-active={active ? "true" : undefined}
+      /* Named rather than left to be recognised by its fill: the browser
+         audits pick bars out of the page, and a colour is a thing that
+         changes. */
+      data-tone={prism.tone}
+      data-row={prism.row}
+      data-step={prism.step}
       onMouseEnter={onEnter}
       onPointerDown={onEnter}
       style={
@@ -76,35 +166,14 @@ function Bar({
 }
 
 export function DemandScape() {
-  const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO.id);
   const [hovered, setHovered] = useState<number | null>(null);
   const [keyed, setKeyed] = useState(false);
   const [running, setRunning] = useState(false);
-  // The opening build can take its time; everything after it is answering a
-  // click, and runs the same choreography on a shorter clock.
-  const [replaying, setReplaying] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const motionReady = useMotionReady();
   // Set the moment the visitor does anything to the chart themselves. From
   // then on it is theirs, and the demonstration never touches it again.
   const taken = useRef(false);
-
-  const scenario = scenarioById(scenarioId);
-  const historyLength = scenario.history.length;
-
-  const scape = useMemo(
-    () => buildScape(scenario.history, scenario.future, scenario.growth),
-    [scenario],
-  );
-  const timing = useMemo(
-    () =>
-      scapeTiming(
-        scenario.history.length,
-        scenario.future.length,
-        replaying ? REPLAY_PACE : 1,
-      ),
-    [scenario, replaying],
-  );
 
   useEffect(() => {
     const node = ref.current;
@@ -123,52 +192,85 @@ export function DemandScape() {
     return () => observer.disconnect();
   }, []);
 
+  /*
+   * The scene leans very slightly towards the pointer.
+   *
+   * An isometric drawing is a still picture of a solid; what convinces
+   * somebody it is solid is seeing it respond to where they are. A degree and
+   * a half is enough — past about three the prisms start to look like they are
+   * on a hinge, and the illusion goes the other way.
+   *
+   * Written to a custom property rather than to React state: this fires on
+   * every pointer move, and re-rendering four hundred polygons at 120Hz to
+   * turn the scene by one degree would be the most expensive thing on the
+   * page.
+   */
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !motionReady) return;
+    if (window.matchMedia("(hover: none)").matches) return;
+
+    let frame = 0;
+    const onMove = (event: PointerEvent) => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const box = node.getBoundingClientRect();
+        const x = (event.clientX - box.left) / box.width - 0.5;
+        const y = (event.clientY - box.top) / box.height - 0.5;
+        node.style.setProperty("--scape-tilt-x", `${(-y * 1.5).toFixed(3)}deg`);
+        node.style.setProperty("--scape-tilt-y", `${(x * 1.5).toFixed(3)}deg`);
+      });
+    };
+    const onLeave = () => {
+      node.style.setProperty("--scape-tilt-x", "0deg");
+      node.style.setProperty("--scape-tilt-y", "0deg");
+    };
+
+    node.addEventListener("pointermove", onMove);
+    node.addEventListener("pointerleave", onLeave);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      node.removeEventListener("pointermove", onMove);
+      node.removeEventListener("pointerleave", onLeave);
+    };
+  }, [motionReady]);
+
   // Once built, the chart walks its own forecast and shows what the readout
   // gives, rather than only asking to be hovered. See `lib/scape-motion.ts`.
   useEffect(() => {
     if (!running || !motionReady || taken.current) return;
 
-    const walk = demoWalk(historyLength, scenario.future.length, timing);
-    const timers = walk.steps.map((step, index) =>
+    const timers = WALK.steps.map((step, index) =>
       window.setTimeout(() => {
         if (!taken.current) setHovered(step);
-      }, walk.start + index * walk.interval),
+      }, WALK.start + index * WALK.interval),
     );
 
     // Let go at the end, so the hint the visitor is being taught comes back.
     timers.push(
       window.setTimeout(() => {
         if (!taken.current) setHovered(null);
-      }, walk.release),
+      }, WALK.release),
     );
 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [running, motionReady, timing, historyLength, scenario.future.length]);
+  }, [running, motionReady]);
 
   const take = () => {
     taken.current = true;
   };
 
-  const choose = (id: string) => {
-    if (id === scenario.id) return;
-    // Choosing data is the visitor doing the thing the demonstration was for.
-    take();
-    // The readout described a week of the series being replaced.
-    setHovered(null);
-    setReplaying(true);
-    setScenarioId(id);
-  };
-
   const stage = motionReady ? (running ? "scape-running" : "scape-armed") : "";
-  const spoken = hovered === null ? null : readoutFor(scenario, hovered);
+  const spoken = hovered === null ? null : readoutFor(hovered);
   const readout = spoken === null ? null : columned(spoken);
-  const marked = hovered === null ? null : scape.columns[hovered];
+  const marked = hovered === null ? null : SCAPE.columns[hovered];
 
   const step = (delta: number) => {
     setKeyed(true);
     setHovered((current) => {
       const next = (current ?? -1) + delta;
-      return Math.max(0, Math.min(scape.steps - 1, next < 0 ? 0 : next));
+      return Math.max(0, Math.min(SCAPE.steps - 1, next < 0 ? 0 : next));
     });
   };
 
@@ -183,7 +285,7 @@ export function DemandScape() {
     if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       setKeyed(true);
-      setHovered(event.key === "Home" ? 0 : scape.steps - 1);
+      setHovered(event.key === "Home" ? 0 : SCAPE.steps - 1);
       return;
     }
     if (event.key === "Escape") {
@@ -193,40 +295,12 @@ export function DemandScape() {
 
   return (
     <div className="scape-frame" ref={ref}>
-      {/*
-       * Toggle buttons rather than tabs or radios: the chart below already
-       * owns the arrow keys, and a widget that swallowed them to move between
-       * its own options would take them away from the thing worth exploring.
-       */}
-      <div
-        role="group"
-        aria-label="Example demand to draw"
-        className="mb-5 flex flex-wrap items-center justify-center gap-2"
-      >
-        {SCENARIOS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={option.id === scenario.id}
-            onClick={() => choose(option.id)}
-            className={cn(
-              "scape-chip border px-4 py-2 font-mono text-site-caption uppercase tracking-[0.12em]",
-              option.id === scenario.id
-                ? "border-[#111512] bg-[#111512] text-white"
-                : "border-[#cfd5cf] bg-[#fafbf9] text-[#4e554e] hover:border-[#8f9a90] hover:text-[#111512]",
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
       <div className="relative">
         <svg
-          viewBox={scape.viewBox}
+          viewBox={SCAPE.viewBox}
           className={stage}
           role="img"
-          aria-label={`${scenario.label}: ${historyLength} weeks of historical demand followed by a ${scenario.future.length}-week forecast and its possible range`}
+          aria-label={seriesDescription()}
           tabIndex={0}
           onKeyDown={onKeyDown}
           onFocus={() => {
@@ -240,38 +314,41 @@ export function DemandScape() {
           }}
           onMouseLeave={() => setHovered(null)}
           onTouchStart={take}
+          /* Drives the dimming in CSS, so pointing at a week costs one
+             attribute write rather than a style on each of eighty-eight
+             marks. */
+          data-reading={hovered === null ? undefined : "true"}
         >
-          <g stroke="#cfd6cf" strokeWidth="1" opacity=".95">
-            {scape.guides.map((guide) => (
+          <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
+            {SCAPE.guides.map((guide) => (
               <line key={guide.key} x1={guide.x1} y1={guide.y1} x2={guide.x2} y2={guide.y2} />
             ))}
           </g>
 
-          {marked ? (
-            <rect
-              className="scape-marker"
-              x={marked.x}
-              y={marked.y1}
-              width={marked.width}
-              height={marked.y2 - marked.y1}
-              aria-hidden
-            />
-          ) : null}
+          {/* The marker spans both rows: a week is a week in every product
+              line, and reading one of them alone is not what the chart is
+              for. */}
+          {marked
+            ? marked.bands.map((band) => (
+                <rect
+                  key={band.key}
+                  className="scape-marker"
+                  x={band.x}
+                  y={band.y1}
+                  width={band.width}
+                  height={band.y2 - band.y1}
+                  aria-hidden
+                />
+              ))
+            : null}
 
-          {/*
-           * Keyed on the scenario, so choosing one remounts the bars and the
-           * build sequence runs again from the start. A CSS animation cannot
-           * be replayed in place without removing the element that carries it,
-           * and running it again is the right thing to show anyway: picking a
-           * series is asking for a forecast, and this is the chart making one.
-           */}
-          <g key={scenario.id}>
-            {scape.prisms.map((prism) => (
+          <g>
+            {SCAPE.prisms.map((prism) => (
               <Bar
                 key={prism.key}
                 prism={prism}
-                historyLength={historyLength}
-                timing={timing}
+                timing={TIMING}
+                active={prism.step === hovered}
                 onEnter={() => {
                   take();
                   setHovered(prism.step);
@@ -280,28 +357,36 @@ export function DemandScape() {
             ))}
           </g>
 
-          {/* Outside that key: the axis and the today line are the same in
-              every scenario, and should not blink on each choice. */}
           <g
             className="scape-caption"
             style={
               {
-                "--delay": `${timing.captionStart}ms`,
-                "--caption-fade": `${timing.captionFade}ms`,
+                "--delay": `${TIMING.captionStart}ms`,
+                "--caption-fade": `${TIMING.captionFade}ms`,
               } as CSSProperties
             }
           >
             <line
-              x1={scape.boundary.x1}
-              y1={scape.boundary.y1}
-              x2={scape.boundary.x2}
-              y2={scape.boundary.y2}
-              stroke="#616862"
+              x1={SCAPE.boundary.x1}
+              y1={SCAPE.boundary.y1}
+              x2={SCAPE.boundary.x2}
+              y2={SCAPE.boundary.y2}
+              stroke="var(--scape-axis)"
               strokeDasharray="5 5"
               strokeWidth="1.5"
             />
-            <g fill="#7d837d" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
-              {scape.labels.map((label) => (
+            <g fill="var(--scape-week)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
+              {SCAPE.labels.map((label) => (
+                <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
+                  {label.text}
+                </text>
+              ))}
+            </g>
+            {/* Darker than the week captions: these name what the depth of the
+                chart is, which is the part a visitor is least likely to guess
+                and most likely to be told once. */}
+            <g fill="var(--scape-row-name)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
+              {SCAPE.rowLabels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
                   {label.text}
                 </text>
@@ -312,31 +397,39 @@ export function DemandScape() {
       </div>
 
       {/* Fixed height, so the readout appearing cannot move the page. Full
-          width for the same reason horizontally: the line is centred inside a
-          box that does not resize with what it is holding. */}
-      <div className="mt-1 flex min-h-[42px] items-center justify-center sm:h-[26px] sm:min-h-0">
+          width for the same reason horizontally: the lines are centred inside
+          a box that does not resize with what it is holding. */}
+      <div className="mt-1 flex min-h-[58px] items-center justify-center sm:h-[46px] sm:min-h-0">
         <p className="scape-readout w-full text-center font-mono text-site-caption" aria-hidden>
-          {readout ? (
-            <span className="hidden whitespace-pre sm:inline">
-              <span className="text-[#111512]">{readout.label}</span>
-              <span className="text-[#585e58]">
-                {` · ${readout.point}`}
-                {readout.range === "actual" ? "" : ` · range ${readout.range}`}
+          <span className="block">
+            {readout ? (
+              <span className="hidden whitespace-pre sm:inline">
+                <span className="text-text-primary">{readout.label}</span>
+                <span className="text-text-secondary">
+                  {` · ${readout.point}`}
+                  {readout.range === "actual" ? "" : ` · range ${readout.range}`}
+                </span>
               </span>
-            </span>
-          ) : null}
-          {spoken ? (
-            <span className="text-[#585e58] sm:hidden">
-              <span className="text-[#111512]">{spoken.label}</span>
-              {` · ${spoken.point}`}
-              {spoken.range === "actual" ? "" : ` · range ${spoken.range}`}
-            </span>
-          ) : (
-            <>
-              <span className="hidden text-[#858b85] sm:inline">{HINT}</span>
-              <span className="text-[#858b85] sm:hidden">{TOUCH_HINT}</span>
-            </>
-          )}
+            ) : null}
+            {spoken ? (
+              <span className="text-text-secondary sm:hidden">
+                <span className="text-text-primary">{spoken.label}</span>
+                {` · ${spoken.point}`}
+                {spoken.range === "actual" ? "" : ` · range ${spoken.range}`}
+              </span>
+            ) : (
+              <>
+                <span className="hidden text-land-dim sm:inline">{HINT}</span>
+                <span className="text-land-dim sm:hidden">{TOUCH_HINT}</span>
+              </>
+            )}
+          </span>
+          {/* The same week one level down. Held on its own line rather than
+              run on to the first: the split is what the two rows are for, and
+              a line that long wraps differently on every phone. */}
+          <span className="block min-h-[1.45em] whitespace-pre text-land-dim">
+            {readout ? readout.split : ""}
+          </span>
         </p>
       </div>
 
@@ -344,16 +437,16 @@ export function DemandScape() {
           concern, and a screen reader should not hear them. */}
       <p className="sr-only" aria-live="polite">
         {keyed && spoken
-          ? `${spoken.label}, ${spoken.point}${spoken.range === "actual" ? "" : `, range ${spoken.range}`}`
+          ? `${spoken.label}, ${spoken.point}${spoken.range === "actual" ? "" : `, range ${spoken.range}`}, ${spoken.split}`
           : ""}
       </p>
 
-      <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-[#656b65]">
-        <span className="flex items-center gap-2.5"><span className="size-3 bg-[#151a16]" />What you sold</span>
-        <span className="flex items-center gap-2.5"><span className="size-3 bg-[#287b59]" />What is coming</span>
-        <span className="flex items-center gap-2.5"><span className="size-3 bg-[#c8ddd2]" />How far it could move</span>
+      <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-land-dim">
+        <Key weights={PALETTE.history.map((face) => face.front)}>What you sold</Key>
+        <Key weights={PALETTE.future.map((face) => face.front)}>What is coming</Key>
+        <Key weights={["var(--scape-shell-key)"]}>How far it could move</Key>
       </div>
-      <p className="mt-5 text-center text-site-body text-[#8a908a]">{scenario.caption}</p>
+      <p className="mt-5 text-center text-site-body text-land-dim">{SERIES.caption}</p>
     </div>
   );
 }

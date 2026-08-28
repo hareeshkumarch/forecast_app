@@ -107,3 +107,37 @@ describe("defaultModelFor", () => {
     }
   });
 });
+
+describe("provider catalogue", () => {
+  it("offers no model a provider has retired", () => {
+    // Both of these were listed here until a provider turned them off:
+    // deepseek-r1-distill-llama-70b in September 2025, llama-3.3-70b-versatile
+    // in June 2026. Named rather than described, so the test fails loudly if
+    // either is ever pasted back in.
+    const retired = [
+      "llama-3.3-70b-versatile",
+      "deepseek-r1-distill-llama-70b",
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "moonshotai/kimi-k2-instruct-0905",
+    ];
+    const offered = Object.values(PROVIDER_MODELS).flat();
+
+    for (const model of retired) {
+      expect(offered).not.toContain(model);
+    }
+  });
+
+  it("gives every provider a default model except the ones that cannot have one", () => {
+    // custom is anything with an OpenAI-shaped API, so there is no name to
+    // guess; everything else should land on something usable when picked.
+    for (const { value } of PROVIDERS) {
+      if (value === "custom") continue;
+      expect(defaultModelFor(value), `${value} has no default model`).not.toBe("");
+    }
+  });
+
+  it("lists nvidia, which is the one a deployment with no budget can turn on", () => {
+    expect(PROVIDERS.map((p) => p.value)).toContain("nvidia");
+    expect(PROVIDER_MODELS.nvidia?.length).toBeGreaterThan(0);
+  });
+});

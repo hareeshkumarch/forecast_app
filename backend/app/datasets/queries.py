@@ -359,8 +359,7 @@ def distinct_series_count(
         return 1
 
     keys = ", ".join(
-        f"COALESCE(CAST({_quote(column)} AS VARCHAR), '{MISSING_KEY}')"
-        for column in group_columns
+        f"COALESCE(CAST({_quote(column)} AS VARCHAR), '{MISSING_KEY}')" for column in group_columns
     )
     with _using(connection) as db:
         row = db.execute(

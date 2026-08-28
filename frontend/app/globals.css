@@ -8,17 +8,30 @@
  * graphite type, measured green, and restrained supporting colours. */
 :root {
   --canvas: #f1f3ef;
-  --surface: #fafbf9;
-  --surface-muted: #e6e9e4;
+  /*
+   * Written as channels, then wrapped, for the five tokens something asks for
+   * at a fraction of their strength. Tailwind builds `bg-surface/95` by
+   * substituting an alpha into the colour it was given, which it can do to a
+   * hex and cannot do to a bare `var()` — handed one, it emits no rule at all,
+   * so the utility silently resolves to nothing and the element renders fully
+   * transparent. `tests/alpha-tokens.test.ts` fails if a token gains a
+   * fractional use without gaining its channels here.
+   */
+  --surface-rgb: 250 251 249;
+  --surface: rgb(var(--surface-rgb));
+  --surface-muted-rgb: 230 233 228;
+  --surface-muted: rgb(var(--surface-muted-rgb));
   --border: #d8ddd7;
   --border-strong: #bcc4bc;
 
   --text-primary: #111512;
   --text-secondary: #4e554e;
-  --text-muted: #7d847e;
+  --text-muted-rgb: 125 132 126;
+  --text-muted: rgb(var(--text-muted-rgb));
 
   --accent: #287b59;
-  --accent-soft: #dce9e1;
+  --accent-soft-rgb: 220 233 225;
+  --accent-soft: rgb(var(--accent-soft-rgb));
   --accent-hover: #175a3e;
   --accent-border: #adcbbd;
   --accent-disabled: #88aa99;
@@ -31,7 +44,8 @@
   --sand: #a7b9aa;
 
   --positive: #287b59;
-  --positive-soft: #dce9e1;
+  --positive-soft-rgb: 220 233 225;
+  --positive-soft: rgb(var(--positive-soft-rgb));
   --positive-border: #adcbbd;
   --negative: #aa453f;
   --negative-soft: #f3e5e2;
@@ -44,6 +58,120 @@
   --shadow-card: 0 1px 2px rgba(17, 22, 18, 0.055);
   --shadow-popover: 0 12px 30px rgba(17, 22, 18, 0.13), 0 2px 5px rgba(17, 22, 18, 0.07);
   --grid-line: rgba(31, 48, 36, 0.055);
+
+  /* ------------------------------------------------------------- landing
+   *
+   * The marketing page used to write its colours literally, some seventy of
+   * them, and eight of those were greys within a few points of each other
+   * doing the same job. They are tokens now, for the obvious reason — the
+   * page can be dark — and for a quieter one: a page whose supporting text
+   * has one colour is a page you can restate, and one with eight is a page
+   * you can only edit.
+   *
+   * Surfaces, borders, body text and the accent come from the product tokens
+   * above; a landing that invented its own would be a second system to keep
+   * in step. What is here is what the marketing page has and the product
+   * does not.
+   */
+
+  /* Between --text-secondary and --text-muted: eyebrows, captions, the ink
+     of things that label rather than say. */
+  --land-dim: #626862;
+  /* The hairline inside a component, lighter than the border between two. */
+  --land-rule: #cfd5cf;
+  --land-rule-soft: #dbe0da;
+
+  /* The primary call to action: ink-on-paper reversed. Not --text-primary on
+     --surface, because in the dark theme it stops being the darkest thing on
+     the page and has to invert with it. */
+  --land-cta-bg: #111512;
+  --land-cta-hover-bg: #242a25;
+  --land-cta-text: #ffffff;
+
+  /* The accuracy section, which runs against the page rather than with it.
+     In the light theme that means near-black; in the dark theme the same
+     intent lands the other way, as the one band lifted off the canvas. */
+  --land-invert-bg: #111512;
+  --land-invert-text: #f2f3f1;
+  --land-invert-secondary: #b9bdb9;
+  --land-invert-muted: #afb4af;
+  --land-invert-dim: #7f8580;
+  --land-invert-border: rgba(255, 255, 255, 0.2);
+  --land-invert-rule: rgba(255, 255, 255, 0.12);
+  --land-invert-accent: #7fbea1;
+
+  /* The wash behind the headline and the tint across the chart's frame. */
+  --land-wash-accent: #dce9e1;
+  --land-wash-warm: #eee8db;
+  --land-stage-tint-accent: rgba(40, 123, 89, 0.1);
+  --land-stage-tint-warm: rgba(156, 135, 96, 0.08);
+  --land-stage-veil: rgba(250, 251, 249, 0.94);
+  --land-stage-shadow: 0 28px 70px -48px rgba(17, 22, 18, 0.65), 0 1px 2px rgba(17, 22, 18, 0.06);
+  --land-glow: rgba(40, 123, 89, 0.1);
+  --land-lift-shadow: 0 10px 30px -18px rgba(17, 21, 18, 0.32);
+  /* The nav's own shade. Carried as a colour rather than a whole shadow so
+     the three offsets it is used at stay in the components that set them. */
+  --land-nav-shadow: rgba(17, 22, 18, 0.4);
+
+  --land-mark-crown: #303530;
+  --land-mark-shadow: #101411;
+
+  /* The hero chart. Two product lines, three faces each: the near line at
+     full strength and the line behind it stepped back, with each face lit a
+     shade lighter than the one below it. Named per face rather than derived,
+     because "lighter" in a dark theme is not the same instruction. */
+  --scape-sold-near: #151a16;
+  --scape-sold-near-side: #333a34;
+  --scape-sold-near-top: #3f453f;
+  --scape-sold-far: #5c645d;
+  --scape-sold-far-side: #767d76;
+  --scape-sold-far-top: #828981;
+
+  --scape-next-near: #1d6b4b;
+  --scape-next-near-side: #357f5f;
+  --scape-next-near-top: #458d6e;
+  --scape-next-far: #5ba488;
+  --scape-next-far-side: #74b09a;
+  --scape-next-far-top: #82b9a5;
+
+  --scape-shell-near: rgba(40, 123, 89, 0.08);
+  --scape-shell-near-side: rgba(40, 123, 89, 0.1);
+  --scape-shell-near-top: rgba(40, 123, 89, 0.12);
+  --scape-shell-near-line: #9ebfaf;
+  --scape-shell-far: rgba(40, 123, 89, 0.05);
+  --scape-shell-far-side: rgba(40, 123, 89, 0.07);
+  --scape-shell-far-top: rgba(40, 123, 89, 0.09);
+  --scape-shell-far-line: #bcd2c7;
+  /* A solid stand-in for the shells, for the key — a translucent swatch on
+     a card reads as a lighter colour, not as a transparent one. */
+  --scape-shell-key: #c8ddd2;
+
+  --scape-guide: #cfd6cf;
+  --scape-axis: #616862;
+  --scape-week: #7d837d;
+  --scape-row-name: #3f463f;
+  --scape-marker: rgba(17, 21, 18, 0.055);
+
+  /* The accuracy diagram, which sits inside the inverted section and so is
+     lit for a dark ground in both themes. */
+  --check-actual: #d7d8d6;
+  --check-predicted: #7fbea1;
+  --check-outcome: #f0f1ef;
+  --check-held-rgb: 89 96 91;
+  --check-held: rgb(var(--check-held-rgb));
+
+  /* The line-versus-range panels. */
+  --compare-ink: #111512;
+  --compare-forecast: #287b59;
+  --compare-rule: #cfd6cf;
+  --compare-outcome: #747b74;
+
+  /* The planning band. `--plan-prepare` is deliberately not the warning
+     colour: being ready for the upper bound is capacity, not an alarm. */
+  --plan-commit: #287b59;
+  --plan-prepare: #7a5f31;
+  --plan-fill-low: rgba(40, 123, 89, 0.16);
+  --plan-fill-high: rgba(122, 95, 49, 0.15);
 
   /* Row heights and padding step down together in compact mode. */
   --density-row: 9px;
@@ -96,17 +224,21 @@
 /* The landing page's dark accuracy section becomes the product dark theme. */
 :root[data-theme="dark"] {
   --canvas: #111512;
-  --surface: #171c18;
-  --surface-muted: #222823;
+  --surface-rgb: 23 28 24;
+  --surface: rgb(var(--surface-rgb));
+  --surface-muted-rgb: 34 40 35;
+  --surface-muted: rgb(var(--surface-muted-rgb));
   --border: #303832;
   --border-strong: #49524a;
 
   --text-primary: #f2f3f1;
   --text-secondary: #b9bdb9;
-  --text-muted: #858b86;
+  --text-muted-rgb: 133 139 134;
+  --text-muted: rgb(var(--text-muted-rgb));
 
   --accent: #7fbea1;
-  --accent-soft: #1d3027;
+  --accent-soft-rgb: 29 48 39;
+  --accent-soft: rgb(var(--accent-soft-rgb));
   --accent-hover: #9ed0b7;
   --accent-border: #355c48;
   --accent-disabled: #4f7563;
@@ -119,7 +251,8 @@
   --sand: #819b8c;
 
   --positive: #7fbea1;
-  --positive-soft: #1d3027;
+  --positive-soft-rgb: 29 48 39;
+  --positive-soft: rgb(var(--positive-soft-rgb));
   --positive-border: #355c48;
   --negative: #e1847d;
   --negative-soft: #2d1e1c;
@@ -132,6 +265,87 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
   --grid-line: rgba(255, 255, 255, 0.045);
+
+  /* ------------------------------------------------------- landing, dark
+   *
+   * Not the light values darkened. Three of these carry an intent that only
+   * survives if the value flips outright: the call to action is the darkest
+   * thing on a light page and has to become the lightest thing on a dark one;
+   * the accuracy section runs against the page, so a band that dropped away
+   * from the paper has to lift off the canvas instead; and the near row of
+   * the hero chart is the heaviest ink in the light theme and the brightest
+   * in this one. A near-black button on a near-black page is the bug this
+   * whole block exists to avoid.
+   */
+  --land-dim: #9aa09b;
+  --land-rule: #3a423c;
+  --land-rule-soft: #2a312c;
+
+  --land-cta-bg: #f2f3f1;
+  --land-cta-hover-bg: #dcdfdb;
+  --land-cta-text: #111512;
+
+  --land-invert-bg: #1b211c;
+  --land-invert-text: #f2f3f1;
+  --land-invert-secondary: #b9bdb9;
+  --land-invert-muted: #afb4af;
+  --land-invert-dim: #8b918c;
+  --land-invert-border: rgba(255, 255, 255, 0.16);
+  --land-invert-rule: rgba(255, 255, 255, 0.1);
+  --land-invert-accent: #7fbea1;
+
+  --land-wash-accent: #1a2c22;
+  --land-wash-warm: #26211a;
+  --land-stage-tint-accent: rgba(127, 190, 161, 0.09);
+  --land-stage-tint-warm: rgba(192, 168, 120, 0.07);
+  --land-stage-veil: rgba(23, 28, 24, 0.9);
+  --land-stage-shadow: 0 28px 70px -48px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --land-glow: rgba(127, 190, 161, 0.1);
+  --land-lift-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
+  --land-nav-shadow: rgba(0, 0, 0, 0.75);
+
+  --land-mark-crown: #a8afa8;
+  --land-mark-shadow: #6b736c;
+
+  --scape-sold-near: #d7dbd6;
+  --scape-sold-near-side: #e6e9e4;
+  --scape-sold-near-top: #eff1ee;
+  --scape-sold-far: #767e77;
+  --scape-sold-far-side: #8b938c;
+  --scape-sold-far-top: #969d97;
+
+  --scape-next-near: #7fbea1;
+  --scape-next-near-side: #93c9b0;
+  --scape-next-near-top: #a1d1bb;
+  --scape-next-far: #47765f;
+  --scape-next-far-side: #56846d;
+  --scape-next-far-top: #608e77;
+
+  --scape-shell-near: rgba(127, 190, 161, 0.1);
+  --scape-shell-near-side: rgba(127, 190, 161, 0.13);
+  --scape-shell-near-top: rgba(127, 190, 161, 0.16);
+  --scape-shell-near-line: #4f8069;
+  --scape-shell-far: rgba(127, 190, 161, 0.06);
+  --scape-shell-far-side: rgba(127, 190, 161, 0.08);
+  --scape-shell-far-top: rgba(127, 190, 161, 0.1);
+  --scape-shell-far-line: #3d6353;
+  --scape-shell-key: #2f4b3e;
+
+  --scape-guide: #2b332d;
+  --scape-axis: #838a84;
+  --scape-week: #858b86;
+  --scape-row-name: #c3c8c2;
+  --scape-marker: rgba(255, 255, 255, 0.06);
+
+  --compare-ink: #e4e7e3;
+  --compare-forecast: #7fbea1;
+  --compare-rule: #3a423c;
+  --compare-outcome: #9aa09b;
+
+  --plan-commit: #7fbea1;
+  --plan-prepare: #c4a86e;
+  --plan-fill-low: rgba(127, 190, 161, 0.18);
+  --plan-fill-high: rgba(196, 168, 110, 0.16);
 
   color-scheme: dark;
 }
@@ -368,10 +582,10 @@ body {
 /* --------------------------------------------------------------- landing */
 
 .forecast-landing {
-  background-color: #f1f3ef;
+  background-color: var(--canvas);
   background-image:
-    linear-gradient(rgba(31, 48, 36, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 48, 36, 0.055) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
   font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -382,10 +596,10 @@ body {
   top: max(8px, env(safe-area-inset-top));
   left: max(8px, env(safe-area-inset-left));
   transform: translateY(-160%);
-  border: 2px solid #111512;
-  background: #fafbf9;
+  border: 2px solid var(--text-primary);
+  background: var(--surface);
   padding: 10px 14px;
-  color: #111512;
+  color: var(--text-primary);
   font-size: 0.875rem;
   font-weight: 600;
   transition: transform 140ms var(--ease-out);
@@ -468,15 +682,84 @@ body {
   }
 }
 
+/* ------------------------------------------------------- the planning band
+ *
+ * The track opens from the commit end, then the three figures land on it left
+ * to right, so a range exists before anything is placed inside it.
+ */
+.plan-track {
+  border-top: 1px solid var(--land-rule);
+  border-bottom: 1px solid var(--land-rule);
+  overflow: hidden;
+}
+
+.plan-fill-low {
+  background: var(--plan-fill-low);
+}
+
+.plan-fill-high {
+  background: var(--plan-fill-high);
+}
+
+.motion-ready .plan-track,
+.motion-ready .plan-edge,
+.motion-ready .plan-base,
+.motion-ready .plan-mark {
+  opacity: 0;
+}
+
+.motion-ready [data-shown="true"] .plan-track {
+  animation: band-open var(--band-grow) var(--ease-out) both;
+  transform-origin: left;
+}
+
+.motion-ready [data-shown="true"] .plan-edge,
+.motion-ready [data-shown="true"] .plan-base {
+  animation: mark-land var(--mark-land) var(--ease-out) var(--band-grow) both;
+}
+
+.motion-ready [data-shown="true"] .plan-mark {
+  animation: mark-land var(--mark-land) var(--ease-out) var(--mark-delay, 0ms) both;
+}
+
+@keyframes band-open {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes mark-land {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 /* A static warm wash behind the hero headline. Two radials rather than one, so
    the accent and the gold meet instead of one fading to nothing. Both stay
    well clear of the box edges — the hero clips its overflow, and a gradient
    that is still tinted where it meets that clip shows up as a straight line
    across the page. */
 .hero-wash {
+  /* Its own two tokens rather than --accent-soft/--warning-soft. The wash
+     needs a value that works behind the headline in each theme, and those
+     two are chosen to sit under text and chips elsewhere in the product; the
+     one time this read them, a visitor on a dark OS got two near-black
+     smudges behind a light headline, because the page around it was still
+     light. The page follows the theme now, and so does the wash — but they
+     remain separate decisions. */
   background:
-    radial-gradient(34% 40% at 27% 52%, var(--accent-soft) 0%, transparent 72%),
-    radial-gradient(30% 36% at 68% 40%, var(--warning-soft) 0%, transparent 74%);
+    radial-gradient(34% 40% at 27% 52%, var(--land-wash-accent) 0%, transparent 72%),
+    radial-gradient(30% 36% at 68% 40%, var(--land-wash-warm) 0%, transparent 74%);
   opacity: 0.8;
   animation: hero-breathe 12s ease-in-out infinite alternate;
   will-change: transform, opacity;
@@ -494,14 +777,15 @@ body {
 }
 
 .hero-stage {
-  border: 1px solid #c9d0c9;
+  border: 1px solid var(--land-rule);
+  /* A veil over a two-colour tint, rather than a flat fill: the tint is what
+     keeps the frame from reading as another card, and the veil is what keeps
+     the chart inside it readable. */
   background:
-    linear-gradient(rgba(250, 251, 249, 0.92), rgba(250, 251, 249, 0.96)),
-    linear-gradient(90deg, rgba(40, 123, 89, 0.1), rgba(156, 135, 96, 0.08));
+    linear-gradient(var(--land-stage-veil), var(--land-stage-veil)),
+    linear-gradient(90deg, var(--land-stage-tint-accent), var(--land-stage-tint-warm));
   padding: clamp(1rem, 2.5vw, 1.75rem);
-  box-shadow:
-    0 28px 70px -48px rgba(17, 22, 18, 0.65),
-    0 1px 2px rgba(17, 22, 18, 0.06);
+  box-shadow: var(--land-stage-shadow);
 }
 
 .status-dot {
@@ -512,11 +796,15 @@ body {
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(40, 123, 89, 0.18);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 18%, transparent);
   }
   50% {
     opacity: 0.72;
-    box-shadow: 0 0 0 5px rgba(40, 123, 89, 0);
+    /* Plainly transparent, not the accent at zero alpha. A fully transparent
+       shadow has no colour left to theme, and writing it as a mix cost the
+       5px spread: the declaration resolved to `none` and the ring stopped
+       expanding, leaving a dot that only dimmed. */
+    box-shadow: 0 0 0 5px transparent;
   }
 }
 
@@ -536,41 +824,110 @@ body {
  * blank one waiting to be revealed.
  */
 .motion-ready .reveal {
+  /* Far enough to be seen arriving. At 18px the movement was real but below
+     the threshold anybody notices — the section simply appeared, and the work
+     of animating it was spent without being spent on anything. */
   --reveal-x: 0px;
-  --reveal-y: 18px;
+  --reveal-y: 44px;
   --reveal-scale: 1;
+  --reveal-blur: 6px;
   opacity: 0;
+  filter: blur(var(--reveal-blur));
   transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(var(--reveal-scale));
+  /* Opacity over three quarters of the travel rather than a flat 400ms. Fixed,
+     it finished at wildly different points depending on how long the element
+     had been given — barely half way through a 760ms reveal — so a slow
+     arrival was fully opaque and still visibly moving. */
   transition:
-    opacity 400ms var(--ease-out),
+    opacity calc(var(--reveal-duration, 520ms) * 0.75) var(--ease-out),
+    filter calc(var(--reveal-duration, 520ms) * 0.6) var(--ease-out),
     transform var(--reveal-duration, 520ms) var(--ease-out);
   transition-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
 }
 
 .motion-ready .reveal[data-reveal="scale"] {
-  --reveal-y: 10px;
-  --reveal-scale: 0.982;
+  --reveal-y: 28px;
+  --reveal-scale: 0.94;
 }
 
 .motion-ready .reveal[data-reveal="from-left"] {
-  --reveal-x: -22px;
+  --reveal-x: -64px;
   --reveal-y: 0px;
 }
 
 .motion-ready .reveal[data-reveal="from-right"] {
-  --reveal-x: 22px;
+  --reveal-x: 64px;
   --reveal-y: 0px;
 }
 
 .motion-ready .reveal[data-reveal="fade"] {
   --reveal-y: 0px;
+  --reveal-blur: 3px;
+}
+
+/* The words do the moving, so the container must not: a parent fading from 0
+   and children fading from 0 multiply, and the heading lands at a grey that
+   never quite becomes black. */
+.motion-ready .reveal[data-reveal="words"] {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
 }
 
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
+  filter: blur(0);
   transform: translate3d(0, 0, 0);
   will-change: auto;
+}
+
+/*
+ * A heading that arrives a word at a time.
+ *
+ * `inline-block` is what makes a word transformable at all, and it is also the
+ * reason the spaces between words are their own text nodes in the markup
+ * rather than part of a span — a space inside an inline-block is not a break
+ * opportunity, and the heading would stop wrapping.
+ */
+.split-word {
+  display: inline-block;
+}
+
+.motion-ready .split-words .split-word {
+  opacity: 0;
+  transform: translate3d(0, 0.9em, 0);
+}
+
+.motion-ready .split-words[data-shown="true"] .split-word {
+  animation: word-rise 760ms cubic-bezier(0.16, 1.06, 0.3, 1)
+    calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms)) both;
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.9em, 0) rotate(1.2deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+/* The rule beside a section's eyebrow draws itself in, so a section announces
+   itself rather than simply being there. Shares the `grow-x` keyframes. */
+.eyebrow-rule {
+  transform-origin: left center;
+}
+
+.motion-ready .eyebrow-rule {
+  transform: scaleX(0);
+}
+
+.motion-ready [data-shown="true"] .eyebrow-rule {
+  animation: grow-x 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 90ms) forwards;
 }
 
 @keyframes icon-settle {
@@ -590,6 +947,27 @@ body {
 
 .motion-ready [data-shown="true"] .motion-icon {
   animation: icon-settle 480ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 120ms) both;
+}
+
+/* The step number lands a beat before its icon, so the card reads left to
+   right as it arrives rather than both corners appearing at once. */
+@keyframes badge-land {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.86);
+  }
+  70% {
+    opacity: 1;
+    transform: translate3d(0, 1px, 0) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.motion-ready [data-shown="true"] .step-badge {
+  animation: badge-land 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 60ms) both;
 }
 
 .motion-ready .grow-x {
@@ -739,6 +1117,11 @@ body {
   transition:
     border-color 140ms var(--ease-out),
     background-color 140ms var(--ease-out),
+    transform 160ms var(--ease-out),
+    /* Alongside opacity and over the same time, so the nav's pill fades out
+       and only then stops being there. Left out, visibility snaps at the
+       start of the transition and takes the fade with it. */ visibility 300ms
+      var(--ease-out),
     opacity 300ms var(--ease-out);
 }
 
@@ -750,11 +1133,29 @@ body {
   .cta-nudge:hover .cta-arrow {
     transform: translate3d(3px, 0, 0);
   }
+
+  /*
+   * One pixel, which is the whole of it.
+   *
+   * `audits/track-b.mjs` has asked for this since it was written and the rule
+   * was never there, so the check has been red the entire time. A button that
+   * answers the cursor with nothing reads as disabled next to cards on the
+   * same page that lift 3px — but this is the page's primary action sitting on
+   * its own, not a card in a grid, and any more travel turns a press into a
+   * hop. Written as `transform` rather than the standalone `translate`
+   * property: the arrow inside has its own nudge and is a different element,
+   * so there is nothing here to compose with — and `getComputedStyle().transform`
+   * is where anything measuring this will look, `audits/track-b.mjs` included.
+   */
+  .cta-nudge:hover {
+    transform: translate3d(0, -1px, 0);
+  }
 }
 
-.card-hover {
-  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
-}
+/* Marks a card's border so the prefers-contrast query below can strengthen it.
+   Carries no hover: these cards are read, not clicked, and a border that
+   responded to the pointer promised a click that never came. It has no
+   transition either, because nothing about it changes. */
 
 .scape-chip {
   transition:
@@ -768,8 +1169,53 @@ body {
 }
 
 .scape-marker {
-  fill: rgba(17, 21, 18, 0.055);
+  fill: var(--scape-marker);
   pointer-events: none;
+}
+
+/*
+ * The week under the pointer, found by quieting the other thirty-four.
+ *
+ * Marking the week itself was the obvious way and it does not survive the
+ * palette: an outline has to contrast with the bar it is drawn on, and there
+ * are four of those — near-black, mid-grey, deep green, pale green — which
+ * swap ends in the dark theme. The accent read cleanly on the sold weeks and
+ * vanished into the forecast ones.
+ *
+ * Receding is one instruction that works on all of them, because it is a
+ * change to the mark rather than a colour laid over it. The chart keeps its
+ * shape, and the week being read is the only part still at full strength.
+ */
+.scape-bar {
+  transition: opacity 140ms var(--ease-out);
+}
+
+svg[data-reading="true"] .scape-bar:not([data-active="true"]) {
+  opacity: 0.32;
+}
+
+/* The shells are already nearly transparent; taking another two thirds off
+   leaves the forecast's range invisible exactly when it is being asked about. */
+svg[data-reading="true"] .scape-shell:not([data-active="true"]) {
+  opacity: 0.55;
+}
+
+/* The theme control shows the theme it switches *to*, and picks which icon
+   from the document rather than from React. The bootstrap script sets
+   `data-theme` before the first paint; the store that knows the same thing
+   arrives a moment later, and a button that waited for it would show the
+   wrong icon in between. Default to the light-theme icon, so a document that
+   somehow carries no theme at all still shows exactly one. */
+.theme-icon-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-dark {
+  display: inline-block;
 }
 
 .scape-frame svg[role="img"] {
@@ -924,15 +1370,170 @@ svg[role="img"]:focus-visible {
   }
 }
 
+/* ------------------------------------------------------ card interaction
+ *
+ * `.card-edge` marked the cards for the contrast query below and did nothing
+ * else, so ten cards sat inert under the cursor while every other surface on
+ * the page answered it. Two layers, both hover-only:
+ *
+ *   1. the card lifts a little and its border firms up
+ *   2. a soft highlight follows the pointer, positioned by `PointerGlow`
+ *
+ * The highlight is a pseudo-element rather than a background on the card so
+ * it composites above the card's own fill and below its text, and so a card
+ * that already carries a background image is unaffected.
+ */
+.card-edge {
+  position: relative;
+  isolation: isolate;
+  transition:
+    translate 260ms var(--ease-out),
+    border-color 260ms var(--ease-out),
+    box-shadow 260ms var(--ease-out);
+}
+
+/*
+ * Most of these cards are also `Reveal` roots, and the reveal system owns
+ * both `transform` and the `transition` shorthand on them — at a specificity
+ * a plain `.card-lift:hover` loses to, so an earlier version of this simply
+ * did nothing on hover.
+ *
+ * Two consequences, both handled here. The lift moves with `translate`, a
+ * separate property that composes with the reveal's `transform` instead of
+ * fighting it. And the transition is restated with a per-property delay list,
+ * so the reveal keeps its entrance stagger while hover answers immediately —
+ * a shared `transition-delay` would make every card hesitate by its own
+ * stagger before lifting.
+ */
+.motion-ready .reveal.card-edge {
+  transition:
+    opacity 400ms var(--ease-out),
+    transform var(--reveal-duration, 520ms) var(--ease-out),
+    translate 260ms var(--ease-out),
+    box-shadow 260ms var(--ease-out),
+    border-color 260ms var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms), var(--reveal-delay, 0ms), 0ms, 0ms, 0ms;
+}
+
+.card-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms var(--ease-out);
+  /* Falls back to the centre until PointerGlow writes a real position, so a
+     keyboard-focused card still lights up sensibly. */
+  background: radial-gradient(
+    22rem circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    var(--land-glow),
+    transparent 62%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card-edge:hover {
+    border-color: var(--border-strong);
+  }
+
+  .card-edge:hover::after {
+    opacity: 1;
+  }
+
+  /* Lifting is opt-in, because most of these cards are gapless grid cells
+     that share their borders with a neighbour — raising one tears the seam
+     and casts a shadow onto the card beside it. Only cards standing in their
+     own space get `card-lift`. */
+  .card-lift:hover {
+    translate: 0 -3px;
+    box-shadow: var(--land-lift-shadow);
+  }
+
+  /* The number and the icon are the card's two fixed points; nudging them
+     apart on hover makes the whole card read as one object being picked up
+     rather than a rectangle that moved. */
+  .card-edge:hover .step-badge {
+    transform: translate3d(0, -1px, 0);
+  }
+
+  .card-edge:hover .motion-icon {
+    transform: translate3d(2px, -1px, 0);
+    color: var(--accent);
+  }
+}
+
+.card-edge .motion-icon {
+  transition:
+    transform 260ms var(--ease-out),
+    color 260ms var(--ease-out);
+}
+
+/* Keyboard parity: a card reached by Tab gets the same highlight a cursor
+   would have given it. */
+.card-edge:focus-within::after {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------- CTA sheen
+ *
+ * One pass of light across the primary button on hover. The button is nearly
+ * black and otherwise only changes its border, which on a dark fill is close
+ * to invisible — this gives the page's single most important control a
+ * response you can actually see.
+ */
+.cta-nudge {
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-nudge > * {
+  position: relative;
+  z-index: 1;
+}
+
+.cta-nudge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 80%
+  );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cta-nudge:hover::before {
+    animation: cta-sheen 620ms var(--ease-draw) forwards;
+  }
+}
+
+@keyframes cta-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-contrast: more) {
   .forecast-landing {
     background-image: none;
   }
 
   .hero-stage,
-  .card-hover,
+  .card-edge,
   .forecast-landing nav {
     border-color: #717971;
+  }
+
+  /* A wash of colour is not a contrast cue; drop it rather than compete. */
+  .card-edge::after,
+  .cta-nudge::before {
+    display: none;
   }
 }
 
@@ -989,4 +1590,128 @@ svg[role="img"]:focus-visible {
   transition-delay: 0s !important;
   caret-color: transparent !important;
   scroll-behavior: auto !important;
+}
+
+/* ------------------------------------------------- landing: steps + lines */
+
+/*
+ * The three steps hang off one rule that draws itself down the page. It
+ * replaces three bordered cards, and it does the job the cards could not:
+ * a card grid states that there are three things, where a line being drawn
+ * through them shows that they happen in an order.
+ *
+ * The rule is a pseudo-element rather than a border so it can be scaled from
+ * the top — a border cannot be animated along its length, and animating
+ * height would reflow every row beneath it on each frame.
+ */
+.step-rail {
+  position: relative;
+  display: grid;
+  gap: clamp(2.5rem, 5vw, 4rem);
+  padding-left: clamp(2.25rem, 5vw, 4.5rem);
+}
+
+.step-rail::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.35rem 0.5rem;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--accent) 0%,
+    var(--land-rule) 55%,
+    transparent 100%
+  );
+  transform-origin: top;
+  transform: scaleY(1);
+}
+
+.motion-ready .step-rail::before {
+  transform: scaleY(0);
+  transition: transform 1400ms cubic-bezier(0.22, 1, 0.36, 1) 120ms;
+}
+
+.motion-ready .step-rail:has([data-shown="true"])::before {
+  transform: scaleY(1);
+}
+
+.step-row {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* The tick where a step meets the rule. Small, and the only ornament left. */
+.step-row::before {
+  content: "";
+  position: absolute;
+  top: 0.6rem;
+  left: calc(clamp(2.25rem, 5vw, 4.5rem) * -1);
+  width: clamp(1.25rem, 2.5vw, 2rem);
+  height: 1px;
+  background: var(--land-rule);
+}
+
+.step-row[data-shown="true"]::before {
+  background: var(--accent);
+}
+
+.motion-ready .step-row::before {
+  transition: background-color 520ms ease 260ms;
+}
+
+.step-ordinal {
+  display: block;
+  letter-spacing: 0.22em;
+}
+
+/*
+ * A feature is a sentence on a rule now, so the only hover affordance left is
+ * the rule itself brightening — enough to say the page is alive, not enough to
+ * suggest the row is a link, because it is not one.
+ */
+.motion-ready .feature-line {
+  transition: border-color 400ms ease;
+}
+
+.feature-line:hover {
+  border-color: var(--border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .step-rail::before {
+    transform: scaleY(1);
+  }
+}
+
+/* ------------------------------------------------- landing: the 3D scene */
+
+/*
+ * The lean towards the pointer, driven by two custom properties the component
+ * writes on pointermove. Perspective sits on the frame and the transform on
+ * the drawing inside it, which is the only arrangement where the far end of
+ * the scene recedes rather than the whole picture skewing.
+ *
+ * The transition is long and eased out on purpose: matching the pointer
+ * frame-for-frame reads as a jitter, while a second of catching up reads as
+ * weight.
+ */
+.scape-frame {
+  --scape-tilt-x: 0deg;
+  --scape-tilt-y: 0deg;
+  perspective: 1400px;
+}
+
+.motion-ready .scape-frame > .relative {
+  transform: rotateX(var(--scape-tilt-x)) rotateY(var(--scape-tilt-y));
+  transform-style: preserve-3d;
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .scape-frame > .relative {
+    transform: none;
+  }
 }

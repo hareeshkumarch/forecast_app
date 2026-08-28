@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date
 from threading import Lock
@@ -15,7 +15,13 @@ from app.core.budget import RunTimings, Stage
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.forecasting import combination
-from app.forecasting.backtest import BacktestResult, ModelFactory, plan_backtest, run_backtest
+from app.forecasting.backtest import (
+    BacktestPlan,
+    BacktestResult,
+    ModelFactory,
+    plan_backtest,
+    run_backtest,
+)
 from app.forecasting.calibration import (
     HeldOutPoint,
     Interval,
@@ -229,6 +235,12 @@ def _make_factory(
     those choices can be made with the fold's validation data in hand.
     """
 
+    # Shared by every fold of one backtest: the shape of a series does not
+    # change between folds, so ETS and Holt-Winters search for it once and
+    # refit only its parameters afterwards. Chosen on the first fold's
+    # training slice, so nothing sees a period it is about to be scored on.
+    shape_cache: dict[str, object] = {}
+
     def factory(y_train: FloatArray, periods_train: list[date]) -> Forecaster:
         key = (len(periods_train), periods_train[0], periods_train[-1])
         window_profile = (
@@ -243,12 +255,41 @@ def _make_factory(
             if drivers is not None
             else None
         )
-        model = build_candidate(kind, frequency, options, window_profile, panel)
+        model = build_candidate(kind, frequency, options, window_profile, panel, shape_cache)
         if kind in TRANSFORMABLE:
             return TransformedForecaster(model, build_transform(y_train, window_profile))
         return model
 
     return factory
+
+
+def _backtest_candidate(
+    args: tuple[
+        ModelKind,
+        ForecastFrequency,
+        dict[str, object],
+        DriverSource | None,
+        FloatArray,
+        list[date],
+        BacktestPlan,
+        FloatArray | None,
+        float,
+        Preparation | None,
+    ],
+) -> BacktestResult:
+    """One candidate, scored. Module level so it can be sent to a subprocess."""
+    kind, frequency, options, source, observed, periods, plan, weights, level, prepare = args
+    return run_backtest(
+        _make_factory(kind, frequency, options, source),
+        kind,
+        observed,
+        periods,
+        plan,
+        frequency,
+        weights,
+        level,
+        prepare=prepare,
+    )
 
 
 def _columns_used(model: Forecaster, panel: DriverPanel) -> list[DriverLink]:
@@ -365,25 +406,31 @@ def run_forecast(
             prepare=payload.preparation,
         )
 
+    work = [
+        (
+            candidate.kind,
+            frequency,
+            model_options,
+            source,
+            observed,
+            periods,
+            plan,
+            weights,
+            payload.confidence_level,
+            payload.preparation,
+        )
+        for candidate in candidates
+    ]
+
+    def announce(done: int, label: str) -> None:
+        if progress_callback is not None:
+            progress_callback("backtesting", done, candidate_total, label)
+
     model_workers = min(settings.forecast_model_concurrency, candidate_total)
-    if model_workers <= 1:
-        for candidate_index, candidate in enumerate(candidates, start=1):
-            if progress_callback is not None:
-                progress_callback(
-                    "backtesting",
-                    candidate_index - 1,
-                    candidate_total,
-                    f"Backtesting {candidate.kind.value.replace('_', ' ')} ({candidate_index} of {candidate_total})...",
-                )
-            results.append(evaluate_candidate(candidate))
-            if progress_callback is not None:
-                progress_callback(
-                    "backtesting",
-                    candidate_index,
-                    candidate_total,
-                    f"Backtested {candidate_index} of {candidate_total} candidate models.",
-                )
-    else:
+    lanes = min(settings.forecast_candidate_workers, candidate_total)
+
+    if model_workers > 1:
+        # Thread-level parallelism with feature caching.
         indexed: dict[int, BacktestResult] = {}
         if progress_callback is not None:
             progress_callback(
@@ -411,6 +458,33 @@ def run_forecast(
                         f"Backtested {kind.value.replace('_', ' ')} ({completed} of {candidate_total}).",
                     )
         results = [indexed[index] for index in range(candidate_total)]
+    elif lanes > 1:
+        # Process-level parallelism without feature caching.
+        results = [None] * candidate_total  # type: ignore[list-item]
+        announce(0, f"Backtesting {candidate_total} candidate models...")
+        with ProcessPoolExecutor(max_workers=lanes) as pool:
+            futures = {pool.submit(_backtest_candidate, item): i for i, item in enumerate(work)}
+            for done, future in enumerate(as_completed(futures), start=1):
+                index = futures[future]
+                results[index] = future.result()
+                announce(done, f"Backtested {done} of {candidate_total} candidate models.")
+    else:
+        for candidate_index, candidate in enumerate(candidates, start=1):
+            if progress_callback is not None:
+                progress_callback(
+                    "backtesting",
+                    candidate_index - 1,
+                    candidate_total,
+                    f"Backtesting {candidate.kind.value.replace('_', ' ')} ({candidate_index} of {candidate_total})...",
+                )
+            results.append(evaluate_candidate(candidate))
+            if progress_callback is not None:
+                progress_callback(
+                    "backtesting",
+                    candidate_index,
+                    candidate_total,
+                    f"Backtested {candidate_index} of {candidate_total} candidate models.",
+                )
 
     combined = combination.blend(
         results,
@@ -421,8 +495,10 @@ def run_forecast(
         results.append(combined.result)
     timings.record(Stage.FIT, time.perf_counter() - fit_started)
 
-    for kind, reason in unavailable_models().items():
-        results.append(BacktestResult(model=kind, failed=True, failure_reason=reason))
+    for kind, status in unavailable_models().items():
+        # The user-facing half only. The operator half is logged once per
+        # process by the probe itself, where somebody can act on it.
+        results.append(BacktestResult(model=kind, failed=True, failure_reason=status.reason))
 
     cps = payload.model_options.get("complexity_penalty_scale") if payload.model_options else None
     # model_options round-trips through stored JSON, so the value is only a number
@@ -632,9 +708,7 @@ def _held_out(winner: BacktestResult) -> list[HeldOutPoint]:
     return [
         HeldOutPoint(horizon=step, actual=float(actual), predicted=float(predicted))
         for fold in winner.folds
-        for step, actual, predicted in zip(
-            fold.steps(), fold.y_true, fold.y_pred, strict=False
-        )
+        for step, actual, predicted in zip(fold.steps(), fold.y_true, fold.y_pred, strict=False)
         if np.isfinite(actual) and np.isfinite(predicted)
     ]
 

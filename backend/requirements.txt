@@ -25,6 +25,17 @@ statsmodels==0.14.4
 scikit-learn==1.6.0
 scipy==1.14.1
 
+# ---- authentication ------------------------------------------------------
+# Verifying Supabase's Google sign-in tokens. cryptography is already present
+# for credential encryption; this adds the JWT layer over it.
+PyJWT[crypto]==2.10.1
+
+# ---- secrets -------------------------------------------------------------
+# Read at startup and put into the environment, so every setting keeps being
+# declared the same way. Imported lazily: a deployment still on plain
+# environment variables never loads it.
+infisicalsdk==1.0.17
+
 # ---- connectors ----------------------------------------------------------
 psycopg2-binary==2.9.10
 pymysql==1.1.1
@@ -41,13 +52,22 @@ reportlab==4.2.5
 celery[redis]==5.4.0
 redis==5.2.1
 
+# ---- object storage ------------------------------------------------------
+# Only reached when an archive bucket is configured; the import lives inside
+# the function so an unconfigured platform never loads it.
+boto3==1.35.92
+
 # ---- crypto --------------------------------------------------------------
 cryptography==44.0.0
 
 # ---- dev / test ----------------------------------------------------------
 pytest==8.3.4
 pytest-asyncio==0.25.0
+pytest-xdist==3.6.1
 aiosqlite==0.20.0
+# Reads the generated PDF back, so the report tests assert what a reader sees
+# rather than that the writer returned without raising.
+pdfplumber==0.11.4
 ruff==0.8.4
 mypy==1.14.0
 types-python-dateutil==2.9.0.20241206

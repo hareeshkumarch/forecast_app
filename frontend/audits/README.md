@@ -22,7 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
-node audits/sections.mjs   # compare, accuracy, proof band, hero demo and series switch
+node audits/theme.mjs      # light and dark: contrast against the real ground, and no surface left behind
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
 
@@ -52,19 +52,20 @@ disagree exactly where the bug lived. An element with `tabindex` matches
 `:focus` on a mouse click but not `:focus-visible`, so styling only the latter
 leaves the click falling through to the browser's own ring.
 
+**theme.mjs** composites each element's background over its ancestors' before
+measuring contrast, rather than reading `background-color` off the element
+itself. Almost nothing on the landing page paints its own background — a
+caption inside a card inside a section reports `rgba(0, 0, 0, 0)` and would
+score against white, which is neither the colour behind it nor a colour on the
+page. It also holds "a surface stayed light" to elements big enough to be a
+ground, because a chart key's 12px swatch and the call to action are supposed
+to stay light in the dark theme: the button is the darkest thing on a light
+page precisely so it can be the lightest thing on a dark one.
+
 **reveal.mjs** scrolls to each section before measuring. A full-page screenshot
 resizes the viewport instead of scrolling, so `IntersectionObserver` never
 fires and every revealed section photographs blank — an artifact that looks
 exactly like content failing to appear.
-
-**sections.mjs** samples the wipe rects and the bars frame by frame rather than
-reading the timings the components asked for. The two disagree exactly where the
-bugs live: a clip whose `transform-box` the browser did not honour still reports
-the animation it was given while wiping from the wrong origin, and a bar that
-overshoots its value does so between the keyframes rather than at them. It also
-loads the page twice more — once under `prefers-reduced-motion`, once with
-JavaScript switched off — because both of those paths render through CSS that
-the normal path never reaches, and the failure they produce is a blank chart.
 
 For the hero's self-demonstration it asserts that a still pointer stops the
 walk, rather than asserting which week ends up under the cursor. The prisms are
@@ -82,12 +83,13 @@ bars with `elementFromPoint` and takes the first that resolves to itself. Call
 it only once the build has settled — a bounding box read mid-animation is the
 height the bar had partway up, not the height it is going to have.
 
-For the series switch it compares bar heights before and after, and asserts the
-`viewBox` and the rendered box are unchanged. That pairing is the point: the
-chart has to redraw completely without resizing, which is what the equal series
-lengths in `lib/scape-data.ts` buy. It also waits only a second before checking
-that every bar animation has finished, which fails if a re-run is ever left
-running at the opening sequence's full pace.
+For the chart's two product lines it reads the fills the browser computed
+rather than the palette the component asked for, and requires the two rows to
+share none of them. The rows overlap by design — that is what makes the drawing
+read as depth — so two rows that resolve to the same ink are one silhouette
+wearing two names, and nothing in the geometry can tell you that has happened.
+It then checks that the two figures the readout splits a week into add up to
+the total it quotes for that week, which is the claim the depth is making.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

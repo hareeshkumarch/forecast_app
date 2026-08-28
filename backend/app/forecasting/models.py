@@ -9,6 +9,12 @@ import numpy as np
 import numpy.typing as npt
 
 from app.core.config import settings
+
+# `availability` is imported as a module and called through, not imported by
+# name: the probe is the seam tests fake a deployment through, and a by-value
+# import would bind past the patch.
+from app.forecasting import availability
+from app.forecasting.availability import ModelAvailability
 from app.forecasting.diagnostics import SeriesProfile
 from app.forecasting.drivers import DriverPanel
 from app.forecasting.features import FeatureSpec, build_design_matrix, build_future_row
@@ -155,6 +161,7 @@ class SeasonalNaiveForecaster:
 class HoltWintersForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    shape_cache: dict[str, object] | None = None
     kind: ModelKind = field(default=ModelKind.HOLT_WINTERS, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -195,7 +202,8 @@ class HoltWintersForecaster:
         best_score = float("inf")
         errors: list[str] = []
 
-        for config in self._configurations(y):
+        remembered = (self.shape_cache or {}).get("hw_config")
+        for config in [remembered] if remembered else self._configurations(y):
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -230,6 +238,9 @@ class HoltWintersForecaster:
             )
 
         self._fitted = best_fit
+        if self.shape_cache is not None:
+            self.shape_cache["hw_config"] = best_config
+
         self._config = {**best_config, "aicc": round(best_score, 3)}
 
     def predict(self, horizon: int, future_periods: list[date]) -> FloatArray:
@@ -250,6 +261,7 @@ class HoltWintersForecaster:
 class AutoEtsForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
+    shape_cache: dict[str, object] | None = None
     kind: ModelKind = field(default=ModelKind.ETS, init=False)
     _fitted: FittedModel = field(default=None, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
@@ -292,7 +304,10 @@ class AutoEtsForecaster:
         best_spec: tuple[str, str | None, str | None, bool] | None = None
         best_score = float("inf")
 
-        for error, trend, season, damped in self._taxonomy(y):
+        remembered = (self.shape_cache or {}).get("ets_spec")
+        space = [remembered] if remembered else self._taxonomy(y)
+
+        for error, trend, season, damped in space:
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -319,6 +334,9 @@ class AutoEtsForecaster:
 
         if best_fit is None or best_spec is None:
             raise ValueError("No ETS specification converged on this history.")
+
+        if self.shape_cache is not None:
+            self.shape_cache["ets_spec"] = best_spec
 
         error, trend, season, damped = best_spec
         self._fitted = best_fit
@@ -364,9 +382,10 @@ class ProphetForecaster:
 
     @staticmethod
     def available() -> bool:
-        from importlib.util import find_spec
-
-        return find_spec("prophet") is not None
+        # Not `find_spec("prophet")`. A Prophet whose Stan backend will not
+        # load imports cleanly and only fails at fit, so an import check puts
+        # it on the roster and then loses every backtest to an exception.
+        return availability.prophet_availability().available
 
     def _seasonality_flags(self, y: FloatArray) -> dict[str, bool]:
         period = self.profile.seasonal_period if self.profile else 0
@@ -382,11 +401,9 @@ class ProphetForecaster:
         }
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
-        if not self.available():
-            raise ValueError(
-                "Prophet is not installed in this deployment "
-                "(pip install -r requirements-optional.txt)."
-            )
+        status = availability.prophet_availability()
+        if not status.available:
+            raise ValueError(status.reason)
 
         import logging
 
@@ -487,7 +504,15 @@ class ProphetForecaster:
                     if yhat.size != actual.size or not np.all(np.isfinite(yhat)):
                         errors = []
                         break
-                    errors.append(blended_error(actual, yhat, self.metric_weights))
+                    errors.append(
+                        blended_error(
+                            actual,
+                            yhat,
+                            self.metric_weights,
+                            np.asarray(train["y"].to_numpy(), dtype=np.float64),
+                            self.profile.seasonal_period if self.profile else 1,
+                        )
+                    )
 
                 if not errors:
                     continue
@@ -648,6 +673,7 @@ class SarimaxForecaster:
     frequency: ForecastFrequency
     profile: SeriesProfile | None = None
     order: tuple[int, int, int] | None = None
+    shape_cache: dict[str, object] | None = None
     drivers: DriverPanel = field(default_factory=DriverPanel)
     kind: ModelKind = field(default=ModelKind.SARIMAX, init=False)
     _fitted: FittedModel = field(default=None, init=False)
@@ -726,7 +752,8 @@ class SarimaxForecaster:
 
         for with_drivers in driver_choices:
             exog = self._exog(y.size, with_drivers=with_drivers)
-            for order in self._search_space(y):
+            remembered = (self.shape_cache or {}).get("sarimax_order")
+            for order in [remembered] if remembered else self._search_space(y):
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
@@ -761,6 +788,9 @@ class SarimaxForecaster:
 
         self._fitted = best_fit
         self._uses_drivers = best_drivers
+        if self.shape_cache is not None:
+            self.shape_cache["sarimax_order"] = best_order
+
         self._config = {
             "order": list(best_order),
             "seasonal_order": list(seasonal_order),
@@ -909,6 +939,7 @@ class GradientBoostingForecaster:
             fit_predict,
             max(1, min(horizon, 12)),
             metric_weights=self.metric_weights,
+            season=self.profile.seasonal_period if self.profile else 1,
         )
 
         keep = self._kept_columns(result.params, from_driver)
@@ -1116,6 +1147,7 @@ def build_candidates(
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
     drivers: DriverPanel | None = None,
+    shape_cache: dict[str, object] | None = None,
 ) -> list[Forecaster]:
     opts = options or {}
     panel = drivers or DriverPanel()
@@ -1135,10 +1167,10 @@ def build_candidates(
     candidates: list[Forecaster] = [
         NaiveForecaster(frequency, profile),
         SeasonalNaiveForecaster(frequency, profile),
-        HoltWintersForecaster(frequency, profile),
-        AutoEtsForecaster(frequency, profile),
+        HoltWintersForecaster(frequency, profile, shape_cache),
+        AutoEtsForecaster(frequency, profile, shape_cache),
         ThetaForecaster(frequency, profile),
-        SarimaxForecaster(frequency, profile, order=order_tuple, drivers=panel),  # type: ignore[arg-type]
+        SarimaxForecaster(frequency, profile, order=order_tuple, shape_cache=shape_cache, drivers=panel),  # type: ignore[arg-type]
         GradientBoostingForecaster(
             frequency,
             profile,
@@ -1183,26 +1215,82 @@ def build_candidates(
             # this deployment cannot fit — Prophet without Prophet installed,
             # Croston on a series that is not intermittent — run everything
             # instead, and report the winner as though it had been asked for.
-            raise ValueError(
-                "None of the selected models can be fitted here: "
-                + ", ".join(sorted(allowed_set))
-                + ". Available for this series: "
-                + ", ".join(sorted(c.kind.value for c in candidates))
-                + "."
-            )
+            #
+            # Two very different reasons land here, and the message says which:
+            # a model missing from the deployment is the operator's to fix,
+            # while one ruled out for this series is the user's to reconsider.
+            raise ValueError(_no_candidates_message(allowed_set, candidates))
         return filtered
 
     return candidates
 
 
-def unavailable_models() -> dict[ModelKind, str]:
-    missing: dict[ModelKind, str] = {}
-    if not ProphetForecaster.available():
-        missing[ModelKind.PROPHET] = (
-            "Prophet is not installed in this deployment. "
-            "Install it with: pip install -r requirements-optional.txt"
+#: Titles for error copy. The wire format stays `ModelKind`; this is only for
+#: sentences a person reads.
+MODEL_LABELS: dict[ModelKind, str] = {
+    ModelKind.NAIVE: "Naive",
+    ModelKind.SEASONAL_NAIVE: "Seasonal Naive",
+    ModelKind.HOLT_WINTERS: "Holt-Winters",
+    ModelKind.ETS: "Auto-ETS",
+    ModelKind.THETA: "Theta",
+    ModelKind.CROSTON: "Croston (Intermittent)",
+    ModelKind.SARIMAX: "SARIMAX",
+    ModelKind.PROPHET: "Prophet",
+    ModelKind.GRADIENT_BOOSTING: "Gradient Boosting",
+    ModelKind.ENSEMBLE: "Ensemble",
+}
+
+
+def label_for(kind: ModelKind | str) -> str:
+    """`ModelKind.SEASONAL_NAIVE` -> "Seasonal Naive"; unknown values pass through."""
+    try:
+        return MODEL_LABELS[ModelKind(kind)]
+    except ValueError:
+        return str(kind).replace("_", " ").title()
+
+
+def _join(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _no_candidates_message(allowed: set[str], offered: list[Forecaster]) -> str:
+    """Why a model restriction left nothing to fit, in terms a user can act on."""
+    unavailable = unavailable_models()
+    asked_for_unavailable = sorted(
+        label_for(kind) for kind in unavailable if kind.value.lower() in allowed
+    )
+    runnable = _join(sorted({label_for(c.kind) for c in offered}))
+
+    if asked_for_unavailable and len(asked_for_unavailable) == len(allowed):
+        # Everything they ticked is missing from the deployment, so pointing
+        # at the series would be a red herring — nothing about their data is
+        # the problem.
+        return (
+            f"{_join(asked_for_unavailable)} "
+            f"{'is' if len(asked_for_unavailable) == 1 else 'are'} not available on this "
+            f"server, so there is nothing to backtest. Choose another model — "
+            f"{runnable} can be fitted here."
         )
-    return missing
+
+    ruled_out = _join(sorted(label_for(name) for name in allowed))
+    return (
+        f"None of the models you chose ({ruled_out}) suit this series, so there is "
+        f"nothing to backtest. For this series the platform can fit {runnable}."
+    )
+
+
+def unavailable_models() -> dict[ModelKind, ModelAvailability]:
+    """Models this deployment cannot fit, keyed by kind.
+
+    Returns the whole availability record rather than a string, because the
+    two halves of it go to different places: `reason` is rendered next to the
+    run's other candidates, and `operator_hint` is for logs and the health
+    endpoint. Flattening them is what put `pip install` in the dashboard.
+    """
+    status = availability.prophet_availability()
+    return {} if status.available else {ModelKind.PROPHET: status}
 
 
 def build_candidate(
@@ -1211,8 +1299,9 @@ def build_candidate(
     options: dict[str, object] | None = None,
     profile: SeriesProfile | None = None,
     drivers: DriverPanel | None = None,
+    shape_cache: dict[str, object] | None = None,
 ) -> Forecaster:
-    for candidate in build_candidates(frequency, options, profile, drivers):
+    for candidate in build_candidates(frequency, options, profile, drivers, shape_cache):
         if candidate.kind == kind:
             return candidate
     raise ValueError(f"Unknown candidate kind: {kind}")

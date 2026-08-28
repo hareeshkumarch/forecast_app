@@ -11,34 +11,41 @@ import {
   Sigma,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { DataQualityPanel } from "@/components/dashboard/data-quality-panel";
+import { useActiveForecastProgress } from "@/components/dashboard/forecast-run-watcher";
 import { Modal } from "@/components/ui/modal";
 import { Button, Field, InlineError, Input } from "@/components/ui/primitives";
 import { providerMark } from "@/components/ui/provider-logo";
 import { Select, type SelectOption } from "@/components/ui/select";
 import {
+  useCapabilities,
   useDataset,
   useDatasetProfile,
   useDatasetQuality,
   useDatasets,
   PICKER_LIMIT,
   useCancelForecastRun,
-  useRefreshDashboard,
   useStartForecast,
 } from "@/hooks/use-dashboard";
-import { STAGE_LABELS, useForecastProgress } from "@/hooks/use-forecast-progress";
+import {
+  STAGE_LABELS,
+  stagesFor,
+  useElapsed,
+  type ForecastProgress,
+} from "@/hooks/use-forecast-progress";
 import { errorMessage } from "@/lib/errors";
 import { humanizeModel } from "@/lib/format";
 import { PROVIDERS, llmRunFields, loadLlmConfig } from "@/lib/llm-config";
 import { cn } from "@/lib/utils";
-import { toast } from "@/stores/toast-store";
 import { useUiStore } from "@/stores/ui-store";
 import type {
   ForecastFrequency,
   GapFill,
   MeasureAggregation,
+  ModelCapability,
   ModelKind,
   OutlierTreatment,
 } from "@/types/api";
@@ -125,19 +132,53 @@ const RUN_MODE_COPY: Record<Exclude<RunMode, "custom">, { label: string; hint: s
   thorough: { label: "Thorough", hint: "All models · 8 checks", folds: 8 },
 };
 
+/**
+ * Warnings about what a model costs to fit, as opposed to whether it can be.
+ * Availability is the server's to report; this is a property of the algorithm
+ * and belongs with the picker that offers it.
+ *
+ * Prophet fits a Stan model per prior combination per backtest fold. Measured
+ * on the sample dataset it turns a 5-second run into a 35-second one — and
+ * earns it, winning that backtest by a wide margin — but a user who ticks it
+ * without knowing should not be left wondering why the run got slow.
+ */
+const MODEL_NOTES: Partial<Record<ModelKind, string>> = {
+  prophet: "slower",
+};
+
+/**
+ * What to draw before `/api/health/capabilities` answers, and nothing more.
+ * Every model is marked available here on purpose: the picker starts complete
+ * and greys entries out as the server corrects it, rather than starting empty
+ * and popping ten checkboxes in. The server's labels win once they arrive.
+ */
+const FALLBACK_MODELS: ModelCapability[] = [
+  { model: "naive", label: "Naive", available: true, reason: null },
+  { model: "seasonal_naive", label: "Seasonal Naive", available: true, reason: null },
+  { model: "holt_winters", label: "Holt-Winters", available: true, reason: null },
+  { model: "ets", label: "Auto-ETS", available: true, reason: null },
+  { model: "theta", label: "Theta", available: true, reason: null },
+  { model: "croston", label: "Croston (Intermittent)", available: true, reason: null },
+  { model: "sarimax", label: "SARIMAX", available: true, reason: null },
+  { model: "prophet", label: "Prophet", available: true, reason: null },
+  { model: "gradient_boosting", label: "Gradient Boosting", available: true, reason: null },
+  { model: "ensemble", label: "Ensemble", available: true, reason: null },
+];
+
 export function ForecastModal() {
   const modal = useUiStore((state) => state.modal);
   const closeModal = useUiStore((state) => state.closeModal);
   const activeRunId = useUiStore((state) => state.activeRunId);
+  const activeRunStartedAt = useUiStore((state) => state.activeRunStartedAt);
   const setActiveRun = useUiStore((state) => state.setActiveRun);
-  const setRunId = useUiStore((state) => state.setRunId);
   const targetDatasetId = useUiStore((state) => state.modalTargetId);
   const open = modal === "configure-forecast";
+  const router = useRouter();
+  const pathname = usePathname();
 
   const { data: datasets } = useDatasets({ limit: PICKER_LIMIT });
   const startMutation = useStartForecast();
   const cancelMutation = useCancelForecastRun();
-  const refreshDashboard = useRefreshDashboard();
 
   const [datasetId, setDatasetId] = useState("");
   const [name, setName] = useState("");
@@ -171,7 +212,42 @@ export function ForecastModal() {
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
   const [runMode, setRunMode] = useState<RunMode>("fast");
+  // The roster comes from the server, because whether a model can be fitted
+  // is a property of the deployment and not of the bundle. This list is only
+  // the shape to draw before that answer arrives, and the labels the server
+  // does not improve on; every entry is optimistically available, so the
+  // picker never flickers models out on a slow connection — it greys them.
+  const { data: capabilities } = useCapabilities();
+
+  const models = useMemo<ModelCapability[]>(
+    () => capabilities?.models ?? FALLBACK_MODELS,
+    [capabilities],
+  );
+  const availableModels = useMemo(() => models.filter((m) => m.available), [models]);
+  const blockedModels = useMemo(() => models.filter((m) => !m.available), [models]);
+
   const [selectedModels, setSelectedModels] = useState<ModelKind[]>(RUN_MODELS.fast);
+
+  // Seed from what this server can actually run, once, when that is known.
+  // Ticking a model the deployment does not have is how a run ends up with a
+  // dead candidate in its comparison table.
+  const seededModels = useRef(false);
+  useEffect(() => {
+    if (!capabilities || seededModels.current) return;
+    seededModels.current = true;
+    setSelectedModels(capabilities.models.filter((m) => m.available).map((m) => m.model));
+  }, [capabilities]);
+
+  // What actually gets sent. Kept separate from `selectedModels` so an
+  // unavailable model can never reach the request, whatever the checkbox
+  // state says — including the pre-capabilities default above.
+  const runnableSelection = useMemo(
+    () => selectedModels.filter((m) => availableModels.some((a) => a.model === m)),
+    [selectedModels, availableModels],
+  );
+  const prophetSelected =
+    runnableSelection.includes("prophet") &&
+    availableModels.some((m) => m.model === "prophet");
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [prophetCps, setProphetCps] = useState(0.05);
   const [prophetIw, setProphetIw] = useState(0.8);
@@ -191,24 +267,10 @@ export function ForecastModal() {
     gap_fill: gapFill,
   });
 
-  const progress = useForecastProgress(activeRunId, (event) => {
-    if (event.status === "completed") {
-      setRunId(event.run_id);
-      refreshDashboard();
-      toast.success(
-        "Forecast complete",
-        event.selected_model
-          ? `${humanizeModel(event.selected_model)} won the backtest; the dashboard now reflects this run.`
-          : "The dashboard now reflects this run.",
-      );
-    } else if (event.status === "failed") {
-      if (event.stage === "cancelled") {
-        toast.info("Forecast cancelled", "No more model work will be started for this run.");
-      } else {
-        toast.error("Forecast failed", event.error ?? "The run did not finish.");
-      }
-    }
-  });
+  // One subscription per session, owned by ForecastRunProvider — see the note
+  // there. Opening a second one here would double the event stream and fire
+  // every completion toast twice while this dialog happens to be open.
+  const progress = useActiveForecastProgress();
 
   const seeded = useRef(false);
 
@@ -277,8 +339,17 @@ export function ForecastModal() {
       setError("Choose a dataset to forecast.");
       return;
     }
-    if (selectedModels.length === 0) {
-      setError("Tick at least one candidate algorithm — there is nothing to backtest.");
+    if (runnableSelection.length === 0) {
+      setError(
+        selectedModels.length === 0
+          ? "Tick at least one candidate algorithm — there is nothing to backtest."
+          : // They ticked something, and every one of them is missing from this
+            // server. Saying "tick one" here would be telling them to do what
+            // they just did.
+            `${selectedModels.map(humanizeModel).join(", ")} ${
+              selectedModels.length === 1 ? "is" : "are"
+            } not available on this server. Tick one of the others to run a backtest.`,
+      );
       return;
     }
     if (quality.data?.blocked) {
@@ -310,7 +381,10 @@ export function ForecastModal() {
         max_series: grain.length > 0 ? seriesLimit : undefined,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
-        candidate_models: selectedModels.length < ALL_MODELS.length ? selectedModels : undefined,
+        // Omitted when everything this server can fit is ticked, which lets
+        // the engine use its full roster and route by demand class itself.
+        candidate_models:
+          runnableSelection.length < availableModels.length ? runnableSelection : undefined,
         driver_columns: selectedDrivers.length > 0 ? selectedDrivers : undefined,
         prophet_changepoint_prior_scale: prophetCps !== 0.05 ? prophetCps : undefined,
         prophet_interval_width: prophetIw !== 0.8 ? prophetIw : undefined,
@@ -346,6 +420,13 @@ export function ForecastModal() {
     setError(null);
   }
 
+  /** Close, clear the finished run, and land the user on the dashboard. */
+  function handleViewForecast() {
+    setActiveRun(null);
+    closeModal();
+    if (pathname !== "/dashboard") router.push("/dashboard");
+  }
+
   function handleCancelRun() {
     if (!activeRunId) return;
     cancelMutation.mutate(activeRunId);
@@ -375,10 +456,26 @@ export function ForecastModal() {
       description="Fits every eligible candidate model, backtests them, and selects a winner."
       size="md"
       footer={
-        activeRunId && (progress.status === "completed" || progress.status === "failed") ? (
+        activeRunId && progress.status === "completed" ? (
+          // The point of finishing a forecast is to look at it. Sending the
+          // user back to this form as the primary action leaves the result
+          // one unmarked click away, behind a dialog that is covering it.
           <>
-            <Button variant="ghost" onClick={handleClose}>Close</Button>
-            <Button variant="primary" onClick={handleClearPreviousRun}>Start another forecast</Button>
+            <Button variant="ghost" onClick={handleClearPreviousRun}>
+              Run another
+            </Button>
+            <Button variant="primary" onClick={handleViewForecast}>
+              View forecast
+            </Button>
+          </>
+        ) : activeRunId && progress.status === "failed" ? (
+          <>
+            <Button variant="ghost" onClick={handleClose}>
+              Close
+            </Button>
+            <Button variant="primary" onClick={handleClearPreviousRun}>
+              Try again
+            </Button>
           </>
         ) : activeRunId ? (
           confirmingCancel ? (
@@ -441,7 +538,11 @@ export function ForecastModal() {
               </div>
             </div>
           ) : null}
-          <ProgressPanel progress={progress} />
+          <ProgressPanel
+            progress={progress}
+            grouped={grain.length > 0}
+            startedAt={activeRunStartedAt}
+          />
         </div>
       ) : (
         <div className="space-y-4">
@@ -606,7 +707,7 @@ export function ForecastModal() {
 
           <Section
             title="Candidate algorithms"
-            note={runMode === "custom" ? `${selectedModels.length} selected` : `${RUN_MODE_COPY[runMode].label} mode`}
+            note={runMode === "custom" ? `${runnableSelection.length} of ${availableModels.length} selected` : `${RUN_MODE_COPY[runMode].label} mode`}
           >
             <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
               {(Object.keys(RUN_MODE_COPY) as Array<Exclude<RunMode, "custom">>).map((mode) => (
@@ -631,22 +732,39 @@ export function ForecastModal() {
               The engine still removes algorithms that do not fit the series shape. Change any tick to create a custom run.
             </p>
             <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
-              {ALL_MODELS.map((m) => (
+              {models.map((m) => (
                 <CheckRow
-                  key={m.value}
+                  key={m.model}
                   label={m.label}
-                  checked={selectedModels.includes(m.value)}
+                  checked={m.available && selectedModels.includes(m.model)}
+                  disabled={!m.available}
+                  hint={m.reason ?? undefined}
+                  note={m.available ? MODEL_NOTES[m.model] : undefined}
                   onChange={(next) => {
                     setRunMode("custom");
                     setSelectedModels(
                       next
-                        ? [...selectedModels, m.value]
-                        : selectedModels.filter((val) => val !== m.value),
+                        ? [...selectedModels, m.model]
+                        : selectedModels.filter((val) => val !== m.model),
                     );
                   }}
                 />
               ))}
             </div>
+            {blockedModels.length > 0 ? (
+              // Said once, plainly, rather than leaving the user to hover a
+              // greyed checkbox to find out why it will not tick. The run is
+              // not degraded by this and the copy should not imply it is.
+              <p className="mt-2 flex items-start gap-1.5 text-caption text-text-muted">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  {blockedModels.map((m) => m.label).join(", ")}{" "}
+                  {blockedModels.length === 1 ? "is" : "are"} not available on this server and
+                  cannot be selected. The remaining {availableModels.length} still compete for
+                  the forecast.
+                </span>
+              </p>
+            ) : null}
           </Section>
 
           {numerics.length > 0 && (
@@ -725,27 +843,41 @@ export function ForecastModal() {
                   />
                 </Field>
 
-                <Field label="Prophet prior scale" hint="Changepoint prior scale (0.001 - 1.0)">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={0.001}
-                    max={1.0}
-                    value={prophetCps}
-                    onChange={(e) => setProphetCps(Number(e.target.value) || 0.05)}
-                  />
-                </Field>
+                {/* Only while Prophet is both installed here and ticked.
+                    These two inputs are the only settings in this panel that
+                    can silently do nothing, and a number you can still type
+                    into reads as a number that will be used. */}
+                {prophetSelected ? (
+                  <>
+                    <Field
+                      label="Prophet prior scale"
+                      hint="Changepoint prior scale (0.001 - 1.0)"
+                    >
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0.001}
+                        max={1.0}
+                        value={prophetCps}
+                        onChange={(e) => setProphetCps(Number(e.target.value) || 0.05)}
+                      />
+                    </Field>
 
-                <Field label="Prophet interval width" hint="Uncertainty interval (0.50 - 0.99)">
-                  <Input
-                    type="number"
-                    step="0.05"
-                    min={0.5}
-                    max={0.99}
-                    value={prophetIw}
-                    onChange={(e) => setProphetIw(Number(e.target.value) || 0.8)}
-                  />
-                </Field>
+                    <Field
+                      label="Prophet interval width"
+                      hint="Uncertainty interval (0.50 - 0.99)"
+                    >
+                      <Input
+                        type="number"
+                        step="0.05"
+                        min={0.5}
+                        max={0.99}
+                        value={prophetIw}
+                        onChange={(e) => setProphetIw(Number(e.target.value) || 0.8)}
+                      />
+                    </Field>
+                  </>
+                ) : null}
 
                 <Field label="Outlier MAD threshold" hint="Multiples of median absolute deviation (1 - 20)">
                   <Input
@@ -837,26 +969,49 @@ function CheckRow({
   label,
   checked,
   onChange,
+  disabled = false,
+  hint,
+  note,
 }: {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  /** Renders the row inert — used for models this deployment cannot fit. */
+  disabled?: boolean;
+  /** Why, on a disabled row. Surfaced to pointer and to assistive tech alike. */
+  hint?: string;
+  /** A short aside on a row that is selectable, e.g. that it is slow to fit. */
+  note?: string;
 }) {
   return (
     <label
+      title={hint}
       className={cn(
-        "flex min-w-0 cursor-pointer items-center gap-2 rounded-input py-1.5 pl-1.5 pr-2",
-        "text-caption transition-colors duration-fast hover:bg-surface-muted",
-        checked ? "font-medium text-text-primary" : "text-text-muted",
+        "flex min-w-0 items-center gap-2 rounded-input py-1.5 pl-1.5 pr-2",
+        "text-caption transition-colors duration-fast",
+        disabled
+          ? "cursor-not-allowed text-text-muted/60"
+          : "cursor-pointer hover:bg-surface-muted",
+        !disabled && (checked ? "font-medium text-text-primary" : "text-text-muted"),
       )}
     >
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
+        aria-describedby={hint ? `${label}-unavailable` : undefined}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
+        className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)] disabled:cursor-not-allowed"
       />
-      <span className="truncate">{label}</span>
+      <span className={cn("truncate", disabled && "line-through decoration-1")}>{label}</span>
+      {note ? (
+        <span className="shrink-0 text-caption font-normal text-text-muted">({note})</span>
+      ) : null}
+      {hint ? (
+        <span id={`${label}-unavailable`} className="sr-only">
+          {hint}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -916,25 +1071,20 @@ function DimensionSelect({
 
 function ProgressPanel({
   progress,
+  grouped,
+  startedAt,
 }: {
-  progress: ReturnType<typeof useForecastProgress>;
+  progress: ForecastProgress;
+  grouped: boolean;
+  startedAt: number | null;
 }) {
   const percent = Math.round(progress.progress * 100);
   const failed = progress.status === "failed";
   const done = progress.status === "completed";
 
-  const stages = [
-    "aggregating",
-    "backtesting",
-    "fitting",
-    "building_outputs",
-    "persisting",
-    "generating_insights",
-    "fitting_series",
-    "storing_series",
-    "complete",
-  ];
+  const stages = stagesFor(grouped);
   const currentIndex = stages.indexOf(progress.stage);
+  const elapsed = useElapsed(startedAt, !done && !failed);
 
   return (
     <div className="space-y-4">
@@ -954,20 +1104,25 @@ function ProgressPanel({
             <p className="text-caption text-text-muted">{progress.message}</p>
           ) : null}
         </div>
-        <span className="ml-auto text-meta font-semibold text-text-secondary num">{percent}%</span>
+        <span className="ml-auto shrink-0 text-right">
+          <span className="block text-meta font-semibold text-text-secondary num">{percent}%</span>
+          {elapsed ? (
+            <span className="block text-caption text-text-muted num">{elapsed}</span>
+          ) : null}
+        </span>
       </div>
 
       {progress.isReconnecting ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Live connection interrupted; retrying. Celery is still running the forecast.
+          Live updates interrupted; reconnecting. The forecast is still running on the server.
         </p>
       ) : null}
 
       {progress.isPolling ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-          Live stream unavailable; status is refreshing every 2 seconds.
+          Live updates unavailable; checking for progress every 2 seconds instead.
         </p>
       ) : null}
 
@@ -988,7 +1143,7 @@ function ProgressPanel({
       </div>
 
       <ol className="space-y-1.5">
-        {stages.slice(0, -1).map((stage, index) => {
+        {stages.map((stage, index) => {
           const isDone = done || (currentIndex >= 0 && index < currentIndex);
           const isCurrent = !done && index === currentIndex;
           return (

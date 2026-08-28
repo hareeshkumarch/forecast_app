@@ -126,6 +126,10 @@ def build_tree(
 SEPARATOR = " · "
 
 
+def leaf_depth(group_by: list[str] | None) -> int:
+    return len(group_by or [])
+
+
 def _roll_up(node: Node) -> None:
     if node.is_leaf:
         return

@@ -219,7 +219,6 @@ def test_backtest_windows_are_profiled_once_across_candidates(monkeypatch) -> No
 
 
 class TestTheReferenceRunFitsTheBudget:
-
     @pytest.mark.slow
     def test_p95_of_the_reference_dataset_is_under_a_minute(self) -> None:
         periods = weeks()

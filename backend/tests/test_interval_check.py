@@ -83,9 +83,7 @@ class TestEveryRunChecksTheRangeItIsAboutToPublish:
         assert all(0.0 <= row["observed"] <= 1.0 for row in served)
         assert all(row["nominal"] == 0.8 for row in served)
 
-    def test_a_verdict_is_reached_rather_than_left_implicit(
-        self, check: dict[str, object]
-    ) -> None:
+    def test_a_verdict_is_reached_rather_than_left_implicit(self, check: dict[str, object]) -> None:
         assert isinstance(check["served_holds"], bool)
         gap = check["served_worst_gap_pp"]
         assert gap is None or isinstance(gap, float)
