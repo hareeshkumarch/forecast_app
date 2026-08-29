@@ -5,6 +5,14 @@ Everything else about the Celery path is unit-tested against fakes, which is
 what let a nested process pool and a mislabelled task result reach the branch:
 both only appear once an actual worker picks the job up. Skipped unless a
 broker is configured, so the ordinary suite stays offline.
+
+Run this file with `-n 0`. The worker fixture is module-scoped, so under xdist
+every process starts a Celery worker of its own, and all of them consume the
+same `forecasts` queue while conftest hands each process a separate SQLite
+file. A task dispatched by one process is then liable to be picked up by
+another, which cannot find the run, fails it immediately and publishes
+nothing. The autouse fixture below refuses the run rather than letting that
+be discovered as a 240-second timeout.
 """
 
 from __future__ import annotations
@@ -29,15 +37,42 @@ pytestmark = pytest.mark.skipif(
 
 WORKER_BOOT_TIMEOUT = 60
 RUN_TIMEOUT = 240
+#: How long a closing frame may lag the database row before it counts as absent.
+FRAME_GRACE = 5
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _one_worker_only() -> None:
+    """Refuse to run in parallel rather than time out in it.
+
+    See the module docstring: several Celery workers on one queue, each with
+    its own database, steal each other's tasks. Said plainly here, once, so
+    nobody spends an afternoon on it a third time.
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        pytest.skip("Run this file with -n 0; parallel workers share one broker.")
+
+
 @pytest.fixture(scope="module")
-def worker() -> Iterator[subprocess.Popen[bytes]]:
+def worker(tmp_path_factory: pytest.TempPathFactory) -> Iterator[subprocess.Popen[bytes]]:
     # conftest pins DATABASE_URL and STORAGE_ROOT to a temp directory before
     # anything imports settings, and the worker inherits both — so the two
     # processes genuinely share one database and one Parquet store.
     assert os.environ.get("DATABASE_URL", "").startswith("sqlite"), "expected the test database"
+
+    # A file, not a pipe. `--loglevel=info` through a PIPE nobody reads fills
+    # the 64 KB kernel buffer partway through the first forecast, and the
+    # worker then blocks forever on its next log line — task accepted, no
+    # progress published, and the test times out 240 seconds later against a
+    # process wedged inside logging. A file has no such limit, and it means
+    # the worker's own account of the run survives the failure below.
+    log_path = tmp_path_factory.mktemp("celery") / "worker.log"
+    log = log_path.open("wb")
+
+    def tail(limit: int = 4000) -> str:
+        log.flush()
+        return log_path.read_text(errors="replace")[-limit:]
 
     process = subprocess.Popen(
         [
@@ -52,31 +87,34 @@ def worker() -> Iterator[subprocess.Popen[bytes]]:
         ],
         cwd=BACKEND_ROOT,
         env={**os.environ},
-        stdout=subprocess.PIPE,
+        stdout=log,
         stderr=subprocess.STDOUT,
     )
 
     from app.workers.celery_app import celery_app
 
-    deadline = time.monotonic() + WORKER_BOOT_TIMEOUT
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            output = process.stdout.read().decode() if process.stdout else ""
-            pytest.fail(f"The worker exited before it was ready:\n{output[-2000:]}")
-        if celery_app.control.ping(timeout=1.0):
-            break
-        time.sleep(1.0)
-    else:
-        process.send_signal(signal.SIGTERM)
-        pytest.fail("The worker never became ready.")
-
-    yield process
-
-    process.send_signal(signal.SIGTERM)
     try:
-        process.wait(timeout=20)
-    except subprocess.TimeoutExpired:
-        process.kill()
+        deadline = time.monotonic() + WORKER_BOOT_TIMEOUT
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                pytest.fail(f"The worker exited before it was ready:\n{tail()}")
+            if celery_app.control.ping(timeout=1.0):
+                break
+            time.sleep(1.0)
+        else:
+            process.send_signal(signal.SIGTERM)
+            pytest.fail(f"The worker never became ready.\n{tail()}")
+
+        yield process
+    finally:
+        process.send_signal(signal.SIGTERM)
+        try:
+            process.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        # Whatever went wrong, the worker's side of it is worth reading.
+        print(f"\n--- celery worker log ({log_path}) ---\n{tail()}")
+        log.close()
 
 
 async def _seed_dataset() -> uuid.UUID:
@@ -129,8 +167,50 @@ async def _dispatch_and_follow(
             if payload["status"] in ("completed", "failed"):
                 return
 
+    async def until_terminal_in_the_database() -> None:
+        """The other record of the same run.
+
+        The frames are what this test is about, but they are not the only
+        evidence: the run reaches a terminal status whether or not anything
+        announces it. Watching only the channel means a run that fails without
+        publishing — which is exactly what a broken relay looks like — stalls
+        for the full RUN_TIMEOUT and then raises a bare TimeoutError naming
+        nothing. Watching both turns that into the failure it actually is,
+        carrying the run's own error message.
+        """
+        from app.models.enums import RunStatus
+
+        terminal = {RunStatus.COMPLETED, RunStatus.FAILED}
+        while True:
+            await asyncio.sleep(1.0)
+            async with session_scope() as session:
+                row = await forecast_service.get_run(session, run_id)
+            if row is not None and row.status in terminal:
+                return
+
+    collector = asyncio.create_task(collect())
+    watcher = asyncio.create_task(until_terminal_in_the_database())
     try:
-        await asyncio.wait_for(collect(), timeout=RUN_TIMEOUT)
+        done, pending = await asyncio.wait(
+            {collector, watcher},
+            timeout=RUN_TIMEOUT,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if watcher in done and collector not in done:
+            # The database got there first. Give the closing frame a moment to
+            # arrive anyway — losing a race by a few milliseconds is not the
+            # same as never publishing, and only the second is a failure.
+            await asyncio.wait({collector}, timeout=FRAME_GRACE)
+        for task in pending | {collector, watcher}:
+            if not task.done():
+                task.cancel()
+        if not done:
+            raise TimeoutError(
+                f"Run {run_id} neither published a terminal frame nor reached a "
+                f"terminal status within {RUN_TIMEOUT}s."
+            )
+        for task in done:
+            task.result()
     finally:
         await pubsub.aclose()
         await client.aclose()

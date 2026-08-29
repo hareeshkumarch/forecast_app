@@ -174,7 +174,16 @@ jobs:
 
       - name: Dispatch a forecast to a real worker
         working-directory: backend
-        run: pytest -q tests/test_worker_roundtrip.py --no-header
+        # -n 0 overrides the `-n auto` in pyproject, and it is load-bearing.
+        # The worker fixture is module-scoped, so each xdist process starts its
+        # own Celery worker — and every one of them consumes the same
+        # `forecasts` queue on the same broker while conftest gives each its
+        # own SQLite file. A task dispatched by one process is then picked up
+        # by another, which cannot find the run, fails it in under two seconds
+        # and publishes nothing, so the dispatcher waits out all 240 seconds.
+        # Whether that happened came down to whether xdist put both tests on
+        # one process, which is why this passed and failed at random.
+        run: pytest -q tests/test_worker_roundtrip.py --no-header -n 0
 
   frontend-checks:
     name: Frontend · lint, types, unit tests, build
