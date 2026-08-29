@@ -21,7 +21,18 @@ VPC_ORIGIN_NAME="${VPC_ORIGIN_NAME:-forecast-api-origin}"
 SG_NAME="${SG_NAME:-forecast-api}"
 INSTANCE_NAME="${INSTANCE_NAME:-forecast-api}"
 
-aws() { command env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY "$(command -v aws)" "$@"; }
+# A container can arrive with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+# already set to something that is not this account — the sandbox this was
+# written in does exactly that — and they shadow the configured profile. Drop
+# them, but only once the CLI has been shown to name an account without them,
+# so a machine that authenticates *by* those variables is left alone rather
+# than stripped of the only credentials it has.
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ] &&
+   env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY \
+     "$(command -v aws)" sts get-caller-identity > /dev/null 2>&1; then
+  aws() { command env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY "$(command -v aws)" "$@"; }
+  echo "==> ignoring the AWS_* variables in the environment; using the profile"
+fi
 
 aws sts get-caller-identity --query Account --output text > /dev/null
 
