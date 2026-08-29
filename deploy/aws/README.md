@@ -214,7 +214,45 @@ the usual reason a plan like this fails.
 | **ECS Fargate + ALB** | The ALB alone costs more per month than the whole instance plan, and it cannot serve valid public HTTPS without a domain: an HTTPS listener requires a certificate whose name matches, and ACM refuses to issue for `amazonaws.com`. |
 | **Amplify Hosting** | Would work for the frontend, but its free allowance is a 12-month offer that accounts created after July 2025 do not get — so it would cost money that S3 + CloudFront does not. And it does nothing for the backend, which is the part that actually costs. |
 | **Elastic Beanstalk** | Its `*.elasticbeanstalk.com` name has no usable public certificate — AWS's own docs say HTTPS there requires a custom domain, or a self-signed cert "for development and testing". The mixed-content problem returns. |
-| **Vercel (frontend) + AWS (backend)** | The repo already carries `vercel.json`, and Vercel's free tier would host the frontend at no cost. It is a legitimate option. It is not recommended here only because it reintroduces cross-origin requests and splits the deployment across two vendors, to save something that CloudFront already gives away. |
+| **Vercel (frontend) + AWS (backend)** | The repo already carries `vercel.json`, and Vercel's free tier would host the frontend at no cost. It is a legitimate option — see below, because it is the one being run. |
+
+---
+
+## Running the frontend on Vercel instead
+
+This is the shape currently deployed, and it works: `vercel.json` rewrites
+`/api/*`, `/docs` and `/openapi.json` to the backend, so the browser only ever
+talks to the Vercel origin over HTTPS and the plain-HTTP hop happens
+server-side at Vercel's edge. No mixed content and no CORS, which is why
+`NEXT_PUBLIC_API_BASE_URL` is empty there too.
+
+**It still needs the CloudFront distribution.** Not for the frontend — Vercel
+does that better and for nothing — but because the alternative destination for
+those rewrites is the instance's public hostname, and that has two costs:
+
+- **The instance must accept `:80` from the whole internet.** Vercel's proxy
+  addresses are not a published fixed set, so the rule is `0.0.0.0/0` in
+  practice. `POST /api/datasets` and the connector-credential endpoints are
+  then served over plaintext to anybody who finds the hostname.
+  `app/core/ratelimit.py` says as much where it explains why the limiter is a
+  control against accident rather than against somebody determined.
+- **The hostname changes on stop/start**, which silently breaks the rewrites
+  and takes the largest cost lever in `aws-costs.md` with it.
+
+Pointing the rewrites at the distribution fixes both: CloudFront reaches the
+instance by its *private* DNS name through the VPC origin, so stop/start is
+safe, and the security group can then admit nothing but CloudFront. The
+frontend stays on Vercel and `deploy-frontend.sh` is simply not run — the S3
+origin sits unused and costs nothing.
+
+```bash
+./deploy/aws/finish-cloudfront.sh            # once, creates the distribution
+aws cloudfront wait distribution-deployed --id <id>
+./deploy/aws/point-vercel-at-cloudfront.sh   # switches vercel.json over
+```
+
+The second script prints the remaining steps, including the security-group
+revocation that has to come *after* Vercel has redeployed rather than before.
 
 ---
 
@@ -235,3 +273,5 @@ that change the number.
 | `deploy-frontend.sh` | Builds the static export and publishes it to S3 with correct cache headers, then invalidates CloudFront. |
 | `aws-costs.md` | What it costs per month, how long $100 lasts, and how to make it last longer. |
 | `runbook.md` | The click-by-click and CLI setup, in order. |
+| `finish-cloudfront.sh` | The distribution, the bucket policy and the security-group rule, split out because a new account cannot create CloudFront resources until AWS verifies it. Idempotent. |
+| `point-vercel-at-cloudfront.sh` | Moves `frontend/vercel.json`'s rewrites off the instance's public hostname and onto the distribution, after checking the distribution is Deployed and its `/api/health` answers. |
