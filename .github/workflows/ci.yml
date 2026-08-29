@@ -129,7 +129,14 @@ jobs:
         working-directory: backend
         env:
           RUN_AGAINST_POSTGRES: "1"
-        run: pytest -q --no-header -k "zeros or too_short or leading_column"
+        # -n 0 overrides the `-n auto` in pyproject. On SQLite each worker gets
+        # its own file, because conftest names the database after a per-process
+        # temp directory. Against Postgres they all share the one service
+        # container, so the schema each worker creates and drops is the schema
+        # the others are mid-INSERT against: an INSERT INTO forecast_runs
+        # deadlocks with another worker's DROP TABLE schema_mappings, and three
+        # of these nine fail. Nine tests do not need the parallelism anyway.
+        run: pytest -q --no-header -n 0 -k "zeros or too_short or leading_column"
 
   worker:
     name: Backend · Celery round trip
