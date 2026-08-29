@@ -129,6 +129,53 @@ const INSIGHTS = {
   ],
 };
 
+// `/api/forecasts/{id}/accuracy`. Not optional: AccuracyPanel reads
+// `caveats.length` and filters `coverage` unconditionally, because a real
+// response always carries both. Served by the catch-all instead, the panel
+// throws on the first render and takes the whole dashboard down with it —
+// which is what "Overview is not visible" turns out to mean.
+const ACCURACY = {
+  run_id: RUN_ID,
+  dataset_id: "e2e-dataset",
+  scored_at: "2026-02-01T00:00:00Z",
+  measured_against_outcomes: true,
+  backtest: { wape: 8.6, bias_pct: -1.2 },
+  by_horizon: [
+    { horizon: 1, wape: 7.4, bias_pct: -0.8, observations: 24 },
+    { horizon: 2, wape: 9.1, bias_pct: -1.6, observations: 24 },
+  ],
+  by_class: [
+    {
+      demand_class: "smooth",
+      wape: 8.2,
+      bias_pct: -1.1,
+      series: 6,
+      point_forecast_claimed: true,
+    },
+  ],
+  coverage: [
+    {
+      nominal: 0.95,
+      horizon: 1,
+      observed: 93.0,
+      gap_pp: -2.0,
+      n_observations: 24,
+      measurable: true,
+      holds: true,
+    },
+  ],
+  coverage_tolerance_pp: 5,
+  forecast_value_add: {
+    model: "sarimax",
+    model_error: 8.6,
+    baseline: "seasonal_naive",
+    baseline_error: 12.4,
+    improvement_pct: 30.6,
+    beats_baseline: true,
+  },
+  caveats: [],
+};
+
 const METRICS = {
   run_id: RUN_ID,
   selected_model: "sarimax",
@@ -264,6 +311,7 @@ export async function stubApi(page: Page): Promise<void> {
     if (pathname.endsWith("/api/dashboard/breakdown")) return json(BREAKDOWN);
     if (pathname.endsWith("/api/dashboard/drivers")) return json(DRIVERS);
     if (pathname.endsWith("/api/insights")) return json(INSIGHTS);
+    if (pathname.endsWith("/accuracy")) return json(ACCURACY);
     if (pathname.endsWith("/metrics")) return json(METRICS);
     if (pathname.endsWith("/points")) return json(POINTS);
     if (pathname.endsWith("/series")) return json(SERIES);
