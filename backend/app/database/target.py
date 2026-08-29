@@ -152,7 +152,20 @@ def resolve_target() -> DatabaseTarget:
 
 
 def connect_args(target: DatabaseTarget) -> dict[str, object]:
-    if make_url(target.url).get_backend_name() != "postgresql":
+    backend = make_url(target.url).get_backend_name()
+
+    if backend == "sqlite":
+        # SQLite takes a database-wide lock to write, and the default five
+        # seconds is not long enough when several connections in one process
+        # want it at once. The symptom is a teardown DROP TABLE giving up with
+        # "database is locked" while a pooled reader is still finishing —
+        # which under xdist means whole test files erroring on a loaded
+        # machine and passing on an idle one. Waiting longer costs nothing:
+        # SQLite reports a genuine deadlock immediately regardless, and this
+        # is the local and test store, never the one production writes to.
+        return {"timeout": 30}
+
+    if backend != "postgresql":
         return {}
 
     args: dict[str, object] = {}

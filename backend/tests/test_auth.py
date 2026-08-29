@@ -7,6 +7,7 @@ convenience layer. Every case below is something an attacker sends on purpose.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 import jwt
 import pytest
@@ -60,19 +61,26 @@ async def test_a_valid_token_identifies_its_holder() -> None:
     assert not user.is_anonymous
 
 
-@pytest.mark.parametrize(
-    ("label", "token"),
-    [
-        ("expired", _token(exp=int(time.time()) - 1)),
-        ("signed with another key", _token(secret="not-the-secret")),
-        ("issued for another audience", _token(aud="anon")),
-        ("not a token at all", "sk_live_definitely_not_a_jwt"),
-        ("empty", ""),
-    ],
-)
-async def test_tokens_that_must_not_be_accepted(label: str, token: str) -> None:
+#: Built when the test runs, not when it is collected. These used to be signed
+#: in the parametrize list itself, which put a fresh JWT — carrying an `exp`
+#: taken from the current second — into the test's own id. Two xdist workers
+#: importing this module either side of a second boundary then collected
+#: different names for the same tests, and the whole run aborted before it
+#: started with "Different tests were collected between gw0 and gw1". Deferring
+#: the signing leaves the ids as the labels, which do not move.
+_REJECTABLE: dict[str, Callable[[], str]] = {
+    "expired": lambda: _token(exp=int(time.time()) - 1),
+    "signed with another key": lambda: _token(secret="not-the-secret"),
+    "issued for another audience": lambda: _token(aud="anon"),
+    "not a token at all": lambda: "sk_live_definitely_not_a_jwt",
+    "empty": lambda: "",
+}
+
+
+@pytest.mark.parametrize("label", list(_REJECTABLE))
+async def test_tokens_that_must_not_be_accepted(label: str) -> None:
     with pytest.raises(AuthError):
-        await verify_token(token)
+        await verify_token(_REJECTABLE[label]())
 
 
 async def test_an_unsigned_token_is_refused() -> None:

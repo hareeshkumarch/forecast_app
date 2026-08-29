@@ -119,13 +119,22 @@ def test_fallback_can_be_refused(configure, monkeypatch) -> None:
         resolve_target()
 
 
-def test_sqlite_is_left_alone(configure) -> None:
+def test_sqlite_gets_a_busy_timeout_and_none_of_the_postgres_tuning(configure) -> None:
+    """The pgbouncer workarounds are meaningless here; the lock wait is not.
+
+    SQLite's default five seconds is short enough that a teardown DROP TABLE
+    gives up on a loaded machine while a pooled reader is still finishing.
+    """
     configure(database_url="sqlite+aiosqlite:///./test.db")
     resolved = resolve_target()
 
     assert resolved.name == "local"
     assert resolved.url.startswith("sqlite+aiosqlite://")
-    assert connect_args(resolved) == {}
+
+    args = connect_args(resolved)
+    assert args == {"timeout": 30}
+    assert "statement_cache_size" not in args
+    assert "ssl" not in args
 
 
 def test_label_names_the_store() -> None:
