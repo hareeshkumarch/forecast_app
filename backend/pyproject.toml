@@ -37,8 +37,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Fixtures and helpers legitimately accept arguments they do not use.
-"tests/*" = ["ARG001", "ARG002"]
+# Fixtures and helpers legitimately accept arguments they do not use, and a
+# monkeypatch stub has to match the signature of the thing it stands in for —
+# `lambda *a, **k: None` in place of mailer.queue is the whole point, not an
+# oversight. ARG005 is the lambda form of the same case.
+"tests/*" = ["ARG001", "ARG002", "ARG005"]
 # Forecaster and connector implementations must match their protocol signatures
 # even when a particular implementation ignores an argument.
 "app/forecasting/models.py" = ["ARG002"]

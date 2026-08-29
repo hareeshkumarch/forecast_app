@@ -1,5 +1,3 @@
-
-
 def test_every_offered_provider_has_somewhere_to_send_the_request() -> None:
     """A provider the UI offers and the backend cannot reach is a dead option.
 

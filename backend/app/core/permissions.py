@@ -42,7 +42,7 @@ class Permission(StrEnum):
     AUDIT_READ = "audit:read"
 
 
-EVERYTHING = frozenset(Permission)
+EVERYTHING: frozenset[Permission] = frozenset(Permission)
 
 #: What a member could already do, named rather than changed. Anybody approved
 #: on this deployment today has exactly this set, so nothing anyone can do

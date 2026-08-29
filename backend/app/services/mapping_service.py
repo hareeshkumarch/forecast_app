@@ -78,7 +78,7 @@ async def accept(
             detail={"code": "incomplete_mapping", "mapping": proposal.as_dict()},
         )
 
-    unknown = [
+    named = [
         name
         for name in (
             proposal.date_col,
@@ -86,8 +86,9 @@ async def accept(
             *proposal.series_keys,
             *proposal.covariates,
         )
-        if name not in frame.columns
+        if name is not None
     ]
+    unknown = [name for name in named if name not in frame.columns]
     if unknown:
         raise ValidationError(
             f"The mapping names column(s) this dataset does not have: {', '.join(unknown)}.",

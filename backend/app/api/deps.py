@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Annotated
 
@@ -8,9 +9,9 @@ from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import ANONYMOUS, AuthenticatedUser, AuthError, ForbiddenError, verify_token
-from app.core.permissions import Permission, allows, permission_for
 from app.core.config import settings
 from app.core.errors import ValidationError
+from app.core.permissions import Permission, allows, permission_for
 from app.database.session import get_session
 from app.schemas.dashboard import DashboardQuery
 
@@ -131,7 +132,7 @@ async def permitted(
     )
 
 
-def require(permission: Permission):
+def require(permission: Permission) -> Callable[..., Awaitable[AuthenticatedUser]]:
     """A route saying what it needs rather than who it trusts.
 
     Returns a dependency, so it reads as
@@ -179,7 +180,6 @@ _ENGLISH = {
     Permission.USER_MANAGE: "manage who has access",
     Permission.AUDIT_READ: "read the audit log",
 }
-
 
 
 VALID_VIEWS = ("base", "best", "worst")

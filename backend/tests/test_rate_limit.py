@@ -136,7 +136,9 @@ def test_the_progress_stream_is_never_limited() -> None:
 
 
 def test_identity_prefers_the_forwarded_client() -> None:
-    assert ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "1.2.3.4"
+    assert (
+        ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "1.2.3.4"
+    )
     assert ratelimit.client_identity({"x-real-ip": "1.2.3.4"}, "10.0.0.1") == "1.2.3.4"
     assert ratelimit.client_identity({}, "10.0.0.1") == "10.0.0.1"
     assert ratelimit.client_identity({}, None) == "unknown"

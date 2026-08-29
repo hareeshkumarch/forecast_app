@@ -8,6 +8,7 @@ to send lives in app/core/mailer.py; this decides *when*.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -40,10 +41,8 @@ class MailSender:
         if self._task is None:
             return
         self._task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await self._task
-        except asyncio.CancelledError:
-            pass
         self._task = None
 
     async def _run(self) -> None:

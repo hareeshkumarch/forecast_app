@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import cast
+
 import polars as pl
 
 from app.datasets.profiler import DatasetProfileResult, natural_aggregation, profile_frame
@@ -147,14 +150,17 @@ def apply_override(
         proposal.date_col = str(value)
     if value := override.get("target_col"):
         proposal.target_col = str(value)
+    # The override is a decoded JSON body, so every value arrives as `object`
+    # and each field is coerced to the shape it is meant to have. A value of
+    # the wrong shape raises here, which is the same answer as before.
     if (keys := override.get("series_keys")) is not None:
-        proposal.series_keys = [str(key) for key in keys]  # type: ignore[union-attr]
+        proposal.series_keys = [str(key) for key in cast("Iterable[object]", keys)]
     if (covariates := override.get("covariates")) is not None:
-        proposal.covariates = [str(name) for name in covariates]  # type: ignore[union-attr]
+        proposal.covariates = [str(name) for name in cast("Iterable[object]", covariates)]
     if value := override.get("frequency"):
-        proposal.frequency = ForecastFrequency(value)
+        proposal.frequency = ForecastFrequency(str(value))
     if value := override.get("aggregation"):
-        proposal.aggregation = MeasureAggregation(value)
+        proposal.aggregation = MeasureAggregation(str(value))
         proposal.requires_aggregation_choice = False
 
     proposal.source = source

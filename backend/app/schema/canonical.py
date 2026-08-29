@@ -122,7 +122,9 @@ def to_canonical(frame: pl.DataFrame, config: CanonicalConfig) -> pl.DataFrame:
 
 
 def assert_canonical(frame: pl.DataFrame, *, covariates: list[str] | None = None) -> None:
-    expected: dict[str, pl.DataType] = {
+    # The class, not an instance: `pl.Float64` rather than `pl.Float64()`.
+    # Polars compares the two forms as equal, which is all this dict is for.
+    expected: dict[str, type[pl.DataType]] = {
         SERIES_ID: pl.Utf8,
         DS: pl.Date,
         Y: pl.Float64,
