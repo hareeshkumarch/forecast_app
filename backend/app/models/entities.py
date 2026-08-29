@@ -115,7 +115,12 @@ class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     datasets: Mapped[list[Dataset]] = relationship(back_populates="connector")
 
-    __table_args__ = (UniqueConstraint("name", name="uq_connectors_name"),)
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_connectors_name"),
+        # Named for the column's role rather than its name, which is how 0020
+        # created it across all three owned tables.
+        Index("ix_connectors_created_by", "created_by_user_id"),
+    )
 
 
 class ConnectorCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -185,6 +190,7 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_datasets_created", "created_at"),
         Index("ix_datasets_connector", "connector_id"),
+        Index("ix_datasets_created_by", "created_by_user_id"),
     )
 
 
@@ -338,6 +344,7 @@ class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("idempotency_key", name="uq_forecast_runs_idempotency_key"),
         Index("ix_forecast_runs_status_created", "status", "created_at"),
         Index("ix_forecast_runs_dataset_created", "dataset_id", "created_at"),
+        Index("ix_forecast_runs_created_by", "created_by_user_id"),
         Index(
             "ix_forecast_runs_completed_lookup",
             "status",
@@ -778,6 +785,11 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("subject", name="uq_app_users_subject"),
         UniqueConstraint("email", name="uq_app_users_email"),
         Index("ix_app_users_email", "email"),
+        # The People page reads by status and by role, and both were indexed
+        # when those columns arrived — 0021 and 0022. Declared here so the
+        # models say what the database actually holds.
+        Index("ix_app_users_status", "status"),
+        Index("ix_app_users_role", "role"),
     )
 
 

@@ -282,7 +282,9 @@ async def test_two_messages_exist_and_no_more(session: AsyncSession, monkeypatch
     assert sorted(
         name
         for name, value in vars(email_templates).items()
-        if callable(value) and not name.startswith("_") and name not in {"layout", "Action", "Message", "dataclass"}
+        if callable(value)
+        and not name.startswith("_")
+        and name not in {"layout", "Action", "Message", "dataclass"}
     ) == ["access_approved", "request_received"]
 
     subjects: list[str] = []

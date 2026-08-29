@@ -480,9 +480,9 @@ async def test_a_first_run_does_not_caption_a_comparison_it_never_made(
         label = kpi["comparison_label"]
         if label is None or not label.startswith("vs "):
             continue
-        assert kpi["delta_display"] is not None, (
-            f"{kpi['key']} says {label!r} with nothing to compare against"
-        )
+        assert (
+            kpi["delta_display"] is not None
+        ), f"{kpi['key']} says {label!r} with nothing to compare against"
 
     # The window caption under Actual YTD is not a comparison and stands alone.
     actual = next(kpi for kpi in body["kpis"] if kpi["key"] == "actual_ytd")
@@ -811,9 +811,9 @@ async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
     metrics = (await client.get(f"/api/forecasts/{detail['id']}/metrics")).json()
     for candidate in metrics["candidates"]:
         for name, value in candidate["params"].items():
-            assert not isinstance(value, float) or math.isfinite(value), (
-                f"{candidate['model']}.{name} is {value}, which Postgres will reject"
-            )
+            assert not isinstance(value, float) or math.isfinite(
+                value
+            ), f"{candidate['model']}.{name} is {value}, which Postgres will reject"
     assert json.dumps(metrics), "the metrics response must be serialisable"
 
 

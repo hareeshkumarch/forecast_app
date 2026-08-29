@@ -259,9 +259,7 @@ def test_mase_in_the_objective_is_measured_against_the_seasonal_walk() -> None:
     # seasonal series it ranks candidates differently from the MASE selection
     # scores by — which is the disagreement the objective exists to close.
     season = 4
-    history = np.concatenate(
-        [np.array([10.0, 40.0, 10.0, 40.0]) + step * 2.0 for step in range(6)]
-    )
+    history = np.concatenate([np.array([10.0, 40.0, 10.0, 40.0]) + step * 2.0 for step in range(6)])
     actual = np.array([22.0, 52.0, 22.0, 52.0])
     predicted = actual + 3.0
 

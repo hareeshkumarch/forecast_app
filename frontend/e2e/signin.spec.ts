@@ -1,25 +1,30 @@
 import { expect, test } from "@playwright/test";
 
-test("sign in is clear, validated, and keeps a demo path", async ({ page }) => {
+/*
+ * Sign-in is configured at build time, from NEXT_PUBLIC_SUPABASE_URL and
+ * NEXT_PUBLIC_SUPABASE_ANON_KEY, and this suite deliberately builds without
+ * them — the same shape as local development, and a deployment the product
+ * supports on purpose: a missing key leaves the app open rather than broken.
+ *
+ * So what there is to assert here is the unconfigured build's own promise:
+ * /signin does not sit there showing a Google button that cannot work. It
+ * sends you to the workspace instead, and it does it before anything is
+ * painted, so nobody sees a screen offering something this build cannot do.
+ *
+ * The signed-in screen itself — the Google handoff, and the notice that new
+ * accounts are reviewed before they see anything — is not reachable from a
+ * build with no project behind it, and is not covered here.
+ */
+
+test("a build with no sign-in configured sends /signin to the workspace", async ({ page }) => {
   await page.goto("/signin");
 
-  await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByText("Enter a valid work email.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Explore the live workspace" })).toHaveAttribute(
-    "href",
-    "/dashboard",
-  );
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
-test("sign in does not overflow a phone viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("the redirect leaves no sign-in screen behind it", async ({ page }) => {
   await page.goto("/signin");
+  await page.waitForURL(/\/dashboard$/);
 
-  const sizes = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }));
-
-  expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.clientWidth);
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toHaveCount(0);
 });

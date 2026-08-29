@@ -134,9 +134,7 @@ async def test_retrying_stops_rather_than_going_on_forever(session, monkeypatch)
     assert row.attempts == mailer.MAX_ATTEMPTS
 
 
-async def test_one_bad_address_does_not_roll_back_the_ones_that_went(
-    session, monkeypatch
-) -> None:
+async def test_one_bad_address_does_not_roll_back_the_ones_that_went(session, monkeypatch) -> None:
     sent = []
 
     def selective(to, subject, text, html):

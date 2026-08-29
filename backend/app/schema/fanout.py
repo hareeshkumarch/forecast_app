@@ -201,8 +201,13 @@ def _points(
 ) -> list[tuple[date, float, float | None, float | None]]:
     horizon = future_periods(periods[-1], config.horizon, config.frequency)
     forecast = fit.forecast or []
-    lower = fit.lower if fit.banded else [None] * len(forecast)
-    upper = fit.upper if fit.banded else [None] * len(forecast)
+    # An unbanded fit still has to line up column-for-column with a banded one,
+    # so the interval columns become explicit nulls rather than going missing.
+    # `banded` is what promises lower and upper are populated; the `or` keeps
+    # the annotation honest for a fit that claims it and is not.
+    unbanded: list[float | None] = [None] * len(forecast)
+    lower: list[float | None] = list(fit.lower) if fit.banded and fit.lower else unbanded
+    upper: list[float | None] = list(fit.upper) if fit.banded and fit.upper else unbanded
     return [
         (period, float(point), _finite(low), _finite(high))
         for period, point, low, high in zip(horizon, forecast, lower, upper, strict=False)

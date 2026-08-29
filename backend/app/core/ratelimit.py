@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 SPLITS_ACROSS_PROCESSES = True
@@ -118,8 +119,8 @@ class SlidingWindow:
 
         window.append(now)
         self._prune()
-        reset = int(window[0] + rule.window_seconds - now) + 1 if window else int(
-            rule.window_seconds
+        reset = (
+            int(window[0] + rule.window_seconds - now) + 1 if window else int(rule.window_seconds)
         )
         return True, rule.limit - len(window), max(1, reset)
 
@@ -138,7 +139,7 @@ class SlidingWindow:
 limiter = SlidingWindow()
 
 
-def client_identity(headers, client_host: str | None) -> str:
+def client_identity(headers: Mapping[str, str], client_host: str | None) -> str:
     """Who to count this against.
 
     X-Forwarded-For is written by whatever proxied the request, and the

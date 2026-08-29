@@ -43,7 +43,6 @@ async def test_a_browser_that_stopped_reading_does_not_grow_a_queue() -> None:
 async def test_a_decision_announces_to_the_person_and_the_list(monkeypatch) -> None:
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
-
     from tests.test_access_approval import _Account
 
     monkeypatch.setattr(user_service.mailer, "queue", lambda *a, **k: None)
@@ -63,9 +62,7 @@ async def test_a_decision_announces_to_the_person_and_the_list(monkeypatch) -> N
         broadcast.subscribe(broadcast.topic_for_user("user-1")) as theirs,
         broadcast.subscribe(broadcast.PEOPLE) as admins,
     ):
-        await user_service.set_status(
-            _Session(), target, AccessStatus.APPROVED, decided_by="boss"
-        )
+        await user_service.set_status(_Session(), target, AccessStatus.APPROVED, decided_by="boss")
         assert await asyncio.wait_for(theirs.get(), timeout=1) == broadcast.ACCESS
         assert await asyncio.wait_for(admins.get(), timeout=1) == broadcast.PEOPLE
 
@@ -74,7 +71,6 @@ async def test_re_approving_announces_nothing() -> None:
     """Nothing changed, so no screen needs to do anything about it."""
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
-
     from tests.test_access_approval import _Account
 
     user_service.settings.auth_admin_emails_raw = ""
@@ -89,9 +85,7 @@ async def test_re_approving_announces_nothing() -> None:
             return None
 
     async with broadcast.subscribe(broadcast.topic_for_user("user-2")) as theirs:
-        await user_service.set_status(
-            _Session(), target, AccessStatus.APPROVED, decided_by="boss"
-        )
+        await user_service.set_status(_Session(), target, AccessStatus.APPROVED, decided_by="boss")
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(theirs.get(), timeout=0.2)
 
@@ -108,9 +102,7 @@ def test_the_stream_is_reachable_while_still_waiting() -> None:
 
     from app.main import app
 
-    route = next(
-        r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/auth/events"
-    )
+    route = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/auth/events")
     guards = {
         dependency.call.__name__
         for dependency in route.dependant.dependencies
@@ -132,9 +124,7 @@ def test_the_stream_does_not_hold_a_pooled_connection() -> None:
 
     from app.main import app
 
-    route = next(
-        r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/auth/events"
-    )
+    route = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/auth/events")
     assert "session" not in route.dependant.query_params + route.dependant.path_params
     names = {
         dependency.call.__name__

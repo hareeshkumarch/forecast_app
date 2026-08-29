@@ -17,8 +17,14 @@ test("the landing page is the root and the app has moved to /dashboard", async (
 test("the primary call to action opens sign in", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("link", { name: "Start forecasting" }).first().click();
-  await expect(page).toHaveURL(/\/signin$/);
+  // The href, not the landing URL. This suite builds without a Supabase
+  // project, and such a build redirects /signin to /dashboard rather than
+  // showing a sign-in screen it cannot honour — so following the click here
+  // would assert that redirect rather than where the button points.
+  await expect(page.getByRole("link", { name: "Start forecasting" }).first()).toHaveAttribute(
+    "href",
+    "/signin",
+  );
 });
 
 test("the live workspace remains available as a demo", async ({ page }) => {
@@ -47,7 +53,9 @@ test("every section is readable once scrolled to", async ({ page }) => {
 
   for (const heading of [
     "From a spreadsheet to a plan in three steps.",
-    "Everything a planner needs, and nothing they do not.",
+    // "Everything a planner needs, and nothing they do not." used to sit here.
+    // It headed the feature-card grid, and that grid went when the page
+    // dropped its cards and charts for something with visible motion.
     "Know what changed, why it matters, and what to do next.",
     "A range tells you more than a perfect-looking line.",
     // The accuracy figure counts up the first time it is scrolled to, so this
@@ -80,7 +88,7 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   // back into view.
   await expect(page.locator(".motion-ready")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Everything a planner needs, and nothing they do not." }),
+    page.getByRole("heading", { name: "Know what changed, why it matters, and what to do next." }),
   ).toBeVisible();
 
   await context.close();

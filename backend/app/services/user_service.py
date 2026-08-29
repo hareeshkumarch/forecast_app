@@ -197,7 +197,7 @@ async def set_status(
         else:
             action = REVOKED if was is AccessStatus.APPROVED else REJECTED
         _record(session, action, target, actor=decided_by, detail=f"from {was.value}")
-        await _tell_decision(session, target, status, was)
+        await _tell_decision(session, target, status)
         _announce(target)
     return target
 
@@ -239,9 +239,7 @@ def _record(
 
 
 async def history(session: AsyncSession, limit: int = 200) -> list[AccessAudit]:
-    result = await session.execute(
-        select(AccessAudit).order_by(AccessAudit.at.desc()).limit(limit)
-    )
+    result = await session.execute(select(AccessAudit).order_by(AccessAudit.at.desc()).limit(limit))
     return list(result.scalars().all())
 
 
@@ -260,15 +258,17 @@ def _announce_id(user_id: object) -> None:
     broadcast.publish(broadcast.PEOPLE, broadcast.PEOPLE)
 
 
-async def _tell_decision(
-    session: AsyncSession, row: AppUser, status: AccessStatus, was: AccessStatus
-) -> None:
+async def _tell_decision(session: AsyncSession, row: AppUser, status: AccessStatus) -> None:
     """Only the yes.
 
     A refusal, a revocation and a demotion all used to send something. Each
     was a message telling somebody they had lost or been denied a thing, with
     nothing in it for them to act on — and the app says all three the moment
     they next look. What is left is the mail somebody is waiting for.
+
+    The status being replaced was a parameter here while those other messages
+    existed and had to be worded against it. Nothing left reads it, and the
+    caller already refuses to call on an unchanged status.
     """
     if status is not AccessStatus.APPROVED:
         return

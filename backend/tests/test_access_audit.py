@@ -118,9 +118,7 @@ async def test_the_emailed_link_is_recorded_like_any_other_decision(session) -> 
     row = await user_service.resolve(
         session, AuthenticatedUser(id="s6", email="six@example.com", name="Six")
     )
-    await user_service.set_status(
-        session, row, AccessStatus.APPROVED, decided_by="approval link"
-    )
+    await user_service.set_status(session, row, AccessStatus.APPROVED, decided_by="approval link")
     await session.flush()
 
     approved = next(e for e in await _entries(session) if e.action == user_service.APPROVED)

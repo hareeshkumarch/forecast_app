@@ -19,6 +19,8 @@ import asyncio
 import smtplib
 from email.message import EmailMessage
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -65,7 +67,13 @@ MAX_ATTEMPTS = len(BACKOFF_SECONDS) + 1
 BATCH = 20
 
 
-def queue(session, to: list[str], subject: str, text: str, html: str | None = None) -> None:
+def queue(
+    session: AsyncSession,
+    to: list[str],
+    subject: str,
+    text: str,
+    html: str | None = None,
+) -> None:
     """Write the message down in the caller's transaction.
 
     Not sent here, and deliberately not scheduled here either. The row commits
@@ -88,7 +96,7 @@ def queue(session, to: list[str], subject: str, text: str, html: str | None = No
     )
 
 
-async def flush_outbox(session) -> tuple[int, int]:
+async def flush_outbox(session: AsyncSession) -> tuple[int, int]:
     """Send what is due. Returns (sent, failed).
 
     Each message is committed on its own. A batch in one transaction would

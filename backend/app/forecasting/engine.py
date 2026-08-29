@@ -462,10 +462,12 @@ def run_forecast(
         # Process-level parallelism without feature caching.
         results = [None] * candidate_total  # type: ignore[list-item]
         announce(0, f"Backtesting {candidate_total} candidate models...")
-        with ProcessPoolExecutor(max_workers=lanes) as pool:
-            futures = {pool.submit(_backtest_candidate, item): i for i, item in enumerate(work)}
-            for done, future in enumerate(as_completed(futures), start=1):
-                index = futures[future]
+        with ProcessPoolExecutor(max_workers=lanes) as process_pool:
+            queued = {
+                process_pool.submit(_backtest_candidate, item): i for i, item in enumerate(work)
+            }
+            for done, future in enumerate(as_completed(queued), start=1):
+                index = queued[future]
                 results[index] = future.result()
                 announce(done, f"Backtested {done} of {candidate_total} candidate models.")
     else:

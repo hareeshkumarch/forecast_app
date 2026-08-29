@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
-from starlette.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core import broadcast
@@ -336,7 +336,7 @@ async def _assert_admin(session: SessionDep, user: CurrentUser) -> None:
         raise ForbiddenError("Only an administrator can manage who has access.")
 
 
-async def _target(session: SessionDep, user_id: uuid.UUID):
+async def _target(session: SessionDep, user_id: uuid.UUID) -> AppUser:
     row = await session.get(AppUser, user_id)
     if row is None:
         raise NotFoundError(f"No account with id {user_id}.")
@@ -423,7 +423,9 @@ async def stream_access(user: CurrentUser) -> StreamingResponse:
         # Nothing can change, so hold nothing open. An empty stream that closes
         # at once is a clearer answer to the client than a connection that
         # never says anything.
-        return StreamingResponse(iter([b"event: idle\ndata: {}\n\n"]), media_type="text/event-stream")
+        return StreamingResponse(
+            iter([b"event: idle\ndata: {}\n\n"]), media_type="text/event-stream"
+        )
 
     # Deliberately not SessionDep. A dependency-provided session lives as long
     # as the request, and this request lives as long as the browser tab — one

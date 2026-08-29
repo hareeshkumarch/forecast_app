@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -202,7 +202,9 @@ class HoltWintersForecaster:
         best_score = float("inf")
         errors: list[str] = []
 
-        remembered = (self.shape_cache or {}).get("hw_config")
+        # One cache holds every model's remembered shape, so it is typed to the
+        # widest thing any of them stores. Each reader knows what it wrote.
+        remembered = cast("dict[str, object] | None", (self.shape_cache or {}).get("hw_config"))
         for config in [remembered] if remembered else self._configurations(y):
             try:
                 with warnings.catch_warnings():
@@ -304,7 +306,10 @@ class AutoEtsForecaster:
         best_spec: tuple[str, str | None, str | None, bool] | None = None
         best_score = float("inf")
 
-        remembered = (self.shape_cache or {}).get("ets_spec")
+        remembered = cast(
+            "tuple[str, str | None, str | None, bool] | None",
+            (self.shape_cache or {}).get("ets_spec"),
+        )
         space = [remembered] if remembered else self._taxonomy(y)
 
         for error, trend, season, damped in space:
@@ -752,7 +757,9 @@ class SarimaxForecaster:
 
         for with_drivers in driver_choices:
             exog = self._exog(y.size, with_drivers=with_drivers)
-            remembered = (self.shape_cache or {}).get("sarimax_order")
+            remembered = cast(
+                "tuple[int, int, int] | None", (self.shape_cache or {}).get("sarimax_order")
+            )
             for order in [remembered] if remembered else self._search_space(y):
                 try:
                     with warnings.catch_warnings():
@@ -1170,7 +1177,9 @@ def build_candidates(
         HoltWintersForecaster(frequency, profile, shape_cache),
         AutoEtsForecaster(frequency, profile, shape_cache),
         ThetaForecaster(frequency, profile),
-        SarimaxForecaster(frequency, profile, order=order_tuple, shape_cache=shape_cache, drivers=panel),  # type: ignore[arg-type]
+        SarimaxForecaster(
+            frequency, profile, order=order_tuple, shape_cache=shape_cache, drivers=panel
+        ),  # type: ignore[arg-type]
         GradientBoostingForecaster(
             frequency,
             profile,

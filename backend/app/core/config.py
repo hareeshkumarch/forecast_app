@@ -306,9 +306,7 @@ class Settings(BaseSettings):
     @property
     def auth_admin_emails(self) -> tuple[str, ...]:
         return tuple(
-            part.strip().lower()
-            for part in self.auth_admin_emails_raw.split(",")
-            if part.strip()
+            part.strip().lower() for part in self.auth_admin_emails_raw.split(",") if part.strip()
         )
 
     @property
@@ -318,9 +316,7 @@ class Settings(BaseSettings):
     @property
     def auth_allowlist(self) -> tuple[str, ...]:
         return tuple(
-            part.strip().lower()
-            for part in self.auth_allowlist_raw.split(",")
-            if part.strip()
+            part.strip().lower() for part in self.auth_allowlist_raw.split(",") if part.strip()
         )
 
     @property
