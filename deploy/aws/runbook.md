@@ -51,6 +51,19 @@ aws s3api put-public-access-block \
     "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 ```
 
+> **`finish-cloudfront.sh` relaxes two of these, on purpose.** It builds the
+> distribution against the bucket's *website* endpoint rather than the REST one,
+> because only the website endpoint resolves `/dashboard/` to
+> `/dashboard/index.html` — without it every sub-route of the static export
+> renders as a 404. A website endpoint is a custom origin, so CloudFront arrives
+> anonymously and cannot be admitted by an OAC condition; the bucket needs a
+> public-read policy, which means `BlockPublicPolicy` and `RestrictPublicBuckets`
+> have to be `false`. The script does that itself. Do not set them back to `true`
+> afterwards — the first breaks the next `put-bucket-policy`, the second serves
+> 403 to CloudFront and turns the whole site into the 404 page. The two ACL
+> blocks stay on either way, and the bucket holds nothing but the compiled
+> public site.
+
 ---
 
 ## 2. The instance

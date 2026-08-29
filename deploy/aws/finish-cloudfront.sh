@@ -23,7 +23,14 @@ INSTANCE_NAME="${INSTANCE_NAME:-forecast-api}"
 
 aws() { command env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY "$(command -v aws)" "$@"; }
 
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+aws sts get-caller-identity --query Account --output text > /dev/null
+
+# `--output text` renders a null query result as the literal string "None", and
+# the result is null rather than empty whenever the queried key is absent
+# altogether — which is exactly what an account that has never created a
+# distribution returns for DistributionList.Items. Left alone, "None" is a
+# non-empty string and defeats every emptiness test below.
+denull() { case "$1" in None) ;; *) printf '%s' "$1" ;; esac; }
 
 echo "==> resolving the pieces built earlier"
 VPCO=$(aws cloudfront list-vpc-origins \
@@ -33,6 +40,7 @@ PRIV=$(aws ec2 describe-instances \
   --query 'Reservations[0].Instances[0].PrivateDnsName' --output text)
 SG=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" \
   --query 'SecurityGroups[0].GroupId' --output text)
+VPCO=$(denull "$VPCO"); PRIV=$(denull "$PRIV"); SG=$(denull "$SG")
 : "${VPCO:?no VPC origin found}"
 : "${PRIV:?no running instance found}" "${SG:?no security group found}"
 echo "    vpc-origin=$VPCO origin=$PRIV sg=$SG"
@@ -48,6 +56,7 @@ AVX=$(aws cloudfront list-origin-request-policies --type managed \
 
 DIST=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Comment=='forecast-hub'].Id" --output text 2>/dev/null || true)
+DIST=$(denull "$DIST")
 
 if [ -z "$DIST" ]; then
   echo "==> creating the distribution"
@@ -144,6 +153,19 @@ echo "==> bucket policy: public read"
 # A website endpoint is a custom origin, so CloudFront arrives as an ordinary
 # anonymous client and cannot be identified by an OAC condition. The bucket
 # holds only the compiled public marketing site.
+#
+# The bucket was created with all four access blocks on, which is right for the
+# OAC shape the runbook first described but not for this one. Two of them have
+# to come off before the policy below will take, and each fails differently:
+# BlockPublicPolicy makes PutBucketPolicy itself return AccessDenied, while
+# RestrictPublicBuckets accepts the policy and then serves 403 to the anonymous
+# reader anyway — a distribution that deploys clean and answers every request
+# with the 404 page. The two ACL blocks stay on: nothing here grants access by
+# ACL, so keeping them costs nothing.
+aws s3api put-public-access-block --bucket "$BUCKET" \
+  --public-access-block-configuration \
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+
 cat > /tmp/forecast-bucket-policy.json <<EOF
 {"Version":"2012-10-17","Statement":[{
   "Sid":"PublicReadForWebsiteOrigin",
