@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from typing import Final, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +45,27 @@ VIEW_COLUMN: dict[str, str] = {
     "best": "best_case",
     "worst": "worst_case",
 }
+
+
+#: Distinguishes "the caller has not resolved the run" from "the caller
+#: resolved it and there is none". Without it, `run=None` would mean both, and
+#: a dashboard with no completed runs would re-run the lookup on every read
+#: just to be told the same thing again.
+_UNRESOLVED: Final = cast(ForecastRun, object())
+
+
+async def _resolved(
+    session: AsyncSession, query: DashboardQuery, run: ForecastRun | None
+) -> ForecastRun | None:
+    """The run this answer is about, looked up only if nobody has already.
+
+    The route layer resolves it to build the cache validator (see
+    `app/api/routes/dashboard.py`), so passing it back down is the difference
+    between one lookup per read and two.
+    """
+    if run is not _UNRESOLVED:
+        return run
+    return await forecast_service.resolve_run(session, query.run_id)
 
 
 async def revision(session: AsyncSession, run: ForecastRun | None) -> tuple[object, ...]:
@@ -130,8 +152,10 @@ async def _scenario_total(
     return float(sum(value for (value,) in result.all() if value is not None))
 
 
-async def summary(session: AsyncSession, query: DashboardQuery) -> DashboardSummary:
-    run = await forecast_service.resolve_run(session, query.run_id)
+async def summary(
+    session: AsyncSession, query: DashboardQuery, *, run: ForecastRun | None = _UNRESOLVED
+) -> DashboardSummary:
+    run = await _resolved(session, query, run)
     if run is None:
         return DashboardSummary(
             run_id=None,
@@ -408,8 +432,10 @@ def _card(
     )
 
 
-async def drivers(session: AsyncSession, query: DashboardQuery) -> DriverResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
+async def drivers(
+    session: AsyncSession, query: DashboardQuery, *, run: ForecastRun | None = _UNRESOLVED
+) -> DriverResponse:
+    run = await _resolved(session, query, run)
     if run is None:
         return DriverResponse(run_id=None, rows=[])
 
@@ -422,9 +448,13 @@ async def drivers(session: AsyncSession, query: DashboardQuery) -> DriverRespons
 
 
 async def insights(
-    session: AsyncSession, query: DashboardQuery, *, limit: int = 20
+    session: AsyncSession,
+    query: DashboardQuery,
+    *,
+    limit: int = 20,
+    run: ForecastRun | None = _UNRESOLVED,
 ) -> InsightResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
+    run = await _resolved(session, query, run)
     if run is None:
         return InsightResponse(run_id=None, items=[])
 
@@ -436,8 +466,10 @@ async def insights(
     )
 
 
-async def decision(session: AsyncSession, query: DashboardQuery) -> DecisionResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
+async def decision(
+    session: AsyncSession, query: DashboardQuery, *, run: ForecastRun | None = _UNRESOLVED
+) -> DecisionResponse:
+    run = await _resolved(session, query, run)
     if run is None:
         return DecisionResponse(run_id=None)
 
@@ -566,8 +598,14 @@ def _symbol_for(column: str) -> str:
     return currency_symbol(column) or settings.currency_symbol
 
 
-async def breakdown(session: AsyncSession, query: DashboardQuery, column: str) -> BreakdownResponse:
-    run = await forecast_service.resolve_run(session, query.run_id)
+async def breakdown(
+    session: AsyncSession,
+    query: DashboardQuery,
+    column: str,
+    *,
+    run: ForecastRun | None = _UNRESOLVED,
+) -> BreakdownResponse:
+    run = await _resolved(session, query, run)
     if run is None:
         return BreakdownResponse(
             run_id=None, column=column, label=column, source="", currency=False, total=0.0

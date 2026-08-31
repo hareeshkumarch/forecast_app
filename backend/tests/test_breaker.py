@@ -15,6 +15,7 @@ from app.core.breaker import (
     CircuitOpenError,
     is_transport_failure,
 )
+from app.insights.llm import LlmCallResult, LlmUsageRecord
 
 
 @pytest.fixture(autouse=True)
@@ -195,19 +196,38 @@ def test_a_dead_provider_stops_being_called_after_the_threshold(monkeypatch) -> 
     Eight insights fanned out at a provider that is timing out used to be
     eight full timeouts, every time somebody pressed the button. Now the first
     few pay for the discovery and the rest are refused for nothing.
+
+    Under a provider name of its own, because `breaker()` shares by name and
+    configures only on the call that creates one — so a test that assumed a
+    threshold for `llm:openai` would pass or fail on whichever test file
+    happened to register that breaker first. Its own name makes it the
+    creator, and reading the threshold back rather than assuming it makes it
+    true even if that stops being so.
     """
-    from app.core.config import settings
+    from app.insights import llm
     from app.insights.generators import GeneratedInsight
     from app.insights.llm import rewrite_insights
     from app.models.enums import InsightSeverity, InsightType
 
-    monkeypatch.setattr(settings, "llm_breaker_failure_threshold", 2)
+    provider = "breaker-probe"
     calls = 0
 
     def timing_out(source: str, config: dict[str, object] | None = None):
         nonlocal calls
         calls += 1
-        raise httpx.ConnectTimeout("the provider is not answering")
+        # Shaped like the real client's own answer rather than raising. A
+        # stub that raises turns a wrong assumption in this test into a
+        # thread exception three frames away from the assertion that meant it.
+        return LlmCallResult(
+            text=None,
+            usage=LlmUsageRecord(
+                provider=provider,
+                model="m",
+                status="error",
+                latency_ms=0.0,
+                error_code="ConnectTimeout",
+            ),
+        )
 
     monkeypatch.setattr("app.insights.llm._call_llm_api", timing_out)
 
@@ -226,15 +246,13 @@ def test_a_dead_provider_stops_being_called_after_the_threshold(monkeypatch) -> 
         for index, kind in enumerate(list(InsightType)[:6])
     ]
 
-    usage: list = []
-    # The stub raises rather than returning, so the rewriter's own guard is
-    # what turns each failure into a record; drive the breaker directly with
-    # the same exception the real client would raise.
-    guard = breaker_module.breaker("llm:openai", failure_threshold=2)
-    for _ in range(2):
+    guard = llm.provider_breaker(provider)
+    for _ in range(guard.failure_threshold):
         guard.record_failure()
+    assert guard.state is BreakerState.OPEN
 
-    rewrite_insights(drafts, {"llm_api_key": "k", "llm_provider": "openai"}, usage)
+    usage: list = []
+    rewrite_insights(drafts, {"llm_api_key": "k", "llm_provider": provider}, usage)
 
     assert calls == 0
     assert {record.error_code for record in usage} == {"circuit_open"}

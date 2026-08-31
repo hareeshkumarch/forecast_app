@@ -19,6 +19,7 @@ from app.core.httpcache import (
     shape_token,
     version_token,
 )
+from app.models.entities import ForecastRun
 from app.schemas.dashboard import (
     BreakdownResponse,
     DashboardQuery,
@@ -46,7 +47,7 @@ async def _read(
     *,
     endpoint: str,
     model: type[BaseModel],
-    compute: Callable[[], Awaitable[T]],
+    compute: Callable[[ForecastRun | None], Awaitable[T]],
     extra: tuple[object, ...] = (),
 ) -> T | Response:
     """One dashboard read, answered as cheaply as it honestly can be.
@@ -79,6 +80,10 @@ async def _read(
     handler that reached in and changed a field would be changing it for
     everybody. Build a new model instead.
     """
+    # Resolved once, here, and handed to `compute` — the services take it back
+    # rather than looking it up again. Without that the cheap path is not
+    # cheap: every uncached read would pay for the same lookup twice, once to
+    # decide the validator and once to build the answer.
     run = await forecast_service.resolve_run(session, query.run_id)
     token = version_token(
         endpoint,
@@ -96,11 +101,11 @@ async def _read(
         return early
 
     if run is None or not settings.dashboard_cache_enabled:
-        return await compute()
+        return await compute(run)
 
     return await dashboard_cache.get_or_set(  # type: ignore[no-any-return]
         f"{endpoint}:{token}",
-        compute,
+        lambda: compute(run),
         ttl_seconds=settings.dashboard_cache_ttl_seconds,
         tags=(run_tag(run.id),),
     )
@@ -125,7 +130,7 @@ async def summary(
         query,
         endpoint="summary",
         model=DashboardSummary,
-        compute=lambda: dashboard_service.summary(session, query),
+        compute=lambda run: dashboard_service.summary(session, query, run=run),
     )
 
 
@@ -153,7 +158,7 @@ async def breakdown(
         query,
         endpoint="breakdown",
         model=BreakdownResponse,
-        compute=lambda: dashboard_service.breakdown(session, query, column),
+        compute=lambda run: dashboard_service.breakdown(session, query, column, run=run),
         # The column is part of the answer, so it has to be part of the key.
         # Leaving it out would serve the region split to somebody who asked
         # for the category one, which is the classic way a cache goes wrong.
@@ -180,7 +185,7 @@ async def decision(
         query,
         endpoint="decision",
         model=DecisionResponse,
-        compute=lambda: dashboard_service.decision(session, query),
+        compute=lambda run: dashboard_service.decision(session, query, run=run),
     )
 
 
@@ -203,7 +208,7 @@ async def drivers(
         query,
         endpoint="drivers",
         model=DriverResponse,
-        compute=lambda: dashboard_service.drivers(session, query),
+        compute=lambda run: dashboard_service.drivers(session, query, run=run),
     )
 
 
@@ -229,7 +234,7 @@ async def insights(
         query,
         endpoint="insights",
         model=InsightResponse,
-        compute=lambda: dashboard_service.insights(session, query),
+        compute=lambda run: dashboard_service.insights(session, query, run=run),
     )
 
 
