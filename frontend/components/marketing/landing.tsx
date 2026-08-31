@@ -75,6 +75,37 @@ const FEATURES = [
   },
 ];
 
+/*
+ * The decision brief, as the copy beside it describes it: ranked, in decision
+ * order. It was three equal columns, which said the opposite — three columns
+ * are peers, and a reader has no reason to start at the left one. It also
+ * never had the room: at 640px each column was about 190px, and at 1440 the
+ * card sits in the narrower half of a two-column section and gets the same
+ * squeeze, so "West demand is / softening" wrapped at almost every width the
+ * page is ever seen at. `audits/a1.mjs` had been reporting the ink of those
+ * wrapped lines merging since before this section was written.
+ */
+const SIGNALS = [
+  {
+    label: "What changed",
+    title: "West demand is softening",
+    body: "The next six weeks sit 8.4% below the recent baseline.",
+    tone: "warn",
+  },
+  {
+    label: "Why it matters",
+    title: "Inventory may run long",
+    body: "The downside falls outside the normal planning range.",
+    tone: "neutral",
+  },
+  {
+    label: "Next move",
+    title: "Review the West order",
+    body: "Model a lower-receipts scenario before the buying cutoff.",
+    tone: "act",
+  },
+] as const;
+
 export function Landing() {
   const motionReady = useMotionReady();
 
@@ -319,28 +350,27 @@ function InsightsPreview() {
             <div className="flex items-center justify-between gap-4 border-b border-[#d8ddd7] px-5 py-4 sm:px-6">
               <div>
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-[#6a716b]">Decision brief · this run</p>
-                <p className="mt-1 text-site-h3 font-bold">Three signals need attention</p>
+                <p className="signal-heading mt-1 text-site-h3 font-bold">Three signals need attention</p>
               </div>
               <Sparkles className="size-5 text-[#287b59]" strokeWidth={1.7} aria-hidden />
             </div>
 
-            <div className="grid gap-px bg-[#d8ddd7] sm:grid-cols-3">
-              <div className="bg-[#fafbf9] p-5 sm:p-6">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#8a6a31]">What changed</p>
-                <p className="mt-4 text-site-h3 font-bold">West demand is softening</p>
-                <p className="mt-2 text-site-body text-[#525953]">The next six weeks sit 8.4% below the recent baseline.</p>
-              </div>
-              <div className="bg-[#fafbf9] p-5 sm:p-6">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#59605a]">Why it matters</p>
-                <p className="mt-4 text-site-h3 font-bold">Inventory may run long</p>
-                <p className="mt-2 text-site-body text-[#525953]">The downside falls outside the normal planning range.</p>
-              </div>
-              <div className="bg-[#eef4f0] p-5 sm:p-6">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.14em] text-[#287b59]">Next move</p>
-                <p className="mt-4 text-site-h3 font-bold">Review the West order</p>
-                <p className="mt-2 text-site-body text-[#425047]">Model a lower-receipts scenario before the buying cutoff.</p>
-              </div>
-            </div>
+            <ol className="signal-list">
+              {SIGNALS.map((signal, index) => (
+                <li key={signal.label} className={cn("signal-row", `signal-row--${signal.tone}`)}>
+                  <span aria-hidden className="signal-index font-mono text-[0.68rem] text-[#8d948d]">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div className="signal-body">
+                    <p className="signal-label font-mono text-[0.68rem] uppercase tracking-[0.14em]">
+                      {signal.label}
+                    </p>
+                    <p className="signal-title mt-1.5 text-site-h3 font-bold">{signal.title}</p>
+                    <p className="mt-1.5 text-site-body text-[#525953]">{signal.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#d8ddd7] px-5 py-3 font-mono text-[0.68rem] text-[#697069] sm:px-6">
               <span>Computed from 5 backtest folds</span>
@@ -416,20 +446,52 @@ function Accuracy() {
   );
 }
 
+/*
+ * The last thing on the page, and it was the thinnest: an eyebrow, a line and
+ * one button on bare canvas. It also quietly dropped both of the things the
+ * hero offers — the reassurance that there is nothing to set up, and the way
+ * in for somebody not ready to sign in. A visitor who has read this far and
+ * still wants to look before committing had nowhere to go but back up.
+ *
+ * So it closes the loop it opened: the same two assurances, and the same
+ * second door.
+ */
 function Closing() {
   return (
     <section className="section-pad">
-      <Reveal variant="scale" duration={700} className="page-shell max-w-[46ch] text-center">
+      <Reveal variant="scale" duration={700} className="closing-panel page-shell text-center">
         <Eyebrow>Start with the data you have</Eyebrow>
         <SplitWords
           text="See what is coming next."
           stagger={80}
           className="mt-4 text-balance font-display text-site-h2 font-normal"
         />
-        <Link href="/signin" className="cta-nudge group mt-8 inline-flex h-[52px] w-full items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover min-[430px]:w-auto sm:h-[56px] sm:px-8">
-          Start forecasting
-          <Arrow />
-        </Link>
+        <p className="mx-auto mt-5 max-w-[42ch] text-site-lead text-text-secondary">
+          One spreadsheet of what you have sold is enough to get a forecast with a range around
+          every number.
+        </p>
+
+        <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:mx-auto min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
+          <Link href="/signin" className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px] sm:px-8">
+            Start forecasting
+            <Arrow />
+          </Link>
+          <Link
+            href="/dashboard"
+            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-border-strong bg-surface/75 px-6 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
+          >
+            Explore the live workspace
+          </Link>
+        </div>
+
+        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-[#646b65]">
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="size-3.5 text-[#287b59]" aria-hidden /> No setup project
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5 text-[#287b59]" aria-hidden /> Figures stay traceable
+          </span>
+        </p>
       </Reveal>
     </section>
   );

@@ -1827,6 +1827,125 @@ svg[role="img"]:focus-visible {
   background: var(--border-strong);
 }
 
+/* ------------------------------------------------------ landing: the closing */
+
+/*
+ * A measure, and a rule to sit under. The section was `max-w-[46ch]` on the
+ * heading alone, which is right for a heading and too narrow for the two
+ * buttons that now sit below it — they wrapped to a column at widths with
+ * room for a row.
+ */
+.closing-panel {
+  max-width: min(52rem, 100%);
+  padding-top: clamp(2.5rem, 5vw, 3.5rem);
+  position: relative;
+}
+
+.closing-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(28rem, 70%);
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--land-rule) 22%, var(--land-rule) 78%, transparent);
+  transform: translateX(-50%) scaleX(1);
+  transform-origin: center;
+}
+
+/* Drawn from the centre out, which is the direction the section reads. */
+.motion-ready .closing-panel::before {
+  transform: translateX(-50%) scaleX(0);
+  transition: transform 820ms var(--ease-draw, var(--ease-out)) calc(var(--reveal-delay, 0ms) + 120ms);
+}
+
+.motion-ready .closing-panel[data-shown="true"]::before {
+  transform: translateX(-50%) scaleX(1);
+}
+
+/* ---------------------------------------------- landing: the decision brief */
+
+/*
+ * Three signals, ranked. They were three equal columns, and three columns are
+ * peers — nothing about that arrangement says where to start, which is the
+ * one thing the copy beside it promises ("in decision order"). Rows say it,
+ * and they also give each signal the full width of the card instead of a
+ * third of it: at 640px those columns were about 190px, so every title
+ * wrapped, and at 1440 the card sits in the narrower half of the section and
+ * got the same squeeze.
+ */
+.signal-list {
+  display: grid;
+  gap: 1px;
+  background: var(--land-brief-rule, #d8ddd7);
+}
+
+.signal-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 0.85rem;
+  padding: 1.15rem 1.25rem;
+  background: #fafbf9;
+}
+
+@media (min-width: 640px) {
+  .signal-row {
+    gap: 0 1.15rem;
+    padding: 1.35rem 1.5rem;
+  }
+}
+
+/* The index is what makes the ranking visible; it sits on the label's line,
+   not the row's top edge, so it reads as belonging to the text beside it. */
+.signal-index {
+  padding-top: 0.15rem;
+  letter-spacing: 0.16em;
+}
+
+.signal-body {
+  min-width: 0;
+}
+
+/*
+ * Each signal keeps the colour its column had — the amber of a change, the
+ * neutral of a consequence, the green of an action. Carried on the label and
+ * a left edge rather than a whole tinted panel: a full-width row in solid
+ * green would shout, where three characters of it and a rule still read as
+ * "this is the one to act on".
+ */
+.signal-label {
+  color: #59605a;
+}
+
+.signal-row--warn .signal-label {
+  color: #8a6a31;
+}
+
+.signal-row--act {
+  background: #eef4f0;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.signal-row--act .signal-label {
+  color: #287b59;
+}
+
+.signal-row--act p:last-child {
+  color: #425047;
+}
+
+/*
+ * A wrapping bold title at 1.3 leading merges its descenders into the
+ * ascenders below — which is exactly what `audits/a1.mjs` measures, and what
+ * it had been reporting at 320px. The rows above give these room not to wrap
+ * at most widths; this is for the width where they still do.
+ */
+.signal-title,
+.signal-heading {
+  line-height: 1.42;
+  text-wrap: pretty;
+}
+
 /* ------------------------------------------------- landing: reading progress */
 
 /*

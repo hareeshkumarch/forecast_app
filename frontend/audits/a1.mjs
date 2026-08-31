@@ -18,7 +18,16 @@ const failures = [];
 for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await page.addStyleTag({ content: ".reveal{opacity:1 !important}" });
+  // Opacity alone is not enough to undo the scroll choreography. A reveal
+  // that has not fired is also translated and, crucially, `filter: blur(6px)`
+  // — and blurred text smears the ink of one line into the gap below it, so
+  // every wrapped block below the fold reported as merged. That is what made
+  // this audit return a different set of failures on identical input: which
+  // blocks were still blurred depended on which observers had happened to
+  // fire. Flatten all three properties, so what is measured is the type.
+  await page.addStyleTag({
+    content: ".reveal{opacity:1 !important;transform:none !important;filter:none !important}",
+  });
   await page.waitForTimeout(120);
 
   const blocks = await page.evaluate(() => {

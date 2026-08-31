@@ -141,7 +141,16 @@ const config: Config = {
           { lineHeight: "1.55" },
         ],
         "site-body": ["clamp(0.9375rem, calc(0.9rem + 0.2vw), 1.0625rem)", { lineHeight: "1.6" }],
-        "site-caption": ["0.75rem", { lineHeight: "1.45", letterSpacing: "0.07em" }],
+        /*
+         * 1.65, not 1.45. This size is used almost exclusively for uppercase
+         * mono labels, and uppercase has no x-height to open space between
+         * lines — every glyph runs full cap height, so the leading is the
+         * only thing keeping one line's ink off the next. At 1.45 a wrapped
+         * label left 2px of clear space at 320px and `audits/a1.mjs` read the
+         * two lines as one band. It is also the right number on its own
+         * terms: tracked-out caps want more leading than body text, not less.
+         */
+        "site-caption": ["0.75rem", { lineHeight: "1.65", letterSpacing: "0.07em" }],
         "display-xs": ["27px", { lineHeight: "1.16", letterSpacing: "-0.015em" }],
         "display-sm": ["33px", { lineHeight: "1.14", letterSpacing: "-0.015em" }],
         "display-md": ["40px", { lineHeight: "1.12", letterSpacing: "-0.018em" }],
