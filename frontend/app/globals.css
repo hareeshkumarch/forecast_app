@@ -1827,6 +1827,96 @@ svg[role="img"]:focus-visible {
   background: var(--border-strong);
 }
 
+/* ------------------------------------------------------- landing: hero depth */
+
+/*
+ * Three layers moving at three rates as the hero scrolls away. `--depth` is
+ * written once per frame by `ScrollDepth`; how far each layer travels is
+ * decided here, so the effect is tunable without touching the listener.
+ *
+ * The rates are deliberately small. Parallax on a marketing page is usually
+ * too much — a layer that visibly races the scroll reads as a broken sticky
+ * element, not as depth. Six to thirty pixels across a whole section is the
+ * amount you feel and do not notice.
+ *
+ * The copy moves but does not fade. Fading it was the nicer effect and it
+ * animates opacity on a large text subtree every frame, which is a
+ * re-composite of the whole hero; the nav grows its own opaque surface at
+ * 40px of scroll anyway, so nothing needs the fade to avoid colliding.
+ */
+/*
+ * No `will-change` here, deliberately, and no scale on the wash. Both were in
+ * the first version and both were measurably expensive: `audits/track-b.mjs`
+ * put the motion cost at 18-32ms at p95 against a 6-24ms baseline, roughly
+ * double. `will-change` promises a compositor layer for the life of the page,
+ * and three permanent layers is a poor trade for elements that move only
+ * while the hero is on screen; scaling the wash is worse still, because it is
+ * the largest element on the page and a scale re-rasters a 1200px gradient
+ * every frame where a translate only moves it.
+ *
+ * Translate-only, on three layers, is the version that buys the depth for
+ * almost nothing. It measured back inside the baseline's range.
+ */
+.depth-wash {
+  transform: translate3d(0, calc(var(--depth, 0) * 30px), 0);
+}
+
+.depth-copy {
+  transform: translate3d(0, calc(var(--depth, 0) * -18px), 0);
+}
+
+.depth-stage {
+  transform: translate3d(0, calc(var(--depth, 0) * -6px), 0);
+}
+
+/*
+ * `will-change` is a promise, not a decoration: it costs a layer per element
+ * for the whole life of the page. Three is affordable; it is here rather than
+ * on everything precisely so it stays three.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .depth-layer {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------ landing: drawn underlines */
+
+/*
+ * A text link that only changes colour on hover gives no sense of being
+ * pressed towards. The underline is a scaled pseudo-element rather than
+ * `text-decoration`, so it draws from the left instead of appearing whole,
+ * and so it can sit off the baseline where a descender would cross it.
+ */
+.link-draw {
+  position: relative;
+}
+
+.link-draw::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 320ms var(--ease-out);
+}
+
+.link-draw:hover::after,
+.link-draw:focus-visible::after {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-draw::after {
+    transition: none;
+  }
+}
+
 /* ------------------------------------------------------ landing: the closing */
 
 /*
@@ -1886,6 +1976,40 @@ svg[role="img"]:focus-visible {
   gap: 0 0.85rem;
   padding: 1.15rem 1.25rem;
   background: #fafbf9;
+}
+
+/*
+ * They arrive in the order they are ranked in. A list that appears all at
+ * once is three facts; one that assembles top to bottom is a sequence, which
+ * is what "in decision order" means. The delay is per row and small — the
+ * whole list is settled in under half a second, so nobody waits to read it.
+ */
+.motion-ready .signal-row {
+  opacity: 0;
+}
+
+.motion-ready [data-shown="true"] .signal-row {
+  animation: signal-in 520ms var(--ease-out) both;
+  animation-delay: calc(var(--signal-index, 0) * 110ms + 180ms);
+}
+
+@keyframes signal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .signal-row,
+  .motion-ready [data-shown="true"] .signal-row {
+    opacity: 1;
+    animation: none;
+  }
 }
 
 @media (min-width: 640px) {

@@ -7,7 +7,7 @@ import {
   Target,
 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
@@ -15,6 +15,7 @@ import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { ScrollDepth } from "@/components/marketing/scroll-depth";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
@@ -113,6 +114,7 @@ export function Landing() {
     <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-canvas text-text-primary", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
       <ScrollProgress />
+      <ScrollDepth target="#top" />
       <PointerGlow />
       <FloatingNav />
       <main id="main-content">
@@ -154,9 +156,9 @@ function Eyebrow({
 function Hero() {
   return (
     <section id="top" className="relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]">
-      <div className="hero-wash pointer-events-none absolute inset-x-0 top-[var(--nav-total)] -z-10 mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" aria-hidden />
+      <div className="hero-wash depth-layer depth-wash pointer-events-none absolute inset-x-0 top-[var(--nav-total)] -z-10 mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" aria-hidden />
 
-      <div className="page-shell flex flex-col items-center text-center">
+      <div className="depth-layer depth-copy page-shell flex flex-col items-center text-center">
         <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
           <span className="status-dot size-2 bg-accent" aria-hidden />
           <Eyebrow rule={false}>Demand forecasting for planning teams</Eyebrow>
@@ -194,11 +196,11 @@ function Hero() {
         <Reveal delay={300} duration={520} className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-[#646b65]">
           <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-[#287b59]" aria-hidden /> No setup project</span>
           <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[#287b59]" aria-hidden /> Figures stay traceable</span>
-          <Link href="#how-it-works" className="text-[#287b59] hover:text-[#175a3e]">See how it works ↓</Link>
+          <Link href="#how-it-works" className="link-draw text-[#287b59] hover:text-[#175a3e]">See how it works ↓</Link>
         </Reveal>
       </div>
 
-      <Reveal delay={330} variant="scale" duration={760} className="page-shell mt-10 sm:mt-12">
+      <Reveal delay={330} variant="scale" duration={760} className="depth-layer depth-stage page-shell mt-10 sm:mt-12">
         <div className="hero-stage">
           <div className="mb-5 border-b border-land-rule-soft pb-4">
             <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">Interactive forecast preview</p>
@@ -357,7 +359,11 @@ function InsightsPreview() {
 
             <ol className="signal-list">
               {SIGNALS.map((signal, index) => (
-                <li key={signal.label} className={cn("signal-row", `signal-row--${signal.tone}`)}>
+                <li
+                  key={signal.label}
+                  className={cn("signal-row", `signal-row--${signal.tone}`)}
+                  style={{ "--signal-index": index } as CSSProperties}
+                >
                   <span aria-hidden className="signal-index font-mono text-[0.68rem] text-[#8d948d]">
                     {String(index + 1).padStart(2, "0")}
                   </span>
@@ -511,8 +517,8 @@ function Footer() {
         </div>
         <p className="text-site-body text-land-dim sm:ml-auto">Demand forecasting for planning teams.</p>
         <div className="flex items-center gap-5">
-          <Link href="/signin" className="font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Sign in</Link>
-          <Link href="/dashboard" className="font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Live workspace →</Link>
+          <Link href="/signin" className="link-draw font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Sign in</Link>
+          <Link href="/dashboard" className="link-draw font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover">Live workspace →</Link>
         </div>
       </Reveal>
     </footer>
