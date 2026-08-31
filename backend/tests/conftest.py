@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -21,6 +23,7 @@ if os.environ.get("RUN_AGAINST_POSTGRES") != "1":
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{(_STORAGE / 'test.db').as_posix()}"
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.exc import OperationalError  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.database.base import Base  # noqa: E402
@@ -94,11 +97,47 @@ def _process_wide_state_starts_fresh():
     breaker.reset_all()
 
 
+#: How long the schema reset will wait for a lingering writer before giving up.
+#: Generous because the thing it waits for is a forecast finishing, and mean:
+#: the failure it replaces is an ERROR at setup of an unrelated test.
+_SCHEMA_LOCK_TIMEOUT_SECONDS = 20.0
+
+
+async def _reset_schema() -> None:
+    """Drop and recreate every table, waiting out a writer that has not left.
+
+    `DROP TABLE` needs an exclusive lock, and a forecast run does not stop
+    being a forecast run because the test that started it has returned: the
+    pool finishes fitting, `complete_run` writes its row, the progress relay
+    drains. Any of those can still hold SQLite's write lock when the next
+    test's reset arrives, and the reset then fails with "database is locked"
+    at the *setup* of some unrelated test, which is the least informative
+    place a failure can appear.
+
+    Retrying rather than serialising the suite: this is a real race with a
+    short tail, and the alternative — `-n0` — trades four minutes for
+    twenty-two. Retrying rather than a `busy_timeout` pragma because the lock
+    is taken and released repeatedly by the background work rather than held
+    once, so waiting inside one statement does not help.
+    """
+    deadline = time.monotonic() + _SCHEMA_LOCK_TIMEOUT_SECONDS
+    delay = 0.05
+    while True:
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.drop_all)
+                await connection.run_sync(Base.metadata.create_all)
+            return
+        except OperationalError as exc:
+            if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                raise
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 1.0)
+
+
 @pytest.fixture(autouse=True)
 async def _schema() -> AsyncIterator[None]:
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+    await _reset_schema()
     yield
     # Every test gets its own event loop, and a pooled asyncpg connection
     # belongs to the loop that opened it — reusing one across tests raises
