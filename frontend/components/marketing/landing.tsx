@@ -15,6 +15,7 @@ import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,7 @@ export function Landing() {
   return (
     <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-canvas text-text-primary", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <ScrollProgress />
       <PointerGlow />
       <FloatingNav />
       <main id="main-content">
@@ -189,14 +191,16 @@ function Hero() {
 function Proof() {
   return (
     <div className="page-shell mt-14 sm:mt-16">
-      <dl className="grid gap-y-10 border-t border-land-rule pt-10 sm:grid-cols-2 xl:grid-cols-4">
+      <dl className="proof-band border-t border-land-rule">
         {PROOF.map((stat, index) => (
           <Reveal key={stat.label} delay={index * 90} duration={620} className="proof-figure">
             <dt className="font-display text-proof font-normal leading-[0.9] tracking-[-0.02em] text-text-primary">
               {stat.count ? <CountUp value={stat.value} /> : stat.value}
               <span className="text-accent">{stat.unit}</span>
             </dt>
-            <dd className="mt-3 max-w-[24ch] text-site-body text-text-secondary">{stat.label}</dd>
+            <dd className="proof-label mt-3 max-w-[22ch] text-site-body text-text-secondary">
+              {stat.label}
+            </dd>
           </Reveal>
         ))}
       </dl>
@@ -268,9 +272,15 @@ function Features() {
               delay={index * 140}
               duration={720}
               variant="from-left"
-              className="feature-line border-t border-land-rule py-10 first:border-t-0 first:pt-0 sm:py-12"
+              className="feature-line py-10 sm:py-12"
             >
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-14">
+              <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-x-10 lg:gap-y-4">
+                <span
+                  aria-hidden
+                  className="feature-ordinal font-mono text-site-caption tracking-[0.22em] text-land-dim"
+                >
+                  {String(index + 1).padStart(2, "0")}
+                </span>
                 <h3 className="text-balance font-display text-site-h2 font-normal leading-[1.05] text-text-primary">
                   {feature.lede}
                 </h3>

@@ -1666,6 +1666,196 @@ svg[role="img"]:focus-visible {
   letter-spacing: 0.22em;
 }
 
+/* --------------------------------------------------- landing: the proof band */
+
+/*
+ * Four figures under the hero. They were four grid cells on one top rule, and
+ * at desktop widths that left each number floating in a third of a column of
+ * nothing — the band read as an accident of the grid rather than as a
+ * designed row.
+ *
+ * The dividers are what fix it: a vertical hairline between figures turns
+ * four loose items into one measured band, and the eye stops trying to pair
+ * them. They are pseudo-elements on the figure rather than borders on the
+ * grid, so the first one in each row can be suppressed without a
+ * `:nth-child` per breakpoint.
+ */
+.proof-band {
+  display: grid;
+  gap: 0;
+  padding-top: clamp(2rem, 4vw, 2.75rem);
+}
+
+.proof-figure {
+  position: relative;
+  padding-block: 0.25rem;
+}
+
+.proof-label {
+  text-wrap: pretty;
+}
+
+@media (min-width: 640px) {
+  .proof-band {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: clamp(2.25rem, 4vw, 3rem);
+  }
+
+  .proof-figure {
+    padding-inline: clamp(1.25rem, 3vw, 2.5rem);
+  }
+
+  /* The rule belongs between figures, never outside the band. */
+  .proof-figure:nth-child(odd) {
+    padding-inline-start: 0;
+  }
+
+  .proof-figure::before {
+    content: "";
+    position: absolute;
+    inset-block: 0.15rem;
+    inset-inline-start: 0;
+    width: 1px;
+    background: var(--land-rule);
+    transform-origin: top;
+  }
+
+  .proof-figure:nth-child(odd)::before {
+    display: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  .proof-band {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* At four across, every figure but the first earns a divider — so the
+     two-column rule above has to be undone rather than extended. */
+  .proof-figure:nth-child(odd) {
+    padding-inline-start: clamp(1.25rem, 3vw, 2.5rem);
+  }
+
+  .proof-figure:first-child {
+    padding-inline-start: 0;
+  }
+
+  .proof-figure:nth-child(odd)::before {
+    display: block;
+  }
+
+  .proof-figure:first-child::before {
+    display: none;
+  }
+}
+
+/* Drawn, not merely present: the divider grows down as its figure arrives, so
+   the band assembles left to right with the stagger already on the numbers. */
+.motion-ready .proof-figure::before {
+  transform: scaleY(0);
+  transition: transform 620ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 160ms);
+}
+
+.motion-ready .proof-figure[data-shown="true"]::before {
+  transform: scaleY(1);
+}
+
+/* ------------------------------------------------ landing: the feature rows */
+
+/*
+ * A sentence, its explanation, and an index. The rule above each row used to
+ * be a plain top border, which meant it was simply there before the row
+ * animated in — the one static element in a section that otherwise assembles
+ * itself. It is a pseudo-element now so it can be drawn across as the row
+ * arrives, in the same direction the row itself travels.
+ */
+.feature-line {
+  position: relative;
+}
+
+.feature-line::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: var(--land-rule);
+  transform-origin: left;
+}
+
+.feature-line:first-child {
+  padding-top: 0;
+}
+
+.feature-line:first-child::before {
+  display: none;
+}
+
+.motion-ready .feature-line::before {
+  transform: scaleX(0);
+  transition:
+    transform 900ms var(--ease-draw, var(--ease-out)) calc(var(--reveal-delay, 0ms) + 80ms),
+    background-color 400ms ease;
+}
+
+.motion-ready .feature-line[data-shown="true"]::before {
+  transform: scaleX(1);
+}
+
+/*
+ * The index sits against the heading's first line rather than the box's top
+ * edge. `em` here resolves against the ordinal's own mono size, not the
+ * heading's — but that size is on the same fluid scale, so the offset tracks
+ * the type at every width instead of being right at exactly one of them.
+ *
+ * Hidden below the large breakpoint, where the row stacks: an index above a
+ * heading it no longer sits beside stops being an index and becomes a stray
+ * number.
+ */
+.feature-ordinal {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .feature-ordinal {
+    display: block;
+    padding-top: 0.55em;
+  }
+}
+
+.feature-line:hover::before {
+  background: var(--border-strong);
+}
+
+/* ------------------------------------------------- landing: reading progress */
+
+/*
+ * A hairline across the very top, filled to how far down the page you are.
+ * Fixed and one pixel tall, so it is outside the flow and cannot shift
+ * anything; `scaleX` on the inner element, so each frame is a compositor
+ * transform rather than a layout. The component mounts nothing at all under
+ * reduced motion, which is why there is no media query here to undo.
+ */
+.scroll-progress {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  height: 2px;
+  pointer-events: none;
+}
+
+.scroll-progress-bar {
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: linear-gradient(to right, var(--accent), var(--accent-hover, var(--accent)));
+  /* No transition: the value is written every frame from the scroll position,
+     and easing a value that is already continuous only makes it lag the
+     scroll it is describing. */
+}
+
 /*
  * A feature is a sentence on a rule now, so the only hover affordance left is
  * the rule itself brightening — enough to say the page is alive, not enough to
@@ -1675,9 +1865,6 @@ svg[role="img"]:focus-visible {
   transition: border-color 400ms ease;
 }
 
-.feature-line:hover {
-  border-color: var(--border-strong);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .motion-ready .step-rail::before {
