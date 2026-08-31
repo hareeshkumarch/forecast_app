@@ -116,6 +116,28 @@ services:
       RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: json
+
+      # ---- what this box advertises and what it measures --------------------
+      # Mixed into every cache validator, so setting this to the release being
+      # deployed invalidates each browser's stored copy exactly once. Left at
+      # the default it still works; it just means a response that keeps its
+      # shape and changes a number has no signal to travel on.
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      # /api/health/metrics, in Prometheus' text format. The token is what
+      # makes it readable: with it empty this deployment is in production, so
+      # every scrape is refused and the boot log says so. Generate one with
+      # `openssl rand -hex 32`.
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Requests in flight before the API answers 503 rather than queueing.
+      # Health checks and the progress streams are exempt, so a busy box still
+      # reports alive to the load balancer and open dashboards keep streaming.
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-64}
+      # Dashboard aggregates, cached under a key carrying the run's own
+      # revision. Memory knobs, not correctness knobs — an entry cannot go
+      # stale, only unused.
+      DASHBOARD_CACHE_TTL_SECONDS: ${DASHBOARD_CACHE_TTL_SECONDS:-300}
+      DASHBOARD_CACHE_MAX_ENTRIES: ${DASHBOARD_CACHE_MAX_ENTRIES:-600}
       # Empty: without a broker the API fits in-process. Setting these would
       # require the redis and worker services this file deliberately omits.
       CELERY_BROKER_URL: ""
