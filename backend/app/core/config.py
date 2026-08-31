@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     app_name: str = "Forecasting Platform"
+    #: This build. It is the API's advertised version, and it is mixed into
+    #: every cache validator (see app/core/httpcache.py) so that a release
+    #: invalidates each client's stored copy exactly once. A response whose
+    #: *shape* changed is caught automatically; one where the same shape
+    #: carries a different number — a fixed aggregate, a changed rounding —
+    #: has no automatic signal, and this is it. A deployment that stamps its
+    #: build id here gets that for free on every deploy.
+    app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     environment: Literal["development", "test", "production"] = Field(
         default="development", alias="APP_ENV"
     )
@@ -104,6 +112,60 @@ class Settings(BaseSettings):
     #: the internet. The limits themselves live in app/core/ratelimit.py, where
     #: each one carries the reason it is the number it is.
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+
+    # ---- Load shedding -----------------------------------------------------
+    #: Requests this process will have in flight before it starts refusing.
+    #: A ceiling is not a limit on how fast the box goes — it is what keeps a
+    #: burst from turning into a queue nobody is still waiting on. Past this,
+    #: every request is slower than the timeout of the client that sent it, so
+    #: answering 503 immediately is strictly better than answering slowly.
+    #: Sized for two vCPUs with async I/O: enough concurrency to keep the
+    #: event loop fed while the database is answering, well short of the depth
+    #: at which memory becomes the problem.
+    max_concurrent_requests: int = Field(default=64, ge=1, le=4096, alias="MAX_CONCURRENT_REQUESTS")
+    #: Off switches shedding entirely, for a load test that wants to find the
+    #: real ceiling rather than the configured one.
+    load_shedding_enabled: bool = Field(default=True, alias="LOAD_SHEDDING_ENABLED")
+
+    # ---- Metrics -----------------------------------------------------------
+    #: Serves /api/health/metrics in Prometheus' text format.
+    metrics_enabled: bool = Field(default=True, alias="METRICS_ENABLED")
+    #: A bearer token the scraper must present. Metrics say more than health
+    #: does — which routes exist, how much traffic each takes, how often each
+    #: fails — so in production the endpoint answers nothing without one: an
+    #: unset token there refuses every scrape rather than serving them openly.
+    #:
+    #: Refusing to *boot* was the other option and is the wrong one. The
+    #: Infisical check below does refuse, because the configuration it guards
+    #: against comes up with sign-in silently switched off. This leaks route
+    #: names and error rates, which is worth closing and is not worth an
+    #: outage on somebody's next deploy. Safe by default, loud at startup —
+    #: see `metrics_need_a_token`.
+    metrics_token: str = Field(default="", alias="METRICS_TOKEN")
+
+    # ---- Read-through cache ------------------------------------------------
+    #: Dashboard aggregates are keyed by a version derived from the run's own
+    #: row, so an entry cannot go stale — only unused. See app/core/cache.py.
+    dashboard_cache_enabled: bool = Field(default=True, alias="DASHBOARD_CACHE_ENABLED")
+    dashboard_cache_ttl_seconds: float = Field(
+        default=300.0, gt=0.0, le=86_400.0, alias="DASHBOARD_CACHE_TTL_SECONDS"
+    )
+    dashboard_cache_max_entries: int = Field(
+        default=600, ge=1, le=100_000, alias="DASHBOARD_CACHE_MAX_ENTRIES"
+    )
+
+    # ---- Circuit breaking --------------------------------------------------
+    #: Consecutive transport failures before calls to a provider are paused.
+    #: Four rather than one: a single timeout is ordinary, four in a row is a
+    #: pattern. What counts as a transport failure is deliberately narrow —
+    #: see app/core/breaker.py.
+    llm_breaker_failure_threshold: int = Field(
+        default=4, ge=1, le=100, alias="LLM_BREAKER_FAILURE_THRESHOLD"
+    )
+    #: How long calls stay paused before one trial is let through.
+    llm_breaker_reset_seconds: float = Field(
+        default=30.0, gt=0.0, le=3600.0, alias="LLM_BREAKER_RESET_SECONDS"
+    )
 
     credential_secret_key: str = "dev-only-insecure-key-change-me"
 
@@ -254,6 +316,16 @@ class Settings(BaseSettings):
                     "being switched off."
                 )
         return self
+
+    @property
+    def metrics_need_a_token(self) -> bool:
+        """Metrics are switched on in production and no scrape token is set.
+
+        Every scrape is refused in that state, so nothing leaks — but nothing
+        is collected either, and an operator staring at an empty dashboard
+        should be told why. The startup log says so once.
+        """
+        return self.metrics_enabled and self.environment == "production" and not self.metrics_token
 
     @property
     def metric_weights(self) -> dict[str, float]:

@@ -24,6 +24,9 @@ forecast-hub/
   - A model roster that is fitted, backtested and ranked per run: naive,
     seasonal naive, Holt-Winters, auto-ETS, Theta, Croston/SBA, SARIMAX,
     gradient boosting, an ensemble, and Prophet when installed.
+  - A serving layer built for one small box under real load: conditional reads,
+    a version-keyed cache, a concurrency ceiling, circuit breaking and a
+    Prometheus endpoint. See **How the API protects itself** below.
 
 - **Frontend (`/frontend`)**:
   - Next.js 14+ with React Server Components & Client Components.
@@ -385,6 +388,102 @@ runs over twenty-six periods stand behind it. The landing page's accuracy
 section is still static copy — pointing it at a live figure is a decision about
 exposing one deployment's numbers publicly, and the endpoint is ready for
 whoever makes it.
+
+---
+
+## How the API protects itself
+
+Five mechanisms, each answering a different question. They are described here
+together because they are easy to confuse and their failure modes are not.
+
+### Conditional reads — "has anything changed?"
+
+Every dashboard read (`/api/dashboard/*`, `/api/insights`) offers a weak `ETag`
+alongside `Cache-Control: private, no-cache`. A browser that already holds the
+answer sends it back in `If-None-Match` and gets `304 Not Modified` — before
+the aggregate queries run, not after. The saving is the query fan, not the
+bytes.
+
+The validator is a digest of everything the answer depends on: the run's
+`updated_at`, its scored timestamps, its status, the high-water mark of its
+insights, the query that selected it, `APP_VERSION`, and a token derived from
+the response model's own JSON schema. Nothing has to be remembered or bumped
+by hand — a renamed field changes the schema, which changes the validator,
+which refetches. The one change no automatic signal can see is a response that
+keeps its shape and carries a different number, and that is what `APP_VERSION`
+is for: set it to the build id on deploy.
+
+`no-cache` is not "do not store": it means "store it, and ask before using
+it". That is the contract that makes staleness impossible while still costing
+only a 304 on a repeat view.
+
+### Read-through cache — "has this process worked it out already?"
+
+`app/core/cache.py` holds assembled dashboard answers under keys that contain
+the same version token. This is the design decision worth knowing: **an entry
+cannot go stale, only unused.** Change anything the answer depends on and the
+key changes, so the old entry is unreachable garbage that ages out on TTL and
+LRU. There is no invalidation anybody can forget — `forget_run` exists to
+reclaim memory promptly, not to keep answers correct.
+
+Concurrent misses on one key are coalesced: ten tabs opening the same
+dashboard wait on one computation rather than starting ten. On a two-vCPU box
+the load a cache sheds is the correlated load, and correlated load is the load
+that hurts.
+
+### Rate limiting — "is this client asking for too much?"
+
+Per-IP sliding windows, ahead of routing, with per-route rules. See
+`app/core/ratelimit.py`.
+
+### Load shedding — "is this box already doing as much as it usefully can?"
+
+Past `MAX_CONCURRENT_REQUESTS` in flight, requests get `503` with `Retry-After`
+immediately. A rate limit cannot answer this question: fifty honest clients
+arriving while a forecast holds both vCPUs are not abusing anything, and the
+requests they queue behind each other come back to browsers that gave up
+minutes ago. Health checks and the SSE progress streams are exempt — the first
+is how the load balancer decides this instance is alive, and the second is
+open for the length of a run.
+
+The ceiling sits *inside* the rate limiter on purpose. A flood from one client
+should be refused as that client's flood, not absorbed as anonymous load that
+then sheds everybody else.
+
+### Circuit breaking — "is this dependency worth calling right now?"
+
+`app/core/breaker.py` sits in front of the model provider that rewrites insight
+wording, where eight calls fan out at once. After a few *transport* failures —
+timeouts, refused connections, 429, 5xx — calls stop for a cooldown, then one
+trial decides for everybody.
+
+What does **not** count is the interesting half: a 401, a 403 or a 404 is an
+answer, it arrives promptly, and it is fixed by somebody changing a setting.
+Tripping on those would make the person who has just pasted a corrected key
+wait out a cooldown to find out it works. Pressing *check the key* on the
+insights screen goes straight past the breaker for the same reason — and a
+successful probe closes the circuit for the rewrite path too.
+
+An open breaker is reported in `/api/health` under `dependencies` and is
+deliberately **not** folded into `status`. The load balancer reads `status`,
+and taking an instance out of service because an optional nicety is
+unreachable turns somebody else's outage into ours.
+
+### Metrics — `GET /api/health/metrics`
+
+Prometheus text exposition, no dependency. Request counts and latency
+histograms **per route template** (never per URL — that is one timeseries per
+UUID), cache hit ratios, breaker states, rate-limit and shed counters, and
+forecast run outcomes and durations. Label cardinality is capped per metric:
+past the cap the excess folds into a single series whose labels all read
+`overflow`, so the totals stay true even when the breakdown stops being
+useful.
+
+Scrapes need `Authorization: Bearer $METRICS_TOKEN`. In production an unset
+token means every scrape is refused — the endpoint describes every route this
+deployment serves and how often each one fails, which is not something to
+serve openly by accident — and the startup log says so once. Outside
+production it is optional and the endpoint is open.
 
 ---
 

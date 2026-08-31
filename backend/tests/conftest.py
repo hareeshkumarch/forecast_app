@@ -73,6 +73,28 @@ def _rate_limits_start_fresh():
 
 
 @pytest.fixture(autouse=True)
+def _process_wide_state_starts_fresh():
+    """Caches, breakers and counters do not leak between tests.
+
+    All three are module-level singletons for the life of the process, which
+    is right in production and wrong in a suite: a dashboard cached by one
+    test is served to the next one, a breaker left open by a failure test
+    silently skips the provider call a later test is asserting on, and a
+    counter read for an exact value is whatever the file order happened to
+    make it. Same failure mode as the auth switches and the rate limiter
+    above — a test that breaks somewhere else, later, for no visible reason.
+    """
+    from app.core import breaker, cache, metrics
+
+    cache.clear_all()
+    breaker.reset_all()
+    metrics.registry.reset()
+    yield
+    cache.clear_all()
+    breaker.reset_all()
+
+
+@pytest.fixture(autouse=True)
 async def _schema() -> AsyncIterator[None]:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)

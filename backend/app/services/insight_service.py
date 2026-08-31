@@ -22,6 +22,10 @@ REFUSAL_REASONS = {
     "404": "the provider does not recognise that model",
     "429": "the provider is rate-limiting this key",
     "empty_response": "the model returned nothing",
+    "circuit_open": (
+        "recent calls to the provider failed, so this one was skipped rather than left to "
+        "time out"
+    ),
     "invalid_format": "the model did not answer in the expected shape",
     "number_validation": "the model changed a figure, so its wording was discarded",
 }

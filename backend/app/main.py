@@ -22,6 +22,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import (
     CompressExceptStreams,
+    ConcurrencyLimitMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
 )
@@ -56,6 +57,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         active_target.safe_url,
         "on Celery workers" if settings.distributed else "in this process",
     )
+    if settings.metrics_need_a_token:
+        logger.warning(
+            "METRICS_ENABLED is on but METRICS_TOKEN is empty, so every scrape of "
+            "/api/health/metrics is being refused. Set a token to collect them — the endpoint "
+            "describes every route this deployment serves and is not served openly in production."
+        )
     if settings.supabase_configured and active_target.name != "supabase":
         logger.warning(
             "Supabase is configured but was unreachable at boot. This process is "
@@ -73,7 +80,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Forecasting Platform API",
-    version="0.1.0",
+    version=settings.app_version,
     description=(
         "Forecasting analytics API: connectors, dataset profiling, model selection, "
         "scenario forecasting and rule-derived insights."
@@ -87,6 +94,13 @@ app = FastAPI(
         404: {"model": ErrorResponse, "description": "The resource does not exist."},
         422: {"model": ErrorResponse, "description": "The payload failed validation."},
         500: {"model": ErrorResponse, "description": "An unexpected server error."},
+        503: {
+            "model": ErrorResponse,
+            "description": (
+                "The server is at capacity, or a dependency this request needs is unavailable. "
+                "Both carry Retry-After."
+            ),
+        },
     },
 )
 
@@ -95,6 +109,18 @@ app = FastAPI(
 # which is what lets a 429 carry a request id like every other answer. The
 # limiter in turn wraps routing, so a request over its limit costs a dictionary
 # lookup rather than a database round trip.
+#
+# The concurrency ceiling sits *inside* the rate limiter, which is the order
+# that matters when both would fire. A flood from one client should be refused
+# as that client's flood — counted, logged against its identity, and 429 — not
+# absorbed as anonymous load that then sheds everybody else's requests too.
+# By the time a request reaches the ceiling it has already been established as
+# somebody's fair share, and shedding it means the box genuinely has no room.
+app.add_middleware(
+    ConcurrencyLimitMiddleware,
+    limit=settings.max_concurrent_requests,
+    enabled=settings.load_shedding_enabled,
+)
 app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(CompressExceptStreams)

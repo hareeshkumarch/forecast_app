@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, fields
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,7 @@ from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core import budget
+from app.core import budget, cache, metrics
 from app.core.config import settings
 from app.core.errors import ForecastError, NotFoundError, ValidationError
 from app.core.logging import get_logger, request_id
@@ -64,7 +64,7 @@ from app.models.enums import (
     RunStatus,
 )
 from app.services import dataset_service, insight_service
-from app.services.job_runner import ProgressEvent, executors, publish_progress
+from app.services.job_runner import ProgressEvent, as_utc, executors, publish_progress
 
 logger = get_logger(__name__)
 
@@ -781,6 +781,17 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
     run.completed_at = utcnow()
     await session.flush()
 
+    # Counted apart from a failure even though the row records both the same
+    # way. An operator watching the failure rate needs to know which half of
+    # it is the platform breaking and which half is somebody changing their
+    # mind — a graph that cannot tell them apart is a graph nobody trusts.
+    _record_terminal(
+        RunStatus.FAILED,
+        started_at=run.started_at,
+        finished_at=run.completed_at,
+        label="cancelled",
+    )
+
     publish_progress(
         ProgressEvent(
             run_id=run_id,
@@ -792,6 +803,35 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
         )
     )
     return run
+
+
+def _record_terminal(
+    status: RunStatus,
+    *,
+    started_at: datetime | None,
+    finished_at: datetime | None,
+    label: str | None = None,
+) -> None:
+    """Count a run that has finished, and how long it took.
+
+    Duration comes from the row's own timestamps rather than a stopwatch in
+    this process, which is the only version that works when the run executed
+    on a Celery worker and this is the process that noticed. A run with no
+    `started_at` never began, so it is counted but not timed — a zero in the
+    histogram would drag every percentile down and make an outage look fast.
+
+    Both ends go through `as_utc` first. SQLite hands back a naive datetime
+    from the same column Postgres returns aware, and subtracting one from the
+    other raises — inside the completion path, which would turn a finished
+    forecast into a failed one over a measurement nobody asked for.
+    Instrumentation must never be able to break the thing it instruments.
+    """
+    metrics.forecast_runs.inc(status=label or status.value)
+    if started_at is None or finished_at is None:
+        return
+    elapsed = (as_utc(finished_at) - as_utc(started_at)).total_seconds()
+    if elapsed >= 0:
+        metrics.forecast_run_seconds.observe(elapsed)
 
 
 async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
@@ -811,6 +851,10 @@ async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
     from app.services.progress_relay import forget_progress
 
     await forget_progress(run_id)
+    # The dashboard entries derived from this run can never be served again —
+    # their keys carry a revision that no longer exists — but there is no
+    # reason to hold the memory until they expire.
+    cache.forget_run(run_id)
 
     if settings.distributed and task_id:
         from app.workers.celery_app import celery_app
@@ -982,13 +1026,14 @@ async def complete_run(run_id: uuid.UUID) -> bool:
                 completed_at=now,
                 updated_at=now,
             )
-            .returning(ForecastRun.selected_model)
+            .returning(ForecastRun.selected_model, ForecastRun.started_at)
         )
         row = result.first()
 
     if row is None:
         return False
     selected = row[0].value if row[0] else None
+    _record_terminal(RunStatus.COMPLETED, started_at=row[1], finished_at=now)
 
     publish_progress(
         ProgressEvent(
@@ -1424,9 +1469,12 @@ async def mark_failed(run_id: uuid.UUID, exc: Exception) -> None:
                     completed_at=now,
                     updated_at=now,
                 )
-                .returning(ForecastRun.id)
+                .returning(ForecastRun.id, ForecastRun.started_at)
             )
-            recorded = result.first() is not None
+            row = result.first()
+            recorded = row is not None
+            if row is not None:
+                _record_terminal(RunStatus.FAILED, started_at=row[1], finished_at=now)
     except Exception:
         logger.exception("Could not record failure for run %s", run_id)
 

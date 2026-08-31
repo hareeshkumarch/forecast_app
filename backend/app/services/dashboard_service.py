@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -44,6 +44,54 @@ VIEW_COLUMN: dict[str, str] = {
     "best": "best_case",
     "worst": "worst_case",
 }
+
+
+async def revision(session: AsyncSession, run: ForecastRun | None) -> tuple[object, ...]:
+    """Everything a dashboard answer for this run depends on, as a few values.
+
+    This is what makes both the `ETag` and the read-through cache honest: an
+    answer computed from this run's rows is valid exactly as long as these
+    values are unchanged, so a token derived from them can key a cache entry
+    that is incapable of going stale.
+
+    What is in it, and why:
+
+    * `updated_at` moves on every write to the run row — completion, scoring,
+      cancellation, a rename.
+    * `scored_at` and `scored_periods` because comparing a forecast against
+      actuals writes points and metrics, and a run that has just been scored
+      is a different answer with the same `id`.
+    * `status`, so a run moving from running to completed cannot be served
+      from whatever was cached while it was still filling in.
+    * The insights' own high-water mark, because rewriting them through a
+      model changes what `/insights` answers *without touching the run row* —
+      the one dependency that `updated_at` alone would miss. It is one indexed
+      aggregate over a handful of rows.
+
+    One revision for all five dashboard endpoints rather than a per-endpoint
+    dependency table. Rewriting insights therefore also invalidates the KPI
+    cards, which do not depend on them — over-invalidation, deliberately. The
+    alternative is a table of which endpoint depends on what, and the entry
+    somebody gets wrong in that table is a wrong number on a screen. This way
+    the mistake costs a recomputation.
+
+    A run that does not exist has no version and no answer to cache; the empty
+    tuple keeps callers from having to special-case it twice.
+    """
+    if run is None:
+        return ()
+
+    insights_touched = await session.scalar(
+        select(func.max(Insight.updated_at)).where(Insight.run_id == run.id)
+    )
+    return (
+        run.id,
+        run.status.value,
+        run.updated_at,
+        run.scored_at,
+        run.scored_periods,
+        insights_touched,
+    )
 
 
 def format_value(
