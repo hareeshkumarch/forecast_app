@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, filterParams, getSummary, listConnectors } from "@/lib/api";
+import { ApiError, deleteConnector, filterParams, getSummary, listConnectors } from "@/lib/api";
 import { errorMessage, errorTitle, isRetryable } from "@/lib/errors";
 
 function mockFetch(status: number, body: unknown, ok = status < 400, headers: HeadersInit = {}) {
@@ -50,6 +50,27 @@ describe("request handling", () => {
     expect(url).toContain("view=base");
     expect(url).not.toContain("run_id");
     expect(url).not.toContain("start");
+  });
+
+  it("reads with no-cache so the browser can revalidate rather than refetch", async () => {
+    // Not "no-store". The dashboard reads carry an ETag over a version derived
+    // from the run itself, and the whole saving is the 304: the server skips
+    // its aggregate queries entirely. "no-store" would mean the browser keeps
+    // no copy and sends no `If-None-Match`, so that path would never be taken
+    // and the validators would be decoration.
+    const spy = mockFetch(200, { has_data: false, kpis: [] });
+
+    await getSummary({ view: "base" } as never);
+
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({ cache: "no-cache" });
+  });
+
+  it("writes with no-store, because there is nothing to revalidate", async () => {
+    const spy = mockFetch(204, null);
+
+    await deleteConnector("abc");
+
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
   });
 
   it("surfaces the backend's error code and message", async () => {
