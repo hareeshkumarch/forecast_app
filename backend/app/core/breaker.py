@@ -24,10 +24,12 @@ place, testable.
 whole backlog through the moment the cooldown expires, which re-floors a
 service that is still on its knees. One trial call decides for everybody.
 
-**Sync as well as async.** The provider client here is `httpx.Client` on a
-worker thread, not the async one, so a breaker that only wrapped coroutines
-would not fit the one call site that needs it. The state itself is guarded by
-a plain lock for the same reason.
+**Synchronous, and that is not an oversight.** The call site that needs this
+is `httpx.Client` on a worker thread, not the async client, so a breaker that
+only wrapped coroutines would not fit the one place it is for. The state is
+guarded by a plain `threading.Lock` for the same reason — it is read and
+written from the rewrite pool's threads as well as from the event loop. An
+async wrapper is a handful of lines the day something needs one.
 """
 
 from __future__ import annotations
@@ -298,6 +300,16 @@ _REGISTRY_LOCK = threading.Lock()
 def breaker(
     name: str, *, failure_threshold: int = 4, reset_timeout_seconds: float = 30.0
 ) -> CircuitBreaker:
+    """The breaker with this name, creating it on first ask.
+
+    Shared by name, which is the whole point: every caller aimed at one
+    dependency has to be looking at one piece of state, or the fourth failure
+    never meets the third. The consequence to know is that the keyword
+    arguments configure it **only on the call that creates it** — a later call
+    with a different threshold gets the existing breaker, unchanged, rather
+    than silently reconfiguring one that other callers are relying on. Read a
+    breaker's `failure_threshold` if you need to know what it actually is.
+    """
     with _REGISTRY_LOCK:
         existing = _REGISTRY.get(name)
         if existing is None:

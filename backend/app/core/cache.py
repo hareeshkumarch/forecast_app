@@ -38,7 +38,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Final, Generic, TypeVar
 
 from app.core import metrics
 from app.core.logging import get_logger
@@ -64,6 +64,12 @@ class _Entry:
     value: Any
     expires_at: float
     tags: frozenset[str] = field(default_factory=frozenset)
+
+
+#: Returned by `_join` when the computation it was waiting on was abandoned
+#: rather than finished. A sentinel rather than None, because None is a value a
+#: factory is entitled to return.
+_ABANDONED: Final = object()
 
 
 @dataclass(slots=True)
@@ -151,7 +157,12 @@ class AsyncCache(Generic[T]):
         if pending is not None and pending.loop is loop and not pending.future.done():
             self._coalesced += 1
             metrics.cache_events.inc(cache=self.name, outcome="coalesced")
-            return await asyncio.shield(pending.future)  # type: ignore[no-any-return]
+            joined = await self._join(pending)
+            if joined is not _ABANDONED:
+                return joined  # type: ignore[no-any-return]
+            # The request we were waiting behind went away — see `_join`. Fall
+            # through and compute it ourselves rather than failing because
+            # somebody else closed a tab.
 
         self._misses += 1
         metrics.cache_events.inc(cache=self.name, outcome="miss")
@@ -181,6 +192,33 @@ class AsyncCache(Generic[T]):
         finally:
             if self._pending.get(key) is not None and self._pending[key].future is future:
                 del self._pending[key]
+
+    async def _join(self, pending: _Pending) -> Any:
+        """Wait on somebody else's computation, surviving their disconnect.
+
+        Shielded, so that *this* caller giving up does not cancel a
+        computation several other callers are still waiting on.
+
+        The case worth the code: the request that started the computation is
+        cancelled — its client closed the tab, and uvicorn cancels the task —
+        while other requests are waiting behind it. Without this they would
+        all fail with a `CancelledError` raised by somebody else's disconnect,
+        which is a 500 on a healthy request for a reason its owner can neither
+        see nor fix. `_ABANDONED` sends them back to compute it themselves.
+
+        A `CancelledError` when the leader's future is *not* finished means
+        this caller is the one being cancelled, and that must propagate.
+        """
+        try:
+            return await asyncio.shield(pending.future)
+        except asyncio.CancelledError:
+            leader_gone = pending.future.cancelled() or (
+                pending.future.done()
+                and isinstance(pending.future.exception(), asyncio.CancelledError)
+            )
+            if not leader_gone:
+                raise
+            return _ABANDONED
 
     # ---- writing and reclaiming -----------------------------------------
 

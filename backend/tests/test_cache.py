@@ -182,3 +182,59 @@ def test_a_cache_refuses_a_configuration_that_cannot_hold_anything() -> None:
         AsyncCache("t", ttl_seconds=0)
     with pytest.raises(ValueError, match="at least one entry"):
         AsyncCache("t", max_entries=0)
+
+
+async def test_a_waiter_survives_the_leader_closing_their_tab() -> None:
+    """One client disconnecting must not fail another client's request.
+
+    Concurrent misses wait behind the first one. If that first request is
+    cancelled — its browser tab closed, and uvicorn cancels the task — the
+    waiters used to be handed its `CancelledError` and answer 500 for a reason
+    their own client could neither see nor fix.
+    """
+    cache: AsyncCache[str] = AsyncCache("t")
+    started = asyncio.Event()
+    calls = 0
+
+    async def slow() -> str:
+        nonlocal calls
+        calls += 1
+        started.set()
+        await asyncio.sleep(0.2)
+        return "value"
+
+    leader = asyncio.create_task(cache.get_or_set("k", slow))
+    await started.wait()
+    waiter = asyncio.create_task(cache.get_or_set("k", slow))
+    await asyncio.sleep(0.02)
+
+    leader.cancel()
+
+    assert await waiter == "value"
+    assert calls == 2  # the waiter recomputed rather than inheriting the failure
+
+
+async def test_a_waiter_that_is_itself_cancelled_still_stops() -> None:
+    """The other half of the same branch: our own cancellation must propagate."""
+    cache: AsyncCache[str] = AsyncCache("t")
+    started = asyncio.Event()
+
+    async def slow() -> str:
+        started.set()
+        await asyncio.sleep(5)
+        return "value"
+
+    leader = asyncio.create_task(cache.get_or_set("k", slow))
+    await started.wait()
+    waiter = asyncio.create_task(cache.get_or_set("k", slow))
+    await asyncio.sleep(0.02)
+
+    waiter.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert leader.done() is False
+
+    leader.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await leader

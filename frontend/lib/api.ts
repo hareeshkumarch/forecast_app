@@ -152,12 +152,25 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  // "no-cache" is not "no-store" and the difference is the whole point: it
+  // means *always ask the server*, but keep the copy so the question can be
+  // asked with an `If-None-Match`. The dashboard reads answer that with a
+  // bodiless 304 and, more importantly, without running their aggregate
+  // queries — a repeat view of the same run costs a round trip rather than a
+  // fan of database work. A GET with no ETag behind it is unaffected: it just
+  // gets its 200 as before.
+  //
+  // Writes stay "no-store". There is nothing to revalidate on a POST, and a
+  // stored copy of one is only a thing to get wrong.
+  const method = (init?.method ?? "GET").toUpperCase();
+  const reading = method === "GET" || method === "HEAD";
+
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers,
       signal: controller.signal,
-      cache: "no-store",
+      cache: reading ? "no-cache" : "no-store",
     });
   } catch (cause) {
     if (parentSignal?.aborted) throw cause;

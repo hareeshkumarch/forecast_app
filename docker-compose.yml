@@ -76,6 +76,24 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/2}
       FORECAST_MODEL_CONCURRENCY: ${FORECAST_MODEL_CONCURRENCY:-2}
+      # What the API advertises as its version, and what is mixed into every
+      # cache validator. Set it to the build id and each release invalidates
+      # clients' stored copies exactly once.
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      # Requests in flight before the API answers 503 rather than queueing.
+      # Health checks and the progress streams are exempt, so a busy box still
+      # reports alive and open dashboards keep their streams.
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-64}
+      LOAD_SHEDDING_ENABLED: ${LOAD_SHEDDING_ENABLED:-true}
+      # /api/health/metrics, in Prometheus' text format. In production an
+      # unset token means every scrape is refused rather than served openly.
+      METRICS_ENABLED: ${METRICS_ENABLED:-true}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Dashboard aggregates, cached under a key carrying the run's own
+      # revision — memory knobs, not correctness knobs.
+      DASHBOARD_CACHE_ENABLED: ${DASHBOARD_CACHE_ENABLED:-true}
+      DASHBOARD_CACHE_TTL_SECONDS: ${DASHBOARD_CACHE_TTL_SECONDS:-300}
+      DASHBOARD_CACHE_MAX_ENTRIES: ${DASHBOARD_CACHE_MAX_ENTRIES:-600}
     volumes:
       # Bind-mounted so uploaded files and generated Parquet/exports are
       # inspectable from the host and survive rebuilds.

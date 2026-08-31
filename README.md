@@ -415,7 +415,9 @@ is for: set it to the build id on deploy.
 
 `no-cache` is not "do not store": it means "store it, and ask before using
 it". That is the contract that makes staleness impossible while still costing
-only a 304 on a repeat view.
+only a 304 on a repeat view. The frontend's fetch wrapper matches it: reads
+go out with `cache: "no-cache"` (always ask, but keep the copy so the question
+carries an `If-None-Match`), writes stay `no-store`.
 
 ### Read-through cache — "has this process worked it out already?"
 
