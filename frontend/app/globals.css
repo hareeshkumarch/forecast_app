@@ -769,9 +769,10 @@ body {
 }
 
 .motion-ready .reveal[data-reveal="scale"] {
-  --reveal-y: 54px;
-  --reveal-scale: 0.86;
-  --reveal-rotate: 11deg;
+  --reveal-y: 104px;
+  --reveal-scale: 0.8;
+  --reveal-rotate: 17deg;
+  --reveal-blur: 20px;
 }
 
 .motion-ready .reveal[data-reveal="from-left"] {
@@ -2414,6 +2415,25 @@ svg[role="img"]:focus-visible {
     opacity: 1;
     filter: blur(0);
     transform: perspective(900px) translate3d(0, 0, 0) rotateX(0deg);
+  }
+}
+
+/* --------------------------------------------------- the page has layers
+
+   Every section now reads as two planes sliding past each other: the column
+   you are reading climbs, the thing beside it holds back. `--sd` is that
+   element's own scroll progress, written by `ParallaxField`; `--drift` is how
+   far it travels, set in the markup. Translate only — this runs on every
+   frame of every scroll on the page, which is the one place a re-raster is
+   never affordable. */
+
+.motion-ready [data-drift] {
+  transform: translate3d(0, calc(var(--sd, 0) * var(--drift, 0px)), 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready [data-drift] {
+    transform: none;
   }
 }
 
