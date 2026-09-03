@@ -174,29 +174,13 @@
   --land-brief-act: #eef4f0;
   --land-brief-warn: #8a6a31;
 
-  /* The accuracy diagram, which sits inside the inverted section and so is
-     lit for a dark ground in both themes. */
-  --check-actual: #d7d8d6;
-  --check-predicted: #7fbea1;
-  --check-outcome: #f0f1ef;
-  --check-held-rgb: 89 96 91;
-  --check-held: rgb(var(--check-held-rgb));
-
   /* The line-versus-range panels. */
   --compare-ink: #111512;
   --compare-forecast: #287b59;
   --compare-rule: #cfd6cf;
   --compare-outcome: #747b74;
 
-  /* The planning band. `--plan-prepare` is deliberately not the warning
-     colour: being ready for the upper bound is capacity, not an alarm. */
-  --plan-commit: #287b59;
-  --plan-prepare: #7a5f31;
-  --plan-fill-low: rgba(40, 123, 89, 0.16);
-  --plan-fill-high: rgba(122, 95, 49, 0.15);
-
   /* Row heights and padding step down together in compact mode. */
-  --density-row: 9px;
   --density-cell-y: 9px;
   --density-panel-gap: 12px;
 
@@ -379,16 +363,10 @@
   --compare-rule: #3a423c;
   --compare-outcome: #9aa09b;
 
-  --plan-commit: #7fbea1;
-  --plan-prepare: #c4a86e;
-  --plan-fill-low: rgba(127, 190, 161, 0.18);
-  --plan-fill-high: rgba(196, 168, 110, 0.16);
-
   color-scheme: dark;
 }
 
 :root[data-density="compact"] {
-  --density-row: 5px;
   --density-cell-y: 5px;
   --density-panel-gap: 8px;
 }
@@ -589,33 +567,6 @@ body {
   }
 }
 
-/* The donut sits beside its legend only once there is room for both. */
-.category-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.category-donut {
-  width: 100%;
-  max-width: 218px;
-  margin: 0 auto;
-}
-
-@container workspace (min-width: 560px) {
-  .category-layout {
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .category-donut {
-    width: 218px;
-    flex-shrink: 0;
-    margin: 0;
-  }
-}
-
 /* --------------------------------------------------------------- landing */
 
 .forecast-landing {
@@ -671,39 +622,6 @@ body {
   touch-action: pan-y;
 }
 
-@keyframes accuracy-rise {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-
-@keyframes check-ghost {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/*
- * The accuracy diagram is told in its own three steps rather than flashing all
- * sixty bars on one clock — `lib/check-motion.ts` holds the schedule, and each
- * mark carries its own place in it. `both` covers the wait, so a bar with a
- * second of delay spends that second at zero rather than at its value.
- */
-.motion-ready [data-shown="true"] .accuracy-bar {
-  animation: accuracy-rise var(--bar-rise, 480ms) var(--ease-out) var(--bar-delay, 0ms) both;
-  transform-origin: bottom;
-}
-
-.motion-ready [data-shown="true"] .check-ghost {
-  animation: check-ghost var(--ghost-fade, 220ms) var(--ease-out) var(--bar-delay, 0ms) both;
-}
-
 @media (max-width: 639px) {
   .forecast-landing {
     background-size: 42px 42px;
@@ -716,68 +634,6 @@ body {
   }
   to {
     transform: scaleX(1);
-  }
-}
-
-/* ------------------------------------------------------- the planning band
- *
- * The track opens from the commit end, then the three figures land on it left
- * to right, so a range exists before anything is placed inside it.
- */
-.plan-track {
-  border-top: 1px solid var(--land-rule);
-  border-bottom: 1px solid var(--land-rule);
-  overflow: hidden;
-}
-
-.plan-fill-low {
-  background: var(--plan-fill-low);
-}
-
-.plan-fill-high {
-  background: var(--plan-fill-high);
-}
-
-.motion-ready .plan-track,
-.motion-ready .plan-edge,
-.motion-ready .plan-base,
-.motion-ready .plan-mark {
-  opacity: 0;
-}
-
-.motion-ready [data-shown="true"] .plan-track {
-  animation: band-open var(--band-grow) var(--ease-out) both;
-  transform-origin: left;
-}
-
-.motion-ready [data-shown="true"] .plan-edge,
-.motion-ready [data-shown="true"] .plan-base {
-  animation: mark-land var(--mark-land) var(--ease-out) var(--band-grow) both;
-}
-
-.motion-ready [data-shown="true"] .plan-mark {
-  animation: mark-land var(--mark-land) var(--ease-out) var(--mark-delay, 0ms) both;
-}
-
-@keyframes band-open {
-  from {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-}
-
-@keyframes mark-land {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -967,56 +823,6 @@ body {
   animation: grow-x 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 90ms) forwards;
 }
 
-@keyframes icon-settle {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 7px, 0) scale(0.82);
-  }
-  65% {
-    opacity: 1;
-    transform: translate3d(0, -1px, 0) scale(1.035);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-.motion-ready [data-shown="true"] .motion-icon {
-  animation: icon-settle 480ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 120ms) both;
-}
-
-/* The step number lands a beat before its icon, so the card reads left to
-   right as it arrives rather than both corners appearing at once. */
-@keyframes badge-land {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, -8px, 0) scale(0.86);
-  }
-  70% {
-    opacity: 1;
-    transform: translate3d(0, 1px, 0) scale(1.04);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-.motion-ready [data-shown="true"] .step-badge {
-  animation: badge-land 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 60ms) both;
-}
-
-.motion-ready .grow-x {
-  transform: scaleX(0);
-  transform-origin: left center;
-}
-
-.motion-ready [data-shown="true"] .grow-x {
-  animation: grow-x var(--grow-duration, 420ms) var(--ease-out) forwards;
-  animation-delay: var(--grow-delay, 0ms);
-}
-
 /*
  * The comparison panels draw themselves in the order the argument is made:
  * the history both panels share, then the forecast each one draws its own way
@@ -1144,12 +950,6 @@ body {
   transition: opacity 140ms linear;
 }
 
-.nav-progress {
-  transform-origin: left center;
-  transition: transform 120ms linear;
-  will-change: transform;
-}
-
 .cta-nudge {
   transition:
     border-color 140ms var(--ease-out),
@@ -1187,18 +987,6 @@ body {
   .cta-nudge:hover {
     transform: translate3d(0, -1px, 0);
   }
-}
-
-/* Marks a card's border so the prefers-contrast query below can strengthen it.
-   Carries no hover: these cards are read, not clicked, and a border that
-   responded to the pointer promised a click that never came. It has no
-   transition either, because nothing about it changes. */
-
-.scape-chip {
-  transition:
-    border-color 140ms var(--ease-out),
-    background-color 140ms var(--ease-out),
-    color 140ms var(--ease-out);
 }
 
 .scape-readout {
@@ -1331,16 +1119,6 @@ svg[role="img"]:focus-visible {
 .stagger > *:nth-child(5) { animation-delay: 160ms; }
 .stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
 
-/* The rails change width, and their contents should not smear while it
- * happens: the label fades on its own clock rather than being scaled. */
-[data-collapsed] .rail-label {
-  opacity: 0;
-}
-
-.rail-label {
-  transition: opacity 140ms var(--ease-out);
-}
-
 .press {
   transition:
     transform 120ms var(--ease-out),
@@ -1378,9 +1156,6 @@ svg[role="img"]:focus-visible {
     will-change: auto;
   }
 
-  .motion-ready [data-shown="true"] .motion-icon,
-  .motion-ready [data-shown="true"] .accuracy-bar,
-  .motion-ready [data-shown="true"] .check-ghost,
   .motion-ready [data-shown="true"] .draw-wipe,
   .motion-ready [data-shown="true"] .outcome-dot,
   .motion-ready [data-shown="true"] .outcome-ring,
@@ -1388,10 +1163,6 @@ svg[role="img"]:focus-visible {
   .motion-ready .scape-running .scape-shell,
   .motion-ready .scape-running .scape-caption {
     animation: none;
-  }
-
-  .nav-progress {
-    transition: none;
   }
 
   .cta-arrow {
@@ -1405,111 +1176,6 @@ svg[role="img"]:focus-visible {
     --reveal-x: 0px;
     --reveal-y: 14px;
   }
-}
-
-/* ------------------------------------------------------ card interaction
- *
- * `.card-edge` marked the cards for the contrast query below and did nothing
- * else, so ten cards sat inert under the cursor while every other surface on
- * the page answered it. Two layers, both hover-only:
- *
- *   1. the card lifts a little and its border firms up
- *   2. a soft highlight follows the pointer, positioned by `PointerGlow`
- *
- * The highlight is a pseudo-element rather than a background on the card so
- * it composites above the card's own fill and below its text, and so a card
- * that already carries a background image is unaffected.
- */
-.card-edge {
-  position: relative;
-  isolation: isolate;
-  transition:
-    translate 260ms var(--ease-out),
-    border-color 260ms var(--ease-out),
-    box-shadow 260ms var(--ease-out);
-}
-
-/*
- * Most of these cards are also `Reveal` roots, and the reveal system owns
- * both `transform` and the `transition` shorthand on them — at a specificity
- * a plain `.card-lift:hover` loses to, so an earlier version of this simply
- * did nothing on hover.
- *
- * Two consequences, both handled here. The lift moves with `translate`, a
- * separate property that composes with the reveal's `transform` instead of
- * fighting it. And the transition is restated with a per-property delay list,
- * so the reveal keeps its entrance stagger while hover answers immediately —
- * a shared `transition-delay` would make every card hesitate by its own
- * stagger before lifting.
- */
-.motion-ready .reveal.card-edge {
-  transition:
-    opacity 400ms var(--ease-out),
-    transform var(--reveal-duration, 520ms) var(--ease-out),
-    translate 260ms var(--ease-out),
-    box-shadow 260ms var(--ease-out),
-    border-color 260ms var(--ease-out);
-  transition-delay: var(--reveal-delay, 0ms), var(--reveal-delay, 0ms), 0ms, 0ms, 0ms;
-}
-
-.card-edge::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 300ms var(--ease-out);
-  /* Falls back to the centre until PointerGlow writes a real position, so a
-     keyboard-focused card still lights up sensibly. */
-  background: radial-gradient(
-    22rem circle at var(--glow-x, 50%) var(--glow-y, 50%),
-    var(--land-glow),
-    transparent 62%
-  );
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .card-edge:hover {
-    border-color: var(--border-strong);
-  }
-
-  .card-edge:hover::after {
-    opacity: 1;
-  }
-
-  /* Lifting is opt-in, because most of these cards are gapless grid cells
-     that share their borders with a neighbour — raising one tears the seam
-     and casts a shadow onto the card beside it. Only cards standing in their
-     own space get `card-lift`. */
-  .card-lift:hover {
-    translate: 0 -3px;
-    box-shadow: var(--land-lift-shadow);
-  }
-
-  /* The number and the icon are the card's two fixed points; nudging them
-     apart on hover makes the whole card read as one object being picked up
-     rather than a rectangle that moved. */
-  .card-edge:hover .step-badge {
-    transform: translate3d(0, -1px, 0);
-  }
-
-  .card-edge:hover .motion-icon {
-    transform: translate3d(2px, -1px, 0);
-    color: var(--accent);
-  }
-}
-
-.card-edge .motion-icon {
-  transition:
-    transform 260ms var(--ease-out),
-    color 260ms var(--ease-out);
-}
-
-/* Keyboard parity: a card reached by Tab gets the same highlight a cursor
-   would have given it. */
-.card-edge:focus-within::after {
-  opacity: 1;
 }
 
 /* ------------------------------------------------------------- CTA sheen
@@ -1562,13 +1228,11 @@ svg[role="img"]:focus-visible {
   }
 
   .hero-stage,
-  .card-edge,
   .forecast-landing nav {
     border-color: #717971;
   }
 
   /* A wash of colour is not a contrast cue; drop it rather than compete. */
-  .card-edge::after,
   .cta-nudge::before {
     display: none;
   }
@@ -1611,96 +1275,6 @@ svg[role="img"]:focus-visible {
     transparent
   );
   animation: shimmer 1.4s infinite;
-}
-
-/*
- * Playwright sets this class on <html> before capturing, so screenshots are
- * deterministic: no shimmer mid-sweep, no chart entry animation, no caret.
- */
-.pw-freeze *,
-.pw-freeze *::before,
-.pw-freeze *::after {
-  animation-duration: 0s !important;
-  animation-delay: 0s !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0s !important;
-  transition-delay: 0s !important;
-  caret-color: transparent !important;
-  scroll-behavior: auto !important;
-}
-
-/* ------------------------------------------------- landing: steps + lines */
-
-/*
- * The three steps hang off one rule that draws itself down the page. It
- * replaces three bordered cards, and it does the job the cards could not:
- * a card grid states that there are three things, where a line being drawn
- * through them shows that they happen in an order.
- *
- * The rule is a pseudo-element rather than a border so it can be scaled from
- * the top — a border cannot be animated along its length, and animating
- * height would reflow every row beneath it on each frame.
- */
-.step-rail {
-  position: relative;
-  display: grid;
-  gap: clamp(2.5rem, 5vw, 4rem);
-  padding-left: clamp(2.25rem, 5vw, 4.5rem);
-}
-
-.step-rail::before {
-  content: "";
-  position: absolute;
-  inset-block: 0.35rem 0.5rem;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
-    to bottom,
-    var(--accent) 0%,
-    var(--land-rule) 55%,
-    transparent 100%
-  );
-  transform-origin: top;
-  transform: scaleY(1);
-}
-
-.motion-ready .step-rail::before {
-  transform: scaleY(0);
-  transition: transform 1400ms cubic-bezier(0.22, 1, 0.36, 1) 120ms;
-}
-
-.motion-ready .step-rail:has([data-shown="true"])::before {
-  transform: scaleY(1);
-}
-
-.step-row {
-  position: relative;
-  display: grid;
-  gap: 0.35rem;
-}
-
-/* The tick where a step meets the rule. Small, and the only ornament left. */
-.step-row::before {
-  content: "";
-  position: absolute;
-  top: 0.6rem;
-  left: calc(clamp(2.25rem, 5vw, 4.5rem) * -1);
-  width: clamp(1.25rem, 2.5vw, 2rem);
-  height: 1px;
-  background: var(--land-rule);
-}
-
-.step-row[data-shown="true"]::before {
-  background: var(--accent);
-}
-
-.motion-ready .step-row::before {
-  transition: background-color 520ms ease 260ms;
-}
-
-.step-ordinal {
-  display: block;
-  letter-spacing: 0.22em;
 }
 
 /* --------------------------------------------------- landing: the proof band */
@@ -2139,13 +1713,6 @@ svg[role="img"]:focus-visible {
  */
 .motion-ready .feature-line {
   transition: border-color 400ms ease;
-}
-
-
-@media (prefers-reduced-motion: reduce) {
-  .motion-ready .step-rail::before {
-    transform: scaleY(1);
-  }
 }
 
 /* ------------------------------------------------- landing: the 3D scene */

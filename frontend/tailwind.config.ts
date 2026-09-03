@@ -74,12 +74,6 @@ const config: Config = {
         "land-invert-border": "var(--land-invert-border)",
         "land-invert-rule": "var(--land-invert-rule)",
         "land-invert-accent": "var(--land-invert-accent)",
-        "plan-commit": "var(--plan-commit)",
-        "plan-prepare": "var(--plan-prepare)",
-        "check-actual": "var(--check-actual)",
-        "check-predicted": "var(--check-predicted)",
-        "check-outcome": "var(--check-outcome)",
-        "check-held": "rgb(var(--check-held-rgb) / <alpha-value>)",
         "scape-shell-key": "var(--scape-shell-key)",
       },
       borderRadius: {

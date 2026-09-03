@@ -15,7 +15,6 @@ import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
-import { PointerGlow } from "@/components/marketing/pointer-glow";
 import { useReadingFocus } from "@/components/marketing/reading-focus";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
@@ -125,7 +124,6 @@ export function Landing() {
       <a href="#main-content" className="skip-link">Skip to content</a>
       <ScrollProgress />
       <ScrollDepth target="#top" />
-      <PointerGlow />
       <FloatingNav />
       <main id="main-content">
         <Hero />
