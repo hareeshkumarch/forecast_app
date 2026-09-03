@@ -78,6 +78,118 @@ test("every section is readable once scrolled to", async ({ page }) => {
   }
 });
 
+/*
+ * The build in "how it works" is pinned and scrubbed rather than played: the
+ * scroll past the section is what moves it. These cover the two ends of that —
+ * that scrolling actually advances it, and that a visitor who is not being
+ * scrubbed through it gets the finished drawing instead of an empty frame.
+ */
+test("the build advances with the scroll and settles before the pin lets go", async ({ page }) => {
+  await page.goto("/");
+  const track = page.locator(".scroll-track");
+  await expect(track).toHaveClass(/scroll-track--live/);
+
+  const read = () =>
+    track.evaluate((node) => {
+      const styles = getComputedStyle(node);
+      return {
+        step: node.dataset.step,
+        fill: Number(styles.getPropertyValue("--t-fill")),
+        build: Number(styles.getPropertyValue("--t-build")),
+        ahead: Number(styles.getPropertyValue("--t-ahead")),
+      };
+    });
+
+  const frame = await track.evaluate((node: HTMLElement) => ({
+    top: node.getBoundingClientRect().top + window.scrollY,
+    travel: node.offsetHeight - (node.firstElementChild as HTMLElement).offsetHeight,
+  }));
+
+  await page.evaluate((y) => window.scrollTo(0, y), frame.top - 200);
+  await expect.poll(async () => (await read()).build).toBe(0);
+  expect((await read()).step).toBe("0");
+
+  // Only most of the way: the last of the travel deliberately holds the
+  // finished chart, so the drawing has to be complete before the end.
+  await page.evaluate((y) => window.scrollTo(0, y), frame.top + frame.travel * 0.9);
+  await expect.poll(async () => (await read()).ahead).toBe(1);
+
+  const settled = await read();
+  expect(settled.fill).toBe(1);
+  expect(settled.build).toBe(1);
+  expect(settled.step).toBe("2");
+});
+
+test("without the scrub the build is already drawn and the section is one screen", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.goto("/");
+
+  await expect(page.locator(".scroll-track--live")).toHaveCount(0);
+
+  const track = page.locator(".scroll-track");
+  const finished = await track.evaluate((node) => {
+    const styles = getComputedStyle(node);
+    return ["--t-fill", "--t-read", "--t-build", "--t-ahead"].map((name) =>
+      Number(styles.getPropertyValue(name)),
+    );
+  });
+  expect(finished).toEqual([1, 1, 1, 1]);
+
+  // Three screens of pinned scroll with nothing pinned in them would be three
+  // screens of nothing.
+  const height = await track.evaluate((node: HTMLElement) => node.offsetHeight);
+  expect(height).toBeLessThan(page.viewportSize()!.height * 2);
+
+  // Every step keeps its sentence, rather than waiting for a scrub to open it.
+  for (const step of await page.locator(".pipeline-detail").all()) {
+    const box = await step.boundingBox();
+    expect(box!.height).toBeGreaterThan(0);
+  }
+
+  await context.close();
+});
+
+/*
+ * Two sections wrote their colours literally and so stayed on white paper
+ * while the rest of the page went dark. The `.forecast-landing` check above
+ * passed the whole time, because the canvas underneath them did flip.
+ */
+test("no section stays light when the page goes dark", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  const pale = await page.evaluate(() => {
+    const luminance = (color: string) => {
+      const parts = color.match(/[\d.]+/g)?.map(Number) ?? [];
+      const [r, g, b, alpha = 1] = parts;
+      if (alpha < 0.9 || r === undefined) return null;
+      return (0.2126 * r! + 0.7152 * g! + 0.0722 * b!) / 255;
+    };
+
+    return [...document.querySelectorAll<HTMLElement>(".forecast-landing *")]
+      .filter((node) => {
+        const box = node.getBoundingClientRect();
+        // A slab, not a chip: the primary button is light in this theme on
+        // purpose, and it is nothing like this size.
+        return box.width > 300 && box.height > 200;
+      })
+      .map((node) => ({
+        tag: `${node.tagName.toLowerCase()}.${node.className.toString().split(" ")[0]}`,
+        light: luminance(getComputedStyle(node).backgroundColor),
+      }))
+      .filter((entry) => entry.light !== null && entry.light > 0.6)
+      .map((entry) => entry.tag);
+  });
+
+  expect(pale).toEqual([]);
+  await context.close();
+});
+
 test("with reduced motion the page is composed from the first paint", async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: "reduce" });
   const page = await context.newPage();
@@ -92,6 +204,27 @@ test("with reduced motion the page is composed from the first paint", async ({ b
   ).toBeVisible();
 
   await context.close();
+});
+
+/*
+ * The pinned section grows by three screens when it comes alive. Anything that
+ * scrolls to the hash before that height is settled — which is what the dev
+ * server does, and what `audits/track-a.mjs` measures on a cold hash — leaves
+ * every anchor below the section thousands of pixels off. This holds the
+ * property from the reader's end, whoever does the scrolling.
+ */
+test("a cold link to a section below the pinned one still lands on it", async ({ page }) => {
+  await page.goto("/#compare");
+  const heading = page.getByRole("heading", {
+    name: "A range tells you more than a perfect-looking line.",
+  });
+
+  await expect
+    .poll(async () => {
+      const box = await heading.boundingBox();
+      return box ? Math.round(box.y) : 99_999;
+    })
+    .toBeLessThan(page.viewportSize()!.height);
 });
 
 test("the primary call to action fits on the narrowest phones", async ({ page }) => {

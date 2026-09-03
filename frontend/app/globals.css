@@ -152,6 +152,28 @@
   --scape-row-name: #3f463f;
   --scape-marker: rgba(17, 21, 18, 0.055);
 
+  /* The build stage in "how it works". Its own set rather than the chart's:
+     that drawing is a chart from the first frame, this one is a spreadsheet
+     for half of its life and has to be legible as paper before it is legible
+     as ink. */
+  --build-ink: #3d443e;
+  --build-head: #7d837d;
+  --build-rule: #c4ccc5;
+  --build-rule-soft: #dde2dc;
+  --build-cell: rgba(40, 123, 89, 0.09);
+  --build-bar: #1c2a22;
+
+  /* The decision brief and the band it sits on. Both were written literally
+     in the markup, which is why they were the two things on the page that
+     stayed light when the rest of it went dark. */
+  --land-band: #e8ebe6;
+  --land-band-rule: #d8ddd7;
+  --land-brief-bg: #fafbf9;
+  --land-brief-border: #bdc5bd;
+  --land-brief-rule: #d8ddd7;
+  --land-brief-act: #eef4f0;
+  --land-brief-warn: #8a6a31;
+
   /* The accuracy diagram, which sits inside the inverted section and so is
      lit for a dark ground in both themes. */
   --check-actual: #d7d8d6;
@@ -336,6 +358,21 @@
   --scape-week: #858b86;
   --scape-row-name: #c3c8c2;
   --scape-marker: rgba(255, 255, 255, 0.06);
+
+  --build-ink: #b5bcb6;
+  --build-head: #7f867f;
+  --build-rule: #39413b;
+  --build-rule-soft: #2a312c;
+  --build-cell: rgba(127, 190, 161, 0.14);
+  --build-bar: #d3d8d2;
+
+  --land-band: #171c18;
+  --land-band-rule: #2a312c;
+  --land-brief-bg: #1b211c;
+  --land-brief-border: #333b35;
+  --land-brief-rule: #2f3730;
+  --land-brief-act: #1d2b23;
+  --land-brief-warn: #c8a468;
 
   --compare-ink: #e4e7e3;
   --compare-forecast: #7fbea1;
@@ -1967,7 +2004,7 @@ svg[role="img"]:focus-visible {
 .signal-list {
   display: grid;
   gap: 1px;
-  background: var(--land-brief-rule, #d8ddd7);
+  background: var(--land-brief-rule);
 }
 
 .signal-row {
@@ -1975,7 +2012,7 @@ svg[role="img"]:focus-visible {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0 0.85rem;
   padding: 1.15rem 1.25rem;
-  background: #fafbf9;
+  background: var(--land-brief-bg);
 }
 
 /*
@@ -2038,24 +2075,20 @@ svg[role="img"]:focus-visible {
  * "this is the one to act on".
  */
 .signal-label {
-  color: #59605a;
+  color: var(--land-dim);
 }
 
 .signal-row--warn .signal-label {
-  color: #8a6a31;
+  color: var(--land-brief-warn);
 }
 
 .signal-row--act {
-  background: #eef4f0;
+  background: var(--land-brief-act);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .signal-row--act .signal-label {
-  color: #287b59;
-}
-
-.signal-row--act p:last-child {
-  color: #425047;
+  color: var(--accent);
 }
 
 /*
@@ -2143,5 +2176,301 @@ svg[role="img"]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .motion-ready .scape-frame > .relative {
     transform: none;
+  }
+}
+
+/* ------------------------------------------- landing: the scrubbed build
+ *
+ * "How it works" was three paragraphs down the left of the page with the
+ * right half empty beside it — a section that told you what happens to a
+ * spreadsheet and never once showed you. It is pinned now, and the scroll
+ * past it drives one drawing through the three steps instead: rows land, two
+ * columns are picked out, and the quantity column's own cells travel down and
+ * become the bars of a forecast.
+ *
+ * Everything below is parameterised by four numbers `ScrollStage` writes to
+ * the track each frame. No element here has a duration or a keyframe of its
+ * own: the reader's scroll is the clock, which is the difference between an
+ * animation that plays at you and one you are moving.
+ *
+ * The defaults are the finished state. A visitor with no JavaScript, a short
+ * window, or a reduced-motion preference gets a section of ordinary height
+ * with the forecast already drawn — never an empty frame waiting for a
+ * listener that is not coming.
+ */
+.scroll-track {
+  --t-fill: 1;
+  --t-read: 1;
+  --t-build: 1;
+  --t-ahead: 1;
+}
+
+.scroll-track--live .scroll-pin {
+  position: sticky;
+  top: calc(var(--nav-total) + clamp(0.75rem, 2vw, 1.75rem));
+}
+
+.pipeline-grid {
+  display: flex;
+  /* Reversed, so the drawing leads on a phone while the steps keep the
+     reading order they have on a desktop. */
+  flex-direction: column-reverse;
+  gap: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+@media (min-width: 1024px) {
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(2.5rem, 5vw, 4.5rem);
+  }
+}
+
+.pipeline-steps {
+  display: grid;
+  gap: clamp(1.1rem, 2.5vw, 1.6rem);
+}
+
+.pipeline-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 clamp(0.9rem, 2vw, 1.4rem);
+  padding-left: clamp(0.9rem, 2vw, 1.25rem);
+  border-left: 1px solid var(--land-rule);
+}
+
+.scroll-track--live .pipeline-step {
+  transition: border-color 420ms var(--ease-out);
+}
+
+.scroll-track--live[data-step="0"] .pipeline-step:nth-child(1),
+.scroll-track--live[data-step="1"] .pipeline-step:nth-child(2),
+.scroll-track--live[data-step="2"] .pipeline-step:nth-child(3) {
+  border-left-color: var(--accent);
+}
+
+.pipeline-ordinal {
+  padding-top: 0.4em;
+}
+
+/*
+ * Only the step being shown keeps its sentence.
+ *
+ * Collapsing the other two is the same decision as pinning the drawing: three
+ * paragraphs stacked is the wall of text this section was, and a reader on
+ * step one has no use for the copy about step three. Nothing is hidden from
+ * anybody — the scroll opens each one in turn, and a visitor who is not being
+ * scrubbed through it (no JavaScript, reduced motion, a short window) has all
+ * three open from the first paint, which is why the collapse is scoped to the
+ * live track and the row defaults to `1fr`.
+ */
+.pipeline-detail {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.pipeline-detail > * {
+  min-height: 0;
+}
+
+.scroll-track--live .pipeline-detail {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 480ms var(--ease-out),
+    opacity 300ms var(--ease-out);
+}
+
+.scroll-track--live[data-step="0"] .pipeline-step:nth-child(1) .pipeline-detail,
+.scroll-track--live[data-step="1"] .pipeline-step:nth-child(2) .pipeline-detail,
+.scroll-track--live[data-step="2"] .pipeline-step:nth-child(3) .pipeline-detail {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.pipeline-detail > div {
+  overflow: hidden;
+}
+
+.build-frame {
+  border: 1px solid var(--land-rule);
+  background: var(--land-stage-veil);
+  padding: clamp(0.9rem, 2.2vw, 1.5rem);
+}
+
+.build-stage {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---- beat one: the rows land ---- */
+
+/*
+ * Seven rows on one number. `clamp()` on the row's own index turns a single
+ * 0-1 progress into a stagger without seven variables or seven delays: row
+ * three is fully in when the beat is three sevenths through it.
+ */
+.sheet-row {
+  opacity: clamp(0, calc(var(--t-fill) * 8 - var(--i)), 1);
+}
+
+.sheet-head {
+  opacity: clamp(0, calc(var(--t-fill) * 6), 1);
+}
+
+/* ---- beat two: two columns are picked out ---- */
+
+.sheet-pick,
+.sheet-tag {
+  opacity: var(--t-read);
+}
+
+.sheet-pick {
+  transform-box: fill-box;
+  transform-origin: top;
+  transform: scaleY(var(--t-read));
+}
+
+/* What is not the date or the quantity steps back rather than disappearing:
+   the point of the beat is that these columns were also there and were not
+   the ones needed. */
+.sheet-spare {
+  opacity: calc(1 - var(--t-read) * 0.68);
+}
+
+/* ---- beat three: the quantity column becomes the history ---- */
+
+/*
+ * The sheet is gone by a third of the way through the travel, so the cells
+ * spend most of their journey over clear ground rather than dragging the
+ * table's rules down the frame with them.
+ */
+.sheet {
+  opacity: clamp(0, calc(1 - var(--t-build) * 3), 1);
+}
+
+/*
+ * The cell narrows and fans out to its slot first, and only then falls and
+ * grows into a bar. Moving on one clock was the obvious way and it is the
+ * wrong picture: a cell is a hundred and twenty-eight units wide and a slot is
+ * forty-nine, so for most of a single-clock journey seven cells are wider than
+ * the space between them and the whole column travels as one black smear.
+ *
+ * Two overlapping phases off the same progress, plus a beat between rows, and
+ * what you watch instead is a column of numbers spreading out and standing up
+ * — which is what is actually happening to them.
+ */
+/* Gated on the fill beat as well: these cells are siblings of the rows rather
+   than children of them, so without this the quantity column was already sitting
+   in an empty frame before the sheet it belongs to had arrived. */
+.cell-morph {
+  opacity: clamp(0, calc(var(--t-fill) * 8 - var(--i)), 1);
+  --mx: clamp(0, calc(var(--t-build) / 0.45), 1);
+  --my: clamp(0, calc((var(--t-build) - 0.32 - var(--i) * 0.02) / 0.56), 1);
+}
+
+.sheet-cell {
+  transform-box: fill-box;
+  transform-origin: bottom left;
+  transform: translate(calc(var(--dx) * var(--mx)), calc(var(--dy) * var(--my)))
+    scale(calc(1 + (var(--sx) - 1) * var(--mx)), calc(1 + (var(--sy) - 1) * var(--my)));
+}
+
+/*
+ * The cell's own face fades from under the bar it is becoming, so the change
+ * of material happens across the travel instead of as a swap at the end.
+ *
+ * It also has to wait for the second beat. Tinted from the first frame, the
+ * quantity column was picked out before the step that picks it out had run —
+ * the answer was on the sheet, and then a rule was drawn around the answer.
+ */
+.cell-face {
+  opacity: calc(clamp(0, calc(var(--t-read) * 1.6), 1) * clamp(0, calc(1 - var(--t-build) * 1.6), 1));
+}
+
+.cell-bar {
+  opacity: clamp(0, calc(var(--t-build) * 1.8), 1);
+}
+
+/* The number rides down with its cell and leaves early — it is a spreadsheet
+   value, and a spreadsheet value stretched to the height of a bar is a
+   smear. */
+.cell-value {
+  transform-box: fill-box;
+  transform: translate(calc(var(--dx) * var(--mx)), calc(var(--dy) * var(--my)));
+  opacity: clamp(0, calc(1 - var(--t-build) * 2.4), 1);
+}
+
+.build-axis {
+  opacity: clamp(0, calc(var(--t-build) * 2 - 0.35), 1);
+}
+
+.build-split {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  transform: scaleY(var(--t-ahead));
+}
+
+/* ---- beat four: the forecast draws ahead of it ---- */
+
+.ahead-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  transform: scaleY(clamp(0, calc(var(--t-ahead) * (var(--n) + 1) - var(--i)), 1));
+}
+
+.ahead-band {
+  opacity: var(--t-ahead);
+  transform-box: fill-box;
+  transform-origin: left;
+  transform: scaleX(var(--t-ahead));
+}
+
+/*
+ * Nothing to undo for reduced motion: the track is never made live, so every
+ * property above keeps the finished value it defaults to. The one thing worth
+ * saying is that the collapsed steps must not collapse.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-track--live .scroll-pin {
+    position: static;
+  }
+
+  .scroll-track--live .pipeline-detail {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: none;
+  }
+}
+
+/*
+ * The row being read answers.
+ *
+ * Only the rule above it and its index move — the sentence itself never dims,
+ * because a claim you have to scroll into position to read properly is worse
+ * than one that simply sits there. `data-focus` is written by
+ * `useReadingFocus`; without it every row keeps the ink it already had.
+ */
+.motion-ready .feature-line::before,
+.motion-ready .feature-ordinal {
+  transition:
+    background-color 420ms var(--ease-out),
+    color 420ms var(--ease-out);
+}
+
+.motion-ready .feature-line[data-focus="true"]::before {
+  background: var(--accent);
+}
+
+.motion-ready .feature-line[data-focus="true"] .feature-ordinal {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-ready .feature-line::before,
+  .motion-ready .feature-ordinal {
+    transition: none;
   }
 }

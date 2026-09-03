@@ -7,14 +7,18 @@ import {
   Target,
 } from "lucide-react";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ElementType, ReactNode } from "react";
+import { useRef } from "react";
 
+import { BuildStage } from "@/components/marketing/build-stage";
 import { CountUp } from "@/components/marketing/count-up";
 import { DemandScape } from "@/components/marketing/demand-scape";
 import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { PointerGlow } from "@/components/marketing/pointer-glow";
+import { useReadingFocus } from "@/components/marketing/reading-focus";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
+import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
@@ -23,20 +27,26 @@ import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
 
+/*
+ * The steps are shorter than they were, because the stage beside them now
+ * shows what the sentences used to have to describe. "We work out which column
+ * holds the date" is a hundred and one characters of a thing the drawing does
+ * in front of the reader.
+ */
 const STEPS = [
   {
-    title: "Bring in some data",
-    body: "Drop in a spreadsheet of what you have sold. That is the only thing we need from you.",
-    foot: "A spreadsheet is enough",
+    title: "Drop in a spreadsheet",
+    body: "Whatever your sales history already lives in.",
+    foot: "Nothing to set up",
   },
   {
-    title: "Say what to forecast",
-    body: "We work out which column holds the date and which holds the sales, and show you before running.",
-    foot: "You confirm before anything runs",
+    title: "We find the columns",
+    body: "The date and the quantity, shown back to you before anything runs.",
+    foot: "You confirm first",
   },
   {
-    title: "Run it",
-    body: "Your forecast appears, week by week, with a range around every number.",
+    title: "The forecast draws itself",
+    body: "Week by week, with the range it could move inside.",
     foot: "About a minute",
   },
 ];
@@ -64,15 +74,15 @@ const PROOF = [
 const FEATURES = [
   {
     lede: "A forecast you can read.",
-    body: "The number, its likely range, and the history behind it — in one view, without a manual.",
+    body: "The number, its range and the history behind it, in one view.",
   },
   {
     lede: "Every level of the plan.",
-    body: "Move from the whole business down to a product, a region, or a channel without losing the story.",
+    body: "The whole business, or one product, region or channel.",
   },
   {
     lede: "Accuracy you can inspect.",
-    body: "The same test runs against your own past, so the score belongs to your data and not to a benchmark.",
+    body: "Scored against your own past, never against a benchmark.",
   },
 ];
 
@@ -132,10 +142,15 @@ export function Landing() {
 }
 
 function Eyebrow({
+  as: Tag = "div",
   children,
   light = false,
   rule = true,
 }: {
+  /** A heading where the eyebrow is the only thing naming its section — see
+   *  `Features`, which had no h2 and so was not in the document outline at
+   *  all, however plainly it was labelled on the screen. */
+  as?: ElementType;
   children: ReactNode;
   light?: boolean;
   /** Off in the hero, where a pulsing status dot already sits to the left. */
@@ -144,12 +159,12 @@ function Eyebrow({
   return (
     // inline-flex, not flex: the closing section centres its content with
     // `text-align`, which only moves an inline-level box.
-    <div className={cn("inline-flex items-center gap-3 font-mono text-site-caption uppercase tracking-[0.22em]", light ? "text-land-invert-muted" : "text-land-dim")}>
+    <Tag className={cn("inline-flex items-center gap-3 font-mono text-site-caption font-normal uppercase tracking-[0.22em]", light ? "text-land-invert-muted" : "text-land-dim")}>
       {rule ? (
         <span aria-hidden className={cn("eyebrow-rule h-px w-7 shrink-0", light ? "bg-land-invert-accent" : "bg-accent")} />
       ) : null}
       {children}
-    </div>
+    </Tag>
   );
 }
 
@@ -193,10 +208,10 @@ function Hero() {
             Explore the live workspace
           </Link>
         </Reveal>
-        <Reveal delay={300} duration={520} className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-[#646b65]">
-          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-[#287b59]" aria-hidden /> No setup project</span>
-          <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[#287b59]" aria-hidden /> Figures stay traceable</span>
-          <Link href="#how-it-works" className="link-draw text-[#287b59] hover:text-[#175a3e]">See how it works ↓</Link>
+        <Reveal delay={300} duration={520} className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim">
+          <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No setup project</span>
+          <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures stay traceable</span>
+          <Link href="#how-it-works" className="link-draw text-accent hover:text-accent-hover">See how it works ↓</Link>
         </Reveal>
       </div>
 
@@ -256,49 +271,55 @@ function HowItWorks() {
           </p>
         </Reveal>
 
-        {/* The rule is the animation. It draws itself down the page as the
-            section arrives, and each step fades in as the line reaches it —
-            so the sequence is shown by the movement rather than stated by
-            three numbered boxes. */}
-        <ol className="step-rail mt-14 sm:mt-16">
-          {STEPS.map((step, index) => (
-            <Reveal
-              key={step.title}
-              as="li"
-              delay={index * 150}
-              duration={700}
-              variant="from-left"
-              className="step-row"
-            >
-              <span aria-hidden className="step-ordinal font-mono text-site-caption text-land-dim">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <div className="step-body">
-                <h3 className="font-display text-site-h3-display font-normal text-text-primary">
-                  {step.title}
-                </h3>
-                <p className="mt-3 max-w-[52ch] text-site-lead text-text-secondary">{step.body}</p>
-                <p className="mt-4 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
-                  {step.foot}
-                </p>
-              </div>
-            </Reveal>
-          ))}
-        </ol>
+        {/* Pinned, and scrubbed by the scroll rather than played at it — see
+            `scroll-stage.tsx` and the `.scroll-track` block in globals.css. */}
+        <ScrollStage className="mt-12 sm:mt-16">
+          <div className="pipeline-grid">
+            <ol className="pipeline-steps">
+              {STEPS.map((step, index) => (
+                <li key={step.title} className="pipeline-step">
+                  <span aria-hidden className="pipeline-ordinal font-mono text-site-caption text-land-dim">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h3 className="font-display text-site-h3-display font-normal text-text-primary">
+                      {step.title}
+                    </h3>
+                    <div className="pipeline-detail">
+                      <div>
+                        <p className="mt-2 max-w-[42ch] text-site-lead text-text-secondary">{step.body}</p>
+                        <p className="mt-3 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
+                          {step.foot}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            <div className="build-frame">
+              <BuildStage />
+            </div>
+          </div>
+        </ScrollStage>
       </div>
     </section>
   );
 }
 
 function Features() {
+  const rows = useRef<HTMLDivElement>(null);
+  useReadingFocus(rows, ".feature-line");
+
   return (
     <section id="features" className="section-pad border-t border-border">
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
-          <Eyebrow>What you get</Eyebrow>
+          <Eyebrow as="h2">What you get</Eyebrow>
         </Reveal>
 
-        <div className="mt-10 sm:mt-12">
+        <div ref={rows} className="mt-10 sm:mt-12">
           {FEATURES.map((feature, index) => (
             <Reveal
               key={feature.lede}
@@ -331,30 +352,30 @@ function Features() {
 
 function InsightsPreview() {
   return (
-    <section id="insights" className="section-pad border-t border-[#d8ddd7] bg-[#e8ebe6]">
+    <section id="insights" className="section-pad border-t border-land-band-rule bg-land-band">
       <div className={cn(SHELL, "grid items-start gap-10 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Decision brief</Eyebrow>
           <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
             Know what changed, why it matters, and what to do next.
           </h2>
-          <p className="mt-5 max-w-[46ch] text-site-lead text-[#444b45]">
-            Forecast Hub ranks the signals that deserve attention and keeps every conclusion tied to the computed evidence behind it.
+          <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
+            Every run comes back with the handful of things worth acting on.
           </p>
-          <div className="mt-7 grid gap-3 text-site-body text-[#444b45] sm:grid-cols-2 lg:grid-cols-1">
-            <p className="flex gap-3"><Target className="mt-1 size-4 shrink-0 text-[#287b59]" aria-hidden /><span><strong className="text-[#111512]">Prioritised.</strong> Risks and opportunities appear in decision order.</span></p>
-            <p className="flex gap-3"><ShieldCheck className="mt-1 size-4 shrink-0 text-[#287b59]" aria-hidden /><span><strong className="text-[#111512]">Grounded.</strong> AI may refine the wording; it never invents the figures.</span></p>
+          <div className="mt-7 grid gap-3 text-site-body text-text-secondary sm:grid-cols-2 lg:grid-cols-1">
+            <p className="flex gap-3"><Target className="mt-1 size-4 shrink-0 text-accent" aria-hidden /><span><strong className="text-text-primary">Prioritised.</strong> Risks and opportunities appear in decision order.</span></p>
+            <p className="flex gap-3"><ShieldCheck className="mt-1 size-4 shrink-0 text-accent" aria-hidden /><span><strong className="text-text-primary">Grounded.</strong> AI may refine the wording; it never invents the figures.</span></p>
           </div>
         </Reveal>
 
         <Reveal delay={120} variant="from-right" duration={720}>
-          <div className="border border-[#bdc5bd] bg-[#fafbf9] shadow-[0_28px_70px_-52px_rgba(17,22,18,.7)]">
-            <div className="flex items-center justify-between gap-4 border-b border-[#d8ddd7] px-5 py-4 sm:px-6">
+          <div className="border border-land-brief-border bg-land-brief">
+            <div className="flex items-center justify-between gap-4 border-b border-land-brief-rule px-5 py-4 sm:px-6">
               <div>
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-[#6a716b]">Decision brief · this run</p>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-land-dim">Decision brief · this run</p>
                 <p className="signal-heading mt-1 text-site-h3 font-bold">Three signals need attention</p>
               </div>
-              <Sparkles className="size-5 text-[#287b59]" strokeWidth={1.7} aria-hidden />
+              <Sparkles className="size-5 text-accent" strokeWidth={1.7} aria-hidden />
             </div>
 
             <ol className="signal-list">
@@ -364,7 +385,7 @@ function InsightsPreview() {
                   className={cn("signal-row", `signal-row--${signal.tone}`)}
                   style={{ "--signal-index": index } as CSSProperties}
                 >
-                  <span aria-hidden className="signal-index font-mono text-[0.68rem] text-[#8d948d]">
+                  <span aria-hidden className="signal-index font-mono text-[0.68rem] text-land-dim">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <div className="signal-body">
@@ -372,15 +393,15 @@ function InsightsPreview() {
                       {signal.label}
                     </p>
                     <p className="signal-title mt-1.5 text-site-h3 font-bold">{signal.title}</p>
-                    <p className="mt-1.5 text-site-body text-[#525953]">{signal.body}</p>
+                    <p className="mt-1.5 text-site-body text-text-secondary">{signal.body}</p>
                   </div>
                 </li>
               ))}
             </ol>
 
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#d8ddd7] px-5 py-3 font-mono text-[0.68rem] text-[#697069] sm:px-6">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-land-brief-rule px-5 py-3 font-mono text-[0.68rem] text-land-dim sm:px-6">
               <span>Computed from 5 backtest folds</span>
-              <span className="inline-flex items-center gap-1.5 text-[#287b59]"><span className="size-1.5 bg-[#287b59]" aria-hidden /> Figures verified</span>
+              <span className="inline-flex items-center gap-1.5 text-accent"><span className="size-1.5 bg-accent" aria-hidden /> Figures verified</span>
             </div>
           </div>
         </Reveal>
@@ -391,17 +412,17 @@ function InsightsPreview() {
 
 function Compare() {
   return (
-    <section id="compare" className="section-pad border-t border-[#d8ddd7]">
+    <section id="compare" className="section-pad border-t border-border">
       <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Built for a real decision</Eyebrow>
           <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
             A range tells you more than a perfect-looking line.
           </h2>
-          <p className="mt-5 max-w-[46ch] text-site-lead text-[#3f463f]">
-            Forecast Hub shows what is most likely, how far it could move, and what changed since the last run.
+          <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
+            What is most likely, how far it could move, and what changed since the last run.
           </p>
-          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-[#747b74]">
+          <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
             One answer, with the uncertainty left in
           </p>
         </Reveal>
@@ -442,8 +463,8 @@ function Accuracy() {
           </Reveal>
           <Reveal delay={380} duration={700}>
             <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
-              And it keeps being checked. Every run adds another real result to the score, for any
-              product, any region, any week.
+              And every run adds another real result to it — any product, any region, any
+              week.
             </p>
           </Reveal>
         </div>
@@ -473,8 +494,7 @@ function Closing() {
           className="mt-4 text-balance font-display text-site-h2 font-normal"
         />
         <p className="mx-auto mt-5 max-w-[42ch] text-site-lead text-text-secondary">
-          One spreadsheet of what you have sold is enough to get a forecast with a range around
-          every number.
+          Bring the sales history you already have. The first forecast takes about a minute.
         </p>
 
         <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:mx-auto min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
@@ -490,12 +510,12 @@ function Closing() {
           </Link>
         </div>
 
-        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-[#646b65]">
+        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim">
           <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2 className="size-3.5 text-[#287b59]" aria-hidden /> No setup project
+            <CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No setup project
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-[#287b59]" aria-hidden /> Figures stay traceable
+            <ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures stay traceable
           </span>
         </p>
       </Reveal>

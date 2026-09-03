@@ -4,6 +4,43 @@ const BASE = process.env.BASE ?? "http://localhost:3000";
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
 const browser = await chromium.launch({ executablePath: CHROME });
+
+/*
+ * The headline arrives a word at a time, so it has to be stilled before it is
+ * measured: each word is an inline-block part way through its own rise, and a
+ * heading caught mid-flight has a different top for every word in it.
+ */
+const FLAT =
+  ".reveal{opacity:1 !important}" +
+  ".split-word{animation:none !important;transform:none !important;opacity:1 !important}";
+
+/*
+ * How many lines a run of text occupies.
+ *
+ * Distinct rounded tops over-counts as soon as a block holds more than one
+ * kind of inline box. The headline is set a word at a time, and every word
+ * yields two rects — the inline-block's own border box, and the taller line
+ * box it sits in — ten pixels apart. A two-line heading measured that way is
+ * four.
+ *
+ * So tops are grouped, at half of the tallest rect: less than half a line box
+ * apart is the same line, and a real line break is a whole one. Written
+ * against the rects rather than a fixed pixel count, because this heading is
+ * on a fluid scale and its line box is a different size at every width.
+ */
+const COUNT_LINES = `(rects) => {
+  const real = rects.filter((rect) => rect.height > 2);
+  const gap = Math.max(...real.map((rect) => rect.height), 2) / 2;
+  const tops = real.map((rect) => rect.top).sort((a, b) => a - b);
+  let lines = 0;
+  let last = -Infinity;
+  for (const top of tops) {
+    if (top - last > gap) lines += 1;
+    last = top;
+  }
+  return lines;
+}`;
+
 const fail = [];
 const partial = [];
 const line = (s) => console.log(s);
@@ -93,17 +130,18 @@ line("\nA4 — hero fold and headline");
 for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080]]) {
   const page = await browser.newPage({ viewport: { width, height } });
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await page.addStyleTag({ content: ".reveal{opacity:1 !important}" });
+  await page.addStyleTag({ content: FLAT });
   await page.waitForTimeout(150);
-  const r = await page.evaluate(() => {
+  const r = await page.evaluate((source) => {
+    const countLines = eval(source);
     const cta = document.querySelector('#top a[href="/dashboard"]');
     const h1 = document.querySelector("#top h1");
     const range = document.createRange();
     range.selectNodeContents(h1);
-    const lines = new Set([...range.getClientRects()].filter((x) => x.height > 2).map((x) => Math.round(x.top))).size;
+    const lines = countLines([...range.getClientRects()]);
     const b = cta.getBoundingClientRect();
     return { ctaBottom: Math.round(b.bottom), ctaTop: Math.round(b.top), lines, vh: innerHeight };
-  });
+  }, COUNT_LINES);
   const ok = r.ctaBottom <= r.vh && r.ctaTop >= 0 && r.lines <= 2;
   if (!ok) fail.push(`A4 ${width}x${height} ctaBottom=${r.ctaBottom} vh=${r.vh} lines=${r.lines}`);
   line(`  ${width}x${height}  CTA ${r.ctaTop}..${r.ctaBottom} of ${r.vh}  headline ${r.lines} lines  ${ok ? "ok" : "FAIL"}`);
@@ -115,14 +153,15 @@ line("\nA4 — headline line count, 768px and up");
 for (const width of [768, 900, 1024, 1280, 1512, 1920, 2560]) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await page.addStyleTag({ content: ".reveal{opacity:1 !important}" });
+  await page.addStyleTag({ content: FLAT });
   await page.waitForTimeout(120);
-  const lines = await page.evaluate(() => {
+  const lines = await page.evaluate((source) => {
+    const countLines = eval(source);
     const h1 = document.querySelector("#top h1");
     const range = document.createRange();
     range.selectNodeContents(h1);
-    return new Set([...range.getClientRects()].filter((x) => x.height > 2).map((x) => Math.round(x.top))).size;
-  });
+    return countLines([...range.getClientRects()]);
+  }, COUNT_LINES);
   if (lines > 2) fail.push(`A4 headline ${lines} lines at ${width}`);
   line(`  ${String(width).padStart(4)}  ${lines} lines  ${lines <= 2 ? "ok" : "FAIL"}`);
   await page.close();

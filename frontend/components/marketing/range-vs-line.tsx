@@ -8,10 +8,15 @@ import {
 } from "@/lib/compare-motion";
 import { area, buildPanel, path } from "@/lib/range-vs-line";
 
-const INK = "#111512";
-const FOREST = "#287b59";
-const RULE = "#cfd6cf";
-const MUTED = "#747b74";
+/*
+ * The four tokens for this diagram were defined in both themes and the panels
+ * kept their literals, so the one section arguing that a range is more honest
+ * than a line stayed on white paper while the page around it went dark.
+ */
+const INK = "var(--compare-ink)";
+const FOREST = "var(--compare-forecast)";
+const RULE = "var(--compare-rule)";
+const MUTED = "var(--compare-outcome)";
 
 type PanelProps = {
   index: number;
@@ -31,9 +36,17 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
   const pastClip = `compare-past-${index}`;
   const aheadClip = `compare-ahead-${index}`;
 
+  /*
+   * The lighter of the two brief rules, not the heavier one the decision card
+   * uses. These panels are a pair of small drawings side by side, and a firm
+   * outline around each turns them into two boxes competing with the chart
+   * inside them. `audits/a1.mjs` reports the same thing from the other end: at
+   * #bdc5bd the figure's own right border is ink inside every line box of the
+   * verdict below it, so three wrapped lines measure as one band.
+   */
   return (
-    <figure className="m-0 border border-[#d8ddd7] bg-[#fafbf9]">
-      <figcaption className="border-b border-[#e4e8e3] px-5 py-3 font-mono text-site-caption uppercase tracking-[0.14em] text-[#5c635c]">
+    <figure className="m-0 border border-land-brief-rule bg-land-brief">
+      <figcaption className="border-b border-land-brief-rule px-5 py-3 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
         {label}
       </figcaption>
 
@@ -142,7 +155,7 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
         </svg>
       </div>
 
-      <p className="border-t border-[#e4e8e3] px-5 py-4 text-site-body text-[#3f463f]">{verdict}</p>
+      <p className="border-t border-land-brief-rule px-5 py-4 text-site-body text-text-secondary">{verdict}</p>
     </figure>
   );
 }
@@ -167,7 +180,7 @@ export function RangeVsLine() {
         />
       </div>
 
-      <p className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-site-caption uppercase tracking-[0.13em] text-[#747b74]">
+      <p className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-site-caption uppercase tracking-[0.13em] text-land-dim">
         <span className="flex items-center gap-2">
           <span className="inline-block h-[2px] w-5" style={{ background: INK }} aria-hidden />
           What you sold

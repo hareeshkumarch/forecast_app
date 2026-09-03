@@ -25,8 +25,20 @@ for (const width of WIDTHS) {
   // this audit return a different set of failures on identical input: which
   // blocks were still blurred depended on which observers had happened to
   // fire. Flatten all three properties, so what is measured is the type.
+  //
+  // The pinned section needs two more of the same kind, and for the same
+  // reason: a box measured from the DOM has to be a box with that block's ink
+  // painted in it. A `position: sticky` panel in a full-page screenshot paints
+  // where it is stuck against the expanded viewport rather than where it sits
+  // in the flow; and a step whose body is collapsed to a zero-height grid row
+  // still reports its line boxes through a `Range`, at coordinates where
+  // nothing is drawn. Either one hands this scan clear paper and it counts the
+  // lines as merged.
   await page.addStyleTag({
-    content: ".reveal{opacity:1 !important;transform:none !important;filter:none !important}",
+    content:
+      ".reveal{opacity:1 !important;transform:none !important;filter:none !important}" +
+      ".scroll-pin{position:static !important}" +
+      ".pipeline-detail{grid-template-rows:1fr !important;opacity:1 !important}",
   });
   await page.waitForTimeout(120);
 
