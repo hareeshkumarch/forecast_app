@@ -19,7 +19,6 @@ import { useReadingFocus } from "@/components/marketing/reading-focus";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
-import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
 import { cn } from "@/lib/utils";
@@ -122,7 +121,6 @@ export function Landing() {
   return (
     <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-canvas text-text-primary", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      <ScrollProgress />
       <ScrollDepth target="#top" />
       <FloatingNav />
       <main id="main-content">

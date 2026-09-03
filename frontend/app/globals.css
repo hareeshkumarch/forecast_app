@@ -1677,35 +1677,6 @@ svg[role="img"]:focus-visible {
   text-wrap: pretty;
 }
 
-/* ------------------------------------------------- landing: reading progress */
-
-/*
- * A hairline across the very top, filled to how far down the page you are.
- * Fixed and one pixel tall, so it is outside the flow and cannot shift
- * anything; `scaleX` on the inner element, so each frame is a compositor
- * transform rather than a layout. The component mounts nothing at all under
- * reduced motion, which is why there is no media query here to undo.
- */
-.scroll-progress {
-  position: fixed;
-  inset-inline: 0;
-  top: 0;
-  z-index: 60;
-  height: 2px;
-  pointer-events: none;
-}
-
-.scroll-progress-bar {
-  height: 100%;
-  width: 100%;
-  transform: scaleX(0);
-  transform-origin: left;
-  background: linear-gradient(to right, var(--accent), var(--accent-hover, var(--accent)));
-  /* No transition: the value is written every frame from the scroll position,
-     and easing a value that is already continuous only makes it lag the
-     scroll it is describing. */
-}
-
 /*
  * A feature is a sentence on a rule now, so the only hover affordance left is
  * the rule itself brightening — enough to say the page is alive, not enough to
