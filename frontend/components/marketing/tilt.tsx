@@ -11,7 +11,7 @@ const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
  * pointer move, and a card that re-renders its whole subtree to turn by a
  * degree is the most expensive thing on the section.
  */
-export function useTilt(target: RefObject<HTMLElement>, strength = 3): void {
+export function useTilt(target: RefObject<HTMLElement>, strength = 9): void {
   useEffect(() => {
     const node = target.current;
     if (!node) return;

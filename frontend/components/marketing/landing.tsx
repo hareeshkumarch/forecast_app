@@ -178,30 +178,34 @@ function Hero() {
         <span className="aurora aurora-a" />
         <span className="aurora aurora-b" />
         <span className="aurora aurora-c" />
+        <span className="hero-turn" />
         <span className="hero-beam" />
         <span className="hero-spot" />
+        <span className="hero-scrim" />
         <span className="hero-vignette" />
       </div>
 
-      <div className="depth-layer depth-copy page-shell flex flex-col items-center text-center">
-        <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
-          <span className="status-dot size-2 bg-accent" aria-hidden />
-          <Eyebrow rule={false}>Demand forecasting for planning teams</Eyebrow>
-        </Reveal>
+      <div className="page-shell flex flex-col items-center text-center">
+        <div className="depth-layer depth-title flex flex-col items-center">
+          <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
+            <span className="status-dot size-2 bg-accent" aria-hidden />
+            <Eyebrow rule={false}>Demand forecasting for planning teams</Eyebrow>
+          </Reveal>
 
-        <SplitWords
-          as="h1"
-          text="See your demand before it arrives."
-          delay={70}
-          stagger={78}
-          motion="cinematic"
-          className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
-        />
+          <SplitWords
+            as="h1"
+            text="See your demand before it arrives."
+            delay={70}
+            stagger={78}
+            motion="cinematic"
+            className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
+          />
 
-        <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-text-secondary">
-          Connect your sales history and see how much you will sell, week by week, with an honest
-          range around every number.
-        </Reveal>
+          <Reveal as="p" delay={150} duration={620} className="mt-5 max-w-[58ch] text-site-lead text-text-secondary">
+            Connect your sales history and see how much you will sell, week by week, with an honest
+            range around every number.
+          </Reveal>
+        </div>
 
         <Reveal delay={240} duration={620} className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
@@ -333,7 +337,7 @@ function Features() {
               <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-x-10 lg:gap-y-4">
                 <span
                   aria-hidden
-                  className="feature-ordinal font-mono text-site-caption tracking-[0.22em] text-land-dim"
+                  className="feature-ordinal font-display font-normal tracking-[-0.02em] text-land-dim"
                 >
                   {String(index + 1).padStart(2, "0")}
                 </span>
@@ -361,9 +365,12 @@ function InsightsPreview() {
       <div className={cn(SHELL, "grid items-start gap-10 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Decision brief</Eyebrow>
-          <h2 className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal">
-            Know what changed, why it matters, and what to do next.
-          </h2>
+          <SplitWords
+            text="Know what changed, why it matters, and what to do next."
+            stagger={54}
+            motion="cinematic"
+            className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
+          />
           <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
             Every run comes back with the handful of things worth acting on.
           </p>
@@ -424,9 +431,12 @@ function Compare() {
       <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Built for a real decision</Eyebrow>
-          <h2 className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal">
-            A range tells you more than a perfect-looking line.
-          </h2>
+          <SplitWords
+            text="A range tells you more than a perfect-looking line."
+            stagger={58}
+            motion="cinematic"
+            className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal"
+          />
           <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
             What is most likely, how far it could move, and what changed since the last run.
           </p>

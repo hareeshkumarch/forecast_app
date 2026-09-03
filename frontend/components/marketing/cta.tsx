@@ -8,9 +8,21 @@ import { Arrow } from "@/components/marketing/floating-nav";
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 const FINE_POINTER = "(hover: hover) and (pointer: fine)";
 
-/* Whole pixels, so a pointer resting on the button's own centre leaves the
-   transform at exactly the 1px lift the stylesheet gives it. */
-const PULL = 5;
+const PULL = 14;
+
+/*
+ * Whole pixels, and a dead centre.
+ *
+ * The pull has to resolve to exactly nothing for a pointer on the button's
+ * own centre, because that is where the 1px lift lives and where anything
+ * measuring this puts the cursor. Rounding alone was enough at a 5px pull and
+ * is not at 14: half a pixel of centring error is 0.5 of a pull now, which
+ * rounds to a whole pixel and cancels the lift outright. Two pixels of
+ * deadband is below anything a hand can aim and settles it.
+ */
+function snap(offset: number): number {
+  return Math.abs(offset) < 2 ? 0 : Math.round(offset);
+}
 
 function useMagnet(target: RefObject<HTMLElement>): void {
   useEffect(() => {
@@ -27,8 +39,8 @@ function useMagnet(target: RefObject<HTMLElement>): void {
         const box = node.getBoundingClientRect();
         const x = (event.clientX - box.left) / box.width - 0.5;
         const y = (event.clientY - box.top) / box.height - 0.5;
-        node.style.setProperty("--magnet-x", `${Math.round(x * 2 * PULL)}px`);
-        node.style.setProperty("--magnet-y", `${Math.round(y * 2 * PULL)}px`);
+        node.style.setProperty("--magnet-x", `${snap(x * 2 * PULL)}px`);
+        node.style.setProperty("--magnet-y", `${snap(y * 2 * PULL)}px`);
       });
     };
 

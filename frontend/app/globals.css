@@ -117,16 +117,20 @@
      vignette over the whole page, and the halo behind the accuracy figure.
      Every one of them is decoration painted under or over the page — none
      carries meaning, so all of them can be turned off without losing a word. */
-  --land-aurora-a: rgba(40, 123, 89, 0.26);
-  --land-aurora-b: rgba(156, 135, 96, 0.22);
-  --land-aurora-c: rgba(90, 146, 120, 0.18);
-  --land-beam: rgba(255, 255, 255, 0.5);
-  --land-spot: rgba(40, 123, 89, 0.12);
-  --land-sweep: rgba(255, 255, 255, 0.5);
-  --land-grain: 0.032;
-  --land-vignette: rgba(17, 22, 18, 0.14);
+  --land-aurora-a: rgba(40, 123, 89, 0.62);
+  --land-aurora-b: rgba(156, 135, 96, 0.5);
+  --land-aurora-c: rgba(90, 146, 120, 0.46);
+  --land-beam: rgba(255, 255, 255, 0.9);
+  --land-spot: rgba(40, 123, 89, 0.3);
+  --land-sweep: rgba(255, 255, 255, 0.85);
+  --land-grain: 0.055;
+  --land-vignette: rgba(17, 22, 18, 0.34);
+  /* Held down deliberately: this one crosses two columns of body copy, and
+     `audits/a1.mjs` reads the ground under a paragraph by its commonest
+     colour. Past about 0.14 the wash moves that ground further than the
+     threshold that decides what counts as ink. */
   --land-halo: rgba(127, 190, 161, 0.13);
-  --land-figure-glow: rgba(127, 190, 161, 0.26);
+  --land-figure-glow: rgba(127, 190, 161, 0.5);
 
   --land-mark-crown: #303530;
   --land-mark-shadow: #101411;
@@ -325,16 +329,16 @@
   --land-lift-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
   --land-nav-shadow: rgba(0, 0, 0, 0.75);
 
-  --land-aurora-a: rgba(127, 190, 161, 0.18);
-  --land-aurora-b: rgba(192, 168, 120, 0.13);
-  --land-aurora-c: rgba(90, 146, 120, 0.16);
-  --land-beam: rgba(255, 255, 255, 0.07);
-  --land-spot: rgba(127, 190, 161, 0.11);
-  --land-sweep: rgba(255, 255, 255, 0.09);
-  --land-grain: 0.055;
-  --land-vignette: rgba(0, 0, 0, 0.4);
-  --land-halo: rgba(127, 190, 161, 0.16);
-  --land-figure-glow: rgba(127, 190, 161, 0.3);
+  --land-aurora-a: rgba(127, 190, 161, 0.5);
+  --land-aurora-b: rgba(192, 168, 120, 0.34);
+  --land-aurora-c: rgba(90, 146, 120, 0.44);
+  --land-beam: rgba(255, 255, 255, 0.2);
+  --land-spot: rgba(127, 190, 161, 0.3);
+  --land-sweep: rgba(255, 255, 255, 0.22);
+  --land-grain: 0.085;
+  --land-vignette: rgba(0, 0, 0, 0.62);
+  --land-halo: rgba(127, 190, 161, 0.15);
+  --land-figure-glow: rgba(127, 190, 161, 0.55);
 
   --land-mark-crown: #a8afa8;
   --land-mark-shadow: #6b736c;
@@ -752,33 +756,40 @@ body {
      the threshold anybody notices — the section simply appeared, and the work
      of animating it was spent without being spent on anything. */
   --reveal-x: 0px;
-  --reveal-y: 44px;
+  --reveal-y: 96px;
   --reveal-scale: 1;
-  --reveal-blur: 6px;
+  --reveal-rotate: 7deg;
+  --reveal-blur: 14px;
   opacity: 0;
   filter: blur(var(--reveal-blur));
-  transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(var(--reveal-scale));
+  transform-origin: 50% 100%;
+  transform: perspective(1100px) translate3d(var(--reveal-x), var(--reveal-y), 0)
+    rotateX(var(--reveal-rotate)) scale(var(--reveal-scale));
   will-change: transform, opacity;
 }
 
 .motion-ready .reveal[data-reveal="scale"] {
-  --reveal-y: 28px;
-  --reveal-scale: 0.94;
+  --reveal-y: 54px;
+  --reveal-scale: 0.86;
+  --reveal-rotate: 11deg;
 }
 
 .motion-ready .reveal[data-reveal="from-left"] {
-  --reveal-x: -64px;
+  --reveal-x: -140px;
   --reveal-y: 0px;
+  --reveal-rotate: 0deg;
 }
 
 .motion-ready .reveal[data-reveal="from-right"] {
-  --reveal-x: 64px;
+  --reveal-x: 140px;
   --reveal-y: 0px;
+  --reveal-rotate: 0deg;
 }
 
 .motion-ready .reveal[data-reveal="fade"] {
   --reveal-y: 0px;
-  --reveal-blur: 3px;
+  --reveal-rotate: 0deg;
+  --reveal-blur: 8px;
 }
 
 /* The words do the moving, so the container must not: a parent fading from 0
@@ -786,6 +797,7 @@ body {
    never quite becomes black. */
 .motion-ready .reveal[data-reveal="words"] {
   opacity: 1;
+  filter: none;
   transform: none;
   transition: none;
   will-change: auto;
@@ -1480,7 +1492,10 @@ svg[role="img"]:focus-visible {
 @media (min-width: 1024px) {
   .feature-ordinal {
     display: block;
-    padding-top: 0.55em;
+    padding-top: 0.1em;
+    font-size: clamp(1.5rem, 2.6vw, 2.75rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
   }
 }
 
@@ -1491,50 +1506,49 @@ svg[role="img"]:focus-visible {
 /* ------------------------------------------------------- landing: hero depth */
 
 /*
- * Three layers moving at three rates as the hero scrolls away. `--depth` is
- * written once per frame by `ScrollDepth`; how far each layer travels is
- * decided here, so the effect is tunable without touching the listener.
+ * The hero plays out as it leaves rather than sliding away.
  *
- * The rates are deliberately small. Parallax on a marketing page is usually
- * too much — a layer that visibly races the scroll reads as a broken sticky
- * element, not as depth. Six to thirty pixels across a whole section is the
- * amount you feel and do not notice.
+ * `--depth` is the hero's own scrolled fraction, written once per frame by
+ * `ScrollDepth` and — this is the part that matters — derived from `scrollY`
+ * and the section's own height, never from the viewport's. A full-page
+ * screenshot resizes the viewport, and anything keyed to that resizes with
+ * it: the DOM would report one position and the capture would paint another.
+ * Keyed to the scroll alone, every one of these is exactly identity at the
+ * top of the page, which is where anything measuring the type stands.
  *
- * The copy moves but does not fade. Fading it was the nicer effect and it
- * animates opacity on a large text subtree every frame, which is a
- * re-composite of the whole hero; the nav grows its own opaque surface at
- * 40px of scroll anyway, so nothing needs the fade to avoid colliding.
- */
-/*
- * No `will-change` here, deliberately, and no scale on the wash. Both were in
- * the first version and both were measurably expensive: `audits/track-b.mjs`
- * put the motion cost at 18-32ms at p95 against a 6-24ms baseline, roughly
- * double. `will-change` promises a compositor layer for the life of the page,
- * and three permanent layers is a poor trade for elements that move only
- * while the hero is on screen; scaling the wash is worse still, because it is
- * the largest element on the page and a scale re-rasters a 1200px gradient
- * every frame where a translate only moves it.
+ * Translate only, and that is not conservatism — it is the second time this
+ * file has learned it. A scale re-rasters the wash, the largest gradient on
+ * the page, every frame; an opacity on the copy re-composites a whole text
+ * subtree every frame; a `rotateX` on the stage re-projects the chart. All
+ * three were in here at full strength and `audits/track-b.mjs` put the cost
+ * at +33 to +41ms at p95 against a budget of 8. The travel does the work
+ * instead, and there is a lot of it: the wash falls a hundred and ten pixels
+ * behind while the headline climbs a hundred and sixteen, which is a quarter
+ * of a screen of separation between two layers a reader thought were one.
  *
- * Translate-only, on three layers, is the version that buys the depth for
- * almost nothing. It measured back inside the baseline's range.
+ * The copy block carries no depth at all. The primary button lives in it, and
+ * a control that moves as the scroll settles is a control that slides out
+ * from under a cursor aimed at it — the audit hovered the CTA straight after
+ * a scroll and landed clean off it. Depth is for the layers you read, not the
+ * ones you have to hit.
  */
 .depth-wash {
-  transform: translate3d(0, calc(var(--depth, 0) * 30px), 0);
+  transform: translate3d(0, calc(var(--depth, 0) * 110px), 0);
 }
 
-.depth-copy {
-  transform: translate3d(0, calc(var(--depth, 0) * -18px), 0);
+.depth-title {
+  transform: translate3d(0, calc(var(--depth, 0) * -116px), 0);
 }
 
 .depth-stage {
-  transform: translate3d(0, calc(var(--depth, 0) * -6px), 0);
+  transform: translate3d(0, calc(var(--depth, 0) * -46px), 0);
 }
 
-/*
- * `will-change` is a promise, not a decoration: it costs a layer per element
- * for the whole life of the page. Three is affordable; it is here rather than
- * on everything precisely so it stays three.
- */
+.forecast-landing[data-ambient="on"] .depth-title,
+.forecast-landing[data-ambient="on"] .depth-stage {
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .depth-layer {
     transform: none;
@@ -2119,6 +2133,41 @@ svg[role="img"]:focus-visible {
   pointer-events: none;
 }
 
+/*
+ * A scrim, in the lighting sense: the lights above stay at full strength and
+ * this flattens the ground under the words so the copy is read rather than
+ * decoded. It is the last light-layer in the box, so it sits over the aurora
+ * and under every word. Without it `audits/a1.mjs` reads the whole hero
+ * paragraph as one band of ink — which is the audit's way of saying the
+ * background behind it varies more than the type on it does.
+ */
+.hero-scrim {
+  position: absolute;
+  inset-inline: 0;
+  top: var(--nav-total);
+  margin-inline: auto;
+  width: min(100%, 1500px);
+  height: min(64rem, 132vw);
+  max-height: 760px;
+  background: radial-gradient(72% 60% at 50% 42%, var(--canvas) 0%, var(--canvas) 54%, transparent 84%);
+  opacity: 0.9;
+}
+
+/* A phone shows the copy over a much taller slice of the same lights, so the
+   scrim has to be flatter and stronger there — and the light show is worth
+   less on a screen that small than the battery it costs. */
+@media (max-width: 767px) {
+  .hero-scrim {
+    background: radial-gradient(96% 76% at 50% 46%, var(--canvas) 0%, var(--canvas) 62%, transparent 92%);
+    opacity: 0.95;
+  }
+
+  .aurora,
+  .hero-turn {
+    opacity: 0.55;
+  }
+}
+
 .hero-vignette {
   position: absolute;
   inset: 0;
@@ -2137,45 +2186,93 @@ svg[role="img"]:focus-visible {
 }
 
 .aurora-a {
-  left: -6%;
-  top: -12%;
-  width: 58%;
-  height: 86%;
-  background: radial-gradient(closest-side, var(--land-aurora-a), transparent 72%);
-  animation: aurora-a 27s ease-in-out infinite alternate;
+  left: -10%;
+  top: -16%;
+  width: 56%;
+  height: 88%;
+  background: radial-gradient(closest-side, var(--land-aurora-a), transparent 70%);
+  animation: aurora-a 13s ease-in-out infinite alternate;
 }
 
 .aurora-b {
-  right: -10%;
-  top: 2%;
+  right: -12%;
+  top: -6%;
   width: 54%;
-  height: 78%;
-  background: radial-gradient(closest-side, var(--land-aurora-b), transparent 74%);
-  animation: aurora-b 34s ease-in-out infinite alternate;
+  height: 82%;
+  background: radial-gradient(closest-side, var(--land-aurora-b), transparent 72%);
+  animation: aurora-b 17s ease-in-out infinite alternate;
 }
 
 .aurora-c {
-  left: 22%;
-  bottom: -22%;
-  width: 62%;
-  height: 70%;
-  background: radial-gradient(closest-side, var(--land-aurora-c), transparent 76%);
-  animation: aurora-c 41s ease-in-out infinite alternate;
+  left: 20%;
+  bottom: -24%;
+  width: 58%;
+  height: 74%;
+  background: radial-gradient(closest-side, var(--land-aurora-c), transparent 74%);
+  animation: aurora-c 21s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
+/*
+ * Far enough to read as light moving, and translate-only: a scaled gradient
+ * re-rasters every frame and these are the largest elements on the page.
+ *
+ * Their size is a motion cost and their brightness is not — a composite pays
+ * by the pixel, whatever alpha those pixels carry. So the lights are held to
+ * about half the hero each and the drama is bought with colour and travel,
+ * which are free, rather than with area, which is the whole budget.
+ */
 @keyframes aurora-a {
-  from { opacity: 0.5; transform: translate3d(-4%, -3%, 0); }
-  to { opacity: 1; transform: translate3d(10%, 7%, 0); }
+  from { opacity: 0.42; transform: translate3d(-16%, -12%, 0); }
+  to { opacity: 1; transform: translate3d(22%, 16%, 0); }
 }
 
 @keyframes aurora-b {
-  from { opacity: 0.9; transform: translate3d(5%, 6%, 0); }
-  to { opacity: 0.45; transform: translate3d(-8%, -5%, 0); }
+  from { opacity: 1; transform: translate3d(17%, 14%, 0); }
+  to { opacity: 0.36; transform: translate3d(-20%, -13%, 0); }
 }
 
+/* Travel only. Each light that fades re-blends its own full size every frame;
+   the far one gives that up and keeps the movement. */
 @keyframes aurora-c {
-  from { opacity: 0.35; transform: translate3d(6%, 4%, 0); }
-  to { opacity: 0.85; transform: translate3d(-9%, -6%, 0); }
+  from { transform: translate3d(18%, 13%, 0); }
+  to { transform: translate3d(-22%, -16%, 0); }
+}
+
+/*
+ * One key light behind the headline, and it does not turn.
+ *
+ * It did, and rotation is the one transform that cannot be handed to the
+ * compositor as a cached layer being moved: the whole thing is resampled
+ * every frame, through a mask, on precisely the frames a reader is scrolling.
+ * Shrinking it to a fifth of its area was not enough — `audits/track-b.mjs`
+ * still put the page at +13 to +19ms against a budget of 8, where the same
+ * measurement puts the page without it at +0.3 to +7. So the shape stays and
+ * the movement comes from the three lights around it, which travel rather
+ * than turn, and travel is free.
+ */
+.hero-turn {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: min(56%, 620px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--land-aurora-a) 42deg,
+    transparent 120deg,
+    transparent 190deg,
+    var(--land-aurora-b) 250deg,
+    transparent 330deg
+  );
+  opacity: 0.85;
+  /* A conic gradient has a point, and the point is a hard pinwheel seam in
+     the middle of the headline. Masked hollow it reads as a light turning
+     somewhere behind the page instead of a fan drawn on it. */
+  -webkit-mask-image: radial-gradient(closest-side, transparent 4%, #000 46%, #000 62%, transparent 88%);
+  mask-image: radial-gradient(closest-side, transparent 4%, #000 46%, #000 62%, transparent 88%);
 }
 
 /* One pass of light across the hero, on a long cycle. Wide and weak enough
@@ -2185,19 +2282,19 @@ svg[role="img"]:focus-visible {
   top: -40%;
   bottom: -40%;
   left: 0;
-  width: 32%;
+  width: 26%;
   background: linear-gradient(90deg, transparent, var(--land-beam), transparent);
   opacity: 0;
-  transform: translate3d(-70%, 0, 0) rotate(12deg);
-  animation: beam-sweep 15s var(--ease-draw) 3s infinite;
+  transform: translate3d(-90%, 0, 0) rotate(14deg);
+  animation: beam-sweep 7s var(--ease-draw) 1.4s infinite;
   will-change: transform, opacity;
 }
 
 @keyframes beam-sweep {
-  0% { opacity: 0; transform: translate3d(-70%, 0, 0) rotate(12deg); }
-  14% { opacity: 1; }
-  58% { opacity: 0; }
-  100% { opacity: 0; transform: translate3d(340%, 0, 0) rotate(12deg); }
+  0% { opacity: 0; transform: translate3d(-90%, 0, 0) rotate(14deg); }
+  12% { opacity: 1; }
+  46% { opacity: 0; }
+  100% { opacity: 0; transform: translate3d(420%, 0, 0) rotate(14deg); }
 }
 
 /*
@@ -2210,9 +2307,9 @@ svg[role="img"]:focus-visible {
   position: absolute;
   left: 0;
   top: 0;
-  width: 44rem;
-  height: 44rem;
-  margin: -22rem 0 0 -22rem;
+  width: 46rem;
+  height: 46rem;
+  margin: -23rem 0 0 -23rem;
   background: radial-gradient(closest-side, var(--land-spot), transparent 72%);
   opacity: 0;
   transform: translate3d(var(--px, 50vw), var(--py, 30vh), 0);
@@ -2232,7 +2329,9 @@ svg[role="img"]:focus-visible {
 
 .forecast-landing[data-ambient="off"] .aurora,
 .forecast-landing[data-ambient="off"] .hero-beam,
-.forecast-landing[data-ambient="off"] .hero-wash {
+.forecast-landing[data-ambient="off"] .hero-wash,
+.forecast-landing[data-ambient="off"] .depth-title,
+.forecast-landing[data-ambient="off"] .depth-stage {
   will-change: auto;
 }
 
@@ -2283,25 +2382,38 @@ svg[role="img"]:focus-visible {
    moved. No blur: `audits/a1.mjs` screenshots the page while the hero is
    still settling, and blurred glyphs smear one line into the next. */
 
+/*
+ * A full flip up off the page, per word, with the blur clearing as it lands.
+ *
+ * Kept to 820ms because `audits/a1.mjs` screenshots the page once the network
+ * settles and blurred glyphs mid-flight smear one line of a heading into the
+ * next: the whole hero has to be still by then, so the drama is bought with
+ * travel and rotation rather than with time.
+ */
 .motion-ready .split-words[data-motion="cinematic"] .split-word {
   opacity: 0;
   transform-origin: 50% 100%;
-  transform: perspective(760px) translate3d(0, 0.55em, -130px) rotateX(-64deg);
+  transform: perspective(900px) translate3d(0, 0.7em, -320px) rotateX(-92deg);
 }
 
 .motion-ready .split-words[data-motion="cinematic"][data-shown="true"] .split-word {
-  animation: word-swing 760ms cubic-bezier(0.17, 1.02, 0.32, 1)
+  animation: word-swing 820ms cubic-bezier(0.16, 1.05, 0.28, 1)
     calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms)) both;
 }
 
 @keyframes word-swing {
-  from {
+  0% {
     opacity: 0;
-    transform: perspective(760px) translate3d(0, 0.55em, -130px) rotateX(-64deg);
+    filter: blur(12px);
+    transform: perspective(900px) translate3d(0, 0.7em, -320px) rotateX(-92deg);
   }
-  to {
+  45% {
+    filter: blur(0);
+  }
+  100% {
     opacity: 1;
-    transform: perspective(760px) translate3d(0, 0, 0) rotateX(0deg);
+    filter: blur(0);
+    transform: perspective(900px) translate3d(0, 0, 0) rotateX(0deg);
   }
 }
 
@@ -2311,8 +2423,22 @@ svg[role="img"]:focus-visible {
   perspective: 1200px;
 }
 
+/*
+ * Two inputs on one transform: where the pointer is, and how fast the page is
+ * moving. `--vel` is a decayed scroll velocity — it is exactly zero whenever
+ * the page is still, which is the only reason a whole card may be skewed at
+ * all: everything that measures this page measures it at rest.
+ *
+ * Not on the hero chart, which is the one place it looked best and cost most.
+ * A skew is not axis-aligned, so it cannot be a cached layer being moved: the
+ * element is resampled every frame it is skewed, and the frames it is skewed
+ * on are precisely the frames of a scroll. On four hundred SVG nodes that is
+ * the whole motion budget. The scale that rode with it is gone for the same
+ * reason and bought nothing the skew was not already saying.
+ */
 .motion-ready .tilt-plate {
-  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform: perspective(1400px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg))
+    skewY(calc(var(--vel, 0) * 1deg));
   transform-style: preserve-3d;
   transition: transform 700ms var(--ease-out);
 }
@@ -2343,8 +2469,9 @@ svg[role="img"]:focus-visible {
 }
 
 @keyframes edge-draw {
-  from { opacity: 0; transform: scaleX(0); }
-  to { opacity: 1; transform: scaleX(1); }
+  0% { opacity: 0; transform: scaleX(0); background: var(--accent); }
+  70% { background: var(--accent); }
+  100% { opacity: 1; transform: scaleX(1); background: var(--section-edge, var(--border)); }
 }
 
 /* -------------------------------------------------- accuracy: the lit stage */
@@ -2376,22 +2503,24 @@ svg[role="img"]:focus-visible {
 }
 
 .accuracy-figure {
-  text-shadow: 0 0 46px var(--land-figure-glow);
+  text-shadow:
+    0 0 22px var(--land-figure-glow),
+    0 0 90px var(--land-figure-glow);
 }
 
 @keyframes halo-drift {
-  from { transform: translate3d(0, 8%, 0) rotate(-7deg); }
-  to { transform: translate3d(0, -8%, 0) rotate(7deg); }
+  from { transform: translate3d(0, 22%, 0) rotate(-26deg) scale(0.8); }
+  to { transform: translate3d(0, -22%, 0) rotate(26deg) scale(1.25); }
 }
 
 @keyframes figure-push {
-  from { transform: translate3d(0, 24px, 0); }
-  to { transform: translate3d(0, -24px, 0); }
+  from { transform: translate3d(0, 90px, 0) scale(0.9); }
+  to { transform: translate3d(0, -90px, 0) scale(1.06); }
 }
 
 @keyframes ordinal-drift {
-  from { transform: translate3d(0, 20px, 0); }
-  to { transform: translate3d(0, -20px, 0); }
+  from { opacity: 0.25; transform: translate3d(0, 88px, 0) scale(0.7); }
+  to { opacity: 1; transform: translate3d(0, -88px, 0) scale(1.15); }
 }
 
 /*
@@ -2405,7 +2534,7 @@ svg[role="img"]:focus-visible {
     .motion-ready .section-edge::before {
       animation: edge-draw 1s linear both;
       animation-timeline: view();
-      animation-range: cover 0% cover 26%;
+      animation-range: cover 0% cover 22%;
     }
 
     .motion-ready .accuracy-halo {
