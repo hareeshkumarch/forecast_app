@@ -113,6 +113,21 @@
      the three offsets it is used at stay in the components that set them. */
   --land-nav-shadow: rgba(17, 22, 18, 0.4);
 
+  /* The cinematic layer: the drifting light in the hero, the grain and
+     vignette over the whole page, and the halo behind the accuracy figure.
+     Every one of them is decoration painted under or over the page — none
+     carries meaning, so all of them can be turned off without losing a word. */
+  --land-aurora-a: rgba(40, 123, 89, 0.26);
+  --land-aurora-b: rgba(156, 135, 96, 0.22);
+  --land-aurora-c: rgba(90, 146, 120, 0.18);
+  --land-beam: rgba(255, 255, 255, 0.5);
+  --land-spot: rgba(40, 123, 89, 0.12);
+  --land-sweep: rgba(255, 255, 255, 0.5);
+  --land-grain: 0.032;
+  --land-vignette: rgba(17, 22, 18, 0.14);
+  --land-halo: rgba(127, 190, 161, 0.13);
+  --land-figure-glow: rgba(127, 190, 161, 0.26);
+
   --land-mark-crown: #303530;
   --land-mark-shadow: #101411;
 
@@ -309,6 +324,17 @@
   --land-glow: rgba(127, 190, 161, 0.1);
   --land-lift-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
   --land-nav-shadow: rgba(0, 0, 0, 0.75);
+
+  --land-aurora-a: rgba(127, 190, 161, 0.18);
+  --land-aurora-b: rgba(192, 168, 120, 0.13);
+  --land-aurora-c: rgba(90, 146, 120, 0.16);
+  --land-beam: rgba(255, 255, 255, 0.07);
+  --land-spot: rgba(127, 190, 161, 0.11);
+  --land-sweep: rgba(255, 255, 255, 0.09);
+  --land-grain: 0.055;
+  --land-vignette: rgba(0, 0, 0, 0.4);
+  --land-halo: rgba(127, 190, 161, 0.16);
+  --land-figure-glow: rgba(127, 190, 161, 0.3);
 
   --land-mark-crown: #a8afa8;
   --land-mark-shadow: #6b736c;
@@ -569,7 +595,11 @@ body {
 
 /* --------------------------------------------------------------- landing */
 
+/* `isolation` so the grain below can sit at a negative depth: it has to paint
+   above this element's own canvas and beneath every word on it. */
 .forecast-landing {
+  position: relative;
+  isolation: isolate;
   background-color: var(--canvas);
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
@@ -704,7 +734,8 @@ body {
 .hero-secondary-link {
   transition:
     border-color 140ms var(--ease-out),
-    background-color 140ms var(--ease-out);
+    background-color 140ms var(--ease-out),
+    transform 160ms var(--ease-out);
 }
 
 /*
@@ -727,15 +758,6 @@ body {
   opacity: 0;
   filter: blur(var(--reveal-blur));
   transform: translate3d(var(--reveal-x), var(--reveal-y), 0) scale(var(--reveal-scale));
-  /* Opacity over three quarters of the travel rather than a flat 400ms. Fixed,
-     it finished at wildly different points depending on how long the element
-     had been given — barely half way through a 760ms reveal — so a slow
-     arrival was fully opaque and still visibly moving. */
-  transition:
-    opacity calc(var(--reveal-duration, 520ms) * 0.75) var(--ease-out),
-    filter calc(var(--reveal-duration, 520ms) * 0.6) var(--ease-out),
-    transform var(--reveal-duration, 520ms) var(--ease-out);
-  transition-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
 }
 
@@ -769,10 +791,32 @@ body {
   will-change: auto;
 }
 
+/*
+ * The transition is declared here rather than on `.reveal`, so it exists only
+ * for the journey the reveal is actually for.
+ *
+ * Declared on the hidden state, it also ran the other way: `.motion-ready`
+ * arrives a frame after mount, and every element on the page then spent 620ms
+ * transitioning *down* into the position it was supposed to start from. That
+ * is invisible on a fast hydration and plainly wrong on a slow one — and a
+ * running transition outranks even an `!important` author rule, so it is also
+ * what left `audits/a1.mjs` measuring blocks 40px above where their ink had
+ * been painted, however hard the audit tried to flatten them.
+ *
+ * Opacity over three quarters of the travel rather than a flat 400ms. Fixed,
+ * it finished at wildly different points depending on how long the element had
+ * been given — barely half way through a 760ms reveal — so a slow arrival was
+ * fully opaque and still visibly moving.
+ */
 .motion-ready .reveal[data-shown="true"] {
   opacity: 1;
   filter: blur(0);
   transform: translate3d(0, 0, 0);
+  transition:
+    opacity calc(var(--reveal-duration, 520ms) * 0.75) var(--ease-out),
+    filter calc(var(--reveal-duration, 520ms) * 0.6) var(--ease-out),
+    transform var(--reveal-duration, 520ms) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
   will-change: auto;
 }
 
@@ -983,9 +1027,15 @@ body {
    * property: the arrow inside has its own nudge and is a different element,
    * so there is nothing here to compose with — and `getComputedStyle().transform`
    * is where anything measuring this will look, `audits/track-b.mjs` included.
+   *
+   * The lean towards the cursor rides on the same declaration. `--magnet-x`
+   * and `--magnet-y` are whole pixels written by `useMagnet`, so a pointer at
+   * the button's own centre — which is where anything measuring this puts it
+   * — resolves to the bare 1px lift and nothing else.
    */
-  .cta-nudge:hover {
-    transform: translate3d(0, -1px, 0);
+  .cta-nudge:hover,
+  .hero-secondary-link:hover {
+    transform: translate3d(var(--magnet-x, 0px), calc(var(--magnet-y, 0px) - 1px), 0);
   }
 }
 
@@ -1658,7 +1708,6 @@ svg[role="img"]:focus-visible {
 
 .signal-row--act {
   background: var(--land-brief-act);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .signal-row--act .signal-label {
@@ -2010,5 +2059,434 @@ svg[role="img"]:focus-visible {
   .motion-ready .feature-line::before,
   .motion-ready .feature-ordinal {
     transition: none;
+  }
+}
+
+
+/* ------------------------------------------------ landing: the cinematic layer
+
+   Everything below is decoration: drifting light behind the hero, a grain
+   pass over the page, a lit stage under the accuracy figure, and panels that
+   lean towards the pointer. All of it is transform and opacity, and every
+   ambient loop is paused the moment the hero leaves the viewport —
+   `CinematicField` writes `data-ambient` for exactly that, so a reader
+   halfway down the page is paying for none of it. */
+
+/*
+ * Anchored to the page, behind everything on it, and it does not move.
+ *
+ * A fixed full-screen layer at 3% has to be alpha-blended over every frame of
+ * a scroll — two million pixels a frame, on a machine with no GPU — and one
+ * that also drifts on a stepped clock has to be composited on top of that.
+ * `audits/track-b.mjs` gates exactly that cost. Painted into the page
+ * instead, the grain rasterises with the tiles it sits on and a scroll costs
+ * nothing for it.
+ *
+ * And it sits under the type rather than over it. A grain that travels with
+ * the paper is paper texture, not a lens, so under is where it belongs; it is
+ * also the difference between a texture and three per cent of noise laid over
+ * every word on the page. `audits/a1.mjs` reads the ground under a block of
+ * text by its most common colour, and noise on top moved that ground by the
+ * three levels that decided whether the card behind a paragraph counted as
+ * ink.
+ */
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+}
+
+.atmosphere-grain {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: var(--land-grain);
+}
+
+/* -------------------------------------------------------- hero: the light */
+
+.hero-atmos {
+  position: absolute;
+  inset: 0;
+  z-index: -10;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(112% 88% at 50% 42%, transparent 52%, var(--land-vignette) 100%);
+}
+
+/*
+ * Three slow lights behind the headline, on three different clocks so they
+ * never come back to the same arrangement. Translate and opacity only: a
+ * scale re-rasters the gradient every frame, which is the one thing the hero
+ * cannot afford at this size.
+ */
+.aurora {
+  position: absolute;
+  will-change: transform, opacity;
+}
+
+.aurora-a {
+  left: -6%;
+  top: -12%;
+  width: 58%;
+  height: 86%;
+  background: radial-gradient(closest-side, var(--land-aurora-a), transparent 72%);
+  animation: aurora-a 27s ease-in-out infinite alternate;
+}
+
+.aurora-b {
+  right: -10%;
+  top: 2%;
+  width: 54%;
+  height: 78%;
+  background: radial-gradient(closest-side, var(--land-aurora-b), transparent 74%);
+  animation: aurora-b 34s ease-in-out infinite alternate;
+}
+
+.aurora-c {
+  left: 22%;
+  bottom: -22%;
+  width: 62%;
+  height: 70%;
+  background: radial-gradient(closest-side, var(--land-aurora-c), transparent 76%);
+  animation: aurora-c 41s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-a {
+  from { opacity: 0.5; transform: translate3d(-4%, -3%, 0); }
+  to { opacity: 1; transform: translate3d(10%, 7%, 0); }
+}
+
+@keyframes aurora-b {
+  from { opacity: 0.9; transform: translate3d(5%, 6%, 0); }
+  to { opacity: 0.45; transform: translate3d(-8%, -5%, 0); }
+}
+
+@keyframes aurora-c {
+  from { opacity: 0.35; transform: translate3d(6%, 4%, 0); }
+  to { opacity: 0.85; transform: translate3d(-9%, -6%, 0); }
+}
+
+/* One pass of light across the hero, on a long cycle. Wide and weak enough
+   that it reads as a room's light moving rather than as a highlight. */
+.hero-beam {
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  left: 0;
+  width: 32%;
+  background: linear-gradient(90deg, transparent, var(--land-beam), transparent);
+  opacity: 0;
+  transform: translate3d(-70%, 0, 0) rotate(12deg);
+  animation: beam-sweep 15s var(--ease-draw) 3s infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes beam-sweep {
+  0% { opacity: 0; transform: translate3d(-70%, 0, 0) rotate(12deg); }
+  14% { opacity: 1; }
+  58% { opacity: 0; }
+  100% { opacity: 0; transform: translate3d(340%, 0, 0) rotate(12deg); }
+}
+
+/*
+ * A key light at the cursor. `--px` / `--py` are document pixels written once
+ * per frame by `CinematicField`, and the light is a fixed-size layer moved by
+ * a transform — placing it by animating the gradient's own position instead
+ * would repaint a 700px circle on every pointer move.
+ */
+.hero-spot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44rem;
+  height: 44rem;
+  margin: -22rem 0 0 -22rem;
+  background: radial-gradient(closest-side, var(--land-spot), transparent 72%);
+  opacity: 0;
+  transform: translate3d(var(--px, 50vw), var(--py, 30vh), 0);
+  transition: opacity 700ms var(--ease-out);
+}
+
+.forecast-landing[data-ambient="on"][data-pointer="on"] .hero-spot {
+  opacity: 1;
+  will-change: transform;
+}
+
+.forecast-landing[data-ambient="off"] .hero-wash,
+.forecast-landing[data-ambient="off"] .aurora,
+.forecast-landing[data-ambient="off"] .hero-beam {
+  animation-play-state: paused;
+}
+
+.forecast-landing[data-ambient="off"] .aurora,
+.forecast-landing[data-ambient="off"] .hero-beam,
+.forecast-landing[data-ambient="off"] .hero-wash {
+  will-change: auto;
+}
+
+/* --------------------------------------------------- hero: the stage wipe */
+
+.hero-stage {
+  position: relative;
+}
+
+/*
+ * One pass of light across the chart as it arrives, clipped by its own box
+ * rather than by the frame — the frame cannot take `overflow: hidden`, which
+ * would cut the chart's focus ring at its 4px offset.
+ */
+.stage-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage-sweep::before {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, var(--land-sweep), transparent);
+  opacity: 0;
+  transform: translate3d(-170%, 0, 0) rotate(9deg);
+}
+
+.motion-ready [data-shown="true"] .stage-sweep::before {
+  animation: stage-sweep 1500ms var(--ease-draw) 320ms both;
+}
+
+@keyframes stage-sweep {
+  0% { opacity: 0; transform: translate3d(-170%, 0, 0) rotate(9deg); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(330%, 0, 0) rotate(9deg); }
+}
+
+/* ------------------------------------------------- headings: the title swing
+
+   The words swing up out of the page instead of sliding, which is the one
+   thing that makes a heading read as a title card rather than as text that
+   moved. No blur: `audits/a1.mjs` screenshots the page while the hero is
+   still settling, and blurred glyphs smear one line into the next. */
+
+.motion-ready .split-words[data-motion="cinematic"] .split-word {
+  opacity: 0;
+  transform-origin: 50% 100%;
+  transform: perspective(760px) translate3d(0, 0.55em, -130px) rotateX(-64deg);
+}
+
+.motion-ready .split-words[data-motion="cinematic"][data-shown="true"] .split-word {
+  animation: word-swing 760ms cubic-bezier(0.17, 1.02, 0.32, 1)
+    calc(var(--reveal-delay, 0ms) + var(--word-delay, 0ms)) both;
+}
+
+@keyframes word-swing {
+  from {
+    opacity: 0;
+    transform: perspective(760px) translate3d(0, 0.55em, -130px) rotateX(-64deg);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(760px) translate3d(0, 0, 0) rotateX(0deg);
+  }
+}
+
+/* ------------------------------------------------------ panels: the lean */
+
+.tilt-scene {
+  perspective: 1200px;
+}
+
+.motion-ready .tilt-plate {
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 700ms var(--ease-out);
+}
+
+/* ------------------------------------------------- sections: the drawn edge
+
+   The rule between two sections draws itself as the boundary is reached,
+   rather than being there before the section is. Scroll-driven, so the
+   drawing is the reader's own movement; where the timeline is unavailable
+   the rule is simply a rule, which is what it was. */
+
+.section-edge {
+  position: relative;
+}
+
+.section-edge::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: var(--section-edge, var(--border));
+  transform-origin: center;
+}
+
+.section-edge--band {
+  --section-edge: var(--land-band-rule);
+}
+
+@keyframes edge-draw {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+/* -------------------------------------------------- accuracy: the lit stage */
+
+.accuracy-scene {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/*
+ * One light, behind the figure, and no second gradient crossing it. Two
+ * overlapping washes compound to about a third of an alpha, and `audits/a1.mjs`
+ * then reads the ground under the two columns of copy as varying by more than
+ * the ink it is looking for — every row counts as inked and four wrapped lines
+ * report as one band. A single wash at this strength leaves the copy on flat
+ * paper, which is also the only reason it stays comfortable to read.
+ */
+.accuracy-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: min(140%, 1500px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  pointer-events: none;
+  background: radial-gradient(34% 40% at 34% 38%, var(--land-halo), transparent 74%);
+}
+
+.accuracy-figure {
+  text-shadow: 0 0 46px var(--land-figure-glow);
+}
+
+@keyframes halo-drift {
+  from { transform: translate3d(0, 8%, 0) rotate(-7deg); }
+  to { transform: translate3d(0, -8%, 0) rotate(7deg); }
+}
+
+@keyframes figure-push {
+  from { transform: translate3d(0, 24px, 0); }
+  to { transform: translate3d(0, -24px, 0); }
+}
+
+@keyframes ordinal-drift {
+  from { transform: translate3d(0, 20px, 0); }
+  to { transform: translate3d(0, -20px, 0); }
+}
+
+/*
+ * The scroll-driven half of the page. A view timeline costs nothing when the
+ * section is not on screen and needs no listener at all, so the parallax here
+ * is cheaper than the three transforms in the hero. Gated on support, because
+ * without it a `both` fill would leave every one of these at its start frame.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .motion-ready .section-edge::before {
+      animation: edge-draw 1s linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 26%;
+    }
+
+    .motion-ready .accuracy-halo {
+      animation: halo-drift 1s linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+
+    .motion-ready .accuracy-figure {
+      animation: figure-push 1s linear both;
+      animation-timeline: view();
+      animation-range: cover 10% cover 90%;
+    }
+
+    .motion-ready .feature-ordinal {
+      animation: ordinal-drift 1s linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+/* -------------------------------------------- the brief: the answer's edge
+
+   The row worth acting on draws its accent edge once the three rows have
+   finished ranking themselves — the last thing to arrive, on the one row the
+   reader is being sent to. A pass of light across the row was the first
+   version of this and it crossed the sentence it was drawing attention to,
+   which is both worse to read and enough, caught mid-sweep, to make
+   `audits/a1.mjs` read two lines of that sentence as one band of ink. */
+
+.signal-row--act {
+  position: relative;
+}
+
+.signal-row--act::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--accent);
+  transform-origin: top;
+  pointer-events: none;
+}
+
+.motion-ready [data-shown="true"] .signal-row--act::after {
+  animation: act-edge 620ms var(--ease-out) 620ms both;
+}
+
+@keyframes act-edge {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora,
+  .hero-beam {
+    animation: none;
+    will-change: auto;
+  }
+
+  .hero-beam,
+  .hero-spot {
+    opacity: 0;
+  }
+
+  .motion-ready .tilt-plate {
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .atmosphere,
+  .accuracy-halo,
+  .stage-sweep {
+    display: none;
+  }
+
+  .accuracy-figure {
+    text-shadow: none;
   }
 }

@@ -27,6 +27,8 @@ export type SplitWordsProps = {
   delay?: number;
   /** Milliseconds between one word and the next. */
   stagger?: number;
+  /** `cinematic` swings each word up out of the page rather than sliding it. */
+  motion?: "rise" | "cinematic";
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
 
 //: Long headings would otherwise finish well after the reader has read them.
@@ -37,6 +39,7 @@ export function SplitWords({
   as = "h2",
   delay = 0,
   stagger = 60,
+  motion = "rise",
   className,
   ...rest
 }: SplitWordsProps) {
@@ -44,7 +47,14 @@ export function SplitWords({
   const step = Math.min(stagger, MAX_STAGGER_TOTAL / Math.max(words.length, 1));
 
   return (
-    <Reveal as={as} variant="words" delay={delay} className={cn("split-words", className)} {...rest}>
+    <Reveal
+      as={as}
+      variant="words"
+      delay={delay}
+      data-motion={motion}
+      className={cn("split-words", className)}
+      {...rest}
+    >
       {words.map((word, index) => (
         <Fragment key={`${word}-${index}`}>
           <span

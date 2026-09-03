@@ -10,10 +10,13 @@ import Link from "next/link";
 import type { CSSProperties, ElementType, ReactNode } from "react";
 import { useRef } from "react";
 
+import { Atmosphere } from "@/components/marketing/atmosphere";
 import { BuildStage } from "@/components/marketing/build-stage";
+import { CinematicField } from "@/components/marketing/cinematic-field";
 import { CountUp } from "@/components/marketing/count-up";
+import { PrimaryCta, SecondaryCta } from "@/components/marketing/cta";
 import { DemandScape } from "@/components/marketing/demand-scape";
-import { Arrow, FloatingNav } from "@/components/marketing/floating-nav";
+import { FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { useReadingFocus } from "@/components/marketing/reading-focus";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
@@ -21,6 +24,7 @@ import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
+import { useTilt } from "@/components/marketing/tilt";
 import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
@@ -121,7 +125,9 @@ export function Landing() {
   return (
     <div className={cn("forecast-landing min-h-screen overflow-x-clip bg-canvas text-text-primary", motionReady && "motion-ready")}>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <Atmosphere />
       <ScrollDepth target="#top" />
+      <CinematicField scene=".forecast-landing" ambient="#top" />
       <FloatingNav />
       <main id="main-content">
         <Hero />
@@ -167,7 +173,15 @@ function Eyebrow({
 function Hero() {
   return (
     <section id="top" className="relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]">
-      <div className="hero-wash depth-layer depth-wash pointer-events-none absolute inset-x-0 top-[var(--nav-total)] -z-10 mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" aria-hidden />
+      <div className="hero-atmos" aria-hidden>
+        <span className="hero-wash depth-layer depth-wash absolute inset-x-0 top-[var(--nav-total)] mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" />
+        <span className="aurora aurora-a" />
+        <span className="aurora aurora-b" />
+        <span className="aurora aurora-c" />
+        <span className="hero-beam" />
+        <span className="hero-spot" />
+        <span className="hero-vignette" />
+      </div>
 
       <div className="depth-layer depth-copy page-shell flex flex-col items-center text-center">
         <Reveal variant="fade" duration={420} className="flex items-center justify-center gap-3">
@@ -180,6 +194,7 @@ function Hero() {
           text="See your demand before it arrives."
           delay={70}
           stagger={78}
+          motion="cinematic"
           className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
         />
 
@@ -189,20 +204,10 @@ function Hero() {
         </Reveal>
 
         <Reveal delay={240} duration={620} className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
-          <Link
-            href="/signin"
-            className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px] sm:px-8"
-          >
-            Start forecasting
-            <Arrow />
-          </Link>
-          <Link
-            href="/dashboard"
-            aria-label="Open the dashboard"
-            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-border-strong bg-surface/75 px-6 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
-          >
+          <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
+          <SecondaryCta href="/dashboard" label="Open the dashboard">
             Explore the live workspace
-          </Link>
+          </SecondaryCta>
         </Reveal>
         <Reveal delay={300} duration={520} className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim">
           <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No setup project</span>
@@ -213,6 +218,7 @@ function Hero() {
 
       <Reveal delay={330} variant="scale" duration={760} className="depth-layer depth-stage page-shell mt-10 sm:mt-12">
         <div className="hero-stage">
+          <span aria-hidden className="stage-sweep" />
           <div className="mb-5 border-b border-land-rule-soft pb-4">
             <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">Interactive forecast preview</p>
           </div>
@@ -254,7 +260,7 @@ function Proof() {
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" className="section-pad border-t border-border">
+    <section id="how-it-works" className="section-edge section-pad">
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow>01 — Getting started</Eyebrow>
@@ -309,7 +315,7 @@ function Features() {
   useReadingFocus(rows, ".feature-line");
 
   return (
-    <section id="features" className="section-pad border-t border-border">
+    <section id="features" className="section-edge section-pad">
       <div className={SHELL}>
         <Reveal variant="from-left" duration={640}>
           <Eyebrow as="h2">What you get</Eyebrow>
@@ -347,8 +353,11 @@ function Features() {
 }
 
 function InsightsPreview() {
+  const brief = useRef<HTMLDivElement>(null);
+  useTilt(brief, 3.2);
+
   return (
-    <section id="insights" className="section-pad border-t border-land-band-rule bg-land-band">
+    <section id="insights" className="section-edge section-edge--band section-pad bg-land-band">
       <div className={cn(SHELL, "grid items-start gap-10 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Decision brief</Eyebrow>
@@ -364,8 +373,8 @@ function InsightsPreview() {
           </div>
         </Reveal>
 
-        <Reveal delay={120} variant="from-right" duration={720}>
-          <div className="border border-land-brief-border bg-land-brief">
+        <Reveal delay={120} variant="from-right" duration={720} className="tilt-scene">
+          <div ref={brief} className="tilt-plate border border-land-brief-border bg-land-brief">
             <div className="flex items-center justify-between gap-4 border-b border-land-brief-rule px-5 py-4 sm:px-6">
               <div>
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-land-dim">Decision brief · this run</p>
@@ -407,8 +416,11 @@ function InsightsPreview() {
 }
 
 function Compare() {
+  const panels = useRef<HTMLDivElement>(null);
+  useTilt(panels, 2.6);
+
   return (
-    <section id="compare" className="section-pad border-t border-border">
+    <section id="compare" className="section-edge section-pad">
       <div className={cn(SHELL, "grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16")}>
         <Reveal variant="from-left" duration={680}>
           <Eyebrow>Built for a real decision</Eyebrow>
@@ -422,8 +434,10 @@ function Compare() {
             One answer, with the uncertainty left in
           </p>
         </Reveal>
-        <Reveal delay={120} variant="from-right" duration={720}>
-          <RangeVsLine />
+        <Reveal delay={120} variant="from-right" duration={720} className="tilt-scene">
+          <div ref={panels} className="tilt-plate">
+            <RangeVsLine />
+          </div>
         </Reveal>
       </div>
     </section>
@@ -432,22 +446,26 @@ function Compare() {
 
 function Accuracy() {
   return (
-    <section id="accuracy" className="section-pad bg-land-invert text-land-invert-ink">
-      <div className={cn(SHELL, "max-w-[62rem]")}>
+    <section id="accuracy" className="accuracy-scene section-pad bg-land-invert text-land-invert-ink">
+      <span aria-hidden className="accuracy-halo" />
+      <div className={cn(SHELL, "relative max-w-[62rem]")}>
         <Reveal variant="fade" duration={680}>
           <Eyebrow light>Accuracy</Eyebrow>
         </Reveal>
 
         <Reveal delay={80} duration={760} className="mt-6">
-          <p className="font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
+          <p className="accuracy-figure font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
             <CountUp value={94} />%
           </p>
         </Reveal>
 
         <Reveal delay={200} duration={720}>
-          <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
-            of the sales it had never seen.
-          </h2>
+          <SplitWords
+            text="of the sales it had never seen."
+            stagger={70}
+            motion="cinematic"
+            className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal"
+          />
         </Reveal>
 
         <div className="mt-12 grid gap-10 border-t border-land-invert-rule pt-10 sm:grid-cols-2 sm:gap-14">
@@ -487,6 +505,7 @@ function Closing() {
         <SplitWords
           text="See what is coming next."
           stagger={80}
+          motion="cinematic"
           className="mt-4 text-balance font-display text-site-h2 font-normal"
         />
         <p className="mx-auto mt-5 max-w-[42ch] text-site-lead text-text-secondary">
@@ -494,16 +513,8 @@ function Closing() {
         </p>
 
         <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:mx-auto min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
-          <Link href="/signin" className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-7 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px] sm:px-8">
-            Start forecasting
-            <Arrow />
-          </Link>
-          <Link
-            href="/dashboard"
-            className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-border-strong bg-surface/75 px-6 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
-          >
-            Explore the live workspace
-          </Link>
+          <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
+          <SecondaryCta href="/dashboard">Explore the live workspace</SecondaryCta>
         </div>
 
         <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim">
