@@ -270,6 +270,65 @@ class SeriesScoreRow(BaseModel):
         return round(self.forecast_total - self.actual_total, 4)
 
 
+class MetricWithheldRead(BaseModel):
+    """A metric this series cannot carry, and the reason it cannot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    reason: str
+
+
+class MetricPlanRead(BaseModel):
+    """Which metrics the data itself supports, and which one leads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    demand_class: str
+    headline: str
+    ranking: list[str]
+    reported: list[str]
+    withheld: list[MetricWithheldRead]
+    seasonal_period: NonNegativeInt
+    point_forecast_is_meaningful: bool
+    note: str
+
+
+class ResidualRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period: date
+    actual: float
+    predicted: float
+    residual: float
+
+
+class ResidualBucketRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start: float
+    end: float
+    count: NonNegativeInt
+
+
+class DiagnosticResponse(BaseModel):
+    """How the forecast is wrong, not only how much."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: uuid.UUID
+    series_id: uuid.UUID | None
+    frequency: ForecastFrequency
+    plan: MetricPlanRead
+    #: Only the metrics the plan admits. A withheld metric is absent here
+    #: rather than present and null: it was never computed.
+    scored: dict[str, float | None]
+    residuals: list[ResidualRead]
+    histogram: list[ResidualBucketRead]
+    residual_sigma: float | None
+    caveats: list[str]
+
+
 class ScorecardResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

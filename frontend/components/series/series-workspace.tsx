@@ -11,6 +11,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { AccuracyScatter } from "@/components/charts/accuracy-scatter";
+import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
 import { AccuracyCell } from "@/components/dashboard/accuracy-cell";
 import {
@@ -262,6 +263,12 @@ function SeriesTable({
           showActions={false}
         />
       ) : null}
+
+      <DiagnosticsPanel
+        runId={runId}
+        seriesId={selected && selected.level > 0 ? selected.id : null}
+        currency={currency}
+      />
 
       {population && population.rows.length > 1 ? (
         <Card>

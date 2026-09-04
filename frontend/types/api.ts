@@ -411,6 +411,49 @@ export type SeriesStatus = "forecast" | "estimated" | "pooled" | "blocked";
 
 export type SeriesSort = "value_at_risk" | "wmape" | "forecast_total" | "label";
 
+export interface MetricWithheld {
+  name: string;
+  reason: string;
+}
+
+/** Which metrics this series' own data can carry, and which one leads. */
+export interface MetricPlan {
+  demand_class: string;
+  headline: string;
+  ranking: string[];
+  reported: string[];
+  withheld: MetricWithheld[];
+  seasonal_period: number;
+  point_forecast_is_meaningful: boolean;
+  note: string;
+}
+
+export interface Residual {
+  period: string;
+  actual: number;
+  predicted: number;
+  residual: number;
+}
+
+export interface ResidualBucket {
+  start: number;
+  end: number;
+  count: number;
+}
+
+export interface DiagnosticReport {
+  run_id: string;
+  series_id: string | null;
+  frequency: ForecastFrequency;
+  plan: MetricPlan;
+  /** Keyed by metric name; a withheld metric is absent, never null. */
+  scored: Record<string, number | null>;
+  residuals: Residual[];
+  histogram: ResidualBucket[];
+  residual_sigma: number | null;
+  caveats: string[];
+}
+
 export interface SeriesRow {
   id: string;
   parent_id: string | null;

@@ -1,4 +1,5 @@
 import type {
+  DiagnosticReport,
   AccuracyReport,
   ApiErrorBody,
   BreakdownResponse,
@@ -513,6 +514,13 @@ export const getForecastPoints = (
   params: { start?: string; end?: string; series_id?: string } = {},
   signal?: AbortSignal,
 ) => request<ForecastPointsResponse>(`/api/forecasts/${id}/points${buildQuery(params)}`, { signal });
+
+export const getForecastDiagnostics = (
+  id: string,
+  params: { series_id?: string } = {},
+  signal?: AbortSignal,
+) =>
+  request<DiagnosticReport>(`/api/forecasts/${id}/diagnostics${buildQuery(params)}`, { signal });
 
 export const getForecastSeries = (
   id: string,

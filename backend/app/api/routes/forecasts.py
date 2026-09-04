@@ -22,6 +22,7 @@ from app.forecasting.selection import scoring_rule
 from app.models.entities import ForecastRun, ModelCandidate
 from app.models.enums import PointKind, RunStatus, SeriesStatus
 from app.schemas.forecast import (
+    DiagnosticResponse,
     ForecastMetricRead,
     ForecastMetricsResponse,
     ForecastMonitoringResponse,
@@ -47,6 +48,7 @@ from app.schemas.forecast import (
 )
 from app.services import (
     accuracy_service,
+    diagnostic_service,
     forecast_service,
     scenario_service,
     scoring_service,
@@ -265,6 +267,31 @@ async def get_accuracy(run_id: uuid.UUID, session: SessionDep) -> dict:
     if report is None:
         raise NotFoundError(f"No forecast run with id {run_id}.")
     return report.as_dict()
+
+
+@router.get(
+    "/{run_id}/diagnostics",
+    response_model=DiagnosticResponse,
+    summary="How this forecast is wrong, not only how much",
+    description=(
+        "The residuals period by period, their distribution, and the metrics this "
+        "particular series can honestly carry. Which metrics those are is read from the "
+        "data itself: a series with zeros in it is not shown a MAPE, and `plan.withheld` "
+        "says why each absent metric is absent. Pass `series_id` to scope a grouped run "
+        "to one line."
+    ),
+)
+async def get_diagnostics(
+    run_id: uuid.UUID,
+    session: SessionDep,
+    series_id: uuid.UUID | None = Query(
+        default=None, description="Scope to one series of a grouped run; omit for the top line."
+    ),
+) -> DiagnosticResponse:
+    report = await diagnostic_service.build(session, run_id, series_id=series_id)
+    if report is None:
+        raise NotFoundError(f"No forecast run with id {run_id}.")
+    return DiagnosticResponse.model_validate(report.as_dict())
 
 
 @router.get(

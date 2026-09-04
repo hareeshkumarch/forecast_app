@@ -71,6 +71,8 @@ const queryKeys = {
   runPoints: (id: string, start?: string | null, end?: string | null, seriesId?: string | null) =>
     ["forecasts", id, "points", start ?? null, end ?? null, seriesId ?? null] as const,
   runSeries: (id: string, query: SeriesQuery) => ["forecasts", id, "series", query] as const,
+  runDiagnostics: (id: string, seriesId?: string | null) =>
+    ["forecasts", id, "diagnostics", seriesId ?? null] as const,
   runScore: (id: string) => ["forecasts", id, "score"] as const,
   scenarios: (id: string) => ["forecasts", id, "scenarios"] as const,
   comparison: (left: string, right: string) => ["forecasts", "compare", left, right] as const,
@@ -272,6 +274,27 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
       }, signal),
     enabled: Boolean(runId),
 
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * How a run is wrong, and which metrics its data can carry.
+ *
+ * Kept apart from the scorecard on purpose: the headline number is wanted on
+ * every dashboard read, and the residuals behind it are wanted only when
+ * somebody is asking why. Fetching them together would put a per-period
+ * payload on the path of every page load that never opens this.
+ */
+export function useForecastDiagnostics(
+  runId: string | null | undefined,
+  seriesId?: string | null,
+) {
+  return useQuery({
+    queryKey: queryKeys.runDiagnostics(runId ?? "none", seriesId),
+    queryFn: ({ signal }) =>
+      api.getForecastDiagnostics(runId as string, seriesId ? { series_id: seriesId } : {}, signal),
+    enabled: Boolean(runId),
     placeholderData: keepPreviousData,
   });
 }
