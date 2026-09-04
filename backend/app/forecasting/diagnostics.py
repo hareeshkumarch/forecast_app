@@ -32,6 +32,13 @@ class SeriesProfile:
     seasonal_scores: dict[int, float]
     trend_strength: float
     strictly_positive: bool
+    #: Every observation is at or above zero. Distinct from
+    #: `strictly_positive`, which a single legitimate zero turns off — and the
+    #: two answer different questions. Log-space error metrics need only this
+    #: one, and the demand classification means nothing without it: a series
+    #: that swings either side of zero has no "periods with no demand" to
+    #: count, so its interval and its CV² describe something else entirely.
+    non_negative: bool
     zero_share: float
     intermittent: bool
     coefficient_of_variation: float
@@ -61,6 +68,7 @@ class SeriesProfile:
             "seasonal_strength": round(self.seasonal_strength, 4),
             "trend_strength": round(self.trend_strength, 4),
             "intermittent": self.intermittent,
+            "non_negative": self.non_negative,
             "zero_share": round(self.zero_share, 4),
             "outlier_share": round(self.outlier_share, 4),
             "coefficient_of_variation": round(self.coefficient_of_variation, 4),
@@ -391,6 +399,7 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
             seasonal_scores={},
             trend_strength=0.0,
             strictly_positive=False,
+            non_negative=True,
             zero_share=0.0,
             intermittent=False,
             coefficient_of_variation=0.0,
@@ -438,6 +447,7 @@ def profile_series(values: FloatArray, frequency: ForecastFrequency) -> SeriesPr
         seasonal_scores=scores,
         trend_strength=_trend_strength(finite, period),
         strictly_positive=strictly_positive,
+        non_negative=bool(np.all(finite >= 0.0)),
         zero_share=zero_share,
         intermittent=intermittent,
         coefficient_of_variation=cv,

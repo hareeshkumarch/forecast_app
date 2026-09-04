@@ -248,6 +248,178 @@ def winkler(
     return float(np.mean(width + below + above))
 
 
+def rmsse(
+    y_true: FloatArray,
+    y_pred: FloatArray,
+    insample: FloatArray,
+    seasonal_period: int = 1,
+) -> float:
+    """MASE's squared sibling, and the one that survives a zero.
+
+    Scaled by the same in-sample seasonal step MASE uses, so it is unitless
+    and comparable across series of wildly different volume — but squared, so
+    a single badly missed peak is not averaged away by a run of easy weeks.
+    That is the trade to make when what the plan actually cannot absorb is the
+    big miss rather than the typical one.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size == 0:
+        return float("nan")
+
+    history = np.asarray(insample, dtype=float).ravel()
+    lag = max(1, int(seasonal_period))
+    if history.size <= lag:
+        lag = 1
+    if history.size <= lag:
+        return float("nan")
+
+    scale = _squared_seasonal_step(history, lag)
+    if not np.isfinite(scale) and lag != 1:
+        scale = _squared_seasonal_step(history, 1)
+    if not np.isfinite(scale) or scale == 0.0:
+        return float("nan")
+
+    return float(np.sqrt(np.mean((t - p) ** 2) / scale))
+
+
+def _squared_seasonal_step(history: FloatArray, lag: int) -> float:
+    if history.size <= lag:
+        return float("nan")
+    ahead, behind = history[lag:], history[:-lag]
+    pairs = np.isfinite(ahead) & np.isfinite(behind)
+    if not pairs.any():
+        return float("nan")
+    return float(np.mean((ahead[pairs] - behind[pairs]) ** 2))
+
+
+def medae(y_true: FloatArray, y_pred: FloatArray) -> float:
+    """Median absolute error: the typical miss, with the outliers ignored.
+
+    Reported beside `mae` rather than instead of it. The pair is the tell —
+    an MAE far above the median says the error is concentrated in a handful
+    of periods, which is a different problem from being uniformly loose and
+    has a different fix.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size == 0:
+        return float("nan")
+    return float(np.median(np.abs(t - p)))
+
+
+def mape(y_true: FloatArray, y_pred: FloatArray) -> float:
+    """Only defined where the actual is non-zero, and it says how many it used.
+
+    Kept because it is the number most planners already have a feel for, and
+    kept out of selection for the reason in `FORBIDDEN_SELECTION_METRICS`. On
+    a series with zeros in it this scores a subset of the periods and cannot
+    be compared with a metric that scored all of them.
+    """
+    t, p = _aligned(y_true, y_pred)
+    usable = t != 0
+    if not np.any(usable):
+        return float("nan")
+    return float(np.mean(np.abs((t[usable] - p[usable]) / t[usable])) * 100.0)
+
+
+def rmsle(y_true: FloatArray, y_pred: FloatArray) -> float:
+    """Error in log space: proportional, and it punishes under-forecasting.
+
+    For strictly positive series that move across orders of magnitude, where
+    missing 10 by 5 matters as much as missing 1000 by 500. Undefined on
+    negatives, so it is offered only where the data is non-negative.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size == 0 or np.any(t < 0) or np.any(p < 0):
+        return float("nan")
+    return float(np.sqrt(np.mean((np.log1p(p) - np.log1p(t)) ** 2)))
+
+
+def theil_u2(
+    y_true: FloatArray,
+    y_pred: FloatArray,
+    insample: FloatArray,
+    seasonal_period: int = 1,
+) -> float:
+    """Skill against the naive forecast: below 1 beat it, above 1 lost to it.
+
+    The one number that answers "was any of this worth doing" without needing
+    to know the units or the volume. `forecast_value_add` answers the same
+    question against whichever baseline a run actually chose; this answers it
+    against the naive one every series has.
+    """
+    naive = rmsse(y_true, y_pred, insample, seasonal_period)
+    if not np.isfinite(naive):
+        return float("nan")
+    return naive
+
+
+def r_squared(y_true: FloatArray, y_pred: FloatArray) -> float:
+    """Share of the actuals' own variance the forecast accounts for.
+
+    Negative when the forecast is worse than having predicted the mean, which
+    is the reading worth having: it is not a floor of zero, and a model can
+    genuinely land below one.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size < 2:
+        return float("nan")
+    total = float(np.sum((t - np.mean(t)) ** 2))
+    if total == 0:
+        return float("nan")
+    return float(1.0 - np.sum((t - p) ** 2) / total)
+
+
+def residual_acf1(y_true: FloatArray, y_pred: FloatArray) -> float:
+    """Lag-one autocorrelation of what the model left behind.
+
+    Residuals that correlate with themselves are signal the model did not
+    take: something predictable is still in there. Near zero is the healthy
+    reading, and the sign says which way — persistent runs of over- or
+    under-forecasting rather than scatter.
+    """
+    t, p = _aligned(y_true, y_pred)
+    if t.size < 3:
+        return float("nan")
+    residual = t - p
+    residual = residual - np.mean(residual)
+    denominator = float(np.sum(residual**2))
+    if denominator == 0:
+        return float("nan")
+    return float(np.sum(residual[1:] * residual[:-1]) / denominator)
+
+
+def interval_skill(
+    y_true: FloatArray,
+    lower: FloatArray,
+    upper: FloatArray,
+    insample: FloatArray,
+    confidence_level: float,
+    seasonal_period: int = 1,
+) -> float:
+    """Winkler's interval score, scaled — so two series can be compared.
+
+    `winkler` is in the units of the data, which makes it unusable for saying
+    whether the intervals on one product are better than the intervals on
+    another. Dividing by the same in-sample seasonal step MASE uses removes
+    the units and leaves the answer.
+    """
+    raw = winkler(y_true, lower, upper, confidence_level)
+    if not np.isfinite(raw):
+        return float("nan")
+
+    history = np.asarray(insample, dtype=float).ravel()
+    lag = max(1, int(seasonal_period))
+    if history.size <= lag:
+        lag = 1
+    scale = _seasonal_step(history, lag)
+    if not np.isfinite(scale) and lag != 1:
+        scale = _seasonal_step(history, 1)
+    if not np.isfinite(scale) or scale == 0.0:
+        return float("nan")
+
+    return float(raw / scale)
+
+
 def accuracy_from_wmape(value: float) -> float:
     if not np.isfinite(value) or value >= 100.0:
         return float("nan")
