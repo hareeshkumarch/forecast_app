@@ -1434,74 +1434,118 @@ svg[role="img"]:focus-visible {
   transform: scaleY(1);
 }
 
-/* ------------------------------------------------ landing: the feature rows */
+/* --------------------------------------------------- landing: the filmstrip
 
-/*
- * A sentence, its explanation, and an index. The rule above each row used to
- * be a plain top border, which meant it was simply there before the row
- * animated in — the one static element in a section that otherwise assembles
- * itself. It is a pseudo-element now so it can be drawn across as the row
- * arrives, in the same direction the row itself travels.
- */
-.feature-line {
+   Three claims, pinned, and run past the reader sideways by the scroll. They
+   were three sentences stacked down the page, which is the arrangement that
+   makes a reader scan rather than stop — and a page that has already asked
+   for their attention twice has to do something with it. `--t` is the scrub,
+   written by `ScrollStage`.
+
+   Everything here is scoped to a live track. Off it — a short window, no
+   JavaScript, a reduced-motion preference — the panels are a column of three
+   at ordinary height, which is what the server sends and what stays. */
+
+.filmstrip-head {
+  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+}
+
+.filmstrip-track {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 2.5rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filmstrip-panel {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.85rem;
+  border-left: 1px solid var(--land-rule);
+  padding-left: clamp(1.1rem, 2.5vw, 1.75rem);
 }
 
-.feature-line::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: 1px;
-  background: var(--land-rule);
-  transform-origin: left;
+.filmstrip-index {
+  font-size: clamp(0.75rem, 1vw, 0.85rem);
+  letter-spacing: 0.22em;
+  color: var(--land-dim);
 }
 
-.feature-line:first-child {
-  padding-top: 0;
+.filmstrip-lede {
+  font-size: clamp(1.75rem, calc(1.3rem + 2.1vw), 3.25rem);
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+  color: var(--text-primary);
 }
 
-.feature-line:first-child::before {
-  display: none;
-}
-
-.motion-ready .feature-line::before {
-  transform: scaleX(0);
-  transition:
-    transform 900ms var(--ease-draw, var(--ease-out)) calc(var(--reveal-delay, 0ms) + 80ms),
-    background-color 400ms ease;
-}
-
-.motion-ready .feature-line[data-shown="true"]::before {
-  transform: scaleX(1);
-}
-
-/*
- * The index sits against the heading's first line rather than the box's top
- * edge. `em` here resolves against the ordinal's own mono size, not the
- * heading's — but that size is on the same fluid scale, so the offset tracks
- * the type at every width instead of being right at exactly one of them.
- *
- * Hidden below the large breakpoint, where the row stacks: an index above a
- * heading it no longer sits beside stops being an index and becomes a stray
- * number.
- */
-.feature-ordinal {
+.filmstrip-rule {
   display: none;
 }
 
 @media (min-width: 1024px) {
-  .feature-ordinal {
-    display: block;
-    padding-top: 0.1em;
-    font-size: clamp(1.5rem, 2.6vw, 2.75rem);
-    line-height: 1;
-    letter-spacing: -0.02em;
+  .scroll-track--live .filmstrip {
+    overflow: hidden;
   }
-}
 
-.feature-line:hover::before {
-  background: var(--border-strong);
+  /*
+   * The travel is the difference between what the strip is and what there is
+   * room for, so it always ends with the last panel against the right edge —
+   * whatever the width. `min(0px, …)` is the guard for a window wide enough
+   * to hold all three at once: there is nothing to run past, so it does not.
+   */
+  .scroll-track--live .filmstrip-track {
+    --panel: min(72vw, 620px);
+    --strip-gap: clamp(1.5rem, 3.5vw, 3rem);
+    --strip-view: min(calc(100vw - 2 * var(--shell-gutter)), var(--shell-max));
+    --strip-span: calc(
+      var(--strip-view) - (3 * var(--panel) + 2 * var(--strip-gap))
+    );
+
+    display: flex;
+    width: max-content;
+    gap: var(--strip-gap);
+    transform: translate3d(calc(min(0px, var(--strip-span)) * var(--t, 0)), 0, 0);
+    will-change: transform;
+  }
+
+  .scroll-track--live .filmstrip-panel {
+    width: var(--panel);
+    min-height: clamp(15rem, 34vh, 21rem);
+    flex: 0 0 auto;
+    justify-content: center;
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  /* The panel being read answers; the two waiting for their turn step back.
+     Only the index and the rule move — the claim itself never dims, because a
+     sentence you have to wait for is worse than one simply sitting there. */
+  .scroll-track--live[data-step="0"] .filmstrip-panel:nth-child(1),
+  .scroll-track--live[data-step="1"] .filmstrip-panel:nth-child(2),
+  .scroll-track--live[data-step="2"] .filmstrip-panel:nth-child(3) {
+    --strip-ink: var(--accent);
+    --strip-weight: 1;
+  }
+
+  .scroll-track--live .filmstrip-index {
+    color: var(--strip-ink, var(--land-dim));
+    transition: color 420ms var(--ease-out);
+  }
+
+  .scroll-track--live .filmstrip-rule {
+    display: block;
+    height: 2px;
+    width: 100%;
+    background: var(--strip-ink, var(--land-rule));
+    transform: scaleX(var(--strip-weight, 0.18));
+    transform-origin: left;
+    transition:
+      transform 620ms var(--ease-out),
+      background-color 420ms var(--ease-out);
+  }
 }
 
 /* ------------------------------------------------------- landing: hero depth */
@@ -1739,15 +1783,6 @@ svg[role="img"]:focus-visible {
 .signal-heading {
   line-height: 1.42;
   text-wrap: pretty;
-}
-
-/*
- * A feature is a sentence on a rule now, so the only hover affordance left is
- * the rule itself brightening — enough to say the page is alive, not enough to
- * suggest the row is a link, because it is not one.
- */
-.motion-ready .feature-line {
-  transition: border-color 400ms ease;
 }
 
 /* ------------------------------------------------- landing: the 3D scene */
@@ -2043,36 +2078,6 @@ svg[role="img"]:focus-visible {
   .scroll-track--live .pipeline-detail {
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: none;
-  }
-}
-
-/*
- * The row being read answers.
- *
- * Only the rule above it and its index move — the sentence itself never dims,
- * because a claim you have to scroll into position to read properly is worse
- * than one that simply sits there. `data-focus` is written by
- * `useReadingFocus`; without it every row keeps the ink it already had.
- */
-.motion-ready .feature-line::before,
-.motion-ready .feature-ordinal {
-  transition:
-    background-color 420ms var(--ease-out),
-    color 420ms var(--ease-out);
-}
-
-.motion-ready .feature-line[data-focus="true"]::before {
-  background: var(--accent);
-}
-
-.motion-ready .feature-line[data-focus="true"] .feature-ordinal {
-  color: var(--accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .motion-ready .feature-line::before,
-  .motion-ready .feature-ordinal {
     transition: none;
   }
 }
@@ -2538,11 +2543,6 @@ svg[role="img"]:focus-visible {
   to { transform: translate3d(0, -90px, 0) scale(1.06); }
 }
 
-@keyframes ordinal-drift {
-  from { opacity: 0.25; transform: translate3d(0, 88px, 0) scale(0.7); }
-  to { opacity: 1; transform: translate3d(0, -88px, 0) scale(1.15); }
-}
-
 /*
  * The scroll-driven half of the page. A view timeline costs nothing when the
  * section is not on screen and needs no listener at all, so the parallax here
@@ -2567,12 +2567,6 @@ svg[role="img"]:focus-visible {
       animation: figure-push 1s linear both;
       animation-timeline: view();
       animation-range: cover 10% cover 90%;
-    }
-
-    .motion-ready .feature-ordinal {
-      animation: ordinal-drift 1s linear both;
-      animation-timeline: view();
-      animation-range: cover 0% cover 100%;
     }
   }
 }

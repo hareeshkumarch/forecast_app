@@ -129,6 +129,9 @@ export function ScrollStage({ screens = 3, className, children }: ScrollStagePro
       const progress = Math.min(Math.max(-top / travel, 0), 1);
       const { fill, read, build, ahead } = beats(progress);
 
+      // The scrub itself, before it is cut into beats: a sequence that is not
+      // the pipeline wants the raw travel, not four numbers shaped for it.
+      node.style.setProperty("--t", progress.toFixed(4));
       node.style.setProperty("--t-fill", fill.toFixed(4));
       node.style.setProperty("--t-read", read.toFixed(4));
       node.style.setProperty("--t-build", build.toFixed(4));
@@ -156,7 +159,7 @@ export function ScrollStage({ screens = 3, className, children }: ScrollStagePro
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       step.current = -1;
-      for (const name of ["--t-fill", "--t-read", "--t-build", "--t-ahead"]) {
+      for (const name of ["--t", "--t-fill", "--t-read", "--t-build", "--t-ahead"]) {
         node.style.removeProperty(name);
       }
       delete node.dataset.step;

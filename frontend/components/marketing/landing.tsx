@@ -14,7 +14,6 @@ import { DemandScape } from "@/components/marketing/demand-scape";
 import { FloatingNav } from "@/components/marketing/floating-nav";
 import { Mark } from "@/components/marketing/mark";
 import { ParallaxField } from "@/components/marketing/parallax";
-import { useReadingFocus } from "@/components/marketing/reading-focus";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
@@ -403,47 +402,38 @@ function HowItWorks() {
 }
 
 function Features() {
-  const rows = useRef<HTMLDivElement>(null);
-  useReadingFocus(rows, ".feature-line");
-
   return (
     <section id="features" className="section-edge section-pad">
-      <div className={SHELL}>
-        <Reveal variant="from-left" duration={640}>
-          <Eyebrow as="h2">What you get</Eyebrow>
-        </Reveal>
-
-        <div ref={rows} className="mt-10 sm:mt-12">
-          {FEATURES.map((feature, index) => (
-            <Reveal
-              key={feature.lede}
-              delay={index * 140}
-              duration={720}
-              variant="from-left"
-              className="feature-line py-10 sm:py-12"
-            >
-              <div
-                data-drift
-                style={{ "--drift": `${-62 + index * 24}px` } as CSSProperties}
-                className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-x-10 lg:gap-y-4"
-              >
-                <span
-                  aria-hidden
-                  className="feature-ordinal font-display font-normal tracking-[-0.02em] text-land-dim"
-                >
+      {/* Pinned, and the scroll runs the three of them past the reader
+          sideways — see `.filmstrip` in globals.css. The heading is pinned
+          with them rather than left behind at the top: a strip travelling
+          under a title nobody can still see is three claims with nothing
+          holding them together. Off the track they are a column of three at
+          ordinary height, which is what a short window, no JavaScript or a
+          reduced-motion preference gets. */}
+      <ScrollStage screens={2.6}>
+        <div className={cn(SHELL, "filmstrip")}>
+          <Reveal variant="from-left" duration={640} className="filmstrip-head">
+            <Eyebrow as="h2">What you get</Eyebrow>
+          </Reveal>
+          <ol className="filmstrip-track">
+            {FEATURES.map((feature, index) => (
+              <li key={feature.lede} className="filmstrip-panel">
+                <span aria-hidden className="filmstrip-index font-mono">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <h3 className="text-balance font-display text-site-h2 font-normal leading-[1.05] text-text-primary">
+                <h3 className="filmstrip-lede text-balance font-display font-normal">
                   {feature.lede}
                 </h3>
-                <p className="max-w-[46ch] self-end text-site-lead text-text-secondary">
+                <p className="filmstrip-body max-w-[42ch] text-site-lead text-text-secondary">
                   {feature.body}
                 </p>
-              </div>
-            </Reveal>
-          ))}
+                <span aria-hidden className="filmstrip-rule" />
+              </li>
+            ))}
+          </ol>
         </div>
-      </div>
+      </ScrollStage>
     </section>
   );
 }
