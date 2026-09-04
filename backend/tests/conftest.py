@@ -100,7 +100,19 @@ def _process_wide_state_starts_fresh():
 #: How long the schema reset will wait for a lingering writer before giving up.
 #: Generous because the thing it waits for is a forecast finishing, and mean:
 #: the failure it replaces is an ERROR at setup of an unrelated test.
-_SCHEMA_LOCK_TIMEOUT_SECONDS = 20.0
+#:
+#: Twenty was tuned on a developer machine and is not enough on a loaded CI
+#: runner, where the same suite takes sixteen minutes rather than three and a
+#: half: a run that finishes in four seconds here needs eighteen there, which
+#: is inside the old deadline only until it is not. Three of four consecutive
+#: pushes died this way, every one of them at the setup of a test with nothing
+#: to do with forecasting.
+#:
+#: Raising it is free. The loop returns the moment the lock clears, so a
+#: healthy run never reaches the deadline and never waits a millisecond
+#: longer; the number is only ever spent on a run that would otherwise have
+#: failed outright.
+_SCHEMA_LOCK_TIMEOUT_SECONDS = 90.0
 
 
 async def _reset_schema() -> None:
