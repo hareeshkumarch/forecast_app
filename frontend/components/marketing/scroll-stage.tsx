@@ -16,6 +16,15 @@ const MIN_HEIGHT = 600;
 export type ScrollStageProps = {
   /** How many screens of scroll the build is given. */
   screens?: number;
+  /**
+   * What this one is scrubbing, published as `data-stage`.
+   *
+   * The page has three of these now. They are identical in the DOM apart from
+   * their contents, so anything reaching for "the scrubbed section" — a test,
+   * a stylesheet, somebody reading it — has no way to say which. The name
+   * costs an attribute and settles it.
+   */
+  stage?: string;
   className?: string;
   children: ReactNode;
 };
@@ -32,7 +41,7 @@ export type ScrollStageProps = {
  * server sends, and a visitor who asked for stillness keeps, a section of
  * ordinary height with the build already at its finished state.
  */
-export function ScrollStage({ screens = 3, className, children }: ScrollStageProps) {
+export function ScrollStage({ screens = 3, stage, className, children }: ScrollStageProps) {
   // The track's height in pixels, or zero for "do not pin this".
   const [track, setTrack] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -171,6 +180,7 @@ export function ScrollStage({ screens = 3, className, children }: ScrollStagePro
       ref={trackRef}
       className={cn("scroll-track", live && "scroll-track--live", className)}
       style={live ? { minHeight: `${track}px` } : undefined}
+      data-stage={stage}
       data-step={live ? 0 : undefined}
     >
       <div ref={pinRef} className="scroll-pin">

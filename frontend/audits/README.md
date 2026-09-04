@@ -22,6 +22,7 @@ node audits/header.mjs     # the collapse control at each breakpoint
 node audits/rail.mjs       # screenshots the left rail open and collapsed
 node audits/bluebox.mjs    # what focus ring a click, drag, tap and Tab produce
 node audits/reveal.mjs     # every section reveals when actually scrolled to
+node audits/accuracy-hold.mjs  # the pinned hold: one line lit, still, and never doubled
 node audits/theme.mjs      # light and dark: contrast against the real ground, and no surface left behind
 node audits/shots.mjs      # screenshots to audits/out-*.png (git-ignored)
 ```
@@ -90,6 +91,29 @@ read as depth — so two rows that resolve to the same ink are one silhouette
 wearing two names, and nothing in the geometry can tell you that has happened.
 It then checks that the two figures the readout splits a week into add up to
 the total it quotes for that week, which is the claim the depth is making.
+
+**accuracy-hold.mjs** scrubs the pinned accuracy section and measures the type
+inside each line, not the line's box. The box is the full window by design, so
+it is present and full-height whether or not there is a word on screen; only a
+range over the contents says where the ink actually is.
+
+It asserts six things, each of which has been broken here at least once. That
+every line is fully shown at some point, and that the window is never empty
+between them. That a line does not move while it is lit — position and opacity
+ran on different clocks once, and the lines slid for the whole hold instead of
+holding still to be read. That no two lines are printed through each other:
+they cross by moving in opposite directions on one clock, so the gap between
+them is the travel itself and does not change through the swap, and a travel
+shorter than half of one line plus half of the next overlaps them for every
+frame of it at every opacity. That no lit line is clipped by the window, which
+is the failure at the other end of the same trade. And that each tick is lit
+with the line it stands for.
+
+The width is printed because the failure that started all this was a window
+nought pixels wide: every line inside it is out of flow, so the box has no
+content to be as wide as, and the section centres its children — which sizes
+them to their content. The lines then wrapped one character to the row and
+stood 707px tall behind a 176px window while reporting full opacity.
 
 **header.mjs** looks for the mobile navigation as a `[role="dialog"]` in a
 portal, not as the inline `#app-navigation`. Below the rail breakpoint the two

@@ -86,7 +86,10 @@ test("every section is readable once scrolled to", async ({ page }) => {
  */
 test("the build advances with the scroll and settles before the pin lets go", async ({ page }) => {
   await page.goto("/");
-  const track = page.locator(".scroll-track");
+  // Named, because the page pins three sections now — the build, the feature
+  // filmstrip and the accuracy hold — and they are the same element apart
+  // from what is inside them.
+  const track = page.locator('.scroll-track[data-stage="build"]');
   await expect(track).toHaveClass(/scroll-track--live/);
 
   const read = () =>
@@ -129,7 +132,7 @@ test("without the scrub the build is already drawn and the section is one screen
 
   await expect(page.locator(".scroll-track--live")).toHaveCount(0);
 
-  const track = page.locator(".scroll-track");
+  const track = page.locator('.scroll-track[data-stage="build"]');
   const finished = await track.evaluate((node) => {
     const styles = getComputedStyle(node);
     return ["--t-fill", "--t-read", "--t-build", "--t-ahead"].map((name) =>

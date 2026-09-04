@@ -2609,9 +2609,17 @@ svg[role="img"]:focus-visible {
    * outside it and paint nothing at all.
    */
   .scroll-track--live .accuracy-beats {
+    --line-window: 16rem;
+    --line-rise: 5rem;
     position: relative;
     display: block;
-    height: 11rem;
+    /* Every line in here is out of flow, so the box has no content to be as
+       wide as — and the hold centres its children, which sizes them to their
+       content. Left to itself it collapsed to nothing and took the lines with
+       it: `inset-inline: 0` against a nought-wide containing block wraps a
+       sentence one character to the row. */
+    width: 100%;
+    height: var(--line-window);
     overflow: hidden;
   }
 
@@ -2619,18 +2627,44 @@ svg[role="img"]:focus-visible {
     position: absolute;
     inset-inline: 0;
     top: 0;
+    /* As tall as the window and centred in it, so lines of two and three rows
+       sit on one middle rather than hanging off one top edge. */
+    display: flex;
+    height: var(--line-window, 16rem);
+    align-items: center;
+    justify-content: center;
     margin-inline: auto;
-    /* Which line owns the window: nought to two across the scrub, held at
-       each end so the first and last sit still while they are read. */
-    --pos: clamp(0, calc(var(--t, 0) * 3 - 0.5), 2);
-    /* And how much of it is showing — the same scrub, windowed per line, so
-       one is arriving while the last is still leaving. */
-    --vis: min(
-      clamp(0, calc((var(--t, 0) - var(--in, 0)) * 11), 1),
-      clamp(0, calc((var(--out, 1) - var(--t, 0)) * 11), 1)
+    /*
+     * One clock for both halves of the beat. `--arrive` is nought until this
+     * line's turn and one once it has taken it; `--leave` is one until its
+     * turn is over and nought after. A line is therefore perfectly still for
+     * every frame it is fully lit, and only ever moves while it is fading —
+     * which is the whole difference between a hold and a drift.
+     *
+     * Position used to run on a clock of its own, ramping across half the
+     * scrub while the fade took a twelfth of it: the lines slid the entire
+     * time, and there was no point in the section where one of them was
+     * simply sitting still to be read.
+     */
+    --arrive: clamp(0, calc((var(--t, 0) - var(--in, 0)) * 11), 1);
+    --leave: clamp(0, calc((var(--out, 1) - var(--t, 0)) * 11), 1);
+    opacity: min(var(--arrive), var(--leave));
+    /*
+     * The two lines move in opposite directions on one clock, so the distance
+     * between them is the rise itself and does not change through the swap:
+     * it has to clear half of the tallest line plus half of the next, or they
+     * are printed through each other for the whole dissolve rather than for a
+     * frame of it. Two and a half rems left them twenty-eight pixels into one
+     * another the entire time, at every opacity.
+     *
+     * The window is then sized to hold a line at full travel, because the
+     * other way this fails is a sentence with its top row sliced off.
+     */
+    transform: translate3d(
+      0,
+      calc((var(--leave) - var(--arrive)) * var(--line-rise, 5rem)),
+      0
     );
-    opacity: var(--vis);
-    transform: translate3d(0, calc((var(--index, 0) - var(--pos)) * 100%), 0);
   }
 
   .scroll-track--live .accuracy-ticks {
@@ -2642,16 +2676,28 @@ svg[role="img"]:focus-visible {
   }
 
   .scroll-track--live .accuracy-tick {
+    position: relative;
     height: 2px;
     width: 3.25rem;
     background: var(--land-invert-rule);
-    transition: background-color 420ms var(--ease-out);
   }
 
-  .scroll-track--live[data-step="0"] .accuracy-tick[data-tick="0"],
-  .scroll-track--live[data-step="1"] .accuracy-tick[data-tick="1"],
-  .scroll-track--live[data-step="2"] .accuracy-tick[data-tick="2"] {
+  /*
+   * Lit off the same windows as the line it stands for, so the row is a
+   * readout of the hold rather than a second opinion about it. It used to key
+   * off `data-step`, which counts the three stages of the pipeline build up
+   * the page: with two lines here the third rule matched nothing and the last
+   * stretch of the scrub lit no tick at all.
+   */
+  .scroll-track--live .accuracy-tick::after {
+    content: "";
+    position: absolute;
+    inset: 0;
     background: var(--land-invert-accent);
+    opacity: min(
+      clamp(0, calc((var(--t, 0) - var(--in, 0)) * 11), 1),
+      clamp(0, calc((var(--out, 1) - var(--t, 0)) * 11), 1)
+    );
   }
 
   /* The figure rises a little through the hold. Translate only: it is the

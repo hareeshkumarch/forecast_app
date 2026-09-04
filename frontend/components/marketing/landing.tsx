@@ -361,7 +361,7 @@ function HowItWorks() {
 
         {/* Pinned, and scrubbed by the scroll rather than played at it — see
             `scroll-stage.tsx` and the `.scroll-track` block in globals.css. */}
-        <ScrollStage className="mt-12 sm:mt-16">
+        <ScrollStage className="mt-12 sm:mt-16" stage="build">
           <div className="pipeline-grid">
             <ol className="pipeline-steps">
               {STEPS.map((step, index) => (
@@ -411,7 +411,7 @@ function Features() {
           holding them together. Off the track they are a column of three at
           ordinary height, which is what a short window, no JavaScript or a
           reduced-motion preference gets. */}
-      <ScrollStage screens={2.6}>
+      <ScrollStage screens={2.6} stage="filmstrip">
         <div className={cn(SHELL, "filmstrip")}>
           <Reveal variant="from-left" duration={640} className="filmstrip-head">
             <Eyebrow as="h2">What you get</Eyebrow>
@@ -608,25 +608,53 @@ function Compare() {
 }
 
 /*
- * Three lines of one argument, held one at a time.
+ * The case for the figure, held one line at a time.
  *
- * They were a heading and two columns of prose, all on screen at once, which
- * is a paragraph asking to be skimmed. Pinned, the figure holds the middle of
- * the screen and the scroll brings each line under it in turn and takes it
- * away again — the reader is moved through the argument at the pace it was
- * written in rather than handed all of it and left to it.
+ * It was two columns of prose under a heading, all on screen at once, which is
+ * a paragraph asking to be skimmed. Pinned, the figure and the heading hold
+ * the middle of the screen and the scroll brings each line of the argument
+ * under them in turn and takes it away again — the reader is moved through it
+ * at the pace it was written in rather than handed all of it and left to it.
+ *
+ * The heading is not one of these. It was, and a section whose name in the
+ * document outline is invisible for most of the scrub is a section a reader
+ * can be sent to by the nav and not find.
  */
 const ACCURACY_BEATS = [
-  { text: "of the sales it had never seen.", lead: true },
-  {
-    text: "Measured against your own history, never a benchmark: we hide part of your past and check whether the forecast would have got it right.",
-    lead: false,
-  },
-  {
-    text: "And every run adds another real result to it — any product, any region, any week.",
-    lead: false,
-  },
+  "Measured against your own history, never a benchmark: we hide part of your past and check whether the forecast would have got it right.",
+  "And every run adds another real result to it — any product, any region, any week.",
 ];
+
+/*
+ * How fast a beat fades, as a multiple of the scrub. Kept in step with the
+ * ramp in `.accuracy-beat` by hand, because the stylesheet is where the fade
+ * has to happen and this is where the windows are worked out.
+ */
+const BEAT_RAMP = 11;
+
+/*
+ * When a beat owns the hold, as a pair of points on the scrub.
+ *
+ * The windows overlap by exactly half a fade, which is the only overlap that
+ * makes the swap a dissolve: the outgoing line is at whatever the incoming
+ * one is not, so there is always one line's worth of ink on screen and never
+ * two. Butted exactly against each other they both reach zero for a frame and
+ * the hold blinks; overlapped any wider — it was a flat twelfth once — both
+ * lines sit at full strength on top of each other and the reader gets two
+ * sentences printed through one another.
+ *
+ * The first and last reach past the ends so they are already lit when the
+ * section arrives and still lit when it leaves.
+ */
+const BEAT_OVERLAP = 1 / (2 * BEAT_RAMP);
+
+function beatWindow(index: number): CSSProperties {
+  const count = ACCURACY_BEATS.length;
+  return {
+    "--in": index === 0 ? -1 : index / count - BEAT_OVERLAP,
+    "--out": index === count - 1 ? 2 : (index + 1) / count + BEAT_OVERLAP,
+  } as CSSProperties;
+}
 
 function Accuracy() {
   return (
@@ -634,7 +662,7 @@ function Accuracy() {
       <span aria-hidden className="accuracy-veil">
         <span className="accuracy-halo" />
       </span>
-      <ScrollStage screens={3.2}>
+      <ScrollStage screens={2.6} stage="accuracy">
         <div className={cn(SHELL, "accuracy-hold")}>
           <Reveal variant="fade" duration={680}>
             <Eyebrow light>Accuracy</Eyebrow>
@@ -644,50 +672,35 @@ function Accuracy() {
             <CountUp value={94} />%
           </p>
 
+          {/* The subject and its name hold; only the argument cycles. The
+              heading was a beat once, which meant the thing naming this
+              section in the document outline was invisible for most of the
+              scrub — and a heading a reader can land on from the nav and not
+              see is a heading that is not there. */}
+          <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
+            of the sales it had never seen.
+          </h2>
+
           {/* Stacked, so the box never changes height as they cross over.
-              Off a live track they are three lines in a column, which is what
-              a short window, no JavaScript or reduced motion gets. */}
+              Off a live track they are a column of ordinary paragraphs, which
+              is what a short window, no JavaScript or reduced motion gets. */}
           <div className="accuracy-beats mt-8">
-            {ACCURACY_BEATS.map((beat, index) => {
-              /* The first line is the section's heading and has to stay one:
-                 it is what names this section in the document outline, and
-                 what `audits/track-a.mjs` scrolls to when the nav sends a
-                 reader here. */
-              const Line = beat.lead ? "h2" : "p";
-              return (
-              <Line
-                key={beat.text}
-                className={cn(
-                  "accuracy-beat",
-                  beat.lead
-                    ? "font-display text-site-h2 font-normal text-land-invert-ink"
-                    : "text-site-lead text-land-invert-secondary",
-                )}
-                /* Windows that overlap by a twelfth of the scrub, so one
-                   line is arriving while the last is still leaving. Butted
-                   exactly against each other they both reach zero for a
-                   frame, and the hold cuts to an empty screen between every
-                   beat. */
-                style={
-                  {
-                    "--index": index,
-                    "--in": index === 0 ? -1 : index / ACCURACY_BEATS.length - 0.08,
-                    "--out":
-                      index === ACCURACY_BEATS.length - 1
-                        ? 2
-                        : (index + 1) / ACCURACY_BEATS.length + 0.08,
-                  } as CSSProperties
-                }
+            {ACCURACY_BEATS.map((text, index) => (
+              <p
+                key={text}
+                className="accuracy-beat text-site-lead text-land-invert-secondary"
+                style={beatWindow(index)}
               >
-                {beat.text}
-              </Line>
-              );
-            })}
+                {text}
+              </p>
+            ))}
           </div>
 
+          {/* The same windows again, so the row reads the hold rather than
+              keeping a count of its own. */}
           <ol className="accuracy-ticks" aria-hidden>
-            {ACCURACY_BEATS.map((beat, index) => (
-              <li key={beat.text} className="accuracy-tick" data-tick={index} />
+            {ACCURACY_BEATS.map((text, index) => (
+              <li key={text} className="accuracy-tick" style={beatWindow(index)} />
             ))}
           </ol>
         </div>
