@@ -22,6 +22,7 @@ jobs:
   backend-lint:
     name: Backend · ruff & mypy
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +53,7 @@ jobs:
   backend-tests:
     name: Backend · pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +76,7 @@ jobs:
   migrations:
     name: Backend · migrations on Postgres
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
@@ -141,6 +144,7 @@ jobs:
   worker:
     name: Backend · Celery round trip
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       redis:
         image: redis:7-alpine
@@ -188,6 +192,7 @@ jobs:
   frontend-checks:
     name: Frontend · lint, types, unit tests, build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -222,6 +227,7 @@ jobs:
   e2e:
     name: End-to-end · Playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [backend-tests, frontend-checks]
     # The same Postgres the migrations job uses, so the browser is driving the
     # schema that ships rather than a convenience one built from the models.
@@ -339,6 +345,7 @@ jobs:
   docker:
     name: Docker · image builds
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -365,6 +372,7 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     needs: [backend-lint, backend-tests, migrations, worker, frontend-checks, e2e, docker]
     steps:
