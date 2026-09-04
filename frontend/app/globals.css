@@ -2501,10 +2501,25 @@ svg[role="img"]:focus-visible {
 
 /* -------------------------------------------------- accuracy: the lit stage */
 
+/*
+ * No `overflow` here, and that is load-bearing rather than tidy: clipping on
+ * this element makes it a scroll container, and a `position: sticky` pin
+ * inside a scroll container sticks to that container instead of to the
+ * viewport — which is to say it does not stick at all, and the whole hold
+ * scrolls past as an empty screen. The halo gets its own box to be clipped
+ * by, below.
+ */
 .accuracy-scene {
   position: relative;
   isolation: isolate;
+}
+
+.accuracy-veil {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   overflow: hidden;
+  pointer-events: none;
 }
 
 /*
@@ -2515,11 +2530,16 @@ svg[role="img"]:focus-visible {
  * report as one band. A single wash at this strength leaves the copy on flat
  * paper, which is also the only reason it stays comfortable to read.
  */
+/* Follows the scrub, not the section's own passage: the section is pinned
+   now, so "how far through it are we" is `--t` and nothing else. */
+.motion-ready .accuracy-halo {
+  transform: translate3d(0, calc(var(--t, 0.5) * -16%), 0);
+}
+
 .accuracy-halo {
   position: absolute;
   left: 50%;
   top: 50%;
-  z-index: -1;
   width: min(140%, 1500px);
   aspect-ratio: 1;
   translate: -50% -50%;
@@ -2533,14 +2553,112 @@ svg[role="img"]:focus-visible {
     0 0 90px var(--land-figure-glow);
 }
 
-@keyframes halo-drift {
-  from { transform: translate3d(0, 22%, 0) rotate(-26deg) scale(0.8); }
-  to { transform: translate3d(0, -22%, 0) rotate(26deg) scale(1.25); }
+/* ---------------------------------------------- accuracy: the pinned hold
+
+   The figure holds the middle of the screen for a full viewport and the
+   scroll brings each line of the argument under it in turn. `--t` is the
+   scrub, written by `ScrollStage`; `--in` and `--out` are where in it each
+   line owns the screen, set per line in the markup.
+
+   All of it is scoped to a live track. Off one — under the large breakpoint,
+   in a short window, with no JavaScript or a reduced-motion preference — the
+   lines are a column of three at ordinary height, which is what the server
+   sends and what stays. */
+
+.accuracy-hold {
+  position: relative;
+  padding-block: var(--section-gap);
 }
 
-@keyframes figure-push {
-  from { transform: translate3d(0, 90px, 0) scale(0.9); }
-  to { transform: translate3d(0, -90px, 0) scale(1.06); }
+.accuracy-beats {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.accuracy-beat {
+  max-width: 44ch;
+  text-wrap: pretty;
+}
+
+.accuracy-ticks {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  /* Centred, and held for a full screen. A beat that takes the whole frame
+     is the difference between a section you scroll through and one that
+     stops you. */
+  .scroll-track--live .accuracy-hold {
+    display: flex;
+    min-height: min(80vh, 46rem);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-block: 0;
+    text-align: center;
+  }
+
+  /*
+   * A window one line-block tall, and the lines ride through it.
+   *
+   * They were stacked in a single grid cell, which is the obvious way to
+   * crossfade and puts three paragraphs in one box: whatever is measuring
+   * the middle one's line boxes finds the first one's ink in them, and
+   * `audits/a1.mjs` reads that as a wrapped line that merged. Each line has
+   * its own place in the window now, so the two that are not being read are
+   * outside it and paint nothing at all.
+   */
+  .scroll-track--live .accuracy-beats {
+    position: relative;
+    display: block;
+    height: 11rem;
+    overflow: hidden;
+  }
+
+  .scroll-track--live .accuracy-beat {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    margin-inline: auto;
+    /* Which line owns the window: nought to two across the scrub, held at
+       each end so the first and last sit still while they are read. */
+    --pos: clamp(0, calc(var(--t, 0) * 3 - 0.5), 2);
+    /* And how much of it is showing — the same scrub, windowed per line, so
+       one is arriving while the last is still leaving. */
+    --vis: min(
+      clamp(0, calc((var(--t, 0) - var(--in, 0)) * 11), 1),
+      clamp(0, calc((var(--out, 1) - var(--t, 0)) * 11), 1)
+    );
+    opacity: var(--vis);
+    transform: translate3d(0, calc((var(--index, 0) - var(--pos)) * 100%), 0);
+  }
+
+  .scroll-track--live .accuracy-ticks {
+    display: flex;
+    margin: 2.75rem 0 0;
+    padding: 0;
+    list-style: none;
+    gap: 0.5rem;
+  }
+
+  .scroll-track--live .accuracy-tick {
+    height: 2px;
+    width: 3.25rem;
+    background: var(--land-invert-rule);
+    transition: background-color 420ms var(--ease-out);
+  }
+
+  .scroll-track--live[data-step="0"] .accuracy-tick[data-tick="0"],
+  .scroll-track--live[data-step="1"] .accuracy-tick[data-tick="1"],
+  .scroll-track--live[data-step="2"] .accuracy-tick[data-tick="2"] {
+    background: var(--land-invert-accent);
+  }
+
+  /* The figure rises a little through the hold. Translate only: it is the
+     largest type on the page and a scale re-rasters all of it every frame. */
+  .scroll-track--live .accuracy-figure {
+    transform: translate3d(0, calc(var(--t, 0) * -30px), 0);
+  }
 }
 
 /*
@@ -2557,17 +2675,6 @@ svg[role="img"]:focus-visible {
       animation-range: cover 0% cover 22%;
     }
 
-    .motion-ready .accuracy-halo {
-      animation: halo-drift 1s linear both;
-      animation-timeline: view();
-      animation-range: cover 0% cover 100%;
-    }
-
-    .motion-ready .accuracy-figure {
-      animation: figure-push 1s linear both;
-      animation-timeline: view();
-      animation-range: cover 10% cover 90%;
-    }
   }
 }
 

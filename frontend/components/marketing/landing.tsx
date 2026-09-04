@@ -607,53 +607,91 @@ function Compare() {
   );
 }
 
+/*
+ * Three lines of one argument, held one at a time.
+ *
+ * They were a heading and two columns of prose, all on screen at once, which
+ * is a paragraph asking to be skimmed. Pinned, the figure holds the middle of
+ * the screen and the scroll brings each line under it in turn and takes it
+ * away again — the reader is moved through the argument at the pace it was
+ * written in rather than handed all of it and left to it.
+ */
+const ACCURACY_BEATS = [
+  { text: "of the sales it had never seen.", lead: true },
+  {
+    text: "Measured against your own history, never a benchmark: we hide part of your past and check whether the forecast would have got it right.",
+    lead: false,
+  },
+  {
+    text: "And every run adds another real result to it — any product, any region, any week.",
+    lead: false,
+  },
+];
+
 function Accuracy() {
   return (
-    <section
-      id="accuracy"
-      className="accuracy-scene section-pad bg-land-invert text-land-invert-ink"
-    >
-      <span aria-hidden className="accuracy-halo" />
-      <div className={cn(SHELL, "relative max-w-[62rem]")}>
-        <Reveal variant="fade" duration={680}>
-          <Eyebrow light>Accuracy</Eyebrow>
-        </Reveal>
+    <section id="accuracy" className="accuracy-scene bg-land-invert text-land-invert-ink">
+      <span aria-hidden className="accuracy-veil">
+        <span className="accuracy-halo" />
+      </span>
+      <ScrollStage screens={3.2}>
+        <div className={cn(SHELL, "accuracy-hold")}>
+          <Reveal variant="fade" duration={680}>
+            <Eyebrow light>Accuracy</Eyebrow>
+          </Reveal>
 
-        <Reveal delay={80} duration={760} className="mt-6">
-          <p className="accuracy-figure font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
+          <p className="accuracy-figure mt-7 font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
             <CountUp value={94} />%
           </p>
-        </Reveal>
 
-        <Reveal delay={200} duration={720}>
-          <SplitWords
-            text="of the sales it had never seen."
-            stagger={70}
-            motion="cinematic"
-            className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal"
-          />
-        </Reveal>
+          {/* Stacked, so the box never changes height as they cross over.
+              Off a live track they are three lines in a column, which is what
+              a short window, no JavaScript or reduced motion gets. */}
+          <div className="accuracy-beats mt-8">
+            {ACCURACY_BEATS.map((beat, index) => {
+              /* The first line is the section's heading and has to stay one:
+                 it is what names this section in the document outline, and
+                 what `audits/track-a.mjs` scrolls to when the nav sends a
+                 reader here. */
+              const Line = beat.lead ? "h2" : "p";
+              return (
+              <Line
+                key={beat.text}
+                className={cn(
+                  "accuracy-beat",
+                  beat.lead
+                    ? "font-display text-site-h2 font-normal text-land-invert-ink"
+                    : "text-site-lead text-land-invert-secondary",
+                )}
+                /* Windows that overlap by a twelfth of the scrub, so one
+                   line is arriving while the last is still leaving. Butted
+                   exactly against each other they both reach zero for a
+                   frame, and the hold cuts to an empty screen between every
+                   beat. */
+                style={
+                  {
+                    "--index": index,
+                    "--in": index === 0 ? -1 : index / ACCURACY_BEATS.length - 0.08,
+                    "--out":
+                      index === ACCURACY_BEATS.length - 1
+                        ? 2
+                        : (index + 1) / ACCURACY_BEATS.length + 0.08,
+                  } as CSSProperties
+                }
+              >
+                {beat.text}
+              </Line>
+              );
+            })}
+          </div>
 
-        <div className="mt-12 grid gap-10 border-t border-land-invert-rule pt-10 sm:grid-cols-2 sm:gap-14">
-          <div data-drift style={{ "--drift": "-52px" } as CSSProperties}>
-            <Reveal delay={280} duration={700}>
-              <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
-                That figure comes from your own history, not a benchmark — we
-                hide part of your past and check whether the forecast would have
-                got it right.
-              </p>
-            </Reveal>
-          </div>
-          <div data-drift style={{ "--drift": "-92px" } as CSSProperties}>
-            <Reveal delay={380} duration={700}>
-              <p className="max-w-[46ch] text-site-lead text-land-invert-secondary">
-                And every run adds another real result to it — any product, any
-                region, any week.
-              </p>
-            </Reveal>
-          </div>
+          <ol className="accuracy-ticks" aria-hidden>
+            {ACCURACY_BEATS.map((beat, index) => (
+              <li key={beat.text} className="accuracy-tick" data-tick={index} />
+            ))}
+          </ol>
         </div>
-      </div>
+      </ScrollStage>
     </section>
   );
 }
