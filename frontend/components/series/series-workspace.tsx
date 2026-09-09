@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/select";
 import { useDebounced } from "@/hooks/use-debounced";
+import { pageRange, usePageInRange } from "@/hooks/use-paged";
 import {
   useApiFeatures,
   useForecastRuns,
@@ -244,9 +245,16 @@ function SeriesTable({
   const currency = data?.currency ?? true;
 
   const scored = rows.some((row) => row.scored_periods > 0);
-  const showing = data
-    ? `${data.offset + 1}–${data.offset + rows.length} of ${data.total}`
-    : "";
+  const showing = data ? pageRange(data.offset, rows.length, data.total) : "";
+
+  usePageInRange({
+    page,
+    pageSize: PAGE_SIZE,
+    total: data?.total,
+    rows: rows.length,
+    settled: !isPlaceholderData,
+    onChange: setPage,
+  });
 
   return (
     <div className="space-y-3">

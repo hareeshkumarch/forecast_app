@@ -62,7 +62,10 @@ test("the command palette opens, filters and runs an action", async ({ page }) =
   await expect(palette).toBeVisible();
 
   await page.getByPlaceholder("Search actions…").fill("density");
-  await expect(palette.getByRole("button", { name: /density/i })).toBeVisible();
+  // An option rather than a button: the list is a listbox the search field
+  // owns through aria-activedescendant, so a reader that cannot see the
+  // highlight is still told what Enter would run.
+  await expect(palette.getByRole("option", { name: /density/i })).toBeVisible();
 
   const before = await density(page);
   await page.keyboard.press("Enter");

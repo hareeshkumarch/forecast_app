@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation";
 import { downloadExport, useSummary } from "@/hooks/use-dashboard";
 import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useConfirmStore } from "@/stores/confirm-store";
 import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
 import type { ForecastView } from "@/types/api";
@@ -229,6 +230,14 @@ export function CommandPalette() {
 
   useEffect(() => setCursor(0), [query]);
 
+  // Arrowing past the fold used to move a highlight nobody could see, so the
+  // list read as unresponsive and Enter ran something off screen.
+  useEffect(() => {
+    listRef.current
+      ?.querySelector(`[data-command-index="${cursor}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [cursor, query, open]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -244,7 +253,19 @@ export function CommandPalette() {
         return;
       }
 
-      if (typing || open || event.metaKey || event.ctrlKey || event.altKey) return;
+      // Single keys, so anything else already holding the screen has to be
+      // able to say no. Without this, "n" pressed over an open upload dialog
+      // stacked the forecast dialog on top of it, and "t" repainted the theme
+      // under a confirmation somebody was reading.
+      const ui = useUiStore.getState();
+      const busyElsewhere =
+        ui.modal !== "none" ||
+        ui.insightDrawer !== null ||
+        ui.mobileRail !== null ||
+        useConfirmStore.getState().request !== null;
+
+      if (typing || open || busyElsewhere) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const shortcuts: Record<string, () => void> = {
         n: () => openModal("configure-forecast"),
@@ -321,6 +342,10 @@ export function CommandPalette() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search actions…"
               aria-label="Search actions"
+              role="combobox"
+              aria-expanded
+              aria-controls="command-list"
+              aria-activedescendant={visible.length > 0 ? `command-${cursor}` : undefined}
               className="w-full bg-transparent text-body text-text-primary placeholder:text-text-muted focus:outline-none"
             />
             <kbd className="hidden shrink-0 rounded-chip border border-border px-1.5 py-0.5 text-micro text-text-muted sm:block">
@@ -328,7 +353,13 @@ export function CommandPalette() {
             </kbd>
           </div>
 
-          <div ref={listRef} className="scroll-thin max-h-[52vh] overflow-y-auto p-1.5">
+          <div
+            ref={listRef}
+            id="command-list"
+            role="listbox"
+            aria-label="Actions"
+            className="scroll-thin max-h-[52vh] overflow-y-auto p-1.5"
+          >
             {visible.length === 0 ? (
               <p className="px-2 py-6 text-center text-caption text-text-muted">
                 Nothing matches “{query}”.
@@ -347,7 +378,11 @@ export function CommandPalette() {
                     return (
                       <button
                         key={command.id}
+                        id={`command-${index}`}
                         type="button"
+                        role="option"
+                        aria-selected={index === cursor}
+                        data-command-index={index}
                         onMouseEnter={() => setCursor(index)}
                         onClick={() => runAt(index)}
                         className={cn(

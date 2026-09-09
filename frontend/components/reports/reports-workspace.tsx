@@ -18,6 +18,7 @@ import {
 import { Select } from "@/components/ui/select";
 import { downloadExport, useDeleteForecastRun, useForecastRuns } from "@/hooks/use-dashboard";
 import { useDebounced } from "@/hooks/use-debounced";
+import { pageRange, usePageInRange } from "@/hooks/use-paged";
 import { formatDateRange, formatRelativeTime, humanizeKey, humanizeModel } from "@/lib/format";
 import { labelGranularity, periodWord } from "@/lib/periods";
 import { cn } from "@/lib/utils";
@@ -226,7 +227,16 @@ export function ReportsWorkspace() {
   ];
 
   const total = data?.total ?? 0;
-  const showing = data ? `${data.offset + 1}–${data.offset + shown.length} of ${total}` : "";
+  const showing = data ? pageRange(data.offset, shown.length, total) : "";
+
+  usePageInRange({
+    page,
+    pageSize: PAGE_SIZE,
+    total: data?.total,
+    rows: shown.length,
+    settled: !isFetching && !isPlaceholderData,
+    onChange: setPage,
+  });
 
   async function handleClear(run: ForecastRun) {
     const confirmed = await confirm({

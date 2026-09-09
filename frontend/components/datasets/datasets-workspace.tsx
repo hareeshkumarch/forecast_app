@@ -17,6 +17,7 @@ import { RefreshButton } from "@/components/ui/refresh-button";
 import { SortableHeader, type SortState } from "@/components/ui/sortable-header";
 import { useApiFeatures, useDatasets, useDeleteDataset } from "@/hooks/use-dashboard";
 import { useDebounced } from "@/hooks/use-debounced";
+import { pageRange, usePageInRange } from "@/hooks/use-paged";
 import { formatBytes, formatDateRange, formatRelativeTime, humanizeKey } from "@/lib/format";
 import { labelGranularity } from "@/lib/periods";
 import { cn } from "@/lib/utils";
@@ -90,7 +91,16 @@ export function DatasetsWorkspace() {
 
   const sorted = data?.rows ?? [];
   const total = data?.total ?? 0;
-  const showing = data ? `${data.offset + 1}–${data.offset + sorted.length} of ${total}` : "";
+  const showing = data ? pageRange(data.offset, sorted.length, total) : "";
+
+  usePageInRange({
+    page,
+    pageSize: PAGE_SIZE,
+    total: data?.total,
+    rows: sorted.length,
+    settled: !isFetching && !isPlaceholderData,
+    onChange: setPage,
+  });
 
   async function handleRemove(dataset: Dataset) {
     const confirmed = await confirm({

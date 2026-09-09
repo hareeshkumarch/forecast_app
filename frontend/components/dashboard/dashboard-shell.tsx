@@ -22,6 +22,8 @@ import {
 } from "@/components/dashboard/forecast-run-watcher";
 import { TopHeader } from "@/components/dashboard/top-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConnectionBanner } from "@/components/ui/connection-banner";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Skeleton } from "@/components/ui/primitives";
 import { Toaster } from "@/components/ui/toaster";
 import { useUiStore } from "@/stores/ui-store";
@@ -193,15 +195,29 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
           Skip to main content
         </a>
         {configured ? null : <NotConfiguredBanner />}
+        <ConnectionBanner />
         <TopHeader section={section} />
         <div className="flex min-h-0 flex-1">
           <AppSidebar />
-          <SectionWorkspace />
-          {section === "dashboard" ? <InsightsRail /> : null}
+          {/* One boundary per region, not one around the shell. A chart that
+              throws should cost its own panel, not the navigation that is the
+              way out of it — and `resetKey` clears the failure on the way to
+              another section, so a broken page is not still broken after
+              leaving it. */}
+          <ErrorBoundary label="workspace" variant="page" resetKey={section}>
+            <SectionWorkspace />
+          </ErrorBoundary>
+          {section === "dashboard" ? (
+            <ErrorBoundary label="insights panel">
+              <InsightsRail />
+            </ErrorBoundary>
+          ) : null}
         </div>
         <CommandPalette />
         <Toaster />
-        <LazyOverlayHost />
+        <ErrorBoundary label="dialog">
+          <LazyOverlayHost />
+        </ErrorBoundary>
         <ForecastRunPill />
         <ConfirmDialog />
       </div>
