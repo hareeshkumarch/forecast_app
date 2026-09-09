@@ -135,13 +135,62 @@ def test_the_progress_stream_is_never_limited() -> None:
     assert ratelimit.rule_for("GET", "/api/forecasts/x/events") is None
 
 
-def test_identity_prefers_the_forwarded_client() -> None:
+def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote() -> None:
+    """The last entry is what the proxy in front saw. Everything left of it is hearsay."""
     assert (
-        ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "1.2.3.4"
+        ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "5.6.7.8"
     )
     assert ratelimit.client_identity({"x-real-ip": "1.2.3.4"}, "10.0.0.1") == "1.2.3.4"
     assert ratelimit.client_identity({}, "10.0.0.1") == "10.0.0.1"
     assert ratelimit.client_identity({}, None) == "unknown"
+
+
+def test_a_caller_cannot_mint_an_allowance_by_writing_the_header_itself() -> None:
+    """CloudFront appends the viewer to whatever the viewer sent, so the left is theirs.
+
+    Read from the left, `X-Forwarded-For: <a random string>` on every request
+    is a fresh window every time and the limit stops being one.
+    """
+    forged = {"x-forwarded-for": "attacker-chose-this, 203.0.113.9"}
+    assert ratelimit.client_identity(forged, "10.0.0.1") == "203.0.113.9"
+
+
+def test_a_second_proxy_is_accounted_for_by_configuration() -> None:
+    settings = ratelimit.settings
+    before = settings.rate_limit_trusted_proxy_hops
+    settings.rate_limit_trusted_proxy_hops = 2
+    try:
+        chain = {"x-forwarded-for": "9.9.9.9, 203.0.113.9, 10.0.0.5"}
+        assert ratelimit.client_identity(chain, "10.0.0.1") == "203.0.113.9"
+    finally:
+        settings.rate_limit_trusted_proxy_hops = before
+
+
+def test_a_shorter_chain_than_configured_falls_back_rather_than_wrapping() -> None:
+    """Negative indexing past the start would silently return the caller's own entry."""
+    settings = ratelimit.settings
+    before = settings.rate_limit_trusted_proxy_hops
+    settings.rate_limit_trusted_proxy_hops = 3
+    try:
+        assert ratelimit.client_identity({"x-forwarded-for": "203.0.113.9"}, "10.0.0.1") == (
+            "203.0.113.9"
+        )
+    finally:
+        settings.rate_limit_trusted_proxy_hops = before
+
+
+def test_a_header_from_somewhere_other_than_the_proxy_is_not_believed() -> None:
+    """The origin still answers the open internet, so the header can arrive unfiltered."""
+    settings = ratelimit.settings
+    before = settings.rate_limit_trusted_proxies_raw
+    settings.rate_limit_trusted_proxies_raw = "10.0.0.0/8"
+    try:
+        forged = {"x-forwarded-for": "1.1.1.1"}
+        assert ratelimit.client_identity(forged, "10.0.0.1") == "1.1.1.1"
+        assert ratelimit.client_identity(forged, "203.0.113.55") == "203.0.113.55"
+        assert ratelimit.client_identity(forged, "not-an-address") == "not-an-address"
+    finally:
+        settings.rate_limit_trusted_proxies_raw = before
 
 
 async def test_the_headers_are_served_on_an_ordinary_answer(client) -> None:

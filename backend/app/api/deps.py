@@ -20,17 +20,30 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 BEARER_PREFIX = "bearer "
 
 
+#: The only shape of request that may carry its token in the URL.
+STREAM_SUFFIX = "/events"
+
+
+def query_token_allowed(method: str, path: str) -> bool:
+    return method.upper() == "GET" and path.endswith(STREAM_SUFFIX)
+
+
 def bearer_token(request: Request) -> str | None:
     """The token on this request, from the header or — for SSE — the query.
 
-    EventSource cannot set headers, so the one endpoint a browser opens that
-    way has no other way to present a token. It is accepted from the query
-    string for that reason and no other; a token there is visible in access
-    logs, so nothing else should rely on it.
+    EventSource cannot set headers, so the endpoints a browser opens that way
+    have no other means of presenting a token. It is accepted from the query
+    string there and nowhere else: a token in a URL is written to every access
+    log, proxy trace and browser history along the path, so the blast radius of
+    one leaking is kept to the two endpoints that can only stream, never to a
+    DELETE that a copied link would then carry out.
     """
     header = request.headers.get("Authorization", "")
     if header.lower().startswith(BEARER_PREFIX):
         return header[len(BEARER_PREFIX) :].strip() or None
+
+    if not query_token_allowed(request.method, request.url.path):
+        return None
 
     token = request.query_params.get("access_token")
     return token.strip() or None if token else None

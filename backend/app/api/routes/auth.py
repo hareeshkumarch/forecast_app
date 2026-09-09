@@ -6,12 +6,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core import broadcast
+from app.core import broadcast, streams
 from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
@@ -418,7 +418,7 @@ KEEPALIVE_SECONDS = 25.0
         "more than they could already ask for."
     ),
 )
-async def stream_access(user: CurrentUser) -> StreamingResponse:
+async def stream_access(request: Request, user: CurrentUser) -> StreamingResponse:
     if not settings.auth_enabled or user.is_anonymous:
         # Nothing can change, so hold nothing open. An empty stream that closes
         # at once is a clearer answer to the client than a connection that
@@ -427,6 +427,13 @@ async def stream_access(user: CurrentUser) -> StreamingResponse:
             iter([b"event: idle\ndata: {}\n\n"]), media_type="text/event-stream"
         )
 
+    # Admitted before anything is read. A client already at its ceiling should
+    # cost a dictionary lookup, not a database round trip it will not be shown.
+    with streams.leased(request, user.id, "access") as lease:
+        return await _access_stream(user, lease)
+
+
+async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> StreamingResponse:
     # Deliberately not SessionDep. A dependency-provided session lives as long
     # as the request, and this request lives as long as the browser tab — one
     # open page would hold a pooled connection for hours, and a handful would
@@ -442,25 +449,26 @@ async def stream_access(user: CurrentUser) -> StreamingResponse:
         topics.append(broadcast.PEOPLE)
 
     async def events() -> AsyncIterator[bytes]:
+        deadline = streams.Deadline()
         async with broadcast.subscribe(*topics) as queue:
+            yield streams.preamble()
             # Said once on connect. A client that reconnects after missing a
             # decision refetches immediately rather than waiting for the next
             # thing to happen, which may be never.
-            yield b"event: sync\ndata: {}\n\n"
-            while True:
+            yield streams.frame(event="sync")
+            while not deadline.passed:
                 try:
-                    topic = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
+                    topic = await asyncio.wait_for(
+                        queue.get(), timeout=min(KEEPALIVE_SECONDS, deadline.remaining or 1.0)
+                    )
                 except TimeoutError:
-                    yield b": keep-alive\n\n"
+                    yield streams.KEEPALIVE
                     continue
-                yield f"event: {topic}\ndata: {{}}\n\n".encode()
+                yield streams.frame(event=topic)
+            yield streams.EXPIRED
 
     return StreamingResponse(
-        events(),
+        streams.released_after(events(), lease),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=streams.SSE_HEADERS,
     )

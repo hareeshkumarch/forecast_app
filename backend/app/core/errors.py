@@ -14,10 +14,19 @@ class AppError(Exception):
     status_code = 400
     code = "app_error"
 
-    def __init__(self, message: str, *, detail: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        detail: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.detail = detail or {}
+        #: Carried onto the response. A 429 or a 503 whose Retry-After is only
+        #: in the body is a header the client's own retry logic never sees.
+        self.headers = headers or {}
 
 
 class NotFoundError(AppError):
@@ -61,10 +70,17 @@ _STATUS_CODES = {
     415: "unsupported_file",
     422: "validation_error",
     429: "rate_limited",
+    503: "unavailable",
 }
 
 
-def _response(status_code: int, code: str, message: str, detail: dict[str, object]) -> JSONResponse:
+def _response(
+    status_code: int,
+    code: str,
+    message: str,
+    detail: dict[str, object],
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={
@@ -75,6 +91,7 @@ def _response(status_code: int, code: str, message: str, detail: dict[str, objec
                 "request_id": request_id.get(),
             }
         },
+        headers=headers or None,
     )
 
 
@@ -82,14 +99,14 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
         logger.info("%s on %s %s: %s", exc.code, request.method, request.url.path, exc.message)
-        return _response(exc.status_code, exc.code, exc.message, exc.detail)
+        return _response(exc.status_code, exc.code, exc.message, exc.detail, exc.headers)
 
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
         code = _STATUS_CODES.get(exc.status_code, "http_error")
         message = str(exc.detail) if exc.detail else "The request could not be completed."
         logger.info("%s on %s %s", code, request.method, request.url.path)
-        return _response(exc.status_code, code, message, {})
+        return _response(exc.status_code, code, message, {}, dict(exc.headers or {}))
 
     @app.exception_handler(RequestValidationError)
     async def _request_validation(request: Request, exc: RequestValidationError) -> JSONResponse:

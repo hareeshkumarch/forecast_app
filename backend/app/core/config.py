@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote, urlparse
@@ -112,6 +113,19 @@ class Settings(BaseSettings):
     #: the internet. The limits themselves live in app/core/ratelimit.py, where
     #: each one carries the reason it is the number it is.
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+    #: How many proxies of this deployment's own sit in front of the API. The
+    #: entry that many places from the *right* of X-Forwarded-For is the client;
+    #: everything to its left was written by whoever called the outermost proxy,
+    #: which includes the caller. One is right for CloudFront alone.
+    rate_limit_trusted_proxy_hops: int = Field(
+        default=1, ge=1, le=8, alias="RATE_LIMIT_TRUSTED_PROXY_HOPS"
+    )
+    #: Addresses or CIDR ranges whose forwarding headers are believed. Empty
+    #: believes them from anywhere, which is only safe where nothing can reach
+    #: the API except through the proxy. Set this the day the origin is exposed:
+    #: a request from anywhere else is then counted against its own socket
+    #: address, which is the one thing a caller cannot choose.
+    rate_limit_trusted_proxies_raw: str = Field(default="", alias="RATE_LIMIT_TRUSTED_PROXIES")
 
     # ---- Load shedding -----------------------------------------------------
     #: Requests this process will have in flight before it starts refusing.
@@ -126,6 +140,32 @@ class Settings(BaseSettings):
     #: Off switches shedding entirely, for a load test that wants to find the
     #: real ceiling rather than the configured one.
     load_shedding_enabled: bool = Field(default=True, alias="LOAD_SHEDDING_ENABLED")
+
+    # ---- Live streams ------------------------------------------------------
+    #: Server-Sent Events connections one account (or one address, without
+    #: sign-in) may hold at once. A tab holds one for access changes and a
+    #: second while a forecast runs, so this is four tabs' worth. Past it the
+    #: page keeps working: the client falls back to polling.
+    sse_max_streams_per_client: int = Field(
+        default=8, ge=1, le=256, alias="SSE_MAX_STREAMS_PER_CLIENT"
+    )
+    #: And across everybody. Streams are exempt from the concurrency ceiling
+    #: because they are held rather than served, so this is the only thing
+    #: standing between an open socket per tab and an open socket per attempt.
+    sse_max_streams_total: int = Field(default=256, ge=1, le=10_000, alias="SSE_MAX_STREAMS_TOTAL")
+    #: How long one connection is held before it is closed and the browser
+    #: reconnects. Long enough that nobody sees it, short enough that a
+    #: forgotten tab does not hold a socket for a week.
+    sse_max_lifetime_seconds: float = Field(
+        default=1_800.0, ge=30.0, le=86_400.0, alias="SSE_MAX_LIFETIME_SECONDS"
+    )
+    #: The reconnect delay this server asks browsers to use. EventSource's own
+    #: default is three seconds, which after a restart is every tab at once.
+    sse_retry_hint_ms: int = Field(default=5_000, ge=500, le=120_000, alias="SSE_RETRY_HINT_MS")
+    #: What a refused stream is told to wait.
+    sse_retry_after_seconds: int = Field(
+        default=15, ge=1, le=3_600, alias="SSE_RETRY_AFTER_SECONDS"
+    )
 
     # ---- Metrics -----------------------------------------------------------
     #: Serves /api/health/metrics in Prometheus' text format.
@@ -428,6 +468,19 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         cleaned = self.cors_origins_raw.strip().strip("[]")
         return [origin.strip().strip("\"'") for origin in cleaned.split(",") if origin.strip()]
+
+    @property
+    def rate_limit_trusted_proxies(self) -> tuple[IPv4Network | IPv6Network, ...]:
+        networks: list[IPv4Network | IPv6Network] = []
+        for entry in self.rate_limit_trusted_proxies_raw.split(","):
+            cleaned = entry.strip().strip("\"'")
+            if not cleaned:
+                continue
+            try:
+                networks.append(ip_network(cleaned, strict=False))
+            except ValueError:
+                continue
+        return tuple(networks)
 
     @property
     def uploads_dir(self) -> Path:

@@ -16,7 +16,9 @@ by the person looking for why the numbers stopped adding up.
 Identity is the client IP. Not the account: the middleware runs before any
 route dependency, so nothing here has verified a token, and keying on an
 unverified claim would let anybody mint themselves a fresh allowance by
-changing one character of it. An IP cannot be chosen quite so freely.
+changing one character of it. An IP cannot be chosen quite so freely — and
+`client_identity` below is careful about which one it reads, because a
+forwarding header can be.
 """
 
 from __future__ import annotations
@@ -25,6 +27,9 @@ import time
 from collections import OrderedDict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass
+from ipaddress import ip_address
+
+from app.core.config import settings
 
 SPLITS_ACROSS_PROCESSES = True
 
@@ -139,20 +144,49 @@ class SlidingWindow:
 limiter = SlidingWindow()
 
 
+def _trusted_peer(client_host: str | None) -> bool:
+    networks = settings.rate_limit_trusted_proxies
+    if not networks:
+        return True
+    if not client_host:
+        return False
+    try:
+        peer = ip_address(client_host)
+    except ValueError:
+        return False
+    return any(peer in network for network in networks)
+
+
 def client_identity(headers: Mapping[str, str], client_host: str | None) -> str:
     """Who to count this against.
 
-    X-Forwarded-For is written by whatever proxied the request, and the
-    leftmost entry is the client as that proxy saw it. It is also trivially
-    forged by anybody who can reach this box directly — which today is anybody,
-    because the instance still answers the open internet on port 80. Until that
-    origin is closed, treat this as a control against accident and ordinary
-    abuse rather than against somebody determined, and do not let it be the
-    only thing standing anywhere.
+    X-Forwarded-For is a list every proxy on the path appends to, so its
+    *leftmost* entry is whatever the first proxy was handed — and the first
+    proxy was handed it by the client. CloudFront, which is what sits in front
+    of this API, appends the viewer's address to whatever the viewer sent: a
+    request carrying `X-Forwarded-For: <anything>` arrives here as
+    `<anything>, <the real address>`. Reading the left of that is reading a
+    value the caller chose, so a fresh allowance is one header away and the
+    limit is not a limit.
+
+    So the entry is counted from the right, where the proxies this deployment
+    operates are. `RATE_LIMIT_TRUSTED_PROXY_HOPS` says how many of those there
+    are — one for CloudFront alone, two behind a load balancer as well.
+
+    `RATE_LIMIT_TRUSTED_PROXIES` closes the rest of it. While this instance
+    also answers the open internet directly, somebody who skips the CDN can
+    still send the whole chain themselves; naming the addresses the header is
+    believed from makes that stop working, and everything else falls back to
+    the socket, which nobody can choose. Left empty the header is believed from
+    anywhere, which is what a deployment reachable only through its CDN can
+    afford and what one on an open port cannot.
     """
-    forwarded = headers.get("x-forwarded-for", "")
-    if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
+    if not _trusted_peer(client_host):
+        return client_host or "unknown"
+
+    hops = max(1, settings.rate_limit_trusted_proxy_hops)
+    chain = [part.strip() for part in headers.get("x-forwarded-for", "").split(",")]
+    chain = [part for part in chain if part]
+    if chain:
+        return chain[-hops] if len(chain) >= hops else chain[0]
     return headers.get("x-real-ip", "").strip() or client_host or "unknown"

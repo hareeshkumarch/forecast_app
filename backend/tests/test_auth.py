@@ -131,3 +131,129 @@ async def test_an_unreachable_key_set_is_not_a_bad_token(monkeypatch) -> None:
     with pytest.raises(AuthError) as caught:
         await auth._signing_key("some-kid")
     assert "could not" in caught.value.message.lower() or "no Supabase" in caught.value.message
+
+
+async def test_a_token_the_size_of_an_upload_is_refused_before_it_is_parsed() -> None:
+    with pytest.raises(AuthError):
+        await verify_token("a" * (auth.MAX_TOKEN_BYTES + 1))
+
+
+async def test_a_token_claiming_to_be_the_anonymous_caller_is_refused() -> None:
+    """`anonymous` is the one subject every gate in this app lets through."""
+    with pytest.raises(AuthError):
+        await verify_token(_token(sub="anonymous"))
+
+
+async def test_a_verified_token_is_not_verified_twice(monkeypatch) -> None:
+    """A page load is a dozen parallel reads. It should cost one signature check."""
+    token = _token()
+    await verify_token(token)
+
+    def _refuse(*_args, **_kwargs):
+        raise AssertionError("the second read re-verified a token it had already verified")
+
+    monkeypatch.setattr(auth.jwt, "decode", _refuse)
+    assert (await verify_token(token)).email == "person@example.com"
+
+
+async def test_the_cache_does_not_survive_a_change_of_signing_key() -> None:
+    """Rotating the secret must not leave a cache answering with the old one."""
+    token = _token()
+    await verify_token(token)
+
+    settings.supabase_jwt_secret = "a-different-secret"
+    with pytest.raises(AuthError):
+        await verify_token(token)
+
+
+async def test_admission_is_re_asked_of_a_token_already_verified() -> None:
+    """Who a token belongs to is fixed. Whether they are let in is configuration."""
+    token = _token()
+    await verify_token(token)
+
+    settings.auth_allowed_email_domains_raw = "company.com"
+    with pytest.raises(ForbiddenError):
+        await verify_token(token)
+
+
+async def test_an_unknown_key_id_is_not_a_fetch_per_request(monkeypatch) -> None:
+    """Otherwise a stream of junk tokens is this deployment's traffic, aimed at Supabase."""
+    fetches = 0
+
+    async def _count() -> None:
+        nonlocal fetches
+        fetches += 1
+        auth._jwks_cache["known"] = object()
+        auth._jwks_fetched_at = time.monotonic()
+
+    monkeypatch.setattr(auth, "_refresh_jwks", _count)
+    auth.reset_caches()
+
+    for _ in range(5):
+        with pytest.raises(AuthError):
+            await auth._signing_key("unknown")
+
+    assert fetches == 1
+
+
+async def test_a_key_set_refresh_serves_everybody_waiting_on_it(monkeypatch) -> None:
+    """A rotation is every in-flight request at once. One of them should fetch."""
+    import asyncio
+
+    fetches = 0
+
+    async def _slow() -> None:
+        nonlocal fetches
+        fetches += 1
+        await asyncio.sleep(0.05)
+        auth._jwks_cache["kid-1"] = object()
+        auth._jwks_fetched_at = time.monotonic()
+
+    monkeypatch.setattr(auth, "_refresh_jwks", _slow)
+    auth.reset_caches()
+
+    keys = await asyncio.gather(*(auth._signing_key("kid-1") for _ in range(8)))
+
+    assert fetches == 1
+    assert all(key is keys[0] for key in keys)
+
+
+async def test_a_key_set_with_nothing_usable_in_it_is_an_outage_not_a_bad_token(
+    monkeypatch,
+) -> None:
+    class _Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {"keys": []}
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def get(self, _url):
+            return _Response()
+
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **_kwargs: _Client())
+    monkeypatch.setattr(auth.settings, "supabase_url", "https://example.supabase.co")
+    auth.reset_caches()
+
+    with pytest.raises(AuthError):
+        await auth._signing_key("kid-1")
+
+
+def test_a_token_may_only_ride_in_the_url_on_a_stream() -> None:
+    """A token in a query string lands in every access log along the way."""
+    from app.api.deps import query_token_allowed
+
+    assert query_token_allowed("GET", "/api/forecasts/abc/events")
+    assert query_token_allowed("GET", "/api/auth/events")
+    assert not query_token_allowed("GET", "/api/datasets")
+    assert not query_token_allowed("DELETE", "/api/datasets/abc")
+    assert not query_token_allowed("POST", "/api/forecasts/abc/events")

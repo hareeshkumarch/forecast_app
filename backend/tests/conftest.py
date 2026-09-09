@@ -78,22 +78,27 @@ def _rate_limits_start_fresh():
 def _process_wide_state_starts_fresh():
     """Caches, breakers and counters do not leak between tests.
 
-    All three are module-level singletons for the life of the process, which
+    All of them are module-level singletons for the life of the process, which
     is right in production and wrong in a suite: a dashboard cached by one
     test is served to the next one, a breaker left open by a failure test
     silently skips the provider call a later test is asserting on, and a
     counter read for an exact value is whatever the file order happened to
-    make it. Same failure mode as the auth switches and the rate limiter
-    above — a test that breaks somewhere else, later, for no visible reason.
+    make it — and a stream lease a disconnected test never released counts
+    against the next test's ceiling. Same failure mode as the auth switches
+    and the rate limiter above — a test that breaks somewhere else, later, for no visible reason.
     """
-    from app.core import breaker, cache, metrics
+    from app.core import auth, breaker, cache, metrics, streams
 
     cache.clear_all()
     breaker.reset_all()
     metrics.registry.reset()
+    streams.registry.forget_all()
+    auth.reset_caches()
     yield
     cache.clear_all()
     breaker.reset_all()
+    streams.registry.forget_all()
+    auth.reset_caches()
 
 
 async def _reset_schema() -> None:

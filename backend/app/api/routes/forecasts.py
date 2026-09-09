@@ -5,15 +5,16 @@ import contextlib
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query, Response, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core import streams
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.database.session import session_scope
@@ -543,14 +544,36 @@ async def get_series(
     summary="Server-Sent Events stream of forecast progress",
     response_class=StreamingResponse,
 )
-async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
+async def stream_events(
+    run_id: uuid.UUID,
+    request: Request,
+    user: CurrentUser,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    # Admitted first: a client already holding as many streams as it may should
+    # cost a dictionary lookup rather than a run lookup it will not be shown.
+    with streams.leased(request, None if user.is_anonymous else user.id, "forecast") as lease:
+        return await _progress_stream(run_id, last_event_id, lease)
+
+
+async def _progress_stream(
+    run_id: uuid.UUID, last_event_id: str | None, lease: streams.Lease
+) -> StreamingResponse:
     async with session_scope() as session:
         run = await forecast_service.get_run_state(session, run_id)
         initial = await _current_progress(run)
         terminal = initial.status in (RunStatus.COMPLETED, RunStatus.FAILED)
 
+    # A browser reconnecting replays the id of the last frame it saw. Sending
+    # the same frame back would re-fire the completion toast on a run the user
+    # was already told about.
+    seen = _parse_event_id(last_event_id)
+
     async def event_source() -> AsyncIterator[bytes]:
-        yield _sse(initial.to_dict())
+        deadline = streams.Deadline()
+        yield streams.preamble()
+        if seen is None or as_utc(initial.updated_at) > seen:
+            yield _sse(initial)
         if terminal:
             return
 
@@ -559,13 +582,14 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
         next_event: asyncio.Task[ProgressEvent] | None = asyncio.create_task(
             subscription.__anext__()
         )
-        last_updated = as_utc(initial.updated_at)
+        last_updated = max(as_utc(initial.updated_at), seen) if seen else as_utc(initial.updated_at)
 
         try:
-            while next_event is not None:
-                ready, _ = await asyncio.wait((next_event,), timeout=SSE_KEEPALIVE_SECONDS)
+            while next_event is not None and not deadline.passed:
+                wait = min(SSE_KEEPALIVE_SECONDS, deadline.remaining or 1.0)
+                ready, _ = await asyncio.wait((next_event,), timeout=wait)
                 if not ready:
-                    yield b": keep-alive\n\n"
+                    yield streams.KEEPALIVE
                     continue
 
                 try:
@@ -574,11 +598,14 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
                     break
 
                 if as_utc(event.updated_at) > last_updated:
-                    yield _sse(event.to_dict())
+                    yield _sse(event)
                     last_updated = as_utc(event.updated_at)
                 if event.status in (RunStatus.COMPLETED, RunStatus.FAILED):
                     break
                 next_event = asyncio.create_task(subscription.__anext__())
+            else:
+                if next_event is not None and deadline.passed:
+                    yield streams.EXPIRED
         finally:
             if next_event is not None and not next_event.done():
                 next_event.cancel()
@@ -587,18 +614,25 @@ async def stream_events(run_id: uuid.UUID) -> StreamingResponse:
             await subscription.aclose()
 
     return StreamingResponse(
-        event_source(),
+        streams.released_after(event_source(), lease),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=streams.SSE_HEADERS,
     )
 
 
-def _sse(payload: dict) -> bytes:
-    return f"data: {json.dumps(payload)}\n\n".encode()
+def _sse(event: ProgressEvent) -> bytes:
+    payload = event.to_dict()
+    stamp = payload.get("updated_at")
+    return streams.frame(json.dumps(payload), event_id=str(stamp) if stamp else None)
+
+
+def _parse_event_id(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return as_utc(datetime.fromisoformat(raw))
+    except ValueError:
+        return None
 
 
 async def _current_progress(run: ForecastRun) -> ProgressEvent:
