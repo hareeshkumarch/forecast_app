@@ -54,14 +54,16 @@ else
   git --no-pager log --oneline -1 "$after" | sed 's/^/    /'
 fi
 
-# In-flight runs do not survive this. Without a Celery broker the executor has
-# no durable queue, so reap_orphaned_runs fails them on the way back up with
-# "The service restarted before this run finished" — clean and retryable, but
-# somebody is watching a progress bar that is about to stop.
+# The API now waits for the forecasts already running before it exits, and the
+# container is given 60s to honour that, so most runs land. What does not
+# finish in the drain still comes back as retryable — recover_interrupted_runs
+# fails it with "The service restarted before this run finished" — so this is
+# worth saying rather than doing silently.
 running=$(curl -fsS "$HEALTH_URL" 2>/dev/null \
   | sed -n 's/.*"running_forecast_runs":[[:space:]]*\([0-9]*\).*/\1/p' || true)
 if [ -n "${running:-}" ] && [ "$running" -gt 0 ]; then
-  echo "!!  $running forecast run(s) are in flight and will be failed by the restart."
+  echo "!!  $running forecast run(s) are in flight. The restart waits up to 45s for them;"
+  echo "    anything still going after that is failed and has to be retried."
   echo "    Ctrl-C now, or set FORCE=1 to go ahead."
   [ "${FORCE:-0}" = "1" ] || read -r -p "    Continue? [y/N] " reply
   case "${reply:-${FORCE:+y}}" in [yY]*) ;; *) echo "    stopped."; exit 1 ;; esac

@@ -43,6 +43,12 @@ services:
     restart: unless-stopped
 
   backend:
+    # Time docker allows for a SIGTERM to be honoured before it sends SIGKILL.
+    # The default is ten seconds, which is less than the shutdown drain — so
+    # without this the API is killed part-way through waiting for the forecasts
+    # already running to finish, and the wait buys nothing at all. Kept under
+    # systemd's default TimeoutStopSec of 90s, which bounds the whole chain.
+    stop_grace_period: 60s
     build:
       context: ./backend
     ports:

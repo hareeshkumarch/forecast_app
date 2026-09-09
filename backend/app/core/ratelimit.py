@@ -87,6 +87,10 @@ def rule_for(method: str, path: str) -> Rule | None:
         return DECIDE
     if method != "GET" and path.startswith("/api/auth/"):
         return ADMIN
+    # Not the run allowance: a retention pass is administration, and spending
+    # one of twenty hourly forecast slots to tidy up is the wrong trade.
+    if path.startswith("/api/forecasts/retention"):
+        return ADMIN
     if method == "POST" and path.startswith("/api/forecasts"):
         return RUN
     if method == "POST" and path.startswith("/api/datasets"):

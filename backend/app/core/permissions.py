@@ -112,6 +112,13 @@ def permission_for(method: str, path: str) -> Permission:
     if reading:
         return Permission.READ
 
+    # A retention pass removes issued forecasts, whatever verb it arrives on.
+    # Named before the rule below, because that one would read POST as
+    # "start a forecast" and hand the ability to delete a year of history to
+    # everybody who is allowed to make one.
+    if path.startswith("/api/forecasts/retention"):
+        return Permission.FORECAST_DELETE
+
     if path.startswith("/api/forecasts"):
         return Permission.FORECAST_DELETE if method == "DELETE" else Permission.FORECAST_RUN
     if path.startswith("/api/datasets"):

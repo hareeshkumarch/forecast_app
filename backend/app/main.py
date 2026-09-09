@@ -17,7 +17,7 @@ from app.api.routes import (
     health,
     usage,
 )
-from app.core import broadcast
+from app.core import broadcast, lifecycle
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -34,6 +34,7 @@ from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
 from app.services.mail_sender import sender as mail_sender
 from app.services.progress_relay import relay
+from app.services.retention_service import sweeper as retention_sweeper
 
 logger = get_logger(__name__)
 
@@ -46,6 +47,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     executors.start()
     relay.start()
     broadcast.relay.start()
+    retention_sweeper.start()
     mail_sender.start()
     interrupted = await recover_interrupted_runs()
     if interrupted:
@@ -89,8 +91,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    # Readiness goes false before anything is torn down, so the load balancer
+    # stops sending traffic here while the runs already going are given a
+    # chance to land. Without a broker the pool has no durable queue: what is
+    # not finished by the end of the wait comes back as retryable, which is
+    # honest but is still a progress bar that stopped for no visible reason.
+    lifecycle.begin_shutdown()
+    stranded = await executors.drain(settings.shutdown_drain_seconds)
+    if stranded:
+        logger.warning(
+            "%d forecast run(s) were still going after %.0fs and will be marked retryable.",
+            stranded,
+            settings.shutdown_drain_seconds,
+        )
+
     await relay.stop()
     await broadcast.relay.stop()
+    await retention_sweeper.stop()
     await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()

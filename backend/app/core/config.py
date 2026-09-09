@@ -109,6 +109,26 @@ class Settings(BaseSettings):
     #: from wherever the administrator opens their mail.
     public_api_base_url: str = Field(default="", alias="PUBLIC_API_BASE_URL")
 
+    # ---- Database ----------------------------------------------------------
+    #: How long one statement may run before the driver cancels it. A query
+    #: with nothing to stop it holds a pooled connection for as long as it
+    #: takes, and there are ten of those: the concurrency ceiling sheds new
+    #: requests, but nothing at all interrupts work already in flight. Long
+    #: enough that no dashboard read comes close, short enough that a runaway
+    #: aggregate frees its connection while somebody is still waiting.
+    #:
+    #: Reads only — see `db_write_timeout_seconds`. Zero switches it off.
+    db_statement_timeout_seconds: float = Field(
+        default=30.0, ge=0.0, le=3600.0, alias="DB_STATEMENT_TIMEOUT_SECONDS"
+    )
+    #: The same for the sessions that persist a run. A grouped forecast writes
+    #: one row per period per series per kind — tens of thousands — and that is
+    #: slow on purpose rather than stuck. Sharing the read timeout would abort
+    #: exactly the runs worth keeping.
+    db_write_timeout_seconds: float = Field(
+        default=300.0, ge=0.0, le=7200.0, alias="DB_WRITE_TIMEOUT_SECONDS"
+    )
+
     #: Off is for a load test or a local script, never for a deployment facing
     #: the internet. The limits themselves live in app/core/ratelimit.py, where
     #: each one carries the reason it is the number it is.
@@ -166,6 +186,52 @@ class Settings(BaseSettings):
     sse_retry_after_seconds: int = Field(
         default=15, ge=1, le=3_600, alias="SSE_RETRY_AFTER_SECONDS"
     )
+
+    # ---- Shutdown ----------------------------------------------------------
+    #: How long a redeploy waits for the forecasts already running to finish.
+    #: Without a broker the pool has no durable queue, so a restart used to
+    #: fail every in-flight run outright — clean and retryable, but somebody is
+    #: watching a progress bar that stops. Most runs are about a minute, so
+    #: most of them now land. Zero restores the old behaviour.
+    #:
+    #: The instance is behind a load balancer that stops sending traffic when
+    #: readiness goes false, which is what makes the wait free: nothing new
+    #: arrives during it.
+    #: Sized to fit inside the container's stop grace period, which in turn
+    #: fits inside systemd's default TimeoutStopSec of 90s. Raise this and both
+    #: of those have to be raised with it, or the drain is killed part-way
+    #: through and buys nothing.
+    shutdown_drain_seconds: float = Field(
+        default=45.0, ge=0.0, le=1800.0, alias="SHUTDOWN_DRAIN_SECONDS"
+    )
+
+    # ---- Retention ---------------------------------------------------------
+    #: Off. Nothing is deleted until somebody says so, and this is that
+    #: somebody — a platform that prunes forecast history by default is one
+    #: that loses the record of what was claimed and when, which is the thing
+    #: the append-only guard exists to protect.
+    #:
+    #: On, with the two limits below, the sweeper removes completed and failed
+    #: runs that are past both. It never touches a run that is still going, the
+    #: latest completed run (the dashboard reads it), or one a saved scenario
+    #: refers to.
+    retention_enabled: bool = Field(default=False, alias="RETENTION_ENABLED")
+    #: Runs older than this may go. Zero means age is not a reason on its own.
+    retention_run_days: int = Field(default=90, ge=0, le=3650, alias="RETENTION_RUN_DAYS")
+    #: However old they are, this many of the most recent stay. The floor under
+    #: the age rule: a deployment that has not run a forecast in four months
+    #: should come back to its history, not to an empty dashboard.
+    retention_keep_runs: int = Field(default=20, ge=1, le=10_000, alias="RETENTION_KEEP_RUNS")
+    #: How often the sweeper looks. It holds no lock, so a second instance
+    #: would sweep too — harmless, because deleting an already-deleted run is
+    #: a no-op, and each pass is bounded by the batch below.
+    retention_interval_seconds: float = Field(
+        default=3_600.0, ge=60.0, le=86_400.0, alias="RETENTION_INTERVAL_SECONDS"
+    )
+    #: Runs removed in one pass. A cap rather than a target: deleting a grouped
+    #: run is tens of thousands of rows, and a sweeper that takes the database
+    #: away for a minute has traded one outage for another.
+    retention_batch: int = Field(default=10, ge=1, le=1_000, alias="RETENTION_BATCH")
 
     # ---- Metrics -----------------------------------------------------------
     #: Serves /api/health/metrics in Prometheus' text format.

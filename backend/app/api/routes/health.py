@@ -4,16 +4,17 @@ import asyncio
 import hmac
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Header, Response
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from fastapi import APIRouter, Header, Response, status
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, computed_field
 from sqlalchemy import func, select, text
 
 from app.api.deps import SessionDep
-from app.core import breaker, metrics, streams
+from app.core import breaker, lifecycle, metrics, streams
 from app.core.auth import AuthError
 from app.core.cache import CACHES
 from app.core.config import secrets_load, settings
 from app.core.errors import NotFoundError
+from app.core.logging import get_logger
 from app.core.security import using_insecure_default_key
 from app.database.base import utcnow
 from app.database.session import active_target
@@ -21,6 +22,11 @@ from app.forecasting import availability
 from app.forecasting.models import label_for
 from app.models.entities import ForecastRun
 from app.models.enums import ModelKind, RunStatus
+from app.schemas.common import StrictModel
+from app.services import capacity_service, retention_service
+from app.services.job_runner import scheduler
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -208,6 +214,40 @@ async def capabilities() -> CapabilitiesResponse:
     return await _capabilities()
 
 
+class ReadyRead(StrictModel):
+    """Should this process be sent traffic right now."""
+
+    ready: bool
+    #: Forecast runs still finishing while the process drains.
+    finishing: NonNegativeInt
+    draining_seconds: float
+
+
+@router.get(
+    "/health/ready",
+    response_model=ReadyRead,
+    summary="Whether this instance should be sent traffic",
+    description=(
+        "Distinct from /api/health, which answers whether the process is alive. This answers "
+        "whether it wants work — and goes false the moment a shutdown begins, so a load "
+        "balancer takes the instance out while the forecasts already running are given time "
+        "to land. Answering both questions with one endpoint meant a redeploy looked healthy "
+        "while it was already tearing down."
+    ),
+    responses={503: {"description": "Draining. Do not send traffic here."}},
+)
+async def ready(response: Response) -> ReadyRead:
+    draining = lifecycle.shutting_down()
+    if draining:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        response.headers["Retry-After"] = "5"
+    return ReadyRead(
+        ready=not draining,
+        finishing=scheduler.running if draining else 0,
+        draining_seconds=round(lifecycle.draining_for(), 1),
+    )
+
+
 @router.get("/health", response_model=HealthResponse, summary="Service health")
 async def health(session: SessionDep) -> HealthResponse:
     run_counts: dict[RunStatus, int] = {}
@@ -285,6 +325,65 @@ async def get_features() -> FeaturesResponse:
     return FeaturesResponse()
 
 
+class TableUsageRead(StrictModel):
+    name: str
+    rows: NonNegativeInt
+    bytes: NonNegativeInt | None
+
+
+class StorageRead(StrictModel):
+    """What has been stored, and what the retention policy would do about it.
+
+    Behind the metrics token for the same reason the metrics are: row counts
+    say how much a deployment has done, which is more than posture. The
+    numbers are what any decision about retention has to start from — nothing
+    in the platform used to delete anything, and the store of record has a
+    ceiling.
+    """
+
+    total_bytes: NonNegativeInt | None
+    total_rows: NonNegativeInt
+    tables: tuple[TableUsageRead, ...]
+    stored_runs: NonNegativeInt
+    retention_enabled: bool
+    retention_keep_runs: NonNegativeInt
+    retention_older_than_days: NonNegativeInt
+    #: Runs the next pass would remove, were retention on.
+    prunable_runs: NonNegativeInt
+
+
+@router.get(
+    "/health/storage",
+    response_model=StorageRead,
+    summary="What this deployment has stored, and what could be pruned",
+    include_in_schema=False,
+)
+async def storage(
+    session: SessionDep,
+    authorization: Annotated[str | None, Header()] = None,
+    fresh: bool = False,
+) -> StorageRead:
+    if not _scrape_permitted(authorization):
+        raise AuthError("This endpoint needs the metrics token.")
+
+    usage = await capacity_service.measure(session, fresh=fresh)
+    intended = await retention_service.plan(session, limit=settings.retention_batch)
+
+    return StorageRead(
+        total_bytes=usage.total_bytes,
+        total_rows=usage.total_rows,
+        tables=tuple(
+            TableUsageRead(name=table.name, rows=table.rows, bytes=table.bytes)
+            for table in usage.tables
+        ),
+        stored_runs=await retention_service.stored_runs(session),
+        retention_enabled=settings.retention_enabled,
+        retention_keep_runs=settings.retention_keep_runs,
+        retention_older_than_days=settings.retention_run_days,
+        prunable_runs=intended.would_remove + intended.remaining,
+    )
+
+
 #: Prometheus' text exposition content type. The version parameter is part of
 #: the contract, not decoration: a scraper uses it to decide how to parse.
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
@@ -327,6 +426,7 @@ def _scrape_permitted(authorization: str | None) -> bool:
     include_in_schema=False,
 )
 async def prometheus_metrics(
+    session: SessionDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
     """What this process has measured since it started.
@@ -346,8 +446,34 @@ async def prometheus_metrics(
     if not _scrape_permitted(authorization):
         raise AuthError("This scrape carried no valid metrics token.")
 
+    await _refresh_storage_gauges(session)
+
     # This request is counted like any other, and worth saying why that is
     # harmless: the middleware measures it on the way out, after this body has
     # rendered, so a scrape never appears in its own output. It turns up in
     # the next one, which is what a scraper expects.
     return Response(content=metrics.registry.render(), media_type=PROMETHEUS_CONTENT_TYPE)
+
+
+async def _refresh_storage_gauges(session: SessionDep) -> None:
+    """Table sizes, read on scrape rather than kept up to date continuously.
+
+    They only move when a run lands, and a counter maintained at write time is
+    a second place for the number to be wrong. `measure` caches for a minute,
+    so a scrape every fifteen seconds walks the catalogue once in four.
+
+    Never allowed to fail the scrape. Everything else in this response is a
+    process counter that cannot go wrong; this one asks the database, and a
+    database having a bad moment must not also take away the metrics somebody
+    is using to find out why.
+    """
+    try:
+        usage = await capacity_service.measure(session)
+    except Exception:
+        logger.warning("Could not measure stored bytes for this scrape", exc_info=True)
+        return
+
+    for table in usage.tables:
+        metrics.stored_rows.set(float(table.rows), table=table.name)
+        if table.bytes is not None:
+            metrics.stored_bytes.set(float(table.bytes), table=table.name)

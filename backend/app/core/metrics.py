@@ -430,6 +430,23 @@ forecast_runs = registry.counter(
     ("status",),
 )
 
+stored_bytes = registry.gauge(
+    "forecasting_table_bytes",
+    "Bytes on disk per table, indexes and TOAST included. Refreshed on scrape.",
+    ("table",),
+)
+
+stored_rows = registry.gauge(
+    "forecasting_table_rows",
+    "Rows per table, as the planner estimates them. Refreshed on scrape.",
+    ("table",),
+)
+
+retention_removed = registry.counter(
+    "forecasting_retention_removed_total",
+    "Forecast runs removed by the retention sweeper.",
+)
+
 forecast_run_seconds = registry.histogram(
     "forecasting_run_duration_seconds",
     "Wall time of a forecast run from dispatch to terminal state.",

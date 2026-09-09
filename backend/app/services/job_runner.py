@@ -275,6 +275,10 @@ MODEL_SEARCH = "model"
 SERIES_CHUNK = "series"
 
 
+class ShuttingDown(RuntimeError):
+    """Raised to a run that asked for a worker while the process is going away."""
+
+
 @dataclass(slots=True)
 class Waiting:
     run_id: uuid.UUID
@@ -324,6 +328,7 @@ class Scheduler:
         self._held: dict[uuid.UUID, int] = {}
         self._waiting: list[Waiting] = []
         self._sequence = 0
+        self._closed = False
 
     @property
     def slots(self) -> int:
@@ -377,6 +382,12 @@ class Scheduler:
         without saying it to the common case that never queues at all — a
         message that flashes for one frame is worse than no message.
         """
+        if self._closed:
+            raise ShuttingDown(
+                "This server is restarting and is not starting new model work. The run is "
+                "retryable and will say so."
+            )
+
         # Not just "is there a free slot": jumping a queue that already exists
         # is how the run that arrived first waits longest.
         if not self._waiting and self.running < self.slots:
@@ -436,12 +447,30 @@ class Scheduler:
         if promoted or self._waiting:
             _announce_wait(self)
 
+    def close(self) -> None:
+        """Admit nothing further. What is running is left to finish.
+
+        Called when the process is going away: starting a minute of model
+        fitting on a worker that is about to be torn down is work nobody will
+        see the result of, and the run is failed retryably either way.
+        """
+        self._closed = True
+        for waiter in self._waiting:
+            if not waiter.admitted.done():
+                waiter.admitted.cancel()
+        self._waiting.clear()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
     def forget_all(self) -> None:
         for waiter in self._waiting:
             if not waiter.admitted.done():
                 waiter.admitted.cancel()
         self._waiting.clear()
         self._held.clear()
+        self._closed = False
 
 
 scheduler = Scheduler()
@@ -535,6 +564,35 @@ class ExecutorRegistry:
         self._drain = threading.Thread(target=pump, name="progress-drain", daemon=True)
         self._drain.start()
         logger.info("Relaying worker progress into this process.")
+
+    async def drain(self, seconds: float) -> int:
+        """Wait, up to a point, for the forecasts already running to finish.
+
+        Without a broker the pool has no durable queue, so a restart used to
+        fail every in-flight run outright — clean and retryable, and still
+        somebody watching a progress bar that stops for no reason they can
+        see. Most runs are about a minute; most of them now land.
+
+        Only what is *running* is waited for. Anything still queued is not
+        started: it would be beginning a minute of work on a process that has
+        been told to go away, and it comes back as retryable either way.
+
+        Returns how many were still going when the wait ran out, so the caller
+        can say so rather than restarting in silence.
+        """
+        if seconds <= 0 or self.inline:
+            return scheduler.running
+
+        scheduler.close()
+        deadline = time.monotonic() + seconds
+        while scheduler.running > 0 and time.monotonic() < deadline:
+            logger.info(
+                "Waiting for %d forecast(s) to finish before shutting down (%.0fs left).",
+                scheduler.running,
+                deadline - time.monotonic(),
+            )
+            await asyncio.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
+        return scheduler.running
 
     def shutdown(self) -> None:
         channel, self._channel = self._channel, None

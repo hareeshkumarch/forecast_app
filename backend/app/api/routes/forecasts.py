@@ -22,6 +22,7 @@ from app.datasets.profiler import is_currency_like
 from app.forecasting.selection import scoring_rule
 from app.models.entities import ForecastRun, ModelCandidate
 from app.models.enums import PointKind, RunStatus, SeriesStatus
+from app.schemas.common import StrictModel
 from app.schemas.forecast import (
     DiagnosticResponse,
     ForecastMetricRead,
@@ -51,6 +52,7 @@ from app.services import (
     accuracy_service,
     diagnostic_service,
     forecast_service,
+    retention_service,
     scenario_service,
     scoring_service,
     series_service,
@@ -184,6 +186,77 @@ async def monitor_runs(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> ForecastMonitoringResponse:
     return await scenario_service.monitoring(session, limit=limit)
+
+
+class RetentionCandidateRead(StrictModel):
+    run_id: str
+    created_at: str
+    status: RunStatus
+    age_days: int
+
+
+class RetentionRead(StrictModel):
+    """What the platform would forget, or has just forgotten."""
+
+    enabled: bool
+    keep_runs: int
+    older_than_days: int
+    runs: list[RetentionCandidateRead]
+    #: Past the limits and waiting for a later pass, so a large backlog is
+    #: visible as a backlog rather than as a policy that is not working.
+    remaining: int
+    #: Run id to the reason it was left alone. The answer to "why is that one
+    #: still here" without reading the code.
+    protected: dict[str, str]
+
+
+def _retention(result: object) -> RetentionRead:
+    plan = result  # typed loosely so both plan() and sweep() land here
+    return RetentionRead(
+        enabled=plan.enabled,  # type: ignore[attr-defined]
+        keep_runs=plan.keep_runs,  # type: ignore[attr-defined]
+        older_than_days=plan.older_than_days,  # type: ignore[attr-defined]
+        runs=[
+            RetentionCandidateRead(
+                run_id=str(row.run_id),
+                created_at=row.created_at,
+                status=row.status,
+                age_days=row.age_days,
+            )
+            for row in plan.removing  # type: ignore[attr-defined]
+        ],
+        remaining=plan.remaining,  # type: ignore[attr-defined]
+        protected=plan.protected,  # type: ignore[attr-defined]
+    )
+
+
+@router.get(
+    "/retention",
+    response_model=RetentionRead,
+    summary="Which runs the retention policy would remove",
+    description=(
+        "Answers without removing anything, and answers whether or not retention is switched "
+        "on — which is the point: the way to decide a policy is to see what it would do."
+    ),
+)
+async def preview_retention(session: SessionDep) -> RetentionRead:
+    return _retention(await retention_service.plan(session))
+
+
+@router.post(
+    "/retention",
+    response_model=RetentionRead,
+    summary="Run one retention pass now",
+    description=(
+        "Removes what the preview names, one batch at a time. Works on a deployment where the "
+        "periodic sweeper is off: asking for a pass by hand says what you want more clearly "
+        "than a configuration flag can. A run that is still going, the run the dashboard is "
+        "showing, and any run a saved scenario refers to are never removed."
+    ),
+)
+async def run_retention(user: CurrentUser) -> RetentionRead:
+    logger.info("Retention pass requested by %s", user.email or "an anonymous caller")
+    return _retention(await retention_service.sweep(force=True))
 
 
 @router.post(

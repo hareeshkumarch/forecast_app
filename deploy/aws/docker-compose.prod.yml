@@ -59,6 +59,12 @@ services:
     restart: unless-stopped
 
   backend:
+    # Time docker allows for a SIGTERM to be honoured before it sends SIGKILL.
+    # The default is ten seconds, which is less than the shutdown drain — so
+    # without this the API is killed part-way through waiting for the forecasts
+    # already running to finish, and the wait buys nothing at all. Kept under
+    # systemd's default TimeoutStopSec of 90s, which bounds the whole chain.
+    stop_grace_period: 60s
     build:
       context: ../../backend
     image: ${BACKEND_IMAGE:-forecast-backend:local}
@@ -152,6 +158,23 @@ services:
       # Live connections one account may hold, and how many this process will
       # hold at once. Streams are exempt from the ceiling above — they are held
       # rather than served — so these are the only thing bounding them.
+      # A statement with nothing to stop it holds one of ten pooled connections
+      # for as long as it takes. Reads take the first; the sessions that
+      # persist a run take the second, because a grouped forecast writes tens
+      # of thousands of rows and that is slow rather than stuck.
+      DB_STATEMENT_TIMEOUT_SECONDS: ${DB_STATEMENT_TIMEOUT_SECONDS:-30}
+      DB_WRITE_TIMEOUT_SECONDS: ${DB_WRITE_TIMEOUT_SECONDS:-300}
+      # How long a redeploy waits for the forecasts already running. Must fit
+      # inside stop_grace_period above, which must fit inside the unit's
+      # TimeoutStopSec.
+      SHUTDOWN_DRAIN_SECONDS: ${SHUTDOWN_DRAIN_SECONDS:-45}
+      # Off. Read GET /api/health/storage and GET /api/forecasts/retention
+      # before turning it on — both answer while it is off, which is the point.
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-false}
+      RETENTION_RUN_DAYS: ${RETENTION_RUN_DAYS:-90}
+      RETENTION_KEEP_RUNS: ${RETENTION_KEEP_RUNS:-20}
+      RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-3600}
+      RETENTION_BATCH: ${RETENTION_BATCH:-10}
       SSE_MAX_STREAMS_PER_CLIENT: ${SSE_MAX_STREAMS_PER_CLIENT:-8}
       SSE_MAX_STREAMS_TOTAL: ${SSE_MAX_STREAMS_TOTAL:-256}
       SSE_MAX_LIFETIME_SECONDS: ${SSE_MAX_LIFETIME_SECONDS:-1800}

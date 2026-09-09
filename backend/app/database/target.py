@@ -169,6 +169,13 @@ def connect_args(target: DatabaseTarget) -> dict[str, object]:
         return {}
 
     args: dict[str, object] = {}
+    # A client-side backstop under the per-transaction `SET LOCAL` in
+    # session.py. That one is the real control; this catches the case it cannot
+    # reach — a connection doing something outside a transaction, or a pooler
+    # that dropped the setting — and is sized to the longest legitimate write
+    # so it never fires before the tighter one does.
+    if settings.db_write_timeout_seconds > 0:
+        args["command_timeout"] = settings.db_write_timeout_seconds
     if target.name == "supabase":
         args["ssl"] = "require"
     if target.pooled:

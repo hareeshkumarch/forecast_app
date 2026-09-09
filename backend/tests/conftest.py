@@ -88,7 +88,8 @@ def _process_wide_state_starts_fresh():
     leaves the next test's forecast waiting behind a run that is over. Same failure mode as the auth switches
     and the rate limiter above — a test that breaks somewhere else, later, for no visible reason.
     """
-    from app.core import auth, breaker, cache, metrics, streams
+    from app.core import auth, breaker, cache, lifecycle, metrics, streams
+    from app.services import capacity_service
     from app.services.job_runner import scheduler
 
     cache.clear_all()
@@ -96,12 +97,16 @@ def _process_wide_state_starts_fresh():
     metrics.registry.reset()
     streams.registry.forget_all()
     scheduler.forget_all()
+    capacity_service.forget()
+    lifecycle.reset()
     auth.reset_caches()
     yield
     cache.clear_all()
     breaker.reset_all()
     streams.registry.forget_all()
     scheduler.forget_all()
+    capacity_service.forget()
+    lifecycle.reset()
     auth.reset_caches()
 
 

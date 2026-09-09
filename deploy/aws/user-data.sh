@@ -134,6 +134,10 @@ EnvironmentFile=/opt/forecast/.env
 ExecStart=/usr/bin/docker compose -f deploy/aws/docker-compose.prod.yml up -d --build --wait
 ExecStop=/usr/bin/docker compose -f deploy/aws/docker-compose.prod.yml down
 TimeoutStartSec=1800
+# The API waits for the forecasts already running before it exits, and the
+# container is given 60s to honour that. This has to be longer than both or
+# systemd kills the stop part-way through and the wait buys nothing.
+TimeoutStopSec=120
 
 [Install]
 WantedBy=multi-user.target

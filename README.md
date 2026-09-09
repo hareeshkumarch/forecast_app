@@ -429,7 +429,7 @@ whoever makes it.
 
 ## How the API protects itself
 
-Six mechanisms, each answering a different question. They are described here
+Nine mechanisms, each answering a different question. They are described here
 together because they are easy to confuse and their failure modes are not.
 
 ### Conditional reads — "has anything changed?"
@@ -540,6 +540,55 @@ load balancer as well. `RATE_LIMIT_TRUSTED_PROXIES` closes the rest of it for
 the day the origin stops being reachable directly: name the addresses the
 header is believed from, and a request from anywhere else is counted against
 its socket, which is the one thing a caller cannot choose.
+
+### Statement timeouts — "how long may one query hold a connection?"
+
+Every mechanism above refuses work that has not started. None of them can
+touch work already running, and a query with nothing to stop it holds one of
+ten pooled connections for as long as it takes — so a handful of them leaves
+the box up, healthy, and answering nothing.
+
+`SET LOCAL statement_timeout` per transaction, which is the only form that
+survives pgbouncer in transaction mode. Reads take
+`DB_STATEMENT_TIMEOUT_SECONDS` (30s); the sessions that persist a run take
+`DB_WRITE_TIMEOUT_SECONDS` (300s), because a grouped forecast writes one row
+per period per series per kind and that is slow rather than stuck. asyncpg's
+own `command_timeout` sits under both as a backstop for anything running
+outside a transaction.
+
+### Draining — "may this instance be taken away yet?"
+
+`/api/health` answers whether the process is alive, which stays true right up
+to the moment it exits. `/api/health/ready` answers whether it should be sent
+traffic, and goes false the instant a shutdown begins. Answering both with one
+endpoint meant a redeploy looked healthy while it was already tearing down.
+
+On SIGTERM the scheduler stops admitting new model work and the process waits
+`SHUTDOWN_DRAIN_SECONDS` for the runs already going. Most runs are about a
+minute, so most of them land instead of coming back as "the service restarted
+before this run finished". The wait only works because three numbers agree:
+the drain (45s) fits inside the container's `stop_grace_period` (60s), which
+fits inside the unit's `TimeoutStopSec` (120s). Raise one and raise all three,
+or docker sends SIGKILL part-way through and the wait buys nothing.
+
+### Retention — "what may this deployment forget?"
+
+Nothing, until somebody says otherwise. `RETENTION_ENABLED` is off, and that
+default is not timidity: an issued forecast is the record of what was claimed
+and when — the thing the append-only guard exists to keep honest — and a
+platform that prunes it because nobody chose a policy has quietly chosen one.
+
+It matters because nothing else deletes anything. `admission()` caps the series
+in one run; nothing caps the sum of every run ever made, and the store of
+record has a ceiling. `GET /api/health/storage` (metrics token) says what is
+stored and which tables hold it; `GET /api/forecasts/retention` says which runs
+a pass would remove. Both answer while retention is switched off, which is the
+point — the way to choose a policy is to see what it would do.
+
+Three protections hold whatever the limits say: a run that has not finished, the
+run the dashboard is showing, and any run a saved scenario refers to are never
+removed. Deletion goes through the same `delete_run` a person clicking delete
+uses, so a sweeper cannot leave behind what a hand-deletion would not.
 
 ### Metrics — `GET /api/health/metrics`
 
