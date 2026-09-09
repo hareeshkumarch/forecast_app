@@ -550,8 +550,13 @@ function MonitorRow({ row }: { row: ForecastMonitorItem }) {
  * news, and a permanent row saying "0 waiting" is the kind of thing people
  * stop reading before the day it matters.
  */
-function QueuePanel({ queue }: { queue: ForecastQueue }) {
-  if (queue.waiting === 0) return null;
+function QueuePanel({ queue }: { queue: ForecastQueue | undefined }) {
+  // Undefined, not just empty: the frontend deploys to Vercel and the backend
+  // to EC2, so for the minutes between the two the browser is running new code
+  // against an API that has never heard of this field. Reading through it
+  // would throw, and a panel that throws over a field it could have done
+  // without is a bad trade for a deploy window.
+  if (!queue || queue.waiting === 0) return null;
 
   const waiting = queue.rows.filter((row) => row.waiting > 0);
 

@@ -974,7 +974,8 @@ export interface ForecastMonitoring {
   active: number;
   drift_wmape_limit: number;
   rows: ForecastMonitorItem[];
-  queue: ForecastQueue;
+  /** Absent from a backend older than the frontend — see QueuePanel. */
+  queue?: ForecastQueue;
 }
 
 export interface LlmUsageTotals {
