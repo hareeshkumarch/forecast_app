@@ -66,6 +66,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "/api/health/metrics is being refused. Set a token to collect them — the endpoint "
             "describes every route this deployment serves and is not served openly in production."
         )
+    if settings.candidate_workers_shadowed:
+        logger.warning(
+            "FORECAST_CANDIDATE_WORKERS=%d is being ignored: FORECAST_MODEL_CONCURRENCY=%d is "
+            "above 1, and candidates are backtested on threads whenever it is. Set "
+            "FORECAST_MODEL_CONCURRENCY=1 to use processes instead, or leave it and drop "
+            "FORECAST_CANDIDATE_WORKERS to 1 so the configuration says what is happening.",
+            settings.forecast_candidate_workers,
+            settings.forecast_model_concurrency,
+        )
     if "*" in settings.cors_origins:
         logger.warning(
             "CORS_ORIGINS is '*' while credentials are allowed, which no browser honours: it "

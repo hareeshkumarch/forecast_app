@@ -214,6 +214,10 @@ class Settings(BaseSettings):
     currency_symbol: str = "$"
 
     forecast_workers: int = 2
+    #: Candidates backtested at once inside one run, on threads, with the
+    #: feature cache shared between them. Takes precedence over
+    #: `forecast_candidate_workers`: above 1 the engine never reaches the
+    #: process-based lane at all — see `candidate_workers_shadowed`.
     forecast_model_concurrency: int = Field(default=2, ge=1, le=8)
     #: Threads each pool worker's linear algebra may use. One, deliberately:
     #: OpenBLAS sizes its pool from the core count *per process*, so two
@@ -476,6 +480,19 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         cleaned = self.cors_origins_raw.strip().strip("[]")
         return [origin.strip().strip("\"'") for origin in cleaned.split(",") if origin.strip()]
+
+    @property
+    def candidate_workers_shadowed(self) -> bool:
+        """FORECAST_CANDIDATE_WORKERS was set, and cannot take effect.
+
+        The engine picks the threaded lane whenever
+        `forecast_model_concurrency` is above 1 and only falls through to the
+        process lane below that, so setting both leaves the second one dead.
+        It reads as a tuning knob that does nothing, which is worse than a knob
+        that is not there — the production template shipped exactly that
+        combination and the machine quietly ignored half of it.
+        """
+        return self.forecast_candidate_workers > 1 and self.forecast_model_concurrency > 1
 
     @property
     def rate_limit_trusted_proxies(self) -> tuple[IPv4Network | IPv6Network, ...]:

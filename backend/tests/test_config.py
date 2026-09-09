@@ -167,3 +167,29 @@ def test_the_scoring_rule_spells_each_metric_the_way_it_is_written() -> None:
     assert "norm(sMAPE)" not in scoring_rule()
     assert "norm(sMAPE)" in scoring_rule({"smape": 1.0})
     assert "norm(MAE)" in scoring_rule({"mae": 1.0})
+
+
+def test_candidate_workers_are_reported_as_shadowed_when_they_are() -> None:
+    """A tuning knob that does nothing is worse than one that is not there.
+
+    The engine backtests on threads whenever FORECAST_MODEL_CONCURRENCY is
+    above 1 and only falls through to the process lane below that, so setting
+    both leaves the second dead. The production template shipped exactly that
+    pair and the machine quietly ignored half of it.
+    """
+    from app.core.config import settings
+
+    before = (settings.forecast_model_concurrency, settings.forecast_candidate_workers)
+    try:
+        settings.forecast_model_concurrency = 2
+        settings.forecast_candidate_workers = 2
+        assert settings.candidate_workers_shadowed
+
+        settings.forecast_model_concurrency = 1
+        assert not settings.candidate_workers_shadowed
+
+        settings.forecast_model_concurrency = 2
+        settings.forecast_candidate_workers = 1
+        assert not settings.candidate_workers_shadowed
+    finally:
+        settings.forecast_model_concurrency, settings.forecast_candidate_workers = before
