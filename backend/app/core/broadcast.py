@@ -99,10 +99,10 @@ def _announce_elsewhere(topic: str, event: str) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No loop: a script, or a worker process. Nothing here is worth
-        # blocking one on, and a decision made outside the API is rare enough
-        # that the synchronous path is fine.
-        asyncio.run(_push(payload))
+        # No loop: a script, or a worker process. The pooled client below
+        # belongs to whichever loop opened it, so a one-shot connection is used
+        # here rather than one that would be dead by the next call.
+        asyncio.run(_push_once(payload))
         return
 
     task = loop.create_task(_push(payload))
@@ -119,16 +119,30 @@ async def _push(payload: str) -> None:
         logger.warning("Could not announce an access change to other processes", exc_info=True)
 
 
+async def _push_once(payload: str) -> None:
+    client = _open()
+    try:
+        await client.publish(CHANNEL, payload)
+    except Exception:
+        logger.warning("Could not announce an access change to other processes", exc_info=True)
+    finally:
+        await client.aclose()
+
+
+def _open() -> Any:
+    import redis.asyncio as aioredis
+
+    return aioredis.Redis.from_url(
+        settings.progress_channel_url,
+        socket_connect_timeout=3.0,
+        health_check_interval=30,
+    )
+
+
 def _redis() -> Any:
     global _client
     if _client is None:
-        import redis.asyncio as aioredis
-
-        _client = aioredis.Redis.from_url(
-            settings.progress_channel_url,
-            socket_connect_timeout=3.0,
-            health_check_interval=30,
-        )
+        _client = _open()
     return _client
 
 
@@ -156,15 +170,9 @@ class AccessRelay:
             _client = None
 
     async def _run(self) -> None:
-        import redis.asyncio as aioredis
-
         backoff = 1.0
         while True:
-            client = aioredis.Redis.from_url(
-                settings.progress_channel_url,
-                socket_connect_timeout=3.0,
-                health_check_interval=30,
-            )
+            client = _open()
             try:
                 pubsub = client.pubsub(ignore_subscribe_messages=True)
                 await pubsub.subscribe(CHANNEL)
