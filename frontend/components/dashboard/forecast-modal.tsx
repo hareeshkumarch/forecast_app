@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  Clock,
   Loader2,
   Minus,
   MessageSquareText,
@@ -1087,9 +1088,10 @@ function ProgressPanel({
   const failed = progress.status === "failed";
   const done = progress.status === "completed";
 
-  const stages = stagesFor(grouped);
+  const stages = stagesFor(grouped, progress.hasQueued);
   const currentIndex = stages.indexOf(progress.stage);
   const elapsed = useElapsed(startedAt, !done && !failed);
+  const waiting = progress.queueAhead !== null;
 
   return (
     <div className="space-y-4">
@@ -1117,6 +1119,29 @@ function ProgressPanel({
         </span>
       </div>
 
+      {waiting ? (
+        // The bar cannot move while a run is queued, and a bar that does not
+        // move is the whole reason a waiting run read as a stuck one. Say what
+        // is actually happening instead, in the terms that make it act-on-able:
+        // it has not started, here is where it is, and it is not lost.
+        <div
+          className="flex items-start gap-2 rounded-card border border-border bg-surface-muted px-3 py-2"
+          role="status"
+        >
+          <Clock className="mt-px h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
+          <p className="text-caption text-text-secondary">
+            <span className="font-medium text-text-primary">
+              {progress.queueAhead === 0
+                ? "Next in line for a model worker."
+                : `${progress.queueAhead} ahead in the queue.`}
+            </span>{" "}
+            Fitting models is the one part of a run that needs a whole core, so only a few happen
+            at once. This one has not started yet — it is not stuck, and you can close this and be
+            told when it lands.
+          </p>
+        </div>
+      ) : null}
+
       {progress.isReconnecting ? (
         <p className="flex items-center gap-1.5 text-caption text-text-muted" role="status">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -1142,6 +1167,9 @@ function ProgressPanel({
           className={cn(
             "h-full rounded-full transition-[width] duration-300",
             failed ? "bg-negative" : done ? "bg-positive" : "bg-accent",
+            // A striped bar that is going nowhere reads as waiting; a solid
+            // one at 22% reads as progress that has stopped.
+            waiting && "animate-queue-stripe bg-queue-stripe bg-stripe",
           )}
           style={{ width: `${Math.max(percent, 3)}%` }}
         />

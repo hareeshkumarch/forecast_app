@@ -558,6 +558,11 @@ export interface ForecastProgressEvent {
   message: string | null;
   selected_model: ModelKind | null;
   error: string | null;
+  /**
+   * Pieces of work ahead of this run in the model-fitting queue, or null when
+   * it is not waiting for a worker. Zero means it is next.
+   */
+  queue_ahead?: number | null;
   updated_at?: string;
 }
 
@@ -945,6 +950,22 @@ export interface ForecastMonitorItem {
   can_retry: boolean;
 }
 
+export interface QueuedRun {
+  run_id: string;
+  running: number;
+  waiting: number;
+  ahead: number;
+  waiting_seconds: number | null;
+}
+
+/** What the model-fitting pool is doing: why the fourth run has not started. */
+export interface ForecastQueue {
+  workers: number;
+  running: number;
+  waiting: number;
+  rows: QueuedRun[];
+}
+
 export interface ForecastMonitoring {
   total: number;
   healthy: number;
@@ -953,6 +974,7 @@ export interface ForecastMonitoring {
   active: number;
   drift_wmape_limit: number;
   rows: ForecastMonitorItem[];
+  queue: ForecastQueue;
 }
 
 export interface LlmUsageTotals {

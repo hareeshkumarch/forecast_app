@@ -503,6 +503,10 @@ class ForecastProgressEvent(BaseModel):
     message: str | None = None
     selected_model: ModelKind | None = None
     error: str | None = None
+    #: Pieces of work ahead of this run in the model-fitting queue while it is
+    #: waiting for a worker; null when it is not waiting. A number rather than
+    #: prose, so a client can show a queue instead of parsing a sentence.
+    queue_ahead: NonNegativeInt | None = None
     updated_at: datetime
 
     @computed_field
@@ -637,6 +641,36 @@ class ForecastMonitorItem(BaseModel):
     can_retry: bool
 
 
+class QueuedRunRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    #: Pool workers this run currently occupies.
+    running: NonNegativeInt
+    #: Pieces of its work still waiting for one.
+    waiting: NonNegativeInt
+    #: How much work from other runs is ahead of it. Zero means next.
+    ahead: NonNegativeInt
+    waiting_seconds: float | None
+
+
+class ForecastQueueRead(BaseModel):
+    """What the model-fitting pool is doing right now.
+
+    The answer to "why has the fourth run not started". Model fitting is the
+    only part of a run that needs a whole core, so there are `workers` of them
+    and everything else waits — which is a queue, not slowness, and the two
+    are indistinguishable without this.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    workers: NonNegativeInt
+    running: NonNegativeInt
+    waiting: NonNegativeInt
+    rows: list[QueuedRunRead]
+
+
 class ForecastMonitoringResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -647,3 +681,4 @@ class ForecastMonitoringResponse(BaseModel):
     active: NonNegativeInt
     drift_wmape_limit: float
     rows: list[ForecastMonitorItem]
+    queue: ForecastQueueRead

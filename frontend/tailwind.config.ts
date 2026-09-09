@@ -163,6 +163,15 @@ const config: Config = {
       transitionDuration: {
         fast: "120ms",
       },
+      backgroundImage: {
+        // A bar that is going nowhere on purpose. Solid at 22% reads as
+        // progress that has stopped; stripes moving read as a queue.
+        "queue-stripe":
+          "repeating-linear-gradient(45deg, var(--accent) 0 6px, var(--accent-soft) 6px 12px)",
+      },
+      backgroundSize: {
+        stripe: "18px 18px",
+      },
       keyframes: {
         "toast-in": {
           from: { opacity: "0", transform: "translateY(8px) scale(0.98)" },
@@ -184,12 +193,17 @@ const config: Config = {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(400%)" },
         },
+        "queue-stripe": {
+          from: { backgroundPosition: "0 0" },
+          to: { backgroundPosition: "18px 0" },
+        },
       },
       animation: {
         "toast-in": "toast-in 160ms ease-out",
         "pulse-dot": "pulse-dot 2.4s ease-in-out infinite",
         drift: "drift 22s ease-in-out infinite",
         "modal-progress": "modal-progress 1.4s ease-in-out infinite",
+        "queue-stripe": "queue-stripe 0.9s linear infinite",
       },
     },
   },

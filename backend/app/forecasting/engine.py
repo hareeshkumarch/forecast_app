@@ -263,6 +263,59 @@ def _make_factory(
     return factory
 
 
+class _InFlight:
+    """What the model search is doing right now, not only what it has finished.
+
+    Fitting is done `lanes` at a time, so with six candidates and two lanes the
+    last two have not started when the first two are half done. Reporting only
+    completions leaves the message unchanged for as long as a fit takes, which
+    reads as a search that has stalled — and reads worst for the candidates
+    that are merely queued, which is the ones that look slowest.
+    """
+
+    __slots__ = ("_done", "_lanes", "_lock", "_running", "_total")
+
+    def __init__(self, total: int, lanes: int) -> None:
+        self._total = total
+        self._lanes = lanes
+        self._lock = Lock()
+        self._running: list[str] = []
+        self._done = 0
+
+    @staticmethod
+    def _name(kind: ModelKind) -> str:
+        return kind.value.replace("_", " ")
+
+    def opening(self) -> str:
+        return (
+            f"Backtesting {self._total} candidate models, {self._lanes} at a time "
+            f"({self._total - self._lanes} waiting their turn)."
+            if self._total > self._lanes
+            else f"Backtesting {self._total} candidate models, all at once."
+        )
+
+    def started(self, kind: ModelKind) -> None:
+        with self._lock:
+            self._running.append(self._name(kind))
+
+    def finished(self, kind: ModelKind) -> None:
+        with self._lock:
+            self._done += 1
+            name = self._name(kind)
+            if name in self._running:
+                self._running.remove(name)
+
+    def line(self, kind: ModelKind) -> str:
+        with self._lock:
+            done, running = self._done, list(self._running)
+        finished = f"Backtested {self._name(kind)} ({done} of {self._total})"
+        if not running:
+            return f"{finished}."
+        queued = self._total - done - len(running)
+        tail = f"; {queued} still to start" if queued > 0 else ""
+        return f"{finished}. Fitting {' and '.join(sorted(running))}{tail}."
+
+
 def _backtest_candidate(
     args: tuple[
         ModelKind,
@@ -432,31 +485,36 @@ def run_forecast(
     if model_workers > 1:
         # Thread-level parallelism with feature caching.
         indexed: dict[int, BacktestResult] = {}
+        # Only `model_workers` candidates are being fitted at any moment; the
+        # rest are queued inside the pool. Reporting completions alone left
+        # nothing moving between them and made the candidates that had not
+        # started yet look like candidates that were taking a long time — the
+        # same confusion the run queue caused, one level down. So say what is
+        # in flight as well as what is finished.
+        watch = _InFlight(candidate_total, model_workers)
         if progress_callback is not None:
-            progress_callback(
-                "backtesting",
-                0,
-                candidate_total,
-                f"Backtesting {candidate_total} candidate models with {model_workers} workers...",
-            )
+            progress_callback("backtesting", 0, candidate_total, watch.opening())
+
+        def run_candidate(candidate: Forecaster) -> BacktestResult:
+            watch.started(candidate.kind)
+            try:
+                return evaluate_candidate(candidate)
+            finally:
+                watch.finished(candidate.kind)
+
         with ThreadPoolExecutor(
             max_workers=model_workers,
             thread_name_prefix="forecast-model",
         ) as pool:
             futures = {
-                pool.submit(evaluate_candidate, candidate): (index, candidate.kind)
+                pool.submit(run_candidate, candidate): (index, candidate.kind)
                 for index, candidate in enumerate(candidates)
             }
             for completed, future in enumerate(as_completed(futures), start=1):
                 index, kind = futures[future]
                 indexed[index] = future.result()
                 if progress_callback is not None:
-                    progress_callback(
-                        "backtesting",
-                        completed,
-                        candidate_total,
-                        f"Backtested {kind.value.replace('_', ' ')} ({completed} of {candidate_total}).",
-                    )
+                    progress_callback("backtesting", completed, candidate_total, watch.line(kind))
         results = [indexed[index] for index in range(candidate_total)]
     elif lanes > 1:
         # Process-level parallelism without feature caching.

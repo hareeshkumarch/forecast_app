@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronRight, Loader2, TriangleAlert, X } from "lucide-react";
+import { CheckCircle2, ChevronRight, Clock, Loader2, TriangleAlert, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 
@@ -17,6 +17,8 @@ const IDLE: ForecastProgress = {
   stage: "",
   message: null,
   error: null,
+  queueAhead: null,
+  hasQueued: false,
   isStreaming: false,
   isReconnecting: false,
   isPolling: false,
@@ -136,6 +138,7 @@ function useTabTitleProgress(progress: ForecastProgress): void {
       }
       if (progress.status === "completed") document.title = `✓ Forecast ready — ${base}`;
       else if (progress.status === "failed") document.title = `⚠ Forecast failed — ${base}`;
+      else if (progress.queueAhead !== null) document.title = `⏳ Queued — ${base}`;
       else document.title = `(${Math.round(progress.progress * 100)}%) ${base}`;
     };
 
@@ -145,7 +148,7 @@ function useTabTitleProgress(progress: ForecastProgress): void {
       document.removeEventListener("visibilitychange", paint);
       document.title = base;
     };
-  }, [progress.status, progress.progress]);
+  }, [progress.status, progress.progress, progress.queueAhead]);
 }
 
 /**
@@ -165,6 +168,9 @@ export function ForecastRunPill() {
   const done = progress.status === "completed";
   const failed = progress.status === "failed";
   const percent = Math.round(progress.progress * 100);
+  // "Forecasting… 22%" on a run that has not started is the same lie the
+  // progress bar was telling. A queued run says so, and says where it is.
+  const queued = progress.queueAhead !== null;
 
   return (
     <div
@@ -184,11 +190,21 @@ export function ForecastRunPill() {
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" aria-hidden />
         ) : failed ? (
           <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
+        ) : queued ? (
+          <Clock className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
         ) : (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" aria-hidden />
         )}
         <span className="font-medium text-text-primary">
-          {done ? "Forecast ready" : failed ? "Forecast failed" : `Forecasting… ${percent}%`}
+          {done
+            ? "Forecast ready"
+            : failed
+              ? "Forecast failed"
+              : queued
+                ? progress.queueAhead === 0
+                  ? "Queued — next in line"
+                  : `Queued — ${progress.queueAhead} ahead`
+                : `Forecasting… ${percent}%`}
         </span>
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
       </button>

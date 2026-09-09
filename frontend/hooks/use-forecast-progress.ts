@@ -13,6 +13,20 @@ export interface ForecastProgress {
   message: string | null;
   error: string | null;
 
+  /**
+   * Pieces of work ahead of this run in the model-fitting queue, or null when
+   * it is not waiting for one.
+   *
+   * There are only `FORECAST_WORKERS` model workers, so starting four runs at
+   * once starts two of them. The other two used to report "backtesting" at 30%
+   * while doing nothing, which is why the last of several looked slow rather
+   * than queued.
+   */
+  queueAhead: number | null;
+
+  /** True once this run has waited, so the step stays on the checklist. */
+  hasQueued: boolean;
+
   isStreaming: boolean;
 
   isReconnecting: boolean;
@@ -28,6 +42,8 @@ const IDLE: ForecastProgress = {
   stage: "",
   message: null,
   error: null,
+  queueAhead: null,
+  hasQueued: false,
   isStreaming: false,
   isReconnecting: false,
   isPolling: false,
@@ -69,6 +85,7 @@ export function useForecastProgress(
 
     let done = false;
     let attempts = 0;
+    let queued = false;
     let newestFrame = 0;
     let newestSignature = "";
     let currentTransport: Transport = "connecting";
@@ -99,7 +116,14 @@ export function useForecastProgress(
       if (done) return false;
       const signature =
         event.updated_at ??
-        [event.status, event.progress, event.stage, event.message, event.error].join(":");
+        [
+          event.status,
+          event.progress,
+          event.stage,
+          event.message,
+          event.error,
+          event.queue_ahead,
+        ].join(":");
       if (signature === newestSignature) return false;
       const parsed = event.updated_at ? Date.parse(event.updated_at) : Number.NaN;
       const frameTime = Number.isNaN(parsed) ? Date.now() : parsed;
@@ -108,12 +132,17 @@ export function useForecastProgress(
       newestFrame = frameTime;
       newestSignature = signature;
 
+      const waiting = event.stage === "waiting";
+      if (waiting) queued = true;
+
       setState({
         status: event.status,
         progress: event.progress,
         stage: event.stage,
         message: event.message,
         error: event.error,
+        queueAhead: waiting ? event.queue_ahead ?? 0 : null,
+        hasQueued: queued,
         isStreaming: !isTerminal(event.status) && transport === "streaming",
         isReconnecting: !isTerminal(event.status) && transport === "retrying",
         isPolling: !isTerminal(event.status) && transport === "polling",
@@ -287,10 +316,14 @@ export const GRAIN_STAGES = ["fitting_series", "storing_series"];
 /** The checklist for one run.
  *
  * Showing the grain steps to a run that has no grain leaves two rows that can
- * never light up, which reads as a run that stopped short of finishing.
+ * never light up, which reads as a run that stopped short of finishing. The
+ * wait for a model worker is the same in reverse: most runs never queue, so
+ * the row appears only for a run that did — and stays once it has, so the list
+ * does not reshuffle under the reader the moment its turn comes.
  */
-export function stagesFor(grouped: boolean): string[] {
-  return grouped ? [...RUN_STAGES, ...GRAIN_STAGES] : RUN_STAGES;
+export function stagesFor(grouped: boolean, queued = false): string[] {
+  const core = queued ? ["aggregating", "waiting", ...RUN_STAGES.slice(1)] : RUN_STAGES;
+  return grouped ? [...core, ...GRAIN_STAGES] : core;
 }
 
 /** Time on the clock since `startedAt`, as `0:42` or `3:07`.
@@ -321,6 +354,7 @@ export function useElapsed(startedAt: number | null, running: boolean): string |
 export const STAGE_LABELS: Record<string, string> = {
   queued: "Queued",
   aggregating: "Aggregating series",
+  waiting: "Waiting for a model worker",
   backtesting: "Backtesting candidate models",
   fitting: "Fitting the selected model",
   building_outputs: "Building forecast outputs",

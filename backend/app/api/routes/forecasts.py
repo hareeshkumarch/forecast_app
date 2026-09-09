@@ -56,7 +56,7 @@ from app.services import (
     series_service,
     user_service,
 )
-from app.services.job_runner import ProgressEvent, as_utc, progress_bus
+from app.services.job_runner import ProgressEvent, as_utc, progress_bus, scheduler
 from app.services.progress_relay import latest_from_store
 
 logger = get_logger(__name__)
@@ -636,6 +636,9 @@ def _parse_event_id(raw: str | None) -> datetime | None:
 
 
 async def _current_progress(run: ForecastRun) -> ProgressEvent:
+    # The position is read live rather than from the row: a page loaded while a
+    # run waits should show where it is now, not where it was when the wait
+    # started. Only the frame the stream sends carries the number otherwise.
     database = ProgressEvent(
         run_id=run.id,
         status=run.status,
@@ -643,6 +646,7 @@ async def _current_progress(run: ForecastRun) -> ProgressEvent:
         stage=run.stage,
         selected_model=run.selected_model.value if run.selected_model else None,
         error=run.error_message,
+        queue_ahead=scheduler.position_of(run.id),
         updated_at=as_utc(run.updated_at),
     )
     if run.status in (RunStatus.COMPLETED, RunStatus.FAILED):

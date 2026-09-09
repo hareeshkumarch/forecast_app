@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  Clock,
   FlaskConical,
   GitCompareArrows,
   Plus,
@@ -52,7 +53,7 @@ import { cn } from "@/lib/utils";
 import { confirm } from "@/stores/confirm-store";
 import { usePrefsStore } from "@/stores/prefs-store";
 import { useUiStore } from "@/stores/ui-store";
-import type { ForecastMonitorItem, ScenarioSimulation } from "@/types/api";
+import type { ForecastMonitorItem, ForecastQueue, ScenarioSimulation } from "@/types/api";
 
 type WorkspaceTab = "planner" | "compare" | "monitor";
 
@@ -540,6 +541,56 @@ function MonitorRow({ row }: { row: ForecastMonitorItem }) {
   );
 }
 
+/**
+ * What the model-fitting pool is doing, and what is waiting on it.
+ *
+ * The answer to "the fourth run just takes ages". It has not started: fitting
+ * needs a whole core, so only so many happen at once and the rest queue. Shown
+ * only while something is actually waiting — a pool with room to spare is not
+ * news, and a permanent row saying "0 waiting" is the kind of thing people
+ * stop reading before the day it matters.
+ */
+function QueuePanel({ queue }: { queue: ForecastQueue }) {
+  if (queue.waiting === 0) return null;
+
+  const waiting = queue.rows.filter((row) => row.waiting > 0);
+
+  return (
+    <Card className="p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-text-muted" aria-hidden />
+          <h2 className="panel-title">Waiting for a model worker</h2>
+        </div>
+        <p className="text-caption text-text-muted num">
+          {queue.running} of {queue.workers} busy · {queue.waiting} waiting
+        </p>
+      </div>
+      <p className="mt-1.5 text-caption text-text-secondary">
+        Fitting is the one part of a run that needs a whole core, so {queue.workers} happen at
+        once and the rest wait their turn. These runs have not started — they are queued, not
+        stuck.
+      </p>
+      <ul className="mt-2.5 space-y-1">
+        {waiting.map((row) => (
+          <li
+            key={row.run_id}
+            className="flex items-center justify-between gap-3 rounded-input bg-surface-muted px-2.5 py-1.5"
+          >
+            <span className="min-w-0 truncate font-mono text-caption text-text-secondary">
+              {row.run_id.slice(0, 8)}
+            </span>
+            <span className="shrink-0 text-caption text-text-muted num">
+              {row.ahead === 0 ? "next in line" : `${row.ahead} ahead`}
+              {row.waiting_seconds !== null ? ` · ${Math.round(row.waiting_seconds)}s` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function MonitoringPanel() {
   const monitor = useForecastMonitoring();
   if (monitor.isLoading) return <Skeleton className="h-[34rem]" />;
@@ -556,6 +607,8 @@ function MonitoringPanel() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stats.map((stat) => <Card key={stat.label} className="p-3.5"><div className="flex items-center justify-between"><p className="text-caption text-text-muted">{stat.label}</p><stat.icon className={cn("h-4 w-4", stat.tone)} /></div><p className="mt-2 text-kpi font-semibold text-text-primary num">{stat.value}</p></Card>)}
       </div>
+
+      <QueuePanel queue={data.queue} />
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3.5">
           <div><h2 className="panel-title">Forecast health</h2><p className="mt-0.5 text-caption text-text-muted">Failed jobs, elapsed unscored forecasts, and realized wMAPE above {formatPercent(data.drift_wmape_limit)}.</p></div>

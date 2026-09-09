@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
 from datetime import date, datetime
 from pathlib import Path
@@ -63,7 +64,7 @@ from app.models.enums import (
     PointKind,
     RunStatus,
 )
-from app.services import dataset_service, insight_service
+from app.services import dataset_service, insight_service, job_runner
 from app.services.job_runner import ProgressEvent, as_utc, executors, publish_progress
 
 logger = get_logger(__name__)
@@ -903,11 +904,15 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
 
     payload = await asyncio.to_thread(_build_payload, run, parquet_path, driver_candidates)
 
-    if not await checkpoint_progress(
-        run_id, 0.30, "backtesting", "Backtesting candidate models..."
-    ):
-        return RunStatus.FAILED
-
+    # Deliberately *not* announcing "backtesting" here. The model search cannot
+    # start until a pool worker is free, and there are only `FORECAST_WORKERS`
+    # of those: start four runs at once and two of them wait. Marking a run
+    # backtesting before it was submitted is what made a queued run read as a
+    # slow one — it showed 30% and "Backtesting candidate models..." while
+    # doing nothing at all, for as long as the runs ahead of it took.
+    #
+    # The scheduler says which of the two this run is, the moment it knows:
+    # `on_wait` only if it has to queue, `on_start` when a worker is its own.
     try:
         # The reporting variant used to be reserved for the distributed
         # deployment, on the assumption that only a Celery worker had a way to
@@ -915,8 +920,15 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
         # the silent variant and sat at 30% for the whole model search — the
         # slowest and least predictable part of a run, and the one stretch a
         # watching user most needs to see moving.
-        output: ForecastOutput = await executors.run(
-            _run_forecast_with_progress, payload, run_id, grouped
+        output: ForecastOutput = await executors.run_for(
+            run_id,
+            job_runner.MODEL_SEARCH,
+            _run_forecast_with_progress,
+            payload,
+            run_id,
+            grouped,
+            on_wait=_queued(run_id),
+            on_start=_started(run_id),
         )
     except InsufficientDataError as exc:
         raise ForecastError(str(exc)) from exc
@@ -964,7 +976,71 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
     return RunStatus.COMPLETED if completed else RunStatus.FAILED
 
 
-async def checkpoint_progress(run_id: uuid.UUID, progress: float, stage: str, message: str) -> bool:
+def _waiting_message(ahead: int | None) -> str:
+    """What a run that cannot start yet is told, in the only terms that help."""
+    workers = max(1, settings.forecast_workers)
+    plural = "" if workers == 1 else "s"
+    if not ahead:
+        return f"Waiting for one of {workers} model worker{plural} to come free — next in line."
+    piece = "run" if ahead == 1 else "pieces of work"
+    return (
+        f"Waiting for one of {workers} model worker{plural} to come free — "
+        f"{ahead} {piece} ahead."
+    )
+
+
+def announce_wait(run_id: uuid.UUID, ahead: int, workers: int) -> None:
+    """The scheduler's position updates, as progress frames.
+
+    Streamed rather than written: a queue of four moves several times a minute
+    and the row in the database is only what a page load reads. Entering the
+    wait is checkpointed, so a reload during one still says so.
+    """
+    del workers
+    _publish(run_id, RunStatus.RUNNING, 0.22, "waiting", _waiting_message(ahead), queue_ahead=ahead)
+
+
+job_runner.announce_wait = announce_wait
+
+
+def _queued(run_id: uuid.UUID) -> Callable[[int], Awaitable[None]]:
+    """Called only when the run actually has to wait, with its place in line.
+
+    Written to the row once, on entering the wait, so a page loaded mid-queue
+    reads `waiting` rather than the stage before it. Every move after that is
+    streamed by the scheduler — a queue shifts several times a minute and none
+    of those needs a row rewritten.
+    """
+
+    async def announce(ahead: int) -> None:
+        await checkpoint_progress(
+            run_id, 0.22, "waiting", _waiting_message(ahead), queue_ahead=ahead
+        )
+
+    return announce
+
+
+def _started(run_id: uuid.UUID) -> Callable[[], Awaitable[None]]:
+    """Called the moment a worker is this run's, before the work is submitted.
+
+    The engine's own first frame arrives a beat later — it has a payload to
+    unpack before it can say anything — and without this the screen keeps
+    reporting a queue the run has already left.
+    """
+
+    async def announce() -> None:
+        await checkpoint_progress(run_id, 0.30, "backtesting", "Backtesting candidate models...")
+
+    return announce
+
+
+async def checkpoint_progress(
+    run_id: uuid.UUID,
+    progress: float,
+    stage: str,
+    message: str,
+    queue_ahead: int | None = None,
+) -> bool:
     now = utcnow()
     values: dict[str, object] = {
         "status": RunStatus.RUNNING,
@@ -988,7 +1064,7 @@ async def checkpoint_progress(run_id: uuid.UUID, progress: float, stage: str, me
         accepted = result.first() is not None
 
     if accepted:
-        _publish(run_id, RunStatus.RUNNING, progress, stage, message)
+        _publish(run_id, RunStatus.RUNNING, progress, stage, message, queue_ahead=queue_ahead)
     return accepted
 
 
@@ -1441,10 +1517,22 @@ def _looks_like_currency(column: str) -> bool:
 
 
 def _publish(
-    run_id: uuid.UUID, status: RunStatus, progress: float, stage: str, message: str
+    run_id: uuid.UUID,
+    status: RunStatus,
+    progress: float,
+    stage: str,
+    message: str,
+    queue_ahead: int | None = None,
 ) -> None:
     publish_progress(
-        ProgressEvent(run_id=run_id, status=status, progress=progress, stage=stage, message=message)
+        ProgressEvent(
+            run_id=run_id,
+            status=status,
+            progress=progress,
+            stage=stage,
+            message=message,
+            queue_ahead=queue_ahead,
+        )
     )
 
 

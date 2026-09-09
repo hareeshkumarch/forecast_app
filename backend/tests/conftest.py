@@ -83,21 +83,25 @@ def _process_wide_state_starts_fresh():
     test is served to the next one, a breaker left open by a failure test
     silently skips the provider call a later test is asserting on, and a
     counter read for an exact value is whatever the file order happened to
-    make it — and a stream lease a disconnected test never released counts
-    against the next test's ceiling. Same failure mode as the auth switches
+    make it; a stream lease a disconnected test never released counts against
+    the next test's ceiling, and a pool slot an abandoned run still holds
+    leaves the next test's forecast waiting behind a run that is over. Same failure mode as the auth switches
     and the rate limiter above — a test that breaks somewhere else, later, for no visible reason.
     """
     from app.core import auth, breaker, cache, metrics, streams
+    from app.services.job_runner import scheduler
 
     cache.clear_all()
     breaker.reset_all()
     metrics.registry.reset()
     streams.registry.forget_all()
+    scheduler.forget_all()
     auth.reset_caches()
     yield
     cache.clear_all()
     breaker.reset_all()
     streams.registry.forget_all()
+    scheduler.forget_all()
     auth.reset_caches()
 
 

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import os
 import threading
+import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,6 +47,11 @@ class ProgressEvent:
     message: str | None = None
     selected_model: str | None = None
     error: str | None = None
+    #: Pieces of work ahead of this run in the pool queue, when it is waiting
+    #: for a worker; None when it is not. Carried as a number rather than left
+    #: inside the message so a client can render a queue rather than parse
+    #: prose out of one.
+    queue_ahead: int | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +63,7 @@ class ProgressEvent:
             "message": self.message,
             "selected_model": self.selected_model,
             "error": self.error,
+            "queue_ahead": self.queue_ahead,
             "updated_at": self.updated_at.isoformat(),
         }
 
@@ -77,6 +85,9 @@ class ProgressEvent:
             message=payload.get("message"),
             selected_model=payload.get("selected_model"),
             error=payload.get("error"),
+            queue_ahead=(
+                int(payload["queue_ahead"]) if payload.get("queue_ahead") is not None else None
+            ),
             updated_at=as_utc(datetime.fromisoformat(raw_updated))
             if raw_updated
             else datetime.now(UTC),
@@ -178,9 +189,46 @@ _worker_channel: Any | None = None
 _STOP = None
 
 
+#: The variables every BLAS build reads to decide how many threads to spawn.
+#: OpenBLAS, MKL, Accelerate and OpenMP each have their own, and a machine can
+#: have more than one of them loaded.
+_BLAS_THREAD_VARS = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def _pin_blas_threads() -> None:
+    """Stop each worker's linear algebra from claiming the whole box.
+
+    OpenBLAS sizes its thread pool from the core count *per process*, so a
+    two-core instance running two pool workers, each fitting two candidate
+    models, can have four fits asking for two BLAS threads each — eight
+    runnable threads over two cores. Every one of them then runs slower than it
+    would have alone, and the cost lands hardest on whatever started last,
+    which is exactly the "the fourth one just takes forever" shape.
+
+    Parallelism is already being taken at the run and candidate level, where it
+    is coarse enough to be worth having. Inside a fit there is nothing left to
+    win and a great deal to lose, so one thread each.
+
+    Set before the module that imports numpy: the pool spawns, so a worker
+    imports the forecasting stack when it unpickles its first task, which is
+    after this has run. An operator who has set one of these themselves keeps
+    their value.
+    """
+    threads = max(1, settings.forecast_blas_threads)
+    for name in _BLAS_THREAD_VARS:
+        os.environ.setdefault(name, str(threads))
+
+
 def _adopt_channel(channel: Any) -> None:
     """Pool initializer: hand each worker the pipe back to the parent."""
     global _worker_channel
+    _pin_blas_threads()
     _worker_channel = channel
 
 
@@ -218,6 +266,204 @@ def publish_progress(event: ProgressEvent) -> None:
         from app.services.progress_relay import publish_from_worker
 
         publish_from_worker(event)
+
+
+#: What a slot is being taken for. Only the model search announces its wait —
+#: a grouped run's chunks queue too, but their progress is already reported as
+#: "12 of 40 series", and a position line per chunk would bury it.
+MODEL_SEARCH = "model"
+SERIES_CHUNK = "series"
+
+
+@dataclass(slots=True)
+class Waiting:
+    run_id: uuid.UUID
+    kind: str
+    queued_at: float
+    sequence: int
+    admitted: asyncio.Future[None]
+
+
+@dataclass(frozen=True, slots=True)
+class SlotSnapshot:
+    """What one run is doing to the pool, for the monitoring endpoint."""
+
+    run_id: uuid.UUID
+    running: int
+    waiting: int
+    #: How many pieces of work from *other* runs are ahead of this one's first
+    #: waiter. Zero means it is next.
+    ahead: int
+    waiting_since: float | None
+
+
+class Scheduler:
+    """Who gets a pool worker next, and who is told they are waiting.
+
+    The pool already queued work — a `ProcessPoolExecutor` takes everything
+    submitted and runs `max_workers` of it — so this is not about queueing.
+    It is about the two things that queue could not do.
+
+    The first is honesty. A run that had been dispatched was marked
+    `backtesting` before it was submitted, so a run waiting behind two others
+    displayed as backtesting at 30% while doing nothing at all. That is the
+    "the fourth one just takes ages" report, and nothing on the screen could
+    have explained it. Waiting is now a state with a position in it.
+
+    The second is fairness. A grouped run submits one piece of work per chunk
+    — forty series is several — and the pool's queue is strictly first in,
+    first out, so a single grouped run could hold every worker and every other
+    run behind it for minutes. When a slot frees, it goes to the waiter whose
+    run holds the fewest slots already, and arrival order decides ties. One run
+    on its own still gets the whole pool; the moment a second wants in, the
+    first stops being able to take all of it.
+    """
+
+    def __init__(self) -> None:
+        self._slots = 0
+        self._held: dict[uuid.UUID, int] = {}
+        self._waiting: list[Waiting] = []
+        self._sequence = 0
+
+    @property
+    def slots(self) -> int:
+        return self._slots or max(1, settings.forecast_workers)
+
+    @property
+    def running(self) -> int:
+        return sum(self._held.values())
+
+    @property
+    def queued(self) -> int:
+        return len(self._waiting)
+
+    def _ahead_of(self, waiter: Waiting) -> int:
+        return sum(1 for other in self._waiting if other.sequence < waiter.sequence)
+
+    def snapshot(self) -> list[SlotSnapshot]:
+        runs = set(self._held) | {waiter.run_id for waiter in self._waiting}
+        rows = []
+        for run_id in runs:
+            mine = [waiter for waiter in self._waiting if waiter.run_id == run_id]
+            first = min(mine, key=lambda waiter: waiter.sequence, default=None)
+            rows.append(
+                SlotSnapshot(
+                    run_id=run_id,
+                    running=self._held.get(run_id, 0),
+                    waiting=len(mine),
+                    ahead=self._ahead_of(first) if first is not None else 0,
+                    waiting_since=first.queued_at if first is not None else None,
+                )
+            )
+        return sorted(rows, key=lambda row: (-row.running, row.ahead))
+
+    def position_of(self, run_id: uuid.UUID) -> int | None:
+        """How many pieces of work are ahead of this run, or None if it is not waiting."""
+        mine = [waiter for waiter in self._waiting if waiter.run_id == run_id]
+        if not mine:
+            return None
+        return self._ahead_of(min(mine, key=lambda waiter: waiter.sequence))
+
+    async def acquire(
+        self,
+        run_id: uuid.UUID,
+        kind: str,
+        on_wait: Callable[[int], Awaitable[None]] | None = None,
+    ) -> None:
+        """Take a slot, waiting for one if there is none.
+
+        `on_wait` is called with the queue position, once, and only if this
+        actually has to wait. That is what lets a caller say "queued, 2 ahead"
+        without saying it to the common case that never queues at all — a
+        message that flashes for one frame is worse than no message.
+        """
+        # Not just "is there a free slot": jumping a queue that already exists
+        # is how the run that arrived first waits longest.
+        if not self._waiting and self.running < self.slots:
+            self._held[run_id] = self._held.get(run_id, 0) + 1
+            return
+
+        self._sequence += 1
+        waiter = Waiting(
+            run_id=run_id,
+            kind=kind,
+            queued_at=time.monotonic(),
+            sequence=self._sequence,
+            admitted=asyncio.get_running_loop().create_future(),
+        )
+        self._waiting.append(waiter)
+        _announce_wait(self)
+        if on_wait is not None:
+            await on_wait(self._ahead_of(waiter))
+
+        try:
+            await waiter.admitted
+        except asyncio.CancelledError:
+            # A cancelled run must not leave a waiter nobody will ever admit,
+            # nor a slot handed to it a moment later and never given back.
+            if waiter in self._waiting:
+                self._waiting.remove(waiter)
+            elif waiter.admitted.done() and not waiter.admitted.cancelled():
+                self._release(run_id)
+            raise
+
+    def release(self, run_id: uuid.UUID) -> None:
+        self._release(run_id)
+
+    def _release(self, run_id: uuid.UUID) -> None:
+        remaining = self._held.get(run_id, 0) - 1
+        if remaining > 0:
+            self._held[run_id] = remaining
+        else:
+            self._held.pop(run_id, None)
+        self._promote()
+
+    def _promote(self) -> None:
+        promoted = False
+        while self._waiting and self.running < self.slots:
+            # Fewest slots already held, then arrival order. One run alone
+            # takes the pool; two runs share it.
+            waiter = min(
+                self._waiting,
+                key=lambda item: (self._held.get(item.run_id, 0), item.sequence),
+            )
+            self._waiting.remove(waiter)
+            if waiter.admitted.done():
+                continue
+            self._held[waiter.run_id] = self._held.get(waiter.run_id, 0) + 1
+            waiter.admitted.set_result(None)
+            promoted = True
+        if promoted or self._waiting:
+            _announce_wait(self)
+
+    def forget_all(self) -> None:
+        for waiter in self._waiting:
+            if not waiter.admitted.done():
+                waiter.admitted.cancel()
+        self._waiting.clear()
+        self._held.clear()
+
+
+scheduler = Scheduler()
+
+
+#: Set by forecast_service, which owns what a progress frame means. Left unset
+#: — in a worker, a script, a test — the scheduler simply schedules.
+announce_wait: Any | None = None
+
+
+def _announce_wait(current: Scheduler) -> None:
+    if announce_wait is None:
+        return
+    seen: set[uuid.UUID] = set()
+    for waiter in current._waiting:
+        if waiter.kind != MODEL_SEARCH or waiter.run_id in seen:
+            continue
+        seen.add(waiter.run_id)
+        try:
+            announce_wait(waiter.run_id, current._ahead_of(waiter), current.slots)
+        except Exception:
+            logger.debug("Could not announce a queue position", exc_info=True)
 
 
 def _in_daemonic_process() -> bool:
@@ -319,6 +565,42 @@ class ExecutorRegistry:
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, func, *args)
+
+    async def run_for(
+        self,
+        run_id: uuid.UUID,
+        kind: str,
+        func: Any,
+        *args: Any,
+        on_wait: Callable[[int], Awaitable[None]] | None = None,
+        on_start: Callable[[], Awaitable[None]] | None = None,
+    ) -> Any:
+        """Take a slot, do the work, give the slot back.
+
+        The pool would have queued this anyway. Going through the scheduler is
+        what makes the wait visible and stops one run holding every worker —
+        see `Scheduler`. `inline` skips the queue: a Celery worker's
+        concurrency is the broker's business, and nothing in this process is
+        waiting on it.
+
+        `on_wait` fires only if this has to queue; `on_start` fires the moment
+        the slot is this run's, before the work is submitted. Between them a
+        caller can report "queued, 2 ahead" and then "started" without polling
+        for either — the difference between a screen that is a beat behind and
+        one that is right.
+        """
+        if self.inline:
+            if on_start is not None:
+                await on_start()
+            return func(*args)
+
+        await scheduler.acquire(run_id, kind, on_wait)
+        try:
+            if on_start is not None:
+                await on_start()
+            return await self.run(func, *args)
+        finally:
+            scheduler.release(run_id)
 
 
 executors = ExecutorRegistry()

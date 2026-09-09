@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import date
 
@@ -14,6 +15,8 @@ from app.models.enums import PointKind, RunStatus
 from app.schemas.forecast import (
     ForecastMonitoringResponse,
     ForecastMonitorItem,
+    ForecastQueueRead,
+    QueuedRunRead,
     RunComparisonResponse,
     RunComparisonSnapshot,
     RunMetricComparison,
@@ -21,6 +24,7 @@ from app.schemas.forecast import (
     WhatIfSimulationResponse,
 )
 from app.services import forecast_service
+from app.services.job_runner import scheduler
 
 
 async def list_scenarios(session: AsyncSession, run_id: uuid.UUID) -> list[ForecastScenario]:
@@ -230,4 +234,26 @@ async def monitoring(session: AsyncSession, *, limit: int = 50) -> ForecastMonit
         active=active,
         drift_wmape_limit=settings.drift_wmape_limit,
         rows=rows,
+        queue=queue_state(),
+    )
+
+
+def queue_state() -> ForecastQueueRead:
+    now = time.monotonic()
+    return ForecastQueueRead(
+        workers=scheduler.slots,
+        running=scheduler.running,
+        waiting=scheduler.queued,
+        rows=[
+            QueuedRunRead(
+                run_id=str(row.run_id),
+                running=row.running,
+                waiting=row.waiting,
+                ahead=row.ahead,
+                waiting_seconds=(
+                    round(now - row.waiting_since, 1) if row.waiting_since is not None else None
+                ),
+            )
+            for row in scheduler.snapshot()
+        ],
     )

@@ -371,6 +371,42 @@ order before scoring, so concurrency cannot change a tie or the reported rank.
 `FORECAST_WORKERS × FORECAST_MODEL_CONCURRENCY` close to the machine's available
 CPU cores; on a four-core host, `2 × 2` is the practical starting point.
 
+### Why the fourth run has not started
+
+Fitting is the one part of a run that needs a whole core, so `FORECAST_WORKERS`
+of them happen at once and everything else waits. Start four runs on a
+two-worker box and two of them are queued — which is not the same as slow, and
+used to be indistinguishable from it: a run was marked `backtesting` before it
+was submitted, so a queued run displayed 30% and "Backtesting candidate
+models..." for as long as the runs ahead of it took.
+
+Waiting is now a state. `app/services/job_runner.py` holds the admission gate,
+a run that cannot start yet reports `waiting` with its position in the queue,
+and the position is streamed as the queue moves — so the dialog says "2 ahead"
+and then "next in line" rather than sitting on a bar that cannot move. `GET
+/api/forecasts/monitoring` carries the whole queue under `queue`.
+
+The gate is also what stops one run taking the machine. A grouped run submits
+one piece of work per chunk of series, and a strict first-in-first-out queue
+would let forty chunks lock every worker while a second run waited behind all
+of them. A freed worker goes to the waiter whose run holds the fewest already,
+with arrival order breaking ties: one run on its own still gets the whole pool,
+and the moment a second wants in, the first stops being able to keep all of it.
+
+The same shape appears inside a single run, and has the same answer. Candidates
+are fitted `FORECAST_MODEL_CONCURRENCY` at a time, so with six candidates and
+two lanes the last two have not started when the first two are half done; the
+search now reports what is *fitting* alongside what is finished, rather than
+going quiet between completions.
+
+One genuine source of interference was underneath all of it. OpenBLAS sizes its
+thread pool from the core count **per process**, so two pool workers each
+fitting two candidates asked for eight runnable threads on a two-core instance.
+Every fit then ran slower than it would have alone, and worst for whatever
+started last. `FORECAST_BLAS_THREADS` (default 1) pins it in each worker, where
+there is nothing left to win inside a fit and the parallelism worth having has
+already been taken at the run and candidate level.
+
 ### Where an accuracy figure comes from
 
 `GET /api/forecasts/{id}/accuracy` returns WAPE and signed bias by horizon and

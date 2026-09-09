@@ -36,6 +36,7 @@ from app.models.enums import (
     RunStatus,
     SeriesStatus,
 )
+from app.services import job_runner
 from app.services.job_runner import ProgressEvent, executors, publish_progress
 from app.services.progress_relay import count_series, forget_series_count
 
@@ -200,7 +201,9 @@ async def _fit_here(run_id: uuid.UUID, plan: GroupedPlan) -> list[LeafFit]:
     fits: list[LeafFit] = []
 
     pending = [
-        executors.run(
+        executors.run_for(
+            run_id,
+            job_runner.SERIES_CHUNK,
             fit_chunk,
             [_payload(leaf) for leaf in chunk],
             plan.frequency,

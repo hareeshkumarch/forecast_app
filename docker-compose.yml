@@ -65,8 +65,14 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      # Model fits that happen at once. Also the answer to "why has the fourth
+      # run not started" — everything past this many waits, and says so.
       FORECAST_WORKERS: ${FORECAST_WORKERS:-2}
       FORECAST_MODEL_CONCURRENCY: ${FORECAST_MODEL_CONCURRENCY:-2}
+      # Threads each worker's linear algebra may take. One: OpenBLAS sizes its
+      # pool per process, so without this the fits above oversubscribe the box
+      # and every one of them runs slower than it would have alone.
+      FORECAST_BLAS_THREADS: ${FORECAST_BLAS_THREADS:-1}
       RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-text}
@@ -75,7 +81,6 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/2}
-      FORECAST_MODEL_CONCURRENCY: ${FORECAST_MODEL_CONCURRENCY:-2}
       # What the API advertises as its version, and what is mixed into every
       # cache validator. Set it to the build id and each release invalidates
       # clients' stored copies exactly once.

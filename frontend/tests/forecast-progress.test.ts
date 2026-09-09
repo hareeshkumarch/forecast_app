@@ -262,6 +262,53 @@ describe("following a forecast", () => {
     expect(opened.length).toBe(2);
   });
 
+  it("reports a run that is queued rather than one that is 22% done", () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    opened[0]!.emit({
+      status: "running",
+      progress: 0.22,
+      stage: "waiting",
+      message: "Waiting for one of 2 model workers to come free — 2 pieces of work ahead.",
+      queue_ahead: 2,
+    });
+
+    expect(result.current.queueAhead).toBe(2);
+    expect(result.current.hasQueued).toBe(true);
+  });
+
+  it("stops reporting a queue the moment the run has a worker", () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    opened[0]!.emit({ status: "running", progress: 0.22, stage: "waiting", queue_ahead: 1 });
+    opened[0]!.emit({ status: "running", progress: 0.3, stage: "backtesting" });
+
+    expect(result.current.queueAhead).toBeNull();
+    // The step it went through stays on the checklist rather than vanishing.
+    expect(result.current.hasQueued).toBe(true);
+  });
+
+  it("treats being next in line as queued, not as not-queued", () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    opened[0]!.emit({ status: "running", progress: 0.22, stage: "waiting", queue_ahead: 0 });
+
+    expect(result.current.queueAhead).toBe(0);
+  });
+
+  it("sees a position change as news, not as a duplicate frame", () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    opened[0]!.emit({ status: "running", progress: 0.22, stage: "waiting", queue_ahead: 3 });
+    opened[0]!.emit({ status: "running", progress: 0.22, stage: "waiting", queue_ahead: 1 });
+
+    expect(result.current.queueAhead).toBe(1);
+  });
+
   it("closes the stream when the watcher goes away", () => {
     const { unmount } = renderHook(() => useForecastProgress(RUN_ID));
 
@@ -289,6 +336,24 @@ describe("the steps a run is shown as having", () => {
     for (const stage of stagesFor(true)) {
       expect(STAGE_LABELS[stage], stage).toBeTruthy();
     }
+  });
+
+  it("leaves the wait out of a run that never waited for a worker", () => {
+    expect(stagesFor(false)).not.toContain("waiting");
+  });
+
+  it("shows the wait for a run that queued, in front of the search it was waiting on", () => {
+    const stages = stagesFor(false, true);
+
+    expect(stages.indexOf("waiting")).toBe(stages.indexOf("aggregating") + 1);
+    expect(stages.indexOf("waiting")).toBeLessThan(stages.indexOf("backtesting"));
+  });
+
+  it("keeps the grain steps last when a grouped run also queued", () => {
+    const stages = stagesFor(true, true);
+
+    expect(stages).toContain("waiting");
+    expect(stages.at(-1)).toBe("storing_series");
   });
 
   it("matches the order the backend reports them in", () => {

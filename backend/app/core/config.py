@@ -215,6 +215,14 @@ class Settings(BaseSettings):
 
     forecast_workers: int = 2
     forecast_model_concurrency: int = Field(default=2, ge=1, le=8)
+    #: Threads each pool worker's linear algebra may use. One, deliberately:
+    #: OpenBLAS sizes its pool from the core count *per process*, so two
+    #: workers each fitting two candidates on a two-core box ask for eight
+    #: runnable threads over two cores, and every fit ends up slower than it
+    #: would have been alone — worst for whatever started last. The
+    #: parallelism worth having is already taken at the run and candidate
+    #: level. Raise it only on a box with cores to spare and one run at a time.
+    forecast_blas_threads: int = Field(default=1, ge=1, le=64, alias="FORECAST_BLAS_THREADS")
     #: Candidates backtested at once inside one run. Above 1 this multiplies
     #: with forecast_workers, so a two-core box wants one of them set to 1 —
     #: oversubscribing the cores is slower than not parallelising at all.
