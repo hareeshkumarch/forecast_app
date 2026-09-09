@@ -191,7 +191,16 @@ export function AwaitingApproval({ email }: { email: string | null }) {
   );
 }
 
-export function AccessRefused() {
+/**
+ * Turned away, for either of the two reasons that exist.
+ *
+ * An administrator's decision is one. The other is a deployment limited to
+ * certain addresses, which is refused a step earlier — before an account even
+ * exists to be decided about — and says so in its own words. Passing that
+ * through matters: "not approved" is wrong and unactionable for somebody whose
+ * real problem is that they signed in with the wrong account.
+ */
+export function AccessRefused({ reason }: { reason?: string }) {
   return (
     <AuthScreen>
       <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-negative-soft">
@@ -201,9 +210,15 @@ export function AccessRefused() {
         No access to this workspace
       </h1>
       <p className="mt-2 text-meta leading-relaxed text-text-secondary">
-        This account was not approved. If that is unexpected, ask whoever runs this deployment —
-        signing in again will not change it.
+        {reason ??
+          "This account was not approved. If that is unexpected, ask whoever runs this deployment — signing in again will not change it."}
       </p>
+      {reason ? (
+        <p className="mt-2 text-caption leading-relaxed text-text-muted">
+          Signing in again with the same account will not change this. If you have another one that
+          should have access, sign out and use it.
+        </p>
+      ) : null}
       <SecondaryAction label="Sign out" />
     </AuthScreen>
   );

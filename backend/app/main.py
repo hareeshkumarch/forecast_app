@@ -17,6 +17,7 @@ from app.api.routes import (
     health,
     usage,
 )
+from app.core import broadcast
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -25,6 +26,7 @@ from app.core.middleware import (
     ConcurrencyLimitMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
+    SecurityHeaders,
 )
 from app.database.session import active_target, engine
 from app.schemas.common import ErrorResponse
@@ -43,6 +45,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     executors.start()
     relay.start()
+    broadcast.relay.start()
     mail_sender.start()
     interrupted = await recover_interrupted_runs()
     if interrupted:
@@ -63,6 +66,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "/api/health/metrics is being refused. Set a token to collect them — the endpoint "
             "describes every route this deployment serves and is not served openly in production."
         )
+    if "*" in settings.cors_origins:
+        logger.warning(
+            "CORS_ORIGINS is '*' while credentials are allowed, which no browser honours: it "
+            "sends back the literal '*' and the browser drops every cross-origin answer. Name "
+            "the frontend's origins instead."
+        )
     if settings.supabase_configured and active_target.name != "supabase":
         logger.warning(
             "Supabase is configured but was unreachable at boot. This process is "
@@ -72,6 +81,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
     await relay.stop()
+    await broadcast.relay.stop()
     await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()
@@ -124,13 +134,30 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(CompressExceptStreams)
+# Outermost of the four, so the headers are on every answer this process
+# produces — a 429 from the limiter and a 503 from the ceiling included.
+app.add_middleware(SecurityHeaders)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Request-ID"],
+    # A header the browser cannot read is a header the client does not have.
+    # Retry-After is the one that matters: the frontend is served from a
+    # different origin, so without it here every 429 and 503 reaches the client
+    # stripped of the delay it was told to wait, and the retry logic falls back
+    # to guessing — which is the behaviour the header exists to replace. The
+    # RateLimit-* trio is what lets a well-behaved client slow down before it
+    # is refused at all.
+    expose_headers=[
+        "Content-Disposition",
+        "X-Request-ID",
+        "Retry-After",
+        "RateLimit-Limit",
+        "RateLimit-Remaining",
+        "RateLimit-Reset",
+    ],
 )
 
 register_error_handlers(app)

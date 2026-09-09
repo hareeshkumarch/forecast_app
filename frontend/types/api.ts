@@ -833,6 +833,9 @@ export interface HealthResponse {
   failed_forecast_runs: number;
   /** Model kinds this deployment cannot fit. Empty on a complete install. */
   unavailable_models: ModelKind[];
+  /** Live event-stream connections this process is holding, against its ceiling. */
+  open_streams: number;
+  max_streams: number;
   timestamp: string;
 }
 

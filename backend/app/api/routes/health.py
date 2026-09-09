@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 from sqlalchemy import func, select, text
 
 from app.api.deps import SessionDep
-from app.core import breaker, metrics
+from app.core import breaker, metrics, streams
 from app.core.auth import AuthError
 from app.core.cache import CACHES
 from app.core.config import secrets_load, settings
@@ -131,6 +131,12 @@ class HealthResponse(BaseModel):
     #: a hit ratio that has collapsed is how you find out that something is
     #: writing to the runs on every request.
     caches: tuple[CacheRead, ...] = ()
+    #: Live event-stream connections this process is holding, against its
+    #: ceiling. Streams are exempt from the concurrency limit, so this is the
+    #: only place the number shows up — and a figure sitting at the ceiling is
+    #: how a deployment finds out its clients are reconnecting in a loop.
+    open_streams: Annotated[int, Field(ge=0)] = 0
+    max_streams: Annotated[int, Field(ge=1)] = 1
     timestamp: Annotated[str, Field(min_length=1)]
 
     @computed_field
@@ -256,6 +262,8 @@ async def health(session: SessionDep) -> HealthResponse:
             )
             for cache in CACHES
         ),
+        open_streams=streams.registry.total,
+        max_streams=settings.sse_max_streams_total,
         timestamp=utcnow().isoformat(),
     )
 

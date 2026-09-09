@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -132,3 +133,45 @@ def test_the_stream_does_not_hold_a_pooled_connection() -> None:
         if getattr(dependency, "call", None)
     }
     assert "get_session" not in names
+
+
+class TestAcrossProcesses:
+    """A second API instance used to mean a decision that reached nobody.
+
+    Nothing about approving somebody is instance-local, but the fan-out was: a
+    nudge published on the instance you were not connected to never arrived,
+    and the page sat there looking like it was working.
+    """
+
+    async def test_a_frame_from_another_process_is_delivered_here(self) -> None:
+        async with broadcast.subscribe("access:7") as queue:
+            broadcast._accept(
+                json.dumps({"origin": "another-process", "topic": "access:7", "event": "access"})
+            )
+            assert await asyncio.wait_for(queue.get(), timeout=1) == "access"
+
+    async def test_this_process_ignores_the_echo_of_its_own_publish(self) -> None:
+        """Otherwise every nudge is delivered twice and every client refetches twice."""
+        async with broadcast.subscribe("access:7") as queue:
+            broadcast._accept(
+                json.dumps({"origin": broadcast.ORIGIN, "topic": "access:7", "event": "access"})
+            )
+            assert queue.empty()
+
+    async def test_a_malformed_frame_does_not_bring_the_relay_down(self) -> None:
+        broadcast._accept("not json at all")
+        broadcast._accept(json.dumps({"origin": "x"}))
+
+    async def test_nothing_is_announced_anywhere_without_a_channel_to_announce_on(
+        self, monkeypatch
+    ) -> None:
+        """The deployment this ships to runs one process and no redis."""
+        pushed: list[str] = []
+        monkeypatch.setattr(broadcast.settings, "redis_url", "")
+        monkeypatch.setattr(broadcast, "_push", lambda payload: pushed.append(payload))
+
+        async with broadcast.subscribe("t") as queue:
+            assert broadcast.publish("t", "access") == 1
+            assert await asyncio.wait_for(queue.get(), timeout=1) == "access"
+
+        assert pushed == []

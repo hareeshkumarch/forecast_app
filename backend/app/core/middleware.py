@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core import metrics
 from app.core.httpcache import route_label
@@ -278,3 +278,63 @@ class ConcurrencyLimitMiddleware:
         finally:
             with self._lock:
                 self._in_flight -= 1
+
+
+class SecurityHeaders:
+    """Headers this API had no reason not to be sending.
+
+    It answers the public internet directly and serves its own documentation,
+    so the two that matter are not theoretical. `nosniff` stops a browser
+    deciding for itself that a JSON error body is really HTML — which is how a
+    reflected value in a message becomes script. `frame-options: DENY` stops
+    the whole thing being embedded in somebody else's page, which for an API
+    with a cookie-free bearer scheme is mostly about the docs UI, and costs
+    nothing because nothing here is meant to be framed.
+
+    HSTS is only sent where the request already arrived over TLS. Sent from a
+    plain-HTTP origin it is ignored by every browser and, if it were not,
+    would be a way to lock a development machine out of its own localhost.
+
+    Pure ASGI, and it wraps the send rather than the response object, so it
+    covers the streams too — a `BaseHTTPMiddleware` here would buffer them.
+    """
+
+    HEADERS = (
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"DENY"),
+        (b"referrer-policy", b"no-referrer"),
+        (b"cross-origin-opener-policy", b"same-origin"),
+        (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=()"),
+    )
+
+    HSTS = (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        secure = scope.get("scheme") == "https" or _forwarded_https(scope)
+
+        async def with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                present = {name.lower() for name, _ in headers}
+                for name, value in self.HEADERS:
+                    if name not in present:
+                        headers.append((name, value))
+                if secure and self.HSTS[0] not in present:
+                    headers.append(self.HSTS)
+            await send(message)
+
+        await self.app(scope, receive, with_headers)
+
+
+def _forwarded_https(scope: Scope) -> bool:
+    for name, value in scope.get("headers", ()):
+        if name == b"x-forwarded-proto":
+            return value.decode("latin-1").split(",")[0].strip().lower() == "https"
+    return False

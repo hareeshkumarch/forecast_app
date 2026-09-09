@@ -393,7 +393,7 @@ whoever makes it.
 
 ## How the API protects itself
 
-Five mechanisms, each answering a different question. They are described here
+Six mechanisms, each answering a different question. They are described here
 together because they are easy to confuse and their failure modes are not.
 
 ### Conditional reads — "has anything changed?"
@@ -452,6 +452,23 @@ The ceiling sits *inside* the rate limiter on purpose. A flood from one client
 should be refused as that client's flood, not absorbed as anonymous load that
 then sheds everybody else.
 
+### Stream admission — "how many live connections may one client hold?"
+
+The exemption above is what makes this necessary. A stream is held for as long
+as a browser tab is, so counting it as a request would let four dashboards
+spend an allowance sized for a thousand — and with the two limiters standing
+aside, nothing bounded how many a client could open. `app/core/streams.py`
+does: a lease per connection, counted per account where there is one so that an
+office behind a single NAT is not treated as one client, and per process.
+
+The lease is taken before the endpoint reads anything, so a client already at
+its ceiling costs a dictionary lookup rather than a database round trip. Past
+it, a `429` with `Retry-After` — which the page survives, because both streams
+fall back to polling. Connections also carry a lifetime and end themselves, so
+a tab forgotten on Friday is not still holding a socket on Monday, and a
+`retry:` hint goes out on connect so a restart is not every tab returning in
+the same three seconds.
+
 ### Circuit breaking — "is this dependency worth calling right now?"
 
 `app/core/breaker.py` sits in front of the model provider that rewrites insight
@@ -470,6 +487,23 @@ An open breaker is reported in `/api/health` under `dependencies` and is
 deliberately **not** folded into `status`. The load balancer reads `status`,
 and taking an instance out of service because an optional nicety is
 unreachable turns somebody else's outage into ours.
+
+### Who a request is from
+
+Every one of the limits above is keyed to a client, so the whole set is only
+as sound as the answer to that question. `X-Forwarded-For` is a list each
+proxy appends to, and CloudFront — which is what sits in front of this API —
+appends the viewer's address to whatever the viewer sent. A request carrying
+`X-Forwarded-For: <anything>` therefore arrives as `<anything>, <the real
+address>`, and reading the *left* of that reads a value the caller chose: one
+header, and a fresh rate-limit window on every request.
+
+So the entry is counted from the right. `RATE_LIMIT_TRUSTED_PROXY_HOPS` says
+how many proxies of ours are in front — one for CloudFront alone, two behind a
+load balancer as well. `RATE_LIMIT_TRUSTED_PROXIES` closes the rest of it for
+the day the origin stops being reachable directly: name the addresses the
+header is believed from, and a request from anywhere else is counted against
+its socket, which is the one thing a caller cannot choose.
 
 ### Metrics — `GET /api/health/metrics`
 

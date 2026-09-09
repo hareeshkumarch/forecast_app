@@ -85,6 +85,21 @@ services:
       # reports alive and open dashboards keep their streams.
       MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-64}
       LOAD_SHEDDING_ENABLED: ${LOAD_SHEDDING_ENABLED:-true}
+      # Live connections one account may hold, and how many this process will
+      # hold at once. Streams are exempt from both limits above — they are held
+      # rather than served — so these are the only thing bounding them.
+      SSE_MAX_STREAMS_PER_CLIENT: ${SSE_MAX_STREAMS_PER_CLIENT:-8}
+      SSE_MAX_STREAMS_TOTAL: ${SSE_MAX_STREAMS_TOTAL:-256}
+      SSE_MAX_LIFETIME_SECONDS: ${SSE_MAX_LIFETIME_SECONDS:-1800}
+      # How many proxies of yours stand in front of the API. The client is read
+      # that many places from the right of X-Forwarded-For; everything to its
+      # left was written before your proxies saw the request, so reading the
+      # left of it lets a caller pick its own rate-limit bucket.
+      RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
+      # Addresses whose forwarding headers are believed at all. Empty believes
+      # them from anywhere, which is safe only where nothing reaches the API
+      # except through the proxy.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
       # /api/health/metrics, in Prometheus' text format. In production an
       # unset token means every scrape is refused rather than served openly.
       METRICS_ENABLED: ${METRICS_ENABLED:-true}

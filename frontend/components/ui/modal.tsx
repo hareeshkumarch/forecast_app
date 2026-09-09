@@ -2,8 +2,9 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
+import { confirm } from "@/stores/confirm-store";
 import { cn } from "@/lib/utils";
 
 export type ModalSize = "sm" | "md" | "lg" | "xl";
@@ -26,6 +27,7 @@ export function Modal({
   size = "md",
   busy = false,
   busyHint = "This is still running. It will close when it finishes.",
+  dirty = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -45,13 +47,55 @@ export function Modal({
    */
   busy?: boolean;
   busyHint?: string;
+  /**
+   * There is typed input in here that closing would throw away.
+   *
+   * Escape and a click on the backdrop are one keystroke and one stray click,
+   * and both used to discard a filled-in connector form without a word. This
+   * asks first. It is deliberately not `busy`: nothing is in flight, so
+   * leaving is allowed — it just should not happen by accident.
+   */
+  dirty?: boolean;
 }) {
+  // While the confirmation is up, every pointer event lands outside this
+  // dialog, so without this each click on it would ask the same question again.
+  const asking = useRef(false);
+
+  async function requestClose() {
+    if (busy || asking.current) return;
+    if (!dirty) {
+      onClose();
+      return;
+    }
+
+    asking.current = true;
+    try {
+      const discard = await confirm({
+        title: "Discard what you have entered?",
+        message: "Nothing here has been saved yet. Closing this loses it.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        tone: "danger",
+      });
+      if (discard) onClose();
+    } finally {
+      asking.current = false;
+    }
+  }
+
   const hold = (event: Event) => {
-    if (busy) event.preventDefault();
+    if (busy || asking.current) {
+      event.preventDefault();
+      return;
+    }
+    if (dirty) {
+      event.preventDefault();
+      void requestClose();
+    }
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => !next && !busy && onClose()}>
+    <Dialog.Root open={open} onOpenChange={(next) => !next && void requestClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay backdrop-blur-[1px]" />
         <Dialog.Content
@@ -91,7 +135,7 @@ export function Modal({
             <button
               type="button"
               aria-label="Close"
-              onClick={onClose}
+              onClick={() => void requestClose()}
               disabled={busy}
               title={busy ? busyHint : undefined}
               className={cn(

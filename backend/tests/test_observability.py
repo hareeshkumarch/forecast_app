@@ -244,3 +244,33 @@ def test_a_configured_token_is_enough_anywhere() -> None:
     from app.core.config import settings
 
     assert settings.metrics_need_a_token is False
+
+
+class TestSecurityHeaders:
+    """Headers an API answering the public internet has no reason not to send."""
+
+    async def test_every_answer_carries_them(self, client) -> None:
+        response = await client.get("/api/health")
+
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "no-referrer"
+        assert "camera=()" in response.headers["Permissions-Policy"]
+
+    async def test_a_refusal_carries_them_too(self, client) -> None:
+        """The answers most worth not sniffing are the ones with a message in them."""
+        response = await client.get("/api/datasets/not-a-uuid")
+
+        assert response.status_code >= 400
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+    async def test_hsts_is_not_sent_over_plain_http(self, client) -> None:
+        """Sent from an http origin it is ignored, and locks out a local machine if it is not."""
+        response = await client.get("/api/health")
+
+        assert "Strict-Transport-Security" not in response.headers
+
+    async def test_hsts_is_sent_where_the_proxy_says_the_hop_was_tls(self, client) -> None:
+        response = await client.get("/api/health", headers={"X-Forwarded-Proto": "https"})
+
+        assert "max-age=" in response.headers["Strict-Transport-Security"]

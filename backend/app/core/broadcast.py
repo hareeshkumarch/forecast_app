@@ -10,25 +10,41 @@ refetching through the ordinary authenticated endpoint, which means the stream
 cannot leak anything the reader was not already allowed to fetch, and a
 subscription that outlives someone's access shows them nothing.
 
-Single process, deliberately. The deployment this serves runs one uvicorn on
-one instance — the production compose drops redis specifically to leave the
-RAM for forecasting. A second API instance would need a real broker, and the
-symptom would be quiet: everyone connected to the other instance stops
-updating. `LOSES_EVENTS_ACROSS_PROCESSES` is here to be grepped for on the day
-that matters.
+In-process when there is nothing else, and across processes when there is.
+The deployment this serves runs one uvicorn on one instance — the production
+compose drops redis specifically to leave the RAM for forecasting — and on
+that shape the dictionary below is the whole mechanism. Add a second API
+instance and the failure used to be silent: a decision made on the instance
+you are not connected to never reaches your screen, and the page sits there
+looking like it is working. Where a Redis is configured the nudge now also
+goes out on a channel and comes back in on every other process, which is the
+same bridge the forecast progress relay already crosses.
+
+What travels between processes is still a topic name and nothing else.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
+from typing import Any
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-LOSES_EVENTS_ACROSS_PROCESSES = True
+#: The channel other API processes are listening on. Named apart from the
+#: progress channel so a subscriber never has to sort one kind from the other.
+CHANNEL = "access:events"
+
+#: This process, so it can recognise and drop the echo of its own publish —
+#: which a local subscriber has already been handed directly.
+ORIGIN = uuid.uuid4().hex
 
 #: A subscriber that has not been read from is a browser that went away
 #: without closing the connection. Eight is far more than the two or three a
@@ -46,7 +62,8 @@ def topic_for_user(user_id: object) -> str:
     return f"{ACCESS}:{user_id}"
 
 
-def publish(topic: str, event: str) -> int:
+def deliver(topic: str, event: str) -> int:
+    """Hand a nudge to the subscribers in this process, and nowhere else."""
     delivered = 0
     for queue in tuple(_subscribers.get(topic, ())):
         try:
@@ -55,6 +72,135 @@ def publish(topic: str, event: str) -> int:
         except asyncio.QueueFull:
             logger.debug("Dropping %s for a subscriber that is not reading.", topic)
     return delivered
+
+
+def publish(topic: str, event: str) -> int:
+    """Deliver here, and — where there is somewhere else — announce it there too.
+
+    The return value counts this process's subscribers only. It is what the
+    tests assert on and what a caller can actually know; how many screens are
+    attached to another instance is not answerable from here.
+    """
+    delivered = deliver(topic, event)
+    _announce_elsewhere(topic, event)
+    return delivered
+
+
+_client: Any | None = None
+#: Tasks are only weakly referenced by the loop, so one dropped here is one
+#: the garbage collector may cancel before it has published anything.
+_in_flight: set[asyncio.Task[None]] = set()
+
+
+def _announce_elsewhere(topic: str, event: str) -> None:
+    if not settings.progress_channel_url:
+        return
+    payload = json.dumps({"origin": ORIGIN, "topic": topic, "event": event})
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop: a script, or a worker process. Nothing here is worth
+        # blocking one on, and a decision made outside the API is rare enough
+        # that the synchronous path is fine.
+        asyncio.run(_push(payload))
+        return
+
+    task = loop.create_task(_push(payload))
+    _in_flight.add(task)
+    task.add_done_callback(_in_flight.discard)
+
+
+async def _push(payload: str) -> None:
+    try:
+        await _redis().publish(CHANNEL, payload)
+    except Exception:
+        # A nudge is an optimisation over the polling the clients still do, so
+        # losing one costs latency rather than correctness.
+        logger.warning("Could not announce an access change to other processes", exc_info=True)
+
+
+def _redis() -> Any:
+    global _client
+    if _client is None:
+        import redis.asyncio as aioredis
+
+        _client = aioredis.Redis.from_url(
+            settings.progress_channel_url,
+            socket_connect_timeout=3.0,
+            health_check_interval=30,
+        )
+    return _client
+
+
+class AccessRelay:
+    """Nudges from the other API processes, delivered into this one."""
+
+    def __init__(self) -> None:
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        if self._task is not None or not settings.progress_channel_url:
+            return
+        self._task = asyncio.create_task(self._run(), name="access-relay")
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+
+        global _client
+        if _client is not None:
+            await _client.aclose()
+            _client = None
+
+    async def _run(self) -> None:
+        import redis.asyncio as aioredis
+
+        backoff = 1.0
+        while True:
+            client = aioredis.Redis.from_url(
+                settings.progress_channel_url,
+                socket_connect_timeout=3.0,
+                health_check_interval=30,
+            )
+            try:
+                pubsub = client.pubsub(ignore_subscribe_messages=True)
+                await pubsub.subscribe(CHANNEL)
+                logger.info("Relaying access changes from %s", CHANNEL)
+                backoff = 1.0
+
+                async for message in pubsub.listen():
+                    _accept(message["data"])
+            except asyncio.CancelledError:
+                await client.aclose()
+                raise
+            except Exception:
+                logger.warning("Access relay dropped; retrying in %.0fs", backoff, exc_info=True)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+            finally:
+                await client.aclose()
+
+
+def _accept(raw: str | bytes) -> None:
+    try:
+        frame = json.loads(raw)
+        topic = str(frame["topic"])
+        event = str(frame["event"])
+        origin = str(frame.get("origin", ""))
+    except (ValueError, KeyError, TypeError):
+        logger.warning("Discarded a malformed access frame")
+        return
+
+    # Our own publish, come back around. The local subscribers already have it.
+    if origin == ORIGIN:
+        return
+    deliver(topic, event)
+
+
+relay = AccessRelay()
 
 
 @contextlib.asynccontextmanager

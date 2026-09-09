@@ -9,6 +9,7 @@ import {
   SignInPrompt,
 } from "@/components/auth/sign-in-gate";
 import { useAccessStream } from "@/hooks/use-access-stream";
+import { ApiError } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/use-dashboard";
 import { useAuth } from "@/stores/auth-store";
 import type { ComponentType } from "react";
@@ -142,7 +143,7 @@ function LazyOverlayHost() {
 export function DashboardShell({ section = "dashboard" }: { section?: AppSection }) {
   const SectionWorkspace = WORKSPACES[section];
   const { user, ready, configured } = useAuth();
-  const { data: me } = useCurrentUser();
+  const { data: me, error: meError } = useCurrentUser();
 
   // Above every early return, because a hook cannot be called conditionally
   // and because the screen that needs this most is the waiting one below.
@@ -178,6 +179,20 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
     return (
       <div className="min-h-[100dvh] bg-canvas">
         <AccessRefused />
+      </div>
+    );
+  }
+
+  // A refusal that never became a status. The two gates are separate — a token
+  // can be genuine and its holder still not belong on this deployment — so an
+  // account outside AUTH_ALLOWED_EMAIL_DOMAINS is turned away by /auth/me
+  // itself rather than answering "rejected". Without this the shell rendered
+  // in full for somebody who could read none of it: eight panels of 403 and a
+  // stack of error toasts, none of which said the one thing that was true.
+  if (meError instanceof ApiError && meError.status === 403) {
+    return (
+      <div className="min-h-[100dvh] bg-canvas">
+        <AccessRefused reason={meError.message} />
       </div>
     );
   }
