@@ -103,12 +103,28 @@ services:
       # wanted all along.
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
-      # These two multiply, so on a two-core box only one of them may be
-      # above 1. One run at a time using both cores beats two runs each on
-      # one core: the person waiting sees their own run finish sooner, and a
-      # second run is rare on a single-team deployment.
+      # These multiply, so on a two-core box their product should be two. One
+      # run at a time using both cores beats two runs each on one core: the
+      # person waiting sees their own run finish sooner, and a second run is
+      # rare on a single-team deployment. Runs past the first are queued and
+      # told their position rather than left looking stuck.
+      #
+      # FORECAST_MODEL_CONCURRENCY has to be here, and was not. The engine
+      # backtests candidates on THREADS whenever it is above 1 and only falls
+      # through to FORECAST_CANDIDATE_WORKERS below that — and a variable this
+      # file does not name is one the container never sees, so it kept its
+      # default of 2 and the line under it has never once been read. Exactly
+      # the symptom the note further down warns about: the file said one thing
+      # and the machine did another, with nothing disagreeing out loud.
       FORECAST_WORKERS: ${FORECAST_WORKERS:-1}
+      FORECAST_MODEL_CONCURRENCY: ${FORECAST_MODEL_CONCURRENCY:-1}
       FORECAST_CANDIDATE_WORKERS: ${FORECAST_CANDIDATE_WORKERS:-2}
+      # Threads each worker's linear algebra may take. OpenBLAS sizes its pool
+      # from the core count PER PROCESS, so without this the candidate
+      # processes above each ask for two more and four threads contend for two
+      # cores — every fit slower than it would have been alone, worst for
+      # whatever started last.
+      FORECAST_BLAS_THREADS: ${FORECAST_BLAS_THREADS:-1}
       # Off by default here, unlike the dev compose. Seeding writes a demo
       # dataset into whatever this deployment calls its store of record, and
       # on this file that is somebody's real Supabase project. A default that
@@ -133,6 +149,22 @@ services:
       # Health checks and the progress streams are exempt, so a busy box still
       # reports alive to the load balancer and open dashboards keep streaming.
       MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-64}
+      # Live connections one account may hold, and how many this process will
+      # hold at once. Streams are exempt from the ceiling above — they are held
+      # rather than served — so these are the only thing bounding them.
+      SSE_MAX_STREAMS_PER_CLIENT: ${SSE_MAX_STREAMS_PER_CLIENT:-8}
+      SSE_MAX_STREAMS_TOTAL: ${SSE_MAX_STREAMS_TOTAL:-256}
+      SSE_MAX_LIFETIME_SECONDS: ${SSE_MAX_LIFETIME_SECONDS:-1800}
+      # How many proxies of ours stand in front of the API. The client is read
+      # that many places from the RIGHT of X-Forwarded-For — CloudFront appends
+      # the viewer to whatever the viewer sent, so reading the left of it reads
+      # a value the caller chose and one header mints a fresh rate-limit
+      # window. One is right for CloudFront alone.
+      RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
+      # Addresses whose forwarding headers are believed at all. Empty believes
+      # them from anywhere, which is only safe once nothing can reach this
+      # origin except through CloudFront.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
       # Dashboard aggregates, cached under a key carrying the run's own
       # revision. Memory knobs, not correctness knobs — an entry cannot go
       # stale, only unused.
