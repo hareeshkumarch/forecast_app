@@ -56,7 +56,7 @@ import type {
   SeriesStatus,
 } from "@/types/api";
 
-import { accessToken } from "@/lib/supabase";
+import { accessToken, refreshedAccessToken } from "@/lib/supabase";
 
 export const API_BASE_URL =
   typeof window === "undefined"
@@ -68,6 +68,15 @@ export class ApiError extends Error {
   readonly code: string;
   readonly detail: Record<string, unknown>;
   readonly requestId: string | null;
+  /**
+   * What the server said to wait, in milliseconds, or null if it said nothing.
+   *
+   * A 429 or a 503 names its own delay, and guessing instead is how a client
+   * that has been asked to wait sixty seconds comes back after one and is
+   * refused again — the retry then reads as part of the flood it was told to
+   * stop being.
+   */
+  readonly retryAfterMs: number | null;
 
   constructor(
     status: number,
@@ -75,6 +84,7 @@ export class ApiError extends Error {
     message: string,
     detail: Record<string, unknown>,
     requestId: string | null = null,
+    retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -82,11 +92,44 @@ export class ApiError extends Error {
     this.code = code;
     this.detail = detail;
     this.requestId = requestId;
+    this.retryAfterMs = retryAfterMs;
   }
 
   get isRetryable(): boolean {
     return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500;
   }
+
+  /** Nothing to retry against: the browser knows it has no connection. */
+  get isOffline(): boolean {
+    return this.code === "offline";
+  }
+}
+
+const RETRY_AFTER_CEILING_MS = 120_000;
+
+function retryAfterFrom(response: Response, body: ApiErrorBody | null): number | null {
+  const header = response.headers.get("Retry-After");
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1_000, RETRY_AFTER_CEILING_MS);
+    }
+    // The other legal form is an HTTP date.
+    const at = Date.parse(header);
+    if (!Number.isNaN(at)) {
+      return Math.min(Math.max(0, at - Date.now()), RETRY_AFTER_CEILING_MS);
+    }
+  }
+
+  const named = body?.error.detail?.retry_after_seconds;
+  if (typeof named === "number" && Number.isFinite(named) && named >= 0) {
+    return Math.min(named * 1_000, RETRY_AFTER_CEILING_MS);
+  }
+  return null;
+}
+
+function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -124,6 +167,34 @@ async function request<T>(
   init?: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
+  const answer = await send<T>(path, init, timeoutMs, false);
+  if (!(answer instanceof Unauthorised)) return answer;
+
+  // One retry, with a token minted rather than read from the cache. The window
+  // this covers is narrow and real: a token the client still believed in
+  // expired between being attached and being checked. Retrying blind would be
+  // the same dead token again, so the refresh is the retry — and if that fails
+  // the original 401 is what the caller sees, because "sign in again" is the
+  // honest answer at that point.
+  const refreshed = await refreshedAccessToken().catch(() => null);
+  if (!refreshed) throw answer.error;
+
+  const retried = await send<T>(path, init, timeoutMs, true);
+  if (retried instanceof Unauthorised) throw retried.error;
+  return retried;
+}
+
+/** A 401 the caller may be able to do something about, rather than a thrown one. */
+class Unauthorised {
+  constructor(readonly error: ApiError) {}
+}
+
+async function send<T>(
+  path: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  refreshed: boolean,
+): Promise<T | Unauthorised> {
   let response: Response;
   const parentSignal = init?.signal;
   const controller = new AbortController();
@@ -144,7 +215,7 @@ async function request<T>(
   // Every call to the API goes through here, so the session travels with all
   // of them or with none of them. Attaching it per call site is how one gets
   // forgotten and answers 401 in production only.
-  const token = await accessToken();
+  const token = refreshed ? await refreshedAccessToken() : await accessToken();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -183,6 +254,19 @@ async function request<T>(
         { timeout_ms: timeoutMs },
       );
     }
+    if (isOffline()) {
+      // Told apart from a server that is down, because the two need different
+      // things from the reader: one is "check your connection", the other is
+      // "it is not you". Retrying while the browser knows it is offline is
+      // also pure waste — the reconnect listener refetches everything the
+      // moment the connection is back.
+      throw new ApiError(
+        0,
+        "offline",
+        "You are offline. This will pick up again as soon as the connection is back.",
+        {},
+      );
+    }
     throw new ApiError(
       0,
       "network_error",
@@ -205,13 +289,16 @@ async function request<T>(
     } catch {
       body = null;
     }
-    throw new ApiError(
+    const failure = new ApiError(
       response.status,
       body?.error.code ?? "http_error",
       body?.error.message ?? `The request failed with status ${response.status}.`,
       body?.error.detail ?? {},
       body?.error.request_id ?? response.headers.get("X-Request-ID"),
+      retryAfterFrom(response, body),
     );
+    if (response.status === 401 && !refreshed) return new Unauthorised(failure);
+    throw failure;
   }
 
   return (await response.json()) as T;

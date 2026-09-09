@@ -10,6 +10,19 @@ const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_CEILING_MS = 30_000;
 
 /**
+ * Where in the backoff to come back, with the edges taken off.
+ *
+ * Every tab that lost its stream to the same restart is counting the same
+ * doubling from the same moment, so they all return together and the box that
+ * just came up meets its whole audience at once. Spreading each one across the
+ * second half of its own window costs nobody anything they can notice.
+ */
+function backoff(attempt: number): number {
+  const window = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_CEILING_MS);
+  return window / 2 + Math.random() * (window / 2);
+}
+
+/**
  * Keeps this tab's idea of its own access, and the people list, current.
  *
  * Approving or removing somebody happens on a different screen from the one
@@ -43,18 +56,31 @@ export function useAccessStream(enabled: boolean) {
       void client.invalidateQueries({ queryKey: ["auth", "users"] });
     };
 
+    const close = () => {
+      source?.close();
+      source = null;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
     const reconnect = () => {
-      if (stopped) return;
+      if (stopped || timer) return;
       // Uncapped this becomes a tab hammering a backend that is already having
       // a bad time. Thirty seconds is slower than a person notices and far
       // faster than they would have reloaded.
-      const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_CEILING_MS);
+      timer = setTimeout(open, backoff(attempt));
       attempt += 1;
-      timer = setTimeout(open, delay);
     };
 
     const open = () => {
+      timer = null;
       if (stopped) return;
+      // Nothing to attempt while the browser knows it has no connection, and
+      // every attempt made anyway pushes the backoff further out — so the tab
+      // that comes back from a tunnel would then sit silent for half a minute
+      // having done nothing wrong. The online listener below is the way back.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+
       void accessToken().then((token) => {
         if (stopped || !token) {
           if (!stopped) reconnect();
@@ -75,20 +101,39 @@ export function useAccessStream(enabled: boolean) {
         source.addEventListener("people", refresh);
         source.addEventListener("sync", refresh);
 
+        // The server ends a connection it has held long enough. That is a
+        // planned goodbye rather than a fault, so it does not count against
+        // the backoff — coming back slower each time the server tidies up
+        // would end with a tab that reconnects twice an hour.
+        source.addEventListener("expired", () => {
+          attempt = 0;
+          close();
+          reconnect();
+        });
+
         source.onerror = () => {
-          source?.close();
-          source = null;
+          close();
           reconnect();
         };
       });
     };
 
+    const onOnline = () => {
+      attempt = 0;
+      close();
+      open();
+    };
+    const onOffline = close;
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     open();
 
     return () => {
       stopped = true;
-      if (timer) clearTimeout(timer);
-      source?.close();
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      close();
     };
   }, [client, enabled]);
 }

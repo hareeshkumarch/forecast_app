@@ -4,7 +4,8 @@ import { toast, useToastStore } from "@/stores/toast-store";
 
 beforeEach(() => {
   vi.useFakeTimers();
-  useToastStore.setState({ toasts: [] });
+  useToastStore.getState().release();
+  useToastStore.getState().clear();
 });
 
 afterEach(() => {
@@ -49,6 +50,64 @@ describe("toasts", () => {
     expect(onClick).toHaveBeenCalledOnce();
 
     useToastStore.getState().dismiss(item!.id);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it("counts a repeat rather than stacking the same message again", () => {
+    toast.error("Upload failed", "The connection dropped.");
+    toast.error("Upload failed", "The connection dropped.");
+    toast.error("Upload failed", "The connection dropped.");
+
+    const { toasts } = useToastStore.getState();
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.repeats).toBe(3);
+  });
+
+  it("gives a repeat its full lifetime back", () => {
+    toast.error("Upload failed");
+    vi.advanceTimersByTime(7_000);
+
+    toast.error("Upload failed");
+    vi.advanceTimersByTime(7_000);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+
+    vi.advanceTimersByTime(1_500);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it("treats a different message as a different toast", () => {
+    toast.error("Upload failed");
+    toast.error("Import failed");
+
+    expect(useToastStore.getState().toasts).toHaveLength(2);
+  });
+
+  it("stops the countdown while the stack is held, and resumes where it left off", () => {
+    toast.success("Saved");
+
+    vi.advanceTimersByTime(3_000);
+    useToastStore.getState().hold();
+
+    vi.advanceTimersByTime(60_000);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+
+    useToastStore.getState().release();
+    vi.advanceTimersByTime(900);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+
+    vi.advanceTimersByTime(200);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it("does not start a countdown for a toast raised while held", () => {
+    useToastStore.getState().hold();
+    toast.info("Arrived while the tab was hidden");
+
+    vi.advanceTimersByTime(60_000);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+
+    useToastStore.getState().release();
+    vi.advanceTimersByTime(5_000);
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });

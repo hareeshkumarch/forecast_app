@@ -9,6 +9,7 @@ const TITLES: Record<number, string> = {
   415: "That file type isn't supported",
   422: "Check the highlighted fields",
   429: "Too many requests",
+  503: "The server is at capacity",
 };
 
 const FALLBACK_TITLE = "Something went wrong";
@@ -16,6 +17,10 @@ const FALLBACK_MESSAGE = "Try again in a moment.";
 
 export function errorTitle(error: unknown, fallback = FALLBACK_TITLE): string {
   if (error instanceof ApiError) {
+    if (error.isOffline) return "You're offline";
+    if (error.code === "too_many_streams") return "Too many live connections";
+    if (error.status === 401) return "Your session ended";
+    if (error.status === 403) return "You don't have access to that";
     if (error.status >= 500) return "The server had a problem";
     return TITLES[error.status] ?? fallback;
   }
@@ -34,4 +39,9 @@ export function errorMessage(error: unknown, fallback = FALLBACK_MESSAGE): strin
 
 export function isRetryable(error: unknown): boolean {
   return error instanceof ApiError ? error.isRetryable : true;
+}
+
+/** What the server asked us to wait, where it asked. */
+export function retryAfterMs(error: unknown): number | null {
+  return error instanceof ApiError ? error.retryAfterMs : null;
 }

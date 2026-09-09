@@ -117,6 +117,8 @@ export function ConnectorImportModal() {
       title={connector ? `Import from ${connector.name}` : "Import data"}
       description="Pulls rows into a dataset you can profile and forecast."
       size="lg"
+      busy={importMutation.isPending}
+      busyHint="The import is still running. It will close when it finishes."
       footer={
         <>
           <Button variant="ghost" onClick={closeModal}>

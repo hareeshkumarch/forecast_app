@@ -36,16 +36,38 @@ export async function accessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+/**
+ * A token minted now, whatever is cached.
+ *
+ * `getSession` hands back a token it believes is still good, and it can be
+ * wrong in one narrow window: the token expired between the client's clock
+ * saying it had a minute left and the API checking it. The symptom is a 401
+ * on a page that was working a second ago, and the fix is a refresh rather
+ * than sending the same dead token again.
+ */
+export async function refreshedAccessToken(): Promise<string | null> {
+  const sdk = supabase();
+  if (!sdk) return null;
+  const { data, error } = await sdk.auth.refreshSession();
+  if (error) return null;
+  return data.session?.access_token ?? null;
+}
+
 export async function signInWithGoogle(redirectTo?: string): Promise<void> {
   const sdk = supabase();
   if (!sdk) throw new Error("This deployment has no sign-in configured.");
 
-  await sdk.auth.signInWithOAuth({
+  // signInWithOAuth reports a failure in its result rather than by throwing,
+  // so without this a provider that refuses leaves the button saying "Opening
+  // Google…" for as long as the person is willing to wait for a redirect that
+  // is never coming.
+  const { error } = await sdk.auth.signInWithOAuth({
     provider: "google",
     options: {
       redirectTo: redirectTo ?? `${window.location.origin}/dashboard`,
     },
   });
+  if (error) throw new Error(error.message || "Sign-in could not be started.");
 }
 
 export async function signOut(): Promise<void> {

@@ -455,6 +455,11 @@ export function ForecastModal() {
       title="Run Forecast"
       description="Fits every eligible candidate model, backtests them, and selects a winner."
       size="md"
+      // Only while the request to start one is in the air. Once a run has an
+      // id this dialog is closable on purpose — the watcher outlives it and
+      // "run in background" is the whole point of that button.
+      busy={startMutation.isPending}
+      busyHint="The run is being started. This closes as soon as it has an id."
       footer={
         activeRunId && progress.status === "completed" ? (
           // The point of finishing a forecast is to look at it. Sending the

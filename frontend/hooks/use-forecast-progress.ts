@@ -39,6 +39,10 @@ const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_CEILING_MS = 8_000;
 const POLL_INTERVAL_MS = 2_000;
 
+function offline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 type Transport = "connecting" | "streaming" | "retrying" | "polling";
 
 function isTerminal(status: ForecastProgressEvent["status"]): boolean {
@@ -146,7 +150,17 @@ export function useForecastProgress(
     }
 
     function connect() {
+      reconnectTimer = null;
       if (done) return;
+
+      // Nothing to open while the browser knows it has no connection, and an
+      // attempt made anyway spends one of the three that stand between this
+      // run and the polling fallback — which is no better off offline. The
+      // online listener below is what brings it back.
+      if (offline()) {
+        startPolling();
+        return;
+      }
 
       // Without sign-in configured there is no token to wait for, so the
       // stream opens in the same tick it always did. Deferring that path too
@@ -172,9 +186,21 @@ export function useForecastProgress(
 
       source.onopen = () => {
         if (done || source !== openedSource) return;
+        attempts = 0;
         currentTransport = "streaming";
         setState((previous) => ({ ...previous, isStreaming: true, isReconnecting: false }));
       };
+
+      // The server ends a connection it has held long enough. A planned
+      // goodbye, so it does not spend one of the three attempts that decide
+      // whether this run falls back to polling.
+      openedSource.addEventListener?.("expired", () => {
+        if (done || source !== openedSource) return;
+        attempts = 0;
+        openedSource.close();
+        source = null;
+        connect();
+      });
 
       source.onmessage = (message) => {
         if (done || source !== openedSource) return;
@@ -192,7 +218,7 @@ export function useForecastProgress(
         if (source !== openedSource) return;
         openedSource.close();
         source = null;
-        if (done) return;
+        if (done || reconnectTimer) return;
 
         attempts += 1;
         if (attempts > MAX_STREAM_ATTEMPTS) {
@@ -202,9 +228,30 @@ export function useForecastProgress(
 
         currentTransport = "retrying";
         setState((previous) => ({ ...previous, isStreaming: false, isReconnecting: true }));
-        const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempts - 1), RECONNECT_CEILING_MS);
-        reconnectTimer = setTimeout(connect, delay);
+        const window = Math.min(RECONNECT_BASE_MS * 2 ** (attempts - 1), RECONNECT_CEILING_MS);
+        // Jittered, so every tab that lost its stream to the same restart does
+        // not come back in the same millisecond.
+        reconnectTimer = setTimeout(connect, window / 2 + Math.random() * (window / 2));
       };
+    }
+
+    // Back from a tunnel, a sleep or a dropped wifi. The stream is the better
+    // transport, so the poller stands down and the attempts that were spent
+    // failing to reach a network are given back.
+    function onOnline() {
+      if (done) return;
+      attempts = 0;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      source?.close();
+      source = null;
+      connect();
     }
 
     void Promise.resolve(getForecastProgress(id, controller.signal))
@@ -213,8 +260,10 @@ export function useForecastProgress(
       })
       .catch(() => undefined);
     connect();
+    window.addEventListener("online", onOnline);
     return () => {
       done = true;
+      window.removeEventListener("online", onOnline);
       teardown();
     };
   }, [runId]);

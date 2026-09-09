@@ -143,6 +143,8 @@ export function UploadDatasetModal() {
       title="Upload Dataset"
       description={`CSV or XLSX, up to ${MAX_MB} MB.`}
       size="lg"
+      busy={uploadMutation.isPending || configureMutation.isPending}
+      busyHint="The file is still uploading. Closing now would lose it."
       footer={
         result ? (
           <>

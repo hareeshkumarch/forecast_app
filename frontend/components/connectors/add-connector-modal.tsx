@@ -176,6 +176,8 @@ export function AddConnectorModal() {
           : "Connect a data source. Credentials are encrypted before they are stored and are never returned to the browser."
       }
       size="lg"
+      busy={saving}
+      busyHint="The connector is still being saved."
       footer={
         <>
           <Button variant="ghost" onClick={closeModal}>

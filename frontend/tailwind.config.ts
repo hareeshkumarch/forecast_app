@@ -180,11 +180,16 @@ const config: Config = {
           "0%, 100%": { transform: "translate3d(0, 0, 0) scale(1)" },
           "50%": { transform: "translate3d(2%, -3%, 0) scale(1.08)" },
         },
+        "modal-progress": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(400%)" },
+        },
       },
       animation: {
         "toast-in": "toast-in 160ms ease-out",
         "pulse-dot": "pulse-dot 2.4s ease-in-out infinite",
         drift: "drift 22s ease-in-out infinite",
+        "modal-progress": "modal-progress 1.4s ease-in-out infinite",
       },
     },
   },

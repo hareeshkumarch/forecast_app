@@ -20,8 +20,22 @@ class FakeEventSource {
   onopen: (() => void) | null = null;
   closed = false;
 
+  private readonly listeners = new Map<string, Array<() => void>>();
+
   constructor(readonly url: string) {
     opened.push(this);
+  }
+
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+
+  removeEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, (this.listeners.get(name) ?? []).filter((one) => one !== handler));
+  }
+
+  dispatch(name: string) {
+    act(() => this.listeners.get(name)?.forEach((handler) => handler()));
   }
 
   close() {
@@ -200,6 +214,52 @@ describe("following a forecast", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
     expect(opened).toHaveLength(1);
+  });
+
+  it("treats the server ending a long-held stream as a reconnect, not a failure", async () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    opened[0]!.emit({ status: "running", progress: 0.4, stage: "fitting" });
+    opened[0]!.dispatch("expired");
+
+    expect(opened[0]!.closed).toBe(true);
+    expect(opened.length).toBe(2);
+    expect(result.current.isPolling).toBe(false);
+  });
+
+  it("does not spend its stream attempts on a connection the browser knows it lacks", async () => {
+    const { result } = renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    vi.stubGlobal("navigator", { onLine: false });
+    opened[0]!.fail();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+
+    expect(opened.length).toBe(1);
+    expect(result.current.isPolling).toBe(true);
+  });
+
+  it("goes back to the stream the moment the connection returns", async () => {
+    renderHook(() => useForecastProgress(RUN_ID));
+
+    opened[0]!.open();
+    vi.stubGlobal("navigator", { onLine: false });
+    opened[0]!.fail();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+
+    vi.stubGlobal("navigator", { onLine: true });
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(opened.length).toBe(2);
   });
 
   it("closes the stream when the watcher goes away", () => {
