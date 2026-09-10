@@ -18,6 +18,7 @@ from app.schema.coverage import (
     CoverageMatrix,
     coverage_matrix,
 )
+from app.schema.recall import MAX_CONSIDERED, Recall, StoredMapping, recall
 from app.schema.resolve import apply_override, fingerprint_of, prepare, propose
 from app.schema.validation import ValidationReport, validate_canonical
 from app.services import dataset_service
@@ -133,24 +134,52 @@ async def remember(
     return stored
 
 
-async def remembered_for(session: AsyncSession, frame: pl.DataFrame) -> dict[str, object] | None:
+async def remembered_for(session: AsyncSession, frame: pl.DataFrame) -> Recall | None:
     return await _remembered(session, frame)
 
 
-async def _remembered(session: AsyncSession, frame: pl.DataFrame) -> dict[str, object] | None:
-    stored = await session.scalar(
-        select(SchemaMapping).where(SchemaMapping.fingerprint == fingerprint_of(frame))
+async def _remembered(session: AsyncSession, frame: pl.DataFrame) -> Recall | None:
+    """The mapping somebody already made for a file like this one.
+
+    The exact fingerprint is tried first and is one indexed read. Everything
+    else is scored in Python over the stored rows, because the near-match
+    cases — a dtype that moved, a column added — cannot be expressed as an
+    equality on a hash, and there is one row here per distinct schema ever
+    accepted rather than one per upload.
+    """
+    columns = {name: str(dtype) for name, dtype in frame.schema.items()}
+    fingerprint = fingerprint_of(frame)
+
+    exact = await session.scalar(
+        select(SchemaMapping).where(SchemaMapping.fingerprint == fingerprint)
     )
-    if stored is None:
-        return None
-    return {
-        "date_col": stored.date_col,
-        "target_col": stored.target_col,
-        "series_keys": list(stored.series_keys or []),
-        "covariates": list(stored.covariates or []),
-        "frequency": stored.frequency,
-        "aggregation": stored.aggregation,
-    }
+    rows = [exact] if exact is not None else []
+    if exact is None:
+        rows = list(
+            await session.scalars(
+                select(SchemaMapping)
+                .order_by(SchemaMapping.updated_at.desc())
+                .limit(MAX_CONSIDERED)
+            )
+        )
+
+    return recall(
+        [
+            StoredMapping(
+                fingerprint=row.fingerprint,
+                date_col=row.date_col,
+                target_col=row.target_col,
+                series_keys=list(row.series_keys or []),
+                covariates=list(row.covariates or []),
+                frequency=row.frequency,
+                aggregation=row.aggregation,
+                columns=dict(row.columns or {}),
+            )
+            for row in rows
+        ],
+        fingerprint=fingerprint,
+        columns=columns,
+    )
 
 
 async def _frame_of(session: AsyncSession, dataset_id: uuid.UUID) -> pl.DataFrame:

@@ -367,6 +367,19 @@ backtest folds. **Balanced** adds the heavier statistical and boosting models,
 and **Thorough** uses the full roster over eight folds. Candidate backtests are
 evaluated concurrently while their results are restored to the original model
 order before scoring, so concurrency cannot change a tie or the reported rank.
+Hyperparameters are searched rather than guessed, and the search is bounded by
+the history available — see `app/forecasting/tuning.py`. Candidates are drawn
+so that every value of every parameter is tried at least once: independent
+random draws leave holes, and with eight candidates over a five-value
+parameter it is better than even odds that some value is never tried at all,
+which means the search cannot report that it was worse. They are then screened
+on the earliest fold so only survivors pay for the rest, and the winner is
+walked downhill one parameter at a time. That last step matters more than it
+sounds: sampling leaves you at whichever scattered point happened to be lowest
+rather than at the bottom of the dip it sits in. Over sixty random optima in a
+512-point space, the search went from a mean of 1.87 steps away to 0.18, and
+from 3 exact hits to 50, without landing worse in a single trial.
+
 `FORECAST_MODEL_CONCURRENCY` controls that per-run parallelism. Keep
 `FORECAST_WORKERS × FORECAST_MODEL_CONCURRENCY` close to the machine's available
 CPU cores; on a four-core host, `2 × 2` is the practical starting point.
@@ -426,6 +439,35 @@ exposing one deployment's numbers publicly, and the endpoint is ready for
 whoever makes it.
 
 ---
+
+### Remembering a mapping across a file that moved
+
+The mapping somebody accepts is stored against a fingerprint of the schema —
+every column name *and* dtype, hashed. That is the right fast path and was the
+only one, which meant the case it exists for did not work. The same export
+uploaded next month is routinely not byte-identical: one value gains a decimal
+so polars reads Float64 where it read Int64, the source system appends a
+column, a column that was always empty is dropped. Any of those and the
+mapping was silently not found, and the person who carefully said which column
+was the target was asked again with nothing explaining why.
+
+`app/schema/recall.py` tries the fingerprint first and then the nearest stored
+mapping: columns are compared by normalised name — `Net Revenue (USD)` and
+`net_revenue_usd` are the same column — scored as Jaccard over the *union*, so
+a file that lost six of ten columns does not score as a match. A mapping whose
+date or target column is not in the new file is refused outright rather than
+partly applied; the rest is carried under the new file's spelling, and columns
+it named that are gone are reported rather than dropped in silence. Only an
+exact fingerprint gets full confidence — a near match says so on the proposal,
+because full confidence on a guess is what stops anybody checking it.
+
+Column names are also matched through one typo. `reveneu`, `untis`, `amout`
+and `saels` all scored zero, which is a target column the platform refuses to
+notice over a transposition. The distance is Damerau rather than Levenshtein,
+because a swap of two adjacent letters is the most common way a name is
+mistyped and plain edit distance counts it as two. It is a tier below every
+exact rule and it is guarded by a minimum length, since at four letters one
+edit reaches `cost` from `coat`.
 
 ## How the API protects itself
 

@@ -279,12 +279,15 @@ async def _mapped_columns(
     if remembered is None:
         return inferred
 
-    columns = set(frame.columns)
-    date_col, target_col = remembered["date_col"], remembered["target_col"]
-    if date_col not in columns or target_col not in columns:
-        return inferred
-
-    return str(date_col), str(target_col), remembered["frequency"] or profile.detected_frequency  # type: ignore[return-value]
+    # `recall` has already checked that the columns it names are in this file
+    # and handed them back under this file's spelling, so there is nothing to
+    # re-verify here.
+    fields = remembered.fields
+    return (
+        str(fields["date_col"]),
+        str(fields["target_col"]),
+        fields.get("frequency") or profile.detected_frequency,  # type: ignore[return-value]
+    )
 
 
 def _default_horizon(frequency: ForecastFrequency | None) -> int:

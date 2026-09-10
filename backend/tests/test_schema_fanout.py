@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import polars as pl
 import pytest
+
+from app.schema.keys import _could_separate, resolve_keys
 
 from app.models.enums import ForecastFrequency, MeasureAggregation
 from app.schema import (
@@ -316,3 +319,68 @@ def test_coverage_grid_keeps_the_patchiest_when_it_has_to_choose() -> None:
     # a staircase rather than as a ranking.
     assert [row.series_id for row in matrix.rows] == ["S-02", "S-03", "S-04", "S-05"]
     assert [row.gaps for row in matrix.rows] == [3, 4, 5, 6]
+
+
+class TestKeyPruning:
+    """Every subset used to cost a full pass over the file.
+
+    Six candidate dimensions is 56 subsets, and most of them cannot be keys at
+    all: with `r` rows and `d` distinct dates, a subset needs
+    `d * prod(cardinalities) >= r` combinations to give every row its own key.
+    That is an upper bound, so failing it is proof rather than a guess — the
+    pruned subsets are ones the group-by was always going to reject.
+    """
+
+    @staticmethod
+    def _frame(rows: int = 2000) -> pl.DataFrame:
+        rng = np.random.default_rng(11)
+        dates = np.repeat(np.arange(rows // 20), 20)
+        return pl.DataFrame(
+            {
+                "date": [f"2026-01-{1 + int(d) % 28:02d}" for d in dates],
+                "region": rng.choice(["N", "S"], rows),
+                "sku": rng.choice([f"s{i}" for i in range(30)], rows),
+                "flag": rng.choice(["y", "n"], rows),
+            }
+        )
+
+    def test_a_subset_with_no_room_to_separate_the_rows_is_pruned(self) -> None:
+        # Two dates, one two-valued column: four combinations for 100 rows.
+        assert not _could_separate({"flag": 2}, ("flag",), dates=2, rows=100)
+
+    def test_a_subset_with_room_is_not_pruned(self) -> None:
+        assert _could_separate({"sku": 30}, ("sku",), dates=10, rows=100)
+
+    def test_the_bound_stops_multiplying_once_it_has_passed(self) -> None:
+        """The product of six cardinalities is a number nobody needs."""
+        assert _could_separate({"a": 1000, "b": 1000}, ("a", "b"), dates=1000, rows=10)
+
+    def test_pruning_never_hides_a_key_that_exists(self) -> None:
+        # An outer product, so (date, store) really is one row each. Built with
+        # nested loops rather than modular arithmetic: `i % 20` against
+        # `i % 50` shares a factor and only reaches 100 of the 1000 pairs.
+        dates = [f"2026-01-{1 + day:02d}" for day in range(20)]
+        stores = [f"st{index}" for index in range(50)]
+        frame = pl.DataFrame(
+            {
+                "date": [day for day in dates for _ in stores],
+                "store": [store for _ in dates for store in stores],
+                "noise": ["x"] * (len(dates) * len(stores)),
+            }
+        )
+
+        found = resolve_keys(frame, "date", ["store", "noise"])
+
+        # `store` is the key. `noise` is constant, so `_lineage` folds it in as
+        # an ancestor level — that is the hierarchy code doing its own job and
+        # is not what this test is about.
+        assert "store" in found.series_keys
+        assert found.duplicate_rows == 0
+
+    def test_a_file_with_no_key_still_falls_back_to_every_dimension(self) -> None:
+        frame = self._frame()
+
+        found = resolve_keys(frame, "date", ["region", "sku", "flag"])
+
+        assert set(found.series_keys) <= {"region", "sku", "flag"}
+        assert found.series_count > 1

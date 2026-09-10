@@ -15,7 +15,11 @@ import polars as pl
 import pytest
 
 from app.datasets.profiler import (
+    DATE_NAME_HINTS,
     MAX_AUTO_DIMENSION_VALUES,
+    TARGET_NAME_HINTS,
+    _within_one_edit,
+    name_score,
     profile_frame,
 )
 from app.models.enums import ColumnRole
@@ -270,3 +274,48 @@ def test_a_flat_series_is_still_the_thing_being_forecast() -> None:
     profile = profile_frame(flat)
 
     assert next((c.name for c in profile.columns if c.role is ColumnRole.TARGET), None) == "value"
+
+
+class TestNamesWithTyposInThem:
+    """Column names in hand-maintained exports are spelled by people.
+
+    `reveneu`, `unts`, `amout` and `sels` all scored zero, which is a target
+    column the platform refuses to notice over a transposition — and then asks
+    somebody to point at it by hand every single upload.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        ["reveneu", "quantiy", "amout", "volme", "untis", "saels", "revenu e".replace(" ", "")],
+    )
+    def test_one_typo_still_finds_the_hint(self, name: str) -> None:
+        assert name_score(name, TARGET_NAME_HINTS) > 0.0
+
+    @pytest.mark.parametrize(
+        "name", ["notes", "owner", "status", "ratio", "email", "phone", "label"]
+    )
+    def test_a_word_that_is_simply_not_a_measure_still_scores_nothing(self, name: str) -> None:
+        assert name_score(name, TARGET_NAME_HINTS) == 0.0
+
+    def test_a_typo_scores_below_a_real_match(self) -> None:
+        """It is a tie-break, not a claim: an exact name must always win."""
+        assert name_score("amout", TARGET_NAME_HINTS) < name_score("amount", TARGET_NAME_HINTS)
+
+    def test_a_short_name_is_refused_even_though_it_is_one_edit_away(self) -> None:
+        """At four letters one edit reaches far too much.
+
+        `coat` really is one substitution from the target hint `cost` — the
+        distance function is not wrong about that, and this is exactly why the
+        length guard exists rather than the distance being made stricter.
+        """
+        assert _within_one_edit("coat", "cost"), "one substitution, genuinely"
+        assert name_score("coat", TARGET_NAME_HINTS) == 0.0, "and refused anyway"
+
+    def test_a_transposition_is_one_edit_and_not_two(self) -> None:
+        """Levenshtein counts a swap as two substitutions and would miss it."""
+        assert _within_one_edit("reveneu", "revenue")
+        assert _within_one_edit("untis", "units")
+
+    def test_two_real_edits_are_still_too_many(self) -> None:
+        assert not _within_one_edit("revnue", "revenues")
+        assert not _within_one_edit("sale", "date")

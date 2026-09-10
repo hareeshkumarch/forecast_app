@@ -18,6 +18,12 @@ ROWS_PER_EVALUATION = 12
 CACHE_LIMIT = 64
 SURVIVOR_SHARE = 1.0 / 3.0
 MIN_SURVIVORS = 3
+#: Coordinate-descent passes from the winner. Two is enough to leave a plateau
+#: it landed beside; more is a series with a hundred rows being polished while
+#: the run's minute goes somewhere else.
+MAX_REFINEMENT_STEPS = 2
+#: Fits the refinement may spend even when the sampling budget was tiny.
+MIN_REFINEMENT = 4
 
 
 def as_int(value: object, default: int = 0) -> int:
@@ -46,6 +52,36 @@ class SearchSpace:
         for key, values in self.choices.items():
             combinations = [{**partial, key: value} for partial in combinations for value in values]
         return combinations
+
+    def stratified(self, rng: np.random.Generator, count: int) -> list[dict[str, object]]:
+        """`count` distinct settings, covering every value of every parameter.
+
+        Independent random draws leave holes: with eight candidates over a
+        five-value parameter, the chance that some value is never tried at all
+        is better than one in two, and a search that never tried a setting
+        cannot report that it was worse. This deals each parameter's values out
+        like a shuffled deck instead, so the levels are spread by construction
+        and only which ones meet each other is left to chance.
+        """
+        columns: dict[str, list[object]] = {}
+        for key, values in self.choices.items():
+            dealt: list[object] = []
+            while len(dealt) < count:
+                order = list(values)
+                rng.shuffle(order)  # type: ignore[arg-type]
+                dealt.extend(order)
+            columns[key] = dealt[:count]
+
+        seen: set[tuple] = set()
+        sampled: list[dict[str, object]] = []
+        for index in range(count):
+            params = {key: column[index] for key, column in columns.items()}
+            signature = tuple(sorted(params.items(), key=lambda item: item[0]))
+            if signature in seen:
+                continue
+            seen.add(signature)
+            sampled.append(params)
+        return sampled
 
 
 @dataclass(slots=True)
@@ -246,17 +282,7 @@ def tune(
         candidates = space.grid()
         method = "grid"
     else:
-        seen: set[tuple] = set()
-        candidates = []
-        for _ in range(budget * 4):
-            if len(candidates) >= budget:
-                break
-            params = space.sample(rng)
-            signature = tuple(sorted(params.items(), key=lambda item: item[0]))
-            if signature in seen:
-                continue
-            seen.add(signature)
-            candidates.append(params)
+        candidates = space.stratified(rng, budget)
         method = "random"
 
     def score_over(params: dict[str, object], folds: list[tuple[int, int]]) -> float:
@@ -302,6 +328,14 @@ def tune(
         if score < best_score:
             best_params, best_score = params, score
 
+    if evaluated:
+        best_params, best_score, refined = _refine(
+            best_params, best_score, space, score_over, splits, budget
+        )
+        evaluated += refined
+        if refined:
+            method = f"{method}_refined"
+
     # `evaluations` counts candidates that produced a score. Reporting the
     # number tried made a search where every fit raised look like a search
     # that ran, and the defaults it fell back to look like a winner.
@@ -309,3 +343,89 @@ def tune(
     result = TuningResult(best_params, best_score, evaluated, method, len(splits))
     _CACHE.put(key, result)
     return result
+
+
+def _neighbours(space: SearchSpace, params: dict[str, object]) -> list[dict[str, object]]:
+    """The settings one step from this one, along each parameter in turn.
+
+    A step means the adjacent entry in that parameter's list, so the lists are
+    read as ordered — which they are: every space in `app/forecasting/models.py`
+    lists depths, rates and window lengths in order. For an unordered list this
+    still works, it just explores in the order the values were written.
+    """
+    around: list[dict[str, object]] = []
+    for key, values in space.choices.items():
+        ordered = list(values)
+        try:
+            at = ordered.index(params[key])
+        except (KeyError, ValueError):
+            continue
+        for step in (-1, 1):
+            index = at + step
+            if 0 <= index < len(ordered):
+                around.append({**params, key: ordered[index]})
+    return around
+
+
+def _refine(
+    params: dict[str, object],
+    score: float,
+    space: SearchSpace,
+    score_over: Callable[[dict[str, object], list[tuple[int, int]]], float],
+    splits: list[tuple[int, int]],
+    budget: int,
+) -> tuple[dict[str, object], float, int]:
+    """Walk downhill from the winner, one parameter at a time.
+
+    The search picked the best of a scattered sample and stopped, which leaves
+    it at whichever sampled point happened to be lowest rather than at the
+    bottom of the dip that point is in — and with a coarse sample the two are
+    routinely a step or two apart. Coordinate descent from the winner is the
+    cheapest way to close that: it costs a couple of fits per parameter and it
+    only ever moves to something measurably better, so it cannot make the
+    answer worse than the point it started from.
+
+    Bounded twice over — by a step count, and by a share of the same budget the
+    sampling was drawn against — because refining forever on a series that has
+    a hundred rows is spending the run's minute in the wrong place.
+
+    Returns the number of neighbours that produced a score, not the number
+    tried: `evaluations` means the same thing everywhere it is reported, and a
+    refinement whose every fit raised must not look like one that ran.
+    """
+    allowance = max(MIN_REFINEMENT, budget // 2)
+    attempts = 0
+    scored = 0
+    visited = {_signature(params)}
+
+    for _ in range(MAX_REFINEMENT_STEPS):
+        improved = False
+        for candidate in _neighbours(space, params):
+            signature = _signature(candidate)
+            if signature in visited:
+                continue
+            visited.add(signature)
+
+            if attempts >= allowance:
+                return params, score, scored
+            attempts += 1
+
+            trial = score_over(candidate, splits)
+            if not np.isfinite(trial):
+                # A setting the model could not fit. It cost a fit and it did
+                # not produce a score, and `evaluations` counts scores — see
+                # the note where it is reported.
+                continue
+            scored += 1
+            if trial < score:
+                params, score, improved = candidate, trial, True
+                break
+
+        if not improved:
+            break
+
+    return params, score, scored
+
+
+def _signature(params: dict[str, object]) -> tuple:
+    return tuple(sorted(params.items(), key=lambda item: item[0]))

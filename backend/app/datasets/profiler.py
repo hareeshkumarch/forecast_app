@@ -357,7 +357,65 @@ def name_score(name: str, hints: tuple[str, ...]) -> float:
     lowered = " ".join(sorted(tokens))
     if any(hint in lowered for hint in hints):
         return 0.6
+
+    # One typo, and only one. Column names in hand-maintained exports are
+    # spelled by people: "reveneu", "unts", "amout" and "sels" all scored zero
+    # here, which is a target column the platform refuses to notice over a
+    # transposition. `_within_one_edit` is deliberately strict — it costs a
+    # tier below substring matching, and it is bounded by a length guard,
+    # because at two edits "sale" reaches "date" and the hint list stops
+    # meaning anything.
+    for token in tokens:
+        if len(token) >= MIN_FUZZY_LENGTH and any(_within_one_edit(token, hint) for hint in hints):
+            return 0.5
     return 0.0
+
+
+#: Short tokens are one edit from far too much: at four letters "cost" reaches
+#: "cast", "coat" and "cots". Five is where a single edit stops being a
+#: coincidence.
+MIN_FUZZY_LENGTH = 5
+
+
+def _within_one_edit(token: str, hint: str) -> bool:
+    """Whether one insertion, deletion or substitution turns one into the other.
+
+    Written out rather than reached for from difflib: this runs once per token
+    per hint per column, the hint lists are long, and `SequenceMatcher` is a
+    great deal of machinery for a question that is answered by walking two
+    strings once.
+    """
+    if abs(len(token) - len(hint)) > 1:
+        return False
+    if token == hint:
+        return True
+
+    if len(token) == len(hint):
+        differing = [
+            index
+            for index, (left, right) in enumerate(zip(token, hint, strict=True))
+            if left != right
+        ]
+        if len(differing) == 1:
+            return True
+        # Two adjacent letters swapped — "reveneu" for "revenue". Levenshtein
+        # counts that as two substitutions and would miss it, and it is the
+        # single most common way a name is mistyped, so it is worth the four
+        # lines that make this Damerau rather than plain edit distance.
+        if len(differing) == 2:
+            first, second = differing
+            return (
+                second == first + 1
+                and token[first] == hint[second]
+                and token[second] == hint[first]
+            )
+        return False
+
+    longer, shorter = (token, hint) if len(token) > len(hint) else (hint, token)
+    for index in range(len(longer)):
+        if longer[:index] + longer[index + 1 :] == shorter:
+            return True
+    return False
 
 
 def _try_parse_dates(series: pl.Series, *, name_suggests_date: bool = False) -> pl.Series | None:

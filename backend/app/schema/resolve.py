@@ -24,6 +24,7 @@ from app.schema.contract import (
 )
 from app.schema.keys import resolve_keys
 from app.schema.layout import LayoutResult, normalise_layout
+from app.schema.recall import Recall
 from app.schema.roles import rank_roles
 
 MAX_COVARIATES = 8
@@ -46,7 +47,7 @@ def propose(
     frame: pl.DataFrame,
     *,
     day_first: bool | None = None,
-    remembered: dict[str, object] | None = None,
+    remembered: Recall | None = None,
     overrides: dict[str, object] | None = None,
 ) -> tuple[MappingProposal, pl.DataFrame]:
     fingerprint = fingerprint_of(frame)
@@ -135,12 +136,56 @@ def propose(
         )
         proposal.confidence = min(proposal.confidence, CONFIDENCE_FLOOR - 0.01)
 
-    if remembered:
-        apply_override(proposal, remembered, source=SOURCE_REMEMBERED)
+    if remembered is not None:
+        _apply_recall(proposal, remembered)
     if overrides:
         apply_override(proposal, overrides, source=SOURCE_OVERRIDE)
 
     return proposal, working
+
+
+def _apply_recall(proposal: MappingProposal, remembered: Recall) -> None:
+    """Carry a stored mapping over, and be honest about how well it fits.
+
+    An exact fingerprint is the same file and is worth full confidence. A near
+    match is a judgement — the columns line up well enough to believe it is the
+    same report — and saying so out loud is what lets somebody disagree before
+    a forecast is built on it rather than after.
+    """
+    apply_override(proposal, remembered.fields, source=SOURCE_REMEMBERED)
+
+    if remembered.exact:
+        return
+
+    proposal.confidence = round(min(proposal.confidence, remembered.similarity), 3)
+    proposal.warnings.append(
+        MappingWarning(
+            code="remembered_from_a_similar_file",
+            message=(
+                f"No mapping is stored for this exact file, so the one saved for a "
+                f"{remembered.similarity:.0%} matching set of columns was used. Check the "
+                "date and target columns before running a forecast."
+            ),
+            columns=tuple(
+                str(value)
+                for key in ("date_col", "target_col")
+                if (value := remembered.fields.get(key))
+            ),
+        )
+    )
+
+    if remembered.missing:
+        proposal.warnings.append(
+            MappingWarning(
+                code="remembered_columns_missing",
+                message=(
+                    "The stored mapping also named "
+                    + ", ".join(f"'{name}'" for name in remembered.missing)
+                    + ", which this file does not have. Everything else was carried over."
+                ),
+                columns=remembered.missing,
+            )
+        )
 
 
 def apply_override(

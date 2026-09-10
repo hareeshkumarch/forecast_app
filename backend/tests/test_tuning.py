@@ -7,8 +7,11 @@ import pytest
 
 from app.forecasting.selection import INTERMITTENT_METRIC_WEIGHTS
 from app.forecasting.tuning import (
+    MIN_REFINEMENT,
     MIN_SURVIVORS,
     SearchSpace,
+    _neighbours,
+    _refine,
     blended_error,
     cache_key,
     evaluation_budget,
@@ -61,7 +64,7 @@ def test_tuning_picks_the_parameter_that_validates_best() -> None:
     result = tune("scaled_linear", matrix, target, space, fit_predict, 6)
 
     assert result.params["scale"] == 1.0, "only the unscaled fit reproduces the target"
-    assert result.evaluations == 3
+    assert result.evaluations >= 3, "every candidate in the grid was scored"
     assert result.folds >= 1
     assert np.isfinite(result.score)
 
@@ -96,7 +99,9 @@ def test_a_failing_candidate_does_not_sink_the_search() -> None:
 
     result = tune("resilient", matrix, target, space, fit_predict, 6)
     assert result.params["mode"] == "good"
-    assert result.evaluations == 1, "one of the two candidates produced a score"
+    # Refinement steps to the neighbouring setting, which is the broken one,
+    # and it raises there too — so it is tried and never counted.
+    assert result.evaluations == 1, "only one of the candidates ever produced a score"
 
 
 def test_a_search_where_nothing_fitted_says_so() -> None:
@@ -217,8 +222,8 @@ def test_halving_still_finds_the_parameter_that_validates_best() -> None:
     result = tune("halved", matrix, target, space, fit_predict, 6)
 
     assert result.params["scale"] == 1.0
-    assert result.method.endswith("_halving")
-    assert result.evaluations <= max(MIN_SURVIVORS, 10 // 3) + 1
+    assert "halving" in result.method
+    assert result.evaluations <= max(MIN_SURVIVORS, 10 // 3) + 1 + MIN_REFINEMENT
 
 
 def test_a_small_space_is_not_screened() -> None:
@@ -232,7 +237,7 @@ def test_a_small_space_is_not_screened() -> None:
     result = tune("unscreened", matrix, target, space, fit_predict, 6)
 
     assert "halving" not in result.method
-    assert result.evaluations == 3
+    assert result.evaluations >= 3
 
 
 def test_a_candidate_that_fails_screening_is_not_resurrected() -> None:
@@ -279,3 +284,142 @@ def test_too_little_history_for_mase_falls_back_rather_than_returning_nan() -> N
     assert blended_error(actual, predicted, weights, np.array([5.0]), 12) == pytest.approx(
         blended_error(actual, predicted, weights)
     )
+
+
+class TestStratifiedSampling:
+    """Independent draws leave holes a search can never report on.
+
+    With eight candidates over a five-value parameter, better than one time in
+    two some value is never tried at all — and a setting that was never tried
+    cannot be found to be worse. Dealing each parameter's values out like a
+    shuffled deck spreads the levels by construction.
+    """
+
+    def test_every_value_of_every_parameter_is_tried(self) -> None:
+        space = SearchSpace({"depth": [1, 2, 3, 4, 5], "rate": [0.1, 0.2, 0.3]})
+        rng = np.random.default_rng(0)
+
+        sampled = space.stratified(rng, 10)
+
+        assert {params["depth"] for params in sampled} == {1, 2, 3, 4, 5}
+        assert {params["rate"] for params in sampled} == {0.1, 0.2, 0.3}
+
+    def test_it_asks_for_no_more_than_the_budget(self) -> None:
+        space = SearchSpace({"a": list(range(10)), "b": list(range(10))})
+
+        assert len(space.stratified(np.random.default_rng(0), 12)) <= 12
+
+    def test_the_settings_it_returns_are_distinct(self) -> None:
+        space = SearchSpace({"a": [1, 2], "b": [1, 2]})
+
+        sampled = space.stratified(np.random.default_rng(0), 4)
+        signatures = {tuple(sorted(params.items())) for params in sampled}
+
+        assert len(signatures) == len(sampled)
+
+    def test_the_same_seed_samples_the_same_way(self) -> None:
+        """A run has to be reproducible from its seed, tuning included."""
+        space = SearchSpace({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+        first = space.stratified(np.random.default_rng(3), 6)
+        second = space.stratified(np.random.default_rng(3), 6)
+
+        assert first == second
+
+
+class TestRefinement:
+    """The search picked the best of a scattered sample and stopped there.
+
+    That leaves it at whichever sampled point happened to be lowest rather
+    than at the bottom of the dip that point sits in, and on a coarse sample
+    the two are routinely a step or two apart.
+    """
+
+    @staticmethod
+    def _bowl(space: SearchSpace, best: dict[str, object]):
+        """An error surface with one optimum, falling smoothly towards it."""
+
+        def distance(params: dict[str, object]) -> int:
+            return sum(
+                abs(list(values).index(params[key]) - list(values).index(best[key]))
+                for key, values in space.choices.items()
+            )
+
+        return distance
+
+    def test_it_walks_the_last_steps_to_the_optimum(self) -> None:
+        space = SearchSpace(
+            {
+                "depth": [1, 2, 3, 4, 5, 6, 7, 8],
+                "rate": [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8],
+                "window": [4, 8, 12, 16, 20, 24, 28, 32],
+            }
+        )
+        best = {"depth": 5, "rate": 0.1, "window": 20}
+        distance = self._bowl(space, best)
+
+        rng = np.random.default_rng(1)
+        target = np.cumsum(rng.normal(10, 1, 300)) + 100.0
+        matrix = np.column_stack([target, np.arange(300, dtype=float)])
+
+        result = tune(
+            "bowl",
+            matrix,
+            target,
+            space,
+            lambda params, start, end: target[start:end] + distance(params) * 3.0,
+            horizon=12,
+            metric_weights={"wmape": 1.0},
+        )
+
+        assert result.params == best
+        assert result.method.endswith("_refined")
+
+    def test_it_never_moves_to_something_worse(self) -> None:
+        """Coordinate descent only steps downhill, so it cannot spoil a winner."""
+        space = SearchSpace({"a": [1, 2, 3, 4, 5]})
+        scored: dict[int, float] = {1: 5.0, 2: 4.0, 3: 3.0, 4: 9.0, 5: 9.0}
+
+        params, score, spent = _refine(
+            {"a": 3},
+            3.0,
+            space,
+            lambda candidate, _splits: scored[int(candidate["a"])],
+            [(0, 1)],
+            budget=8,
+        )
+
+        assert params == {"a": 3}
+        assert score == 3.0
+        assert spent > 0
+
+    def test_it_stops_at_its_allowance_rather_than_polishing_forever(self) -> None:
+        space = SearchSpace({key: list(range(9)) for key in ("a", "b", "c", "d")})
+        calls = {"n": 0}
+
+        def descending(candidate: dict[str, object], _splits: list) -> float:
+            calls["n"] += 1
+            return -float(sum(int(value) for value in candidate.values()))
+
+        _params, _score, spent = _refine(
+            dict.fromkeys("abcd", 0), 0.0, space, descending, [(0, 1)], budget=6
+        )
+
+        assert spent <= max(MIN_REFINEMENT, 6 // 2)
+        assert calls["n"] == spent
+
+    def test_neighbours_are_one_step_along_each_parameter(self) -> None:
+        space = SearchSpace({"a": [1, 2, 3], "b": [10, 20]})
+
+        around = _neighbours(space, {"a": 2, "b": 10})
+
+        assert {"a": 1, "b": 10} in around
+        assert {"a": 3, "b": 10} in around
+        assert {"a": 2, "b": 20} in around
+        assert len(around) == 3
+
+    def test_an_edge_of_the_space_has_neighbours_on_one_side_only(self) -> None:
+        space = SearchSpace({"a": [1, 2, 3]})
+
+        assert _neighbours(space, {"a": 1}) == [{"a": 2}]
+        assert _neighbours(space, {"a": 3}) == [{"a": 2}]

@@ -36,12 +36,24 @@ def resolve_keys(frame: pl.DataFrame, date_column: str, dimensions: list[str]) -
             considered=considered,
         )
 
+    # Every subset used to cost a full group-by — up to 56 passes over the
+    # file for six candidate dimensions, most of them over subsets that could
+    # not possibly be keys. A subset can only separate the rows if there are
+    # enough distinct combinations to go round: with `r` rows and `d` distinct
+    # dates, a key needs `d * prod(cardinalities) >= r`. That is an upper bound
+    # on the combinations available, so failing it is proof, not a heuristic —
+    # the pruned subsets are ones the group-by was always going to reject.
+    cardinality = {name: int(frame[name].n_unique()) for name in considered}
+    dates = int(frame[date_column].n_unique())
+    rows = frame.height
+
     best: tuple[str, ...] | None = None
     for width in range(1, min(MAX_KEY_WIDTH, len(considered)) + 1):
         exact = [
             subset
             for subset in combinations(considered, width)
-            if _duplicate_rows(frame, [date_column, *subset]) == 0
+            if _could_separate(cardinality, subset, dates, rows)
+            and _duplicate_rows(frame, [date_column, *subset]) == 0
         ]
         if exact:
             best = min(exact, key=lambda subset: (_series_count(frame, subset), subset))
@@ -92,6 +104,23 @@ def _contains(frame: pl.DataFrame, *, parent: str, child: str) -> bool:
     if fanned.height == 0:
         return False
     return bool((fanned["parents"] <= 1).all())
+
+
+def _could_separate(
+    cardinality: dict[str, int], subset: tuple[str, ...], dates: int, rows: int
+) -> bool:
+    """Whether this subset has room to give every row its own key.
+
+    Multiplied with an early exit rather than in full: the product of six
+    cardinalities is a large number nobody needs, and the question is only
+    ever whether it has passed `rows`.
+    """
+    available = dates
+    for name in subset:
+        available *= max(1, cardinality.get(name, 1))
+        if available >= rows:
+            return True
+    return available >= rows
 
 
 def _duplicate_rows(frame: pl.DataFrame, keys: list[str]) -> int:
