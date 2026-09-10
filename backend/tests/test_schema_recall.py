@@ -180,14 +180,31 @@ class TestNormalise:
 
 
 class TestThroughTheProposal:
-    def test_a_near_match_is_carried_but_says_it_was_a_near_match(self) -> None:
+    def test_a_type_change_is_reported_as_a_type_change(self) -> None:
+        """The ordinary month-to-month case. Nothing about the mapping can have
+        drifted — every column is here under the same name — so it is not
+        dressed up as a partial match somebody has to go and check."""
         february = JANUARY.with_columns(pl.col("units").cast(pl.Float64))
         found = _ask(february, [_stored(JANUARY)])
-        assert found is not None
+        assert found is not None and found.same_columns
 
         proposal, _ = propose(february, remembered=found)
 
         assert proposal.target_col == "units"
+        codes = {warning.code for warning in proposal.warnings}
+        assert codes == {"remembered_across_a_type_change"}
+        assert proposal.confidence == 1.0, "the same columns are the same report"
+
+    def test_a_genuinely_partial_match_asks_to_be_checked(self) -> None:
+        """A column added or dropped is a different file, and might be a
+        different report — that one is worth a second look before a forecast
+        is built on it."""
+        wider = JANUARY.with_columns(pl.lit("x").alias("comment"))
+        found = _ask(wider, [_stored(JANUARY)])
+        assert found is not None and not found.same_columns
+
+        proposal, _ = propose(wider, remembered=found)
+
         codes = {warning.code for warning in proposal.warnings}
         assert "remembered_from_a_similar_file" in codes
 

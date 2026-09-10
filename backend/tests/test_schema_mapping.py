@@ -15,7 +15,6 @@ import polars as pl
 import pytest
 
 from app.datasets.profiler import (
-    DATE_NAME_HINTS,
     MAX_AUTO_DIMENSION_VALUES,
     TARGET_NAME_HINTS,
     _within_one_edit,

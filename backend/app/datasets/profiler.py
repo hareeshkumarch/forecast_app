@@ -222,6 +222,12 @@ NAME_ABBREVIATIONS: dict[str, str] = {
     "seg": "segment",
 }
 
+#: How long a column name must be before one typo in it is allowed to match a
+#: hint. Short tokens are one edit from far too much: at four letters "cost"
+#: reaches "cast", "coat" and "cots". Five is where a single edit stops being a
+#: coincidence.
+MIN_FUZZY_LENGTH = 5
+
 DIMENSION_NAME_HINTS = (
     "region",
     "country",
@@ -371,12 +377,6 @@ def name_score(name: str, hints: tuple[str, ...]) -> float:
     return 0.0
 
 
-#: Short tokens are one edit from far too much: at four letters "cost" reaches
-#: "cast", "coat" and "cots". Five is where a single edit stops being a
-#: coincidence.
-MIN_FUZZY_LENGTH = 5
-
-
 def _within_one_edit(token: str, hint: str) -> bool:
     """Whether one insertion, deletion or substitution turns one into the other.
 
@@ -412,10 +412,7 @@ def _within_one_edit(token: str, hint: str) -> bool:
         return False
 
     longer, shorter = (token, hint) if len(token) > len(hint) else (hint, token)
-    for index in range(len(longer)):
-        if longer[:index] + longer[index + 1 :] == shorter:
-            return True
-    return False
+    return any(longer[:index] + longer[index + 1 :] == shorter for index in range(len(longer)))
 
 
 def _try_parse_dates(series: pl.Series, *, name_suggests_date: bool = False) -> pl.Series | None:

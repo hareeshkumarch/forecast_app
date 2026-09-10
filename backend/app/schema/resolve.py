@@ -157,20 +157,39 @@ def _apply_recall(proposal: MappingProposal, remembered: Recall) -> None:
     if remembered.exact:
         return
 
+    named = tuple(
+        str(value) for key in ("date_col", "target_col") if (value := remembered.fields.get(key))
+    )
+
+    if remembered.same_columns:
+        # Every column is still here under the same name; only how they were
+        # read has moved — one value gaining a decimal is enough. That is the
+        # same report, so it keeps its confidence, and telling somebody to
+        # check a mapping that cannot have drifted is noise that teaches them
+        # to skip the warnings that matter.
+        proposal.warnings.append(
+            MappingWarning(
+                code="remembered_across_a_type_change",
+                message=(
+                    "This file has the same columns as the last one, read as different types "
+                    "— a whole number where there was a decimal, or the other way round. The "
+                    "mapping saved for it was used."
+                ),
+                columns=named,
+            )
+        )
+        return
+
     proposal.confidence = round(min(proposal.confidence, remembered.similarity), 3)
     proposal.warnings.append(
         MappingWarning(
             code="remembered_from_a_similar_file",
             message=(
-                f"No mapping is stored for this exact file, so the one saved for a "
-                f"{remembered.similarity:.0%} matching set of columns was used. Check the "
-                "date and target columns before running a forecast."
+                "No mapping is stored for this exact file, so the one saved for a file "
+                f"sharing {remembered.similarity:.0%} of its columns was used. Check the date "
+                "and target columns before running a forecast."
             ),
-            columns=tuple(
-                str(value)
-                for key in ("date_col", "target_col")
-                if (value := remembered.fields.get(key))
-            ),
+            columns=named,
         )
     )
 

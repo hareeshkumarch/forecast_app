@@ -59,6 +59,16 @@ class Recall:
     def exact(self) -> bool:
         return self.kind == EXACT
 
+    @property
+    def same_columns(self) -> bool:
+        """Every column is still here under the same name; only the types moved.
+
+        The ordinary month-to-month case, and worth telling apart from a
+        genuine near match: nothing about the mapping can have drifted, so it
+        does not need checking the way a partial match does.
+        """
+        return self.kind == RENAMED_TYPES
+
 
 @dataclass(slots=True)
 class StoredMapping:
@@ -83,8 +93,8 @@ def similarity(left: set[str], right: set[str]) -> float:
     """
     if not left or not right:
         return 0.0
-    union = len(left | right)
-    return len(left & right) / union if union else 0.0
+    # Both sides are non-empty, so the union is too — no second guard needed.
+    return len(left & right) / len(left | right)
 
 
 def recall(
@@ -103,9 +113,10 @@ def recall(
     best: Recall | None = None
     for candidate in stored[:MAX_CONSIDERED]:
         if candidate.fingerprint == fingerprint:
-            carried = _carry(candidate, present, by_name)
+            # Same names and same dtypes, so the columns it points at are
+            # there by construction. Nothing beats it; stop looking.
+            carried = _carry(candidate, by_name)
             if carried is not None:
-                # Nothing beats an exact match, so stop looking.
                 return Recall(carried[0], EXACT, 1.0, carried[1])
             continue
 
@@ -114,24 +125,24 @@ def recall(
         if score < MIN_SIMILARITY:
             continue
 
-        carried = _carry(candidate, present, by_name)
+        carried = _carry(candidate, by_name)
         if carried is None:
             # The columns it names are gone. A mapping that points at a target
             # this file does not have is worse than no mapping at all.
             continue
 
-        kind = RENAMED_TYPES if stored_names == present else SIMILAR
-        if best is None or (score, kind == RENAMED_TYPES) > (
-            best.similarity,
-            best.kind == RENAMED_TYPES,
-        ):
+        # Ranked on the score alone: an identical set of names scores exactly
+        # 1.0 by construction, so it already sorts above every other near
+        # match and does not need a tie-break of its own.
+        if best is None or score > best.similarity:
+            kind = RENAMED_TYPES if stored_names == present else SIMILAR
             best = Recall(carried[0], kind, round(score, 3), carried[1])
 
     return best
 
 
 def _carry(
-    candidate: StoredMapping, present: set[str], by_name: dict[str, str]
+    candidate: StoredMapping, by_name: dict[str, str]
 ) -> tuple[dict[str, object], tuple[str, ...]] | None:
     """The parts of a stored mapping this file can still use.
 
@@ -169,5 +180,4 @@ def _carry(
     if candidate.aggregation is not None:
         fields["aggregation"] = candidate.aggregation
 
-    del present
     return fields, tuple(missing)

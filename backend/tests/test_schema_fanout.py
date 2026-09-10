@@ -8,8 +8,6 @@ import numpy as np
 import polars as pl
 import pytest
 
-from app.schema.keys import _could_separate, resolve_keys
-
 from app.models.enums import ForecastFrequency, MeasureAggregation
 from app.schema import (
     CanonicalConfig,
@@ -20,6 +18,7 @@ from app.schema import (
     validate_canonical,
 )
 from app.schema.contract import LAYOUT_WIDE, SINGLE_SERIES_ID
+from app.schema.keys import _could_separate, resolve_keys
 from app.schema.validation import ROUTE_FALLBACK, STATUS_REJECT
 
 MONTHS = [date(2021, 1, 1).replace(month=(i % 12) + 1, year=2021 + i // 12) for i in range(36)]
