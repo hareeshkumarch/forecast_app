@@ -254,10 +254,15 @@ def _rationale(winner: ScoredCandidate, scored: list[ScoredCandidate]) -> str:
     if runner_up is not None:
         runner_name = runner_up.result.model.value.replace("_", " ")
         if runner_up.score - winner.score < 0.05:
-            parts.append(
-                f"{runner_name.capitalize()} was so close behind that the simpler of "
-                "the two was preferred."
-            )
+            winner_budget = PARAMETER_BUDGET.get(winner.result.model, 4)
+            runner_budget = PARAMETER_BUDGET.get(runner_up.result.model, 4)
+            if winner_budget < runner_budget:
+                parts.append(
+                    f"{runner_name.capitalize()} was so close behind that the simpler of "
+                    "the two was preferred."
+                )
+            else:
+                parts.append(f"{runner_name.capitalize()} was close behind.")
         else:
             parts.append(f"Next best was {runner_name}, off by {runner_up.result.wmape:.1f}%.")
 

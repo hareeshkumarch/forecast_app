@@ -368,7 +368,7 @@ class Settings(BaseSettings):
     llm_max_concurrent_rewrites: int = Field(default=8, ge=1, le=64)
 
     anthropic_api_key: str | None = None
-    insight_llm_model: str = "claude-3-5-sonnet-20241022"
+    insight_llm_model: str = "claude-opus-5"
 
     # ---- Insight thresholds ------------------------------------------------
     #: Below this backtested accuracy an insight warns the figures are directional.

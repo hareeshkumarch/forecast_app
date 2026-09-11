@@ -283,3 +283,42 @@ def test_an_interval_leans_the_way_the_model_has_been_wrong() -> None:
     )
     assert float(np.min(bands.lower)) < 100.0
     assert float(np.min(bands.worst_case)) < 100.0
+
+
+# --------------------------------------------------- what the rationale claims
+
+
+def _spread(best: ModelKind, runner_up: ModelKind, gap: float) -> list[BacktestResult]:
+    """Five candidates far enough apart that the robust ceiling keeps them all.
+
+    With only the two leaders in range the min-max normalisation stretches
+    whatever separates them across the whole scale, and no pair is ever
+    "close". A smooth spread is what makes a narrow win narrow.
+    """
+    spread = [
+        (best, 10.0),
+        (runner_up, 10.0 + gap),
+        (ModelKind.THETA, 11.0),
+        (ModelKind.SEASONAL_NAIVE, 12.0),
+        (ModelKind.CROSTON, 13.0),
+    ]
+    return [_result(model, wmape=w, mae=w / 2, rmse=w * 0.7) for model, w in spread]
+
+
+def test_a_close_win_only_claims_simplicity_when_the_winner_is_simpler() -> None:
+    candidates = _spread(ModelKind.GRADIENT_BOOSTING, ModelKind.ETS, 0.2)
+
+    selection = select_model(candidates, n_observations=10_000)
+
+    assert selection.winner.result.model is ModelKind.GRADIENT_BOOSTING
+    assert "close behind" in selection.rationale
+    assert "simpler of the two was preferred" not in selection.rationale
+
+
+def test_a_close_win_for_the_simpler_model_still_says_so() -> None:
+    candidates = _spread(ModelKind.NAIVE, ModelKind.ETS, 0.05)
+
+    selection = select_model(candidates, n_observations=10_000)
+
+    assert selection.winner.result.model is ModelKind.NAIVE
+    assert "simpler of the two was preferred" in selection.rationale

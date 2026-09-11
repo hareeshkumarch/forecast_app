@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -234,6 +235,23 @@ class SqlServerAdapter(SqlAdapter):
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 
+#: Quoted text and comments are carved out before the query is searched for
+#: statements, so a keyword that is only ever part of a value or an identifier
+#: does not refuse an import that was always a read.
+_QUOTED_OR_COMMENT = re.compile(
+    r"'(?:[^']|'')*'" r"|\"(?:[^\"]|\"\")*\"" r"|`(?:[^`]|``)*`" r"|--[^\n]*" r"|/\*.*?\*/",
+    re.DOTALL,
+)
+
+#: Matched on word boundaries rather than by padding the query with spaces.
+#: The keyword only had to follow a literal space to be missed, so a bracket
+#: or a newline in front of it — `with x as (delete ... returning 1) select` —
+#: walked a write straight through a filter that only reads are meant to pass.
+_WRITE_STATEMENT = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|call|merge|into)\b"
+)
+
+
 def _reject_non_select(query: str) -> None:
     normalised = query.strip().rstrip(";").lstrip("(").lstrip()
     lowered = normalised.lower()
@@ -241,28 +259,16 @@ def _reject_non_select(query: str) -> None:
     if not lowered.startswith(("select", "with")):
         raise ConnectorError("Only SELECT (or WITH ... SELECT) queries can be imported.")
 
-    if ";" in normalised:
+    bare = _QUOTED_OR_COMMENT.sub(" ", lowered)
+
+    if ";" in bare:
         raise ConnectorError("Multiple statements are not allowed in an import query.")
 
-    forbidden = (
-        "insert ",
-        "update ",
-        "delete ",
-        "drop ",
-        "alter ",
-        "create ",
-        "truncate ",
-        "grant ",
-        "revoke ",
-        "call ",
-        "merge ",
-    )
-    padded = f" {lowered} "
-    for keyword in forbidden:
-        if f" {keyword}" in padded:
-            raise ConnectorError(
-                f"The query contains '{keyword.strip()}', which is not allowed on an import."
-            )
+    found = _WRITE_STATEMENT.search(bare)
+    if found is not None:
+        raise ConnectorError(
+            f"The query contains '{found.group(1)}', which is not allowed on an import."
+        )
 
 
 def _friendly_error(exc: Exception, display_name: str) -> str:

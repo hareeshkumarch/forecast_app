@@ -130,6 +130,41 @@ def test_write_queries_are_rejected(query: str, fragment: str) -> None:
         _reject_non_select(query)
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "with x as (delete from forecast_runs returning 1) select * from x",
+        "with x as (\ndelete from t returning 1) select * from x",
+        "with a as(update t set c=1 returning *) select * from a",
+        "select * into outfile '/tmp/stolen' from users",
+        "with t as (insert into audit values (1) returning *) select * from t",
+    ],
+)
+def test_a_write_hidden_behind_a_bracket_or_a_newline_is_still_rejected(query: str) -> None:
+    """The guard used to look for a keyword with a space in front of it.
+
+    A bracket or a newline in front of `delete` was enough to walk a write
+    through a filter that only reads are meant to pass, using the connector's
+    own credentials against the customer's database.
+    """
+    with pytest.raises(ConnectorError):
+        _reject_non_select(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "select id, created_at, deleted_flag from t",
+        "select * from t where note = 'please delete this row'",
+        "select * from t -- delete later\nwhere id = 1",
+        'select "create" from t',
+        "select * from t /* drop this later */ where id = 1",
+    ],
+)
+def test_a_keyword_inside_a_value_or_a_name_does_not_refuse_a_read(query: str) -> None:
+    _reject_non_select(query)
+
+
 def test_cloud_adapters_without_drivers_stay_not_configured() -> None:
     adapter = build_adapter(
         ConnectorType.SNOWFLAKE,

@@ -47,18 +47,32 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
     return buckets
 
 
+def _step_scale(history: FloatArray) -> float:
+    finite = history[np.isfinite(history)]
+    if finite.size < 2:
+        return 0.0
+    steps = np.abs(np.diff(finite))
+    scale = float(np.median(steps))
+    return scale if scale > 0.0 else float(np.mean(steps))
+
+
 def _volatility_sigma(history: FloatArray, horizon: int) -> FloatArray:
     finite = history[np.isfinite(history)]
 
-    scale = 0.0
-    if finite.size >= 2:
-        steps = np.abs(np.diff(finite))
-        scale = float(np.median(steps))
-        if scale <= 0.0:
-            scale = float(np.mean(steps))
+    scale = _step_scale(history)
+    # Nothing measurable moved, and a band still has to be drawn: a share of
+    # the level stands in. Only for the case where no residual exists at all —
+    # a series that genuinely never moves gets no width from this.
     if scale <= 0.0 and finite.size:
         scale = float(np.max(np.abs(finite))) * 0.1
 
+    return scale * FALLBACK_VOLATILITY_WEIGHT * np.sqrt(np.arange(1, horizon + 1))
+
+
+def _movement_floor(history: FloatArray, horizon: int) -> FloatArray:
+    scale = _step_scale(history)
+    if scale <= 0.0:
+        return np.zeros(horizon)
     return scale * FALLBACK_VOLATILITY_WEIGHT * np.sqrt(np.arange(1, horizon + 1))
 
 
@@ -87,8 +101,42 @@ def _sigma_by_step(
 
     sigmas = np.maximum.accumulate(sigmas)
 
+    # A run that affords one fold measures its spread from a handful of errors,
+    # and a handful of errors can happen to be small. The series' own
+    # step-to-step movement is the other thing known about how far it travels,
+    # and while the residuals are this thin the band does not claim to be
+    # tighter than that.
+    if len(pooled) < MIN_EMPIRICAL_RESIDUALS and history.size:
+        sigmas = np.maximum(sigmas, _movement_floor(history, horizon))
+
     method = "empirical_per_step" if used_empirical >= horizon // 2 else "pooled_sqrt_scaled"
     return sigmas, method
+
+
+def _spread_quantile(coverage: float, residual_count: int) -> float:
+    """How many sigmas 80% is worth, given how few residuals measured sigma.
+
+    A run that affords one fold measures its spread from a handful of errors,
+    and a normal quantile spends that estimate as though it were the truth:
+    the band comes out too narrow and covers well under what it promises. The
+    t quantile prices in the uncertainty of the estimate itself and converges
+    back to the normal one once there are enough residuals to be sure.
+    """
+    probability = 0.5 + coverage / 2.0
+    if residual_count < 2:
+        return float(stats.norm.ppf(probability))
+    return float(stats.t.ppf(probability, residual_count - 1))
+
+
+def _conformal_bounds(residuals: FloatArray, coverage: float) -> tuple[float, float]:
+    ordered = np.sort(residuals)
+    n = ordered.size
+    tail = (1.0 - coverage) / 2.0
+    low_rank = int(np.floor((n + 1) * tail))
+    high_rank = int(np.ceil((n + 1) * (1.0 - tail)))
+    low = float(ordered[max(low_rank, 1) - 1])
+    high = float(ordered[min(high_rank, n) - 1])
+    return low, high
 
 
 def _quantile_offsets(
@@ -99,7 +147,6 @@ def _quantile_offsets(
     if pooled.size < MIN_EMPIRICAL_RESIDUALS:
         return None
 
-    tail = (1.0 - coverage) / 2.0
     lower = np.zeros(horizon)
     upper = np.zeros(horizon)
 
@@ -109,8 +156,12 @@ def _quantile_offsets(
     # forecast low again, and a band centred on it covers the truth from one
     # side only while claiming to do it from both. Kept as they are, the band
     # leans the way the model has been wrong.
-    pooled_low = float(np.quantile(pooled, tail))
-    pooled_high = float(np.quantile(pooled, 1.0 - tail))
+    #
+    # The order statistic is picked the way split conformal picks it, rather
+    # than by interpolating between neighbours: at these sample sizes the
+    # interpolated quantile sits inside the residuals it was fitted on and the
+    # band it draws covers less often than it claims.
+    pooled_low, pooled_high = _conformal_bounds(pooled, coverage)
 
     if pooled_high - pooled_low <= 0:
         return None
@@ -118,8 +169,7 @@ def _quantile_offsets(
     for step in range(horizon):
         bucket = np.array(buckets[step], dtype=float)
         if bucket.size >= MIN_EMPIRICAL_RESIDUALS:
-            step_low = float(np.quantile(bucket, tail))
-            step_high = float(np.quantile(bucket, 1.0 - tail))
+            step_low, step_high = _conformal_bounds(bucket, coverage)
         else:
             spread = np.sqrt(step + 1)
             step_low, step_high = pooled_low * spread, pooled_high * spread
@@ -150,6 +200,7 @@ def build_intervals(
     )
 
     sigmas, method = _sigma_by_step(backtest, horizon, past)
+    residual_count = sum(len(bucket) for bucket in _residuals_by_step(backtest, horizon))
 
     scenario_confidence = settings.scenario_confidence
     empirical = _quantile_offsets(backtest, horizon, confidence_level)
@@ -160,8 +211,8 @@ def build_intervals(
         scenario_low, scenario_high = scenario
         method = "empirical_quantiles"
     else:
-        z_interval = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
-        z_scenario = float(stats.norm.ppf(0.5 + scenario_confidence / 2.0))
+        z_interval = _spread_quantile(confidence_level, residual_count)
+        z_scenario = _spread_quantile(scenario_confidence, residual_count)
         interval_low, interval_high = -z_interval * sigmas, z_interval * sigmas
         scenario_low, scenario_high = -z_scenario * sigmas, z_scenario * sigmas
 

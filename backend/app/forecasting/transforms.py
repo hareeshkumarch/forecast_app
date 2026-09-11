@@ -13,29 +13,50 @@ from app.models.enums import ModelKind
 FloatArray = npt.NDArray[np.float64]
 
 
+#: How far the estimated exponent has to sit from 1 before a power transform
+#: is worth applying at all. Below this the transform is within rounding of
+#: the identity and only costs a round trip.
+POWER_LAMBDA_MARGIN = 0.05
+
+
 @dataclass(slots=True)
 class Transform:
     kind: str
     shift: float = 0.0
     residual_variance: float = 0.0
+    lam: float = 1.0
 
     @property
     def active(self) -> bool:
-        return self.kind == "log"
+        return self.kind in {"log", "power"}
 
     def forward(self, values: FloatArray) -> FloatArray:
         array = np.asarray(values, dtype=float)
         if not self.active:
             return array.copy()
-        return np.log(np.maximum(array + self.shift, 1e-9))
+        shifted = np.maximum(array + self.shift, 1e-9)
+        if self.kind == "log":
+            return np.log(shifted)
+        return (np.power(shifted, self.lam) - 1.0) / self.lam
 
     def inverse(self, values: FloatArray) -> FloatArray:
         array = np.asarray(values, dtype=float)
         if not self.active:
             return array.copy()
 
-        correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
-        return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
+        if self.kind == "log":
+            correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
+            return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
+
+        # Back on the original scale the inverse of a power transform is the
+        # median, not the mean. The second-order term is what turns one into
+        # the other, and it is the same correction the log branch makes.
+        base = np.maximum(self.lam * array + 1.0, 1e-9)
+        mean = np.power(base, 1.0 / self.lam)
+        if self.residual_variance > 0.0:
+            widen = 1.0 + self.residual_variance * (1.0 - self.lam) / (2.0 * np.square(base))
+            mean = mean * np.clip(widen, 0.5, 2.0)
+        return np.where(np.isfinite(mean), mean, 0.0) - self.shift
 
 
 @dataclass(slots=True)
@@ -68,10 +89,14 @@ class TransformedForecaster:
         return self.transform.inverse(np.asarray(raw, dtype=float).ravel())
 
 
-def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
-    if profile.transform != "log":
-        return Transform(kind="none")
+def _step_variance(transformed: FloatArray) -> float:
+    if transformed.size <= 2:
+        return 0.0
+    variance = float(np.var(np.diff(transformed), ddof=1))
+    return variance if np.isfinite(variance) else 0.0
 
+
+def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if finite.size == 0:
@@ -80,7 +105,22 @@ def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
     minimum = float(np.min(finite))
     shift = 0.0 if minimum > 0 else abs(minimum) + 1.0
 
-    transformed = np.log(np.maximum(finite + shift, 1e-9))
-    variance = float(np.var(np.diff(transformed), ddof=1)) if transformed.size > 2 else 0.0
+    if profile.transform == "log":
+        transformed = np.log(np.maximum(finite + shift, 1e-9))
+        return Transform(
+            kind="log", shift=shift, residual_variance=min(_step_variance(transformed), 1.0)
+        )
 
-    return Transform(kind="log", shift=shift, residual_variance=min(variance, 1.0))
+    # The exponent the profile measured is used as measured. Collapsing it to
+    # log-or-nothing left a series whose variance grows like a square root
+    # fitted on the raw scale, which is the case the search was run to find.
+    lam = float(profile.box_cox_lambda)
+    if profile.transform != "none" or not np.isfinite(lam):
+        return Transform(kind="none")
+    if abs(lam - 1.0) < POWER_LAMBDA_MARGIN or lam <= 0.0:
+        return Transform(kind="none")
+
+    transformed = (np.power(np.maximum(finite + shift, 1e-9), lam) - 1.0) / lam
+    return Transform(
+        kind="power", shift=shift, residual_variance=_step_variance(transformed), lam=lam
+    )

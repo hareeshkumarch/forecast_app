@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -8,7 +9,7 @@ from app.forecasting.backtest import BacktestResult, FoldResult, _diverged, plan
 from app.forecasting.diagnostics import detect_changepoints, minimum_history, profile_series
 from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
 from app.forecasting.frequency import add_periods
-from app.forecasting.models import build_candidates
+from app.forecasting.models import build_candidate, build_candidates
 from app.forecasting.selection import metric_weights_for, penalty_scale, select_model
 from app.forecasting.transforms import build_transform
 from app.models.enums import ForecastFrequency, ModelKind
@@ -312,3 +313,80 @@ def test_a_gap_in_the_history_does_not_hide_the_step() -> None:
 def test_too_little_history_to_judge_reports_nothing() -> None:
     for size in (0, 1, 8, 15):
         assert detect_changepoints(np.arange(size, dtype=float)) == []
+
+
+def test_ensemble_members_are_built_the_way_the_backtest_built_them() -> None:
+    from app.forecasting.models import EnsembleForecaster
+
+    values = seasonal_series(72, 12)
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+    asked: list[ModelKind] = []
+
+    def builder(member: ModelKind, window: np.ndarray, window_periods: list[date]):
+        asked.append(member)
+        assert window.size == values.size
+        assert window_periods == periods
+        return build_candidate(member, MONTHLY, None, profile_series(window, MONTHLY))
+
+    model = EnsembleForecaster(
+        MONTHLY,
+        profile_series(values, MONTHLY),
+        members=(ModelKind.THETA, ModelKind.ETS),
+        member_builder=builder,
+    )
+    model.fit(values, periods)
+
+    assert asked == [ModelKind.THETA, ModelKind.ETS]
+
+
+def test_ensemble_without_a_builder_still_fits_on_its_own() -> None:
+    from app.forecasting.models import EnsembleForecaster
+
+    values = seasonal_series(72, 12)
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+
+    model = EnsembleForecaster(MONTHLY, profile_series(values, MONTHLY))
+    model.fit(values, periods)
+
+    assert len(model.params["members"]) >= 2
+
+
+def test_a_measured_exponent_short_of_log_still_gets_its_transform() -> None:
+    from app.forecasting.diagnostics import SeriesProfile
+    from app.forecasting.transforms import Transform
+
+    values = np.linspace(100.0, 4_000.0, 80)
+    profile = profile_series(values, MONTHLY)
+    profile = replace(profile, transform="none", box_cox_lambda=0.5)
+
+    transform = build_transform(values, profile)
+
+    assert isinstance(transform, Transform)
+    assert transform.kind == "power"
+    assert transform.lam == 0.5
+    assert transform.active
+    restored = transform.inverse(transform.forward(values))
+    assert np.allclose(restored, values, rtol=0.05)
+    assert isinstance(profile, SeriesProfile)
+
+
+def test_an_exponent_of_one_is_left_on_the_raw_scale() -> None:
+    values = np.linspace(100.0, 4_000.0, 80)
+    profile = replace(profile_series(values, MONTHLY), transform="none", box_cox_lambda=1.0)
+
+    transform = build_transform(values, profile)
+
+    assert transform.kind == "none"
+    assert not transform.active
+    assert np.array_equal(transform.forward(values), values)
+
+
+def test_a_log_series_is_still_fitted_on_logs() -> None:
+    t = np.arange(72)
+    values = 10_000 * (1.02**t) * (1 + 0.3 * np.sin(2 * np.pi * t / 12))
+    profile = profile_series(values, MONTHLY)
+
+    transform = build_transform(values, profile)
+
+    assert profile.transform == "log"
+    assert transform.kind == "log"

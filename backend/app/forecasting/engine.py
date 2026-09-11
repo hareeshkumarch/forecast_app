@@ -588,8 +588,20 @@ def run_forecast(
         )
     final_model: Forecaster
     if winner_kind is ModelKind.ENSEMBLE and combined is not None:
+
+        def build_member(
+            member: ModelKind, window: FloatArray, window_periods: list[date]
+        ) -> Forecaster:
+            return _make_factory(member, frequency, model_options, source, feature_cache)(
+                window, window_periods
+            )
+
         final_model = EnsembleForecaster(
-            frequency, profile, members=combined.members, weights=combined.weights
+            frequency,
+            profile,
+            members=combined.members,
+            weights=combined.weights,
+            member_builder=build_member,
         )
     else:
         final_model = _make_factory(

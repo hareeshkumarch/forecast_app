@@ -111,7 +111,7 @@ def _resolve_api_key() -> str | None:
     return settings.llm_api_key or settings.anthropic_api_key
 
 
-DEFAULT_MODELS = {"anthropic": "claude-3-5-sonnet-20241022"}
+DEFAULT_MODELS = {"anthropic": "claude-opus-5"}
 FALLBACK_MODEL = "gpt-4o-mini"
 
 

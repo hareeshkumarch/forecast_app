@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Protocol, cast
@@ -65,6 +66,22 @@ class Forecaster(Protocol):
 
     @property
     def min_observations(self) -> int: ...
+
+
+MemberBuilder = Callable[[ModelKind, FloatArray, list[date]], Forecaster]
+
+#: How fast an observation loses its say, as a fraction of the window: at 1.0
+#: the oldest row counts half of the newest, at 0.35 about a tenth. 0.0 keeps
+#: every row equal, and is in the list so a stationary series can choose it.
+RECENCY_HALF_LIVES = [0.0, 1.0, 0.35]
+
+
+def recency_weights(n_rows: int, half_life_fraction: float) -> FloatArray | None:
+    if n_rows <= 1 or half_life_fraction <= 0.0:
+        return None
+    half_life = max(half_life_fraction * n_rows, 1.0)
+    age = np.arange(n_rows - 1, -1, -1, dtype=np.float64)
+    return np.power(0.5, age / half_life)
 
 
 def _aicc(log_likelihood: float, n_params: int, n_observations: int) -> float:
@@ -864,21 +881,24 @@ class GradientBoostingForecaster:
                 "learning_rate": rates,
                 "min_samples_leaf": leaves,
                 "l2_regularization": [0.0, 1.0, 5.0],
+                "recency_half_life": RECENCY_HALF_LIVES,
             }
         )
 
     def _estimator(self, params: dict[str, object], n_rows: int) -> FittedModel:
         from sklearn.ensemble import HistGradientBoostingRegressor
 
-        early = n_rows >= 80
+        # Left off deliberately. The estimator's own early stopping holds out a
+        # shuffled slice, so it decides when to stop against rows that come
+        # after the ones it keeps training on. Capacity is settled instead by
+        # the search in `tuning`, which splits the history in time order.
         return HistGradientBoostingRegressor(
             max_depth=as_int(params["max_depth"], 3),
             learning_rate=as_float(params["learning_rate"], 0.06),
             min_samples_leaf=as_int(params["min_samples_leaf"], 2),
             l2_regularization=as_float(params["l2_regularization"], 0.0),
             max_iter=int(np.clip(n_rows * 6, 120, 600)),
-            early_stopping=early,
-            validation_fraction=0.15 if early else None,
+            early_stopping=False,
             random_state=RANDOM_STATE,
         )
 
@@ -934,7 +954,8 @@ class GradientBoostingForecaster:
             """
             keep = self._kept_columns(params, from_driver)
             estimator = self._estimator(params, start)
-            estimator.fit(matrix[:start][:, keep], target[:start])
+            weights = recency_weights(start, as_float(params.get("recency_half_life"), 0.0))
+            estimator.fit(matrix[:start][:, keep], target[:start], sample_weight=weights)
             return self._recursive_predictions(estimator, keep, spec, y, periods, rows, start, end)
 
         horizon = self.profile.seasonal_period if self.profile else 6
@@ -951,7 +972,13 @@ class GradientBoostingForecaster:
 
         keep = self._kept_columns(result.params, from_driver)
         model = self._estimator(result.params, n_rows)
-        model.fit(matrix[:, keep], target)
+        model.fit(
+            matrix[:, keep],
+            target,
+            sample_weight=recency_weights(
+                n_rows, as_float(result.params.get("recency_half_life"), 0.0)
+            ),
+        )
 
         used = [
             name
@@ -1061,9 +1088,18 @@ class EnsembleForecaster:
         ModelKind.SARIMAX,
     )
     weights: dict[ModelKind, float] | None = None
+    #: Builds a member the way the backtest built it — same options, same
+    #: driver columns, same variance transform. Without it a member is rebuilt
+    #: bare, and the combination that ships is not the one that was scored.
+    member_builder: MemberBuilder | None = None
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
     _fitted: list[Forecaster] = field(default_factory=list, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
+
+    def _build(self, member: ModelKind, y: FloatArray, periods: list[date]) -> Forecaster:
+        if self.member_builder is not None:
+            return self.member_builder(member, y, periods)
+        return build_candidate(member, self.frequency, None, self.profile)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
         fitted: list[Forecaster] = []
@@ -1072,7 +1108,7 @@ class EnsembleForecaster:
 
         for member in self.members:
             try:
-                model = build_candidate(member, self.frequency, None, self.profile)
+                model = self._build(member, y, periods)
                 if y.size < model.min_observations:
                     raise ValueError("not enough history")
                 model.fit(y, periods)
