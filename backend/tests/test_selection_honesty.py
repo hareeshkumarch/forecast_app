@@ -1,11 +1,3 @@
-"""Ranking candidates on what was actually measured.
-
-Four ways the comparison was quietly wrong: a metric the run had decided not
-to use could still veto a model, a level nobody tabulated was scored as 80%,
-the ensemble was weighed using the folds it was about to be judged on, and one
-bad fold threw away a model that fitted everywhere else.
-"""
-
 from __future__ import annotations
 
 import math
@@ -48,14 +40,7 @@ def _result(
     return result
 
 
-# --------------------------------------------------- a metric the run is not using
-
-
 def test_a_model_is_not_vetoed_by_a_metric_the_run_does_not_score_by() -> None:
-    """On intermittent demand the validation windows can total zero, so wMAPE
-    is undefined — and Croston, the model that exists for exactly that series,
-    was dropped before selection began by a metric the run had already decided
-    against."""
     croston = _result(ModelKind.CROSTON, wmape=float("nan"), mae=2.0, rmse=3.0)
     naive = _result(ModelKind.NAIVE, wmape=float("nan"), mae=9.0, rmse=11.0)
 
@@ -83,9 +68,6 @@ def test_the_rationale_says_it_in_a_measure_the_run_actually_has() -> None:
     assert "nan" not in selection.rationale.lower()
 
 
-# ------------------------------------------------------------- the actual level
-
-
 @pytest.mark.parametrize(
     ("level", "expected"),
     [(0.5, 0.6745), (0.8, 1.2816), (0.9, 1.6449), (0.95, 1.9600), (0.99, 2.5758)],
@@ -95,13 +77,8 @@ def test_the_tabulated_levels_are_reproduced_exactly(level: float, expected: flo
 
 
 def test_a_level_nobody_tabulated_is_not_scored_as_eighty_percent() -> None:
-    """The table answered anything it did not have with the 80% z, so a 92%
-    interval was costed as though it were an 80% one."""
     assert normal_quantile(0.92) != pytest.approx(normal_quantile(0.8))
     assert normal_quantile(0.8) < normal_quantile(0.92) < normal_quantile(0.95)
-
-
-# ------------------------------------------------------------- the ensemble
 
 
 def _member(model: ModelKind, per_fold: list[list[float]], truth: list[list[float]]):
@@ -130,15 +107,6 @@ def _member(model: ModelKind, per_fold: list[list[float]], truth: list[list[floa
 
 
 def test_the_weights_a_fold_is_scored_under_never_saw_that_fold() -> None:
-    """Weighing the members by an error that includes the fold being scored
-    tunes the combination on the window it is about to be judged over — so the
-    ensemble beats its own best member on paper more often than in use, and
-    that comparison is what decides whether it is offered at all.
-
-    One member is exact on the last fold and badly wrong elsewhere; the other
-    is the reverse. Whole-backtest weights would trust each one exactly where
-    it happens to be right, which is the flattery.
-    """
     truth = [[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]
     left = _member(ModelKind.THETA, [[10.0, 10.0], [10.0, 10.0], [30.0, 30.0]], truth)
     right = _member(ModelKind.NAIVE, [[30.0, 30.0], [30.0, 30.0], [10.0, 10.0]], truth)
@@ -149,9 +117,6 @@ def test_the_weights_a_fold_is_scored_under_never_saw_that_fold() -> None:
     everything = combination._member_errors(aligned)
     without_last = combination._member_errors(aligned, skip=2)
 
-    # Left is wrong only on the last fold, so leaving it out makes left look
-    # perfect and right look worse — the opposite of what the all-folds
-    # numbers say, which is the whole point.
     assert everything[0] < everything[1]
     assert without_last[0] == pytest.approx(0.0)
     assert without_last[1] > without_last[0]
@@ -171,9 +136,6 @@ def test_a_member_that_is_useless_everywhere_gets_little_weight() -> None:
     share = combination.inverse_error_weights(combination._member_errors(aligned, skip=0))
 
     assert share[0] > share[1]
-
-
-# -------------------------------------------------------------- a failed fold
 
 
 class _FailsEarly(Forecaster):
@@ -208,9 +170,6 @@ def _calendar(n: int):
 
 
 def test_a_model_that_fails_one_fold_is_still_measured_on_the_rest() -> None:
-    """SARIMAX fails to converge on the shortest early window and fits every
-    later one. Discarding the candidate outright threw away the model that
-    would have won, and reported one fold's reason as the whole story."""
     y = np.arange(30, dtype=float) * 10.0
     seen: list[int] = []
 
@@ -246,14 +205,7 @@ def test_a_model_that_fails_most_folds_is_not_ranked_on_the_easy_ones() -> None:
     assert "too little to compare" in result.failure_reason
 
 
-# ---------------------------------------------------------- an interval that leans
-
-
 def test_an_interval_leans_the_way_the_model_has_been_wrong() -> None:
-    """Centring the residuals threw away the one thing an empirical interval
-    knows that a formula does not. A model that forecast low in every fold will
-    forecast low again, and a band centred on it covers the truth from one side
-    while claiming to do it from both."""
     biased = BacktestResult(model=ModelKind.NAIVE)
     biased.folds = [
         FoldResult(
@@ -285,16 +237,7 @@ def test_an_interval_leans_the_way_the_model_has_been_wrong() -> None:
     assert float(np.min(bands.worst_case)) < 100.0
 
 
-# --------------------------------------------------- what the rationale claims
-
-
 def _spread(best: ModelKind, runner_up: ModelKind, gap: float) -> list[BacktestResult]:
-    """Five candidates far enough apart that the robust ceiling keeps them all.
-
-    With only the two leaders in range the min-max normalisation stretches
-    whatever separates them across the whole scale, and no pair is ever
-    "close". A smooth spread is what makes a narrow win narrow.
-    """
     spread = [
         (best, 10.0),
         (runner_up, 10.0 + gap),

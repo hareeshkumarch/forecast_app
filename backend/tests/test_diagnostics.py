@@ -236,8 +236,6 @@ def test_missing_optional_models_are_reported_not_hidden() -> None:
         assert ModelKind.PROPHET not in missing
     else:
         assert ModelKind.PROPHET in missing
-        # Reported to the user in terms of their forecast, and to whoever runs
-        # the deployment in terms of the install. See test_optional_models.py.
         status = missing[ModelKind.PROPHET]
         assert "Prophet" in status.reason
         assert "requirements-optional" not in status.reason
@@ -295,9 +293,6 @@ def test_a_step_is_found_where_the_level_actually_moved() -> None:
 
 
 def test_a_larger_step_is_no_harder_to_find_than_a_small_one() -> None:
-    # Scoring against the spread of the whole series made this the failure case:
-    # the break inflated the yardstick it was measured with, so the bigger the
-    # step the better it hid.
     small = np.concatenate([np.full(12, 100.0), np.full(12, 180.0)])
     large = np.concatenate([np.full(12, 100.0), np.full(12, 900.0)])
 

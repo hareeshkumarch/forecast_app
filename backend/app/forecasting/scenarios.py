@@ -38,8 +38,15 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
         for step, actual, predicted in zip(fold.steps(), fold.y_true, fold.y_pred, strict=False):
             if step > horizon:
                 continue
-            if np.isfinite(actual) and np.isfinite(predicted):
-                buckets[step - 1].append(actual - predicted)
+            if not (np.isfinite(actual) and np.isfinite(predicted)):
+                continue
+            # Both sides finite is not enough: the difference between them can
+            # still overflow, and one inf residual makes every sigma built
+            # from it inf too.
+            with np.errstate(over="ignore", invalid="ignore"):
+                residual = actual - predicted
+            if np.isfinite(residual):
+                buckets[step - 1].append(residual)
     return buckets
 
 
@@ -47,9 +54,22 @@ def _step_scale(history: FloatArray) -> float:
     finite = history[np.isfinite(history)]
     if finite.size < 2:
         return 0.0
-    steps = np.abs(np.diff(finite))
+    # Two finite values can still overflow the difference between them, and an
+    # infinite scale here becomes an infinite band, which is not a number the
+    # API can serialise.
+    with np.errstate(over="ignore", invalid="ignore"):
+        steps = np.abs(np.diff(finite))
+    steps = steps[np.isfinite(steps)]
+    if steps.size == 0:
+        return 0.0
     scale = float(np.median(steps))
-    return scale if scale > 0.0 else float(np.mean(steps))
+    if scale <= 0.0:
+        scale = float(np.mean(steps))
+    return scale if np.isfinite(scale) else 0.0
+
+
+def _finite_band(values: FloatArray, fallback: FloatArray) -> FloatArray:
+    return np.where(np.isfinite(values), values, fallback)
 
 
 def _volatility_sigma(history: FloatArray, horizon: int) -> FloatArray:
@@ -70,9 +90,12 @@ def _movement_floor(history: FloatArray, horizon: int) -> FloatArray:
 
 
 def _sigma_by_step(
-    result: BacktestResult, horizon: int, history: FloatArray
+    result: BacktestResult,
+    horizon: int,
+    history: FloatArray,
+    buckets: list[list[float]] | None = None,
 ) -> tuple[FloatArray, str]:
-    buckets = _residuals_by_step(result, horizon)
+    buckets = _residuals_by_step(result, horizon) if buckets is None else buckets
     pooled = [value for bucket in buckets for value in bucket]
 
     if not pooled:
@@ -120,9 +143,12 @@ def _conformal_bounds(residuals: FloatArray, coverage: float) -> tuple[float, fl
 
 
 def _quantile_offsets(
-    result: BacktestResult, horizon: int, coverage: float
+    result: BacktestResult,
+    horizon: int,
+    coverage: float,
+    buckets: list[list[float]] | None = None,
 ) -> tuple[FloatArray, FloatArray] | None:
-    buckets = _residuals_by_step(result, horizon)
+    buckets = _residuals_by_step(result, horizon) if buckets is None else buckets
     pooled = np.array([value for bucket in buckets for value in bucket], dtype=float)
     if pooled.size < MIN_EMPIRICAL_RESIDUALS:
         return None
@@ -168,12 +194,13 @@ def build_intervals(
         else np.empty(0, dtype=float)
     )
 
-    sigmas, method = _sigma_by_step(backtest, horizon, past)
-    residual_count = sum(len(bucket) for bucket in _residuals_by_step(backtest, horizon))
+    buckets = _residuals_by_step(backtest, horizon)
+    sigmas, method = _sigma_by_step(backtest, horizon, past, buckets)
+    residual_count = sum(len(bucket) for bucket in buckets)
 
     scenario_confidence = settings.scenario_confidence
-    empirical = _quantile_offsets(backtest, horizon, confidence_level)
-    scenario = _quantile_offsets(backtest, horizon, scenario_confidence)
+    empirical = _quantile_offsets(backtest, horizon, confidence_level, buckets)
+    scenario = _quantile_offsets(backtest, horizon, scenario_confidence, buckets)
 
     if empirical is not None and scenario is not None:
         interval_low, interval_high = empirical
@@ -207,6 +234,17 @@ def build_intervals(
         lower = np.maximum(lower, 0.0)
         worst = np.maximum(worst, 0.0)
         worst = np.minimum(worst, lower)
+
+    # A residual or a history value large enough to overflow leaves inf or nan
+    # in the offsets, and a band that is not a number cannot be rendered: JSON
+    # has no way to write one, and the request for the points fails as a 500
+    # rather than as the forecast it is. A step whose width could not be
+    # measured is published at the point forecast, with no width claimed.
+    lower = _finite_band(lower, point_forecast)
+    upper = _finite_band(upper, point_forecast)
+    worst = _finite_band(worst, lower)
+    best = _finite_band(best, upper)
+    sigmas = _finite_band(sigmas, np.zeros_like(sigmas))
 
     return IntervalBands(
         lower=lower,

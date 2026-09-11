@@ -235,14 +235,63 @@ class SqlServerAdapter(SqlAdapter):
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 
+_DOLLAR_QUOTED = re.compile(r"\$(\w*)\$.*?\$\1\$", re.DOTALL)
+
 _QUOTED_OR_COMMENT = re.compile(
-    r"'(?:[^']|'')*'" r"|\"(?:[^\"]|\"\")*\"" r"|`(?:[^`]|``)*`" r"|--[^\n]*" r"|/\*.*?\*/",
+    r"'(?:[^'\\]|\\.|'')*'"
+    r"|\"(?:[^\"\\]|\\.|\"\")*\""
+    r"|`(?:[^`\\]|\\.|``)*`"
+    r"|--[^\n]*"
+    r"|\#[^\n]*",
     re.DOTALL,
 )
+
+
+_ROW_LOCK = re.compile(r"\bfor\s+(?:no\s+key\s+)?(?:update|share|key\s+share)\b")
 
 _WRITE_STATEMENT = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|call|merge|into)\b"
 )
+
+
+def _strip_block_comments(lowered: str) -> str:
+    """Remove `/* ... */`, refusing the forms the dialects disagree about.
+
+    MySQL runs what it finds in `/*! ... */` and does not nest comments;
+    PostgreSQL nests them and runs neither. A query whose meaning depends on
+    which of those is true is not one to guess at, so both are refused rather
+    than stripped into something that reads as inert here and executes there.
+    """
+    out: list[str] = []
+    depth = 0
+    i = 0
+    n = len(lowered)
+    while i < n:
+        if lowered.startswith("/*", i):
+            if lowered.startswith("/*!", i):
+                raise ConnectorError("An executable comment is not allowed in an import query.")
+            depth += 1
+            if depth > 1:
+                raise ConnectorError("A nested comment is not allowed in an import query.")
+            i += 2
+            continue
+        if lowered.startswith("*/", i) and depth:
+            depth -= 1
+            out.append(" ")
+            i += 2
+            continue
+        if not depth:
+            out.append(lowered[i])
+        i += 1
+
+    if depth:
+        raise ConnectorError("An unterminated comment is not allowed in an import query.")
+    return "".join(out)
+
+
+def _strip_literals(lowered: str) -> str:
+    bare = _strip_block_comments(_DOLLAR_QUOTED.sub(" ", lowered))
+    return _QUOTED_OR_COMMENT.sub(" ", bare)
 
 
 def _reject_non_select(query: str) -> None:
@@ -252,10 +301,17 @@ def _reject_non_select(query: str) -> None:
     if not lowered.startswith(("select", "with")):
         raise ConnectorError("Only SELECT (or WITH ... SELECT) queries can be imported.")
 
-    bare = _QUOTED_OR_COMMENT.sub(" ", lowered)
+    bare = _strip_literals(lowered)
+
+    if "'" in bare or '"' in bare or "`" in bare:
+        raise ConnectorError("An unbalanced quote is not allowed in an import query.")
 
     if ";" in bare:
         raise ConnectorError("Multiple statements are not allowed in an import query.")
+
+    # `for update` takes a row lock on rows this read returns, so it is a read
+    # and not the `update` the next check is looking for.
+    bare = _ROW_LOCK.sub(" ", bare)
 
     found = _WRITE_STATEMENT.search(bare)
     if found is not None:

@@ -109,9 +109,6 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
 
     types = response.json()
 
-    # Every connector offered in the rail must reach the modal, so adding one
-    # cannot silently leave it unconfigurable. CSV is deliberately absent —
-    # files arrive through upload, not through a connection.
     assert {item["type"] for item in types} == {kind.value for kind in RAIL_ORDER}
     assert set(RAIL_ORDER) <= set(ADAPTERS), "a rail entry with no adapter would 500"
     assert all(item["fields"] for item in types), "a type with no fields cannot be configured"
@@ -125,13 +122,6 @@ async def test_connector_types_drive_the_modal(client: AsyncClient) -> None:
 
 
 async def test_a_run_past_the_first_page_is_still_reachable(client: AsyncClient) -> None:
-    """
-    The list used to stop at fifty with no way to ask for the fifty-first.
-
-    Nothing said so: a workspace of forty-seven runs and a workspace of five
-    hundred looked identical, and the screen's own counter reported the cap as
-    though it were the truth.
-    """
     upload = await client.post(
         "/api/datasets/upload",
         files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
@@ -166,7 +156,6 @@ async def test_a_run_past_the_first_page_is_still_reachable(client: AsyncClient)
 
 
 async def test_searching_runs_reaches_past_the_page_in_the_browser(client: AsyncClient) -> None:
-    """Searching a truncated list reported that older runs did not exist."""
     upload = await client.post(
         "/api/datasets/upload",
         files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
@@ -187,7 +176,6 @@ async def test_searching_runs_reaches_past_the_page_in_the_browser(client: Async
             )
         await session.commit()
 
-    # Oldest first, so "Needle" sits outside a one-row page.
     page = (await client.get("/api/forecasts", params={"limit": 1})).json()
     assert page["rows"][0]["name"] != "Needle"
 
@@ -195,7 +183,6 @@ async def test_searching_runs_reaches_past_the_page_in_the_browser(client: Async
     assert found["total"] == 1
     assert found["rows"][0]["name"] == "Needle"
 
-    # And the counters describe the search rather than the whole workspace.
     assert found["counts"]["all"] == 1
 
 
@@ -211,20 +198,11 @@ async def test_the_data_screen_s_totals_are_over_everything_held(client: AsyncCl
     assert len(page["rows"]) == 2, "a page"
     assert page["total"] == 4, "of four"
     assert page["ready"] == 4
-    # The figures the screen reports above the table answer "how much data do
-    # we hold", which the two rows on screen cannot.
     assert page["row_count"] == sum(row["row_count"] for row in page["rows"]) * 2
     assert page["file_size_bytes"] > sum(row["file_size_bytes"] for row in page["rows"])
 
 
 async def test_deleting_a_dataset_reclaims_the_files_it_owned(client: AsyncClient) -> None:
-    """
-    The row went and the bytes stayed.
-
-    Nothing else knew those files existed once the row naming them was gone, so
-    every delete leaked an upload and a parquet for ever — and the screen that
-    offers the delete reports how much disk the uploads take up.
-    """
     upload = await client.post(
         "/api/datasets/upload",
         files={"file": ("throwaway.csv", generate_csv_bytes(), "text/csv")},
@@ -245,12 +223,6 @@ async def test_deleting_a_dataset_reclaims_the_files_it_owned(client: AsyncClien
 
 
 async def test_a_connector_can_be_corrected_after_it_is_saved(client: AsyncClient) -> None:
-    """
-    A wrong host or a rotated password used to be permanent.
-
-    The route to fix it existed and nothing called it, so the only way out was
-    a second connector with a slightly different name.
-    """
     created = await client.post(
         "/api/connectors",
         json={
@@ -282,12 +254,6 @@ async def test_a_connector_can_be_corrected_after_it_is_saved(client: AsyncClien
 async def test_deleting_a_connector_keeps_what_was_imported_through_it(
     client: AsyncClient,
 ) -> None:
-    """
-    Retiring a connection is not a reason to lose the data that came through it.
-
-    Once a table has landed it is a dataset like any other, with forecasts
-    built on it, so the connector goes and the dataset stays.
-    """
     created = await client.post(
         "/api/connectors",
         json={
@@ -309,7 +275,6 @@ async def test_deleting_a_connector_keeps_what_was_imported_through_it(
     assert (await client.get(f"/api/connectors/{connector_id}")).status_code == 404
     assert (await client.get(f"/api/datasets/{dataset_id}")).status_code == 200
 
-    # And a second delete says so rather than pretending it worked.
     assert (await client.delete(f"/api/connectors/{connector_id}")).status_code == 404
 
 
@@ -467,11 +432,6 @@ async def test_dashboard_summary_returns_six_kpis(client: AsyncClient) -> None:
 async def test_a_first_run_does_not_caption_a_comparison_it_never_made(
     client: AsyncClient,
 ) -> None:
-    """A caption naming a comparison with no number beside it reads as a broken card.
-
-    On a first run there is no previous run, so three of the six cards used to
-    print a bare "vs previous run" under the value and nothing else.
-    """
     await _seed_and_run(client)
 
     body = (await client.get("/api/dashboard/summary")).json()
@@ -484,7 +444,6 @@ async def test_a_first_run_does_not_caption_a_comparison_it_never_made(
             kpi["delta_display"] is not None
         ), f"{kpi['key']} says {label!r} with nothing to compare against"
 
-    # The window caption under Actual YTD is not a comparison and stands alone.
     actual = next(kpi for kpi in body["kpis"] if kpi["key"] == "actual_ytd")
     assert actual["comparison_label"], "the actual window is worth stating on its own"
 
@@ -545,10 +504,6 @@ async def test_inverted_date_range_is_rejected(client: AsyncClient) -> None:
 
 
 async def test_breakdowns_come_from_the_run_and_add_up(client: AsyncClient) -> None:
-    """
-    The splits are whatever columns this run actually has, so the test asks the
-    summary which ones exist rather than assuming a region and a category.
-    """
     await _seed_and_run(client)
 
     summary = (await client.get("/api/dashboard/summary")).json()
@@ -596,10 +551,6 @@ async def test_insights_are_generated_from_the_run(client: AsyncClient) -> None:
 
 
 async def test_insights_can_be_reworded_and_put_back(client: AsyncClient, monkeypatch) -> None:
-    """
-    The rewriter has to work against a finished run: a key added afterwards is
-    worth nothing if applying it means refitting every model again.
-    """
     await _seed_and_run(client)
 
     def stub(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
@@ -621,8 +572,6 @@ async def test_insights_can_be_reworded_and_put_back(client: AsyncClient, monkey
     assert all(item["title"].startswith("Reworded: ") for item in rewritten["items"])
     assert all(item["llm_rewritten"] for item in rewritten["items"])
 
-    # Twice over must not compound: the rewriter always starts from the
-    # platform's own words, not from its own previous answer.
     again = (
         await client.post("/api/insights/rewrite", json={"llm_api_key": "k", "llm_model": "stub-1"})
     ).json()
@@ -646,8 +595,6 @@ async def test_checking_a_provider_without_a_key_says_so(client: AsyncClient) ->
     ("fmt", "magic", "media"),
     [
         ("csv", b"series,period,", "text/csv"),
-        # A PDF that a reader will not open is worse than no PDF, so the file
-        # is checked for what it claims to be rather than merely for bytes.
         ("pdf", b"%PDF-", "application/pdf"),
     ],
 )
@@ -677,7 +624,6 @@ async def test_the_pdf_report_carries_the_run_it_describes(client: AsyncClient) 
 
     assert body.startswith(b"%PDF-")
     assert body.rstrip().endswith(b"%%EOF"), "a truncated PDF opens as a damaged file"
-    # The title is metadata, so it survives compression of the page streams.
     assert run["name"].encode() in body
     assert len(body) > 2_000, "a report with no content would still be a valid PDF"
 
@@ -713,11 +659,6 @@ async def test_cancelling_an_unknown_run_is_a_clean_404(client: AsyncClient) -> 
 
 
 async def test_a_leading_column_in_the_upload_is_found_and_reported(client: AsyncClient) -> None:
-    """
-    End to end: a spare numeric column that genuinely leads the target should
-    be picked up from the upload without anybody configuring anything, and the
-    run should say so in words the reader can act on.
-    """
     rng = np.random.default_rng(5)
     n, lag = 84, 6
     driver = rng.normal(0.0, 1.0, n)
@@ -775,8 +716,6 @@ async def _forecast_csv(client: AsyncClient, name: str, rows: list[str], **run: 
             pass
 
     detail = await client.get(f"/api/forecasts/{run_id}")
-    # The endpoint itself is the assertion: a metric that could not be measured
-    # used to reach the response as a NaN, and `json.dumps` refuses those.
     assert detail.status_code == 200, detail.text
     return detail.json()
 
@@ -784,12 +723,6 @@ async def _forecast_csv(client: AsyncClient, name: str, rows: list[str], **run: 
 async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
     client: AsyncClient,
 ) -> None:
-    """
-    A discontinued line, or one that has not launched yet. Every error measure
-    divides by the series total, so the fits report an AICc of -Infinity — which
-    Postgres rejects inside a JSON column, failing the whole run with a message
-    naming a token nobody wrote.
-    """
     rows = ["month,value"] + [
         f"{date(2021, 1, 1) + relativedelta(months=index):%Y-%m-%d},0" for index in range(36)
     ]
@@ -801,13 +734,9 @@ async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
     summary = (await client.get("/api/dashboard/summary", params={"run_id": detail["id"]})).json()
     shown = {kpi["key"]: kpi["display_value"] for kpi in summary["kpis"]}
 
-    # Not measurable is shown as not measurable, never as a confident zero.
     assert shown["forecast_accuracy"] == "—"
     assert shown["weighted_mape"] == "—"
 
-    # The invariant behind the fix, checked here because the suite runs on
-    # SQLite and SQLite would happily store the -Infinity that Postgres throws
-    # out. Every stored number has to be one a JSON column can hold.
     metrics = (await client.get(f"/api/forecasts/{detail['id']}/metrics")).json()
     for candidate in metrics["candidates"]:
         for name, value in candidate["params"].items():
@@ -820,11 +749,6 @@ async def test_a_series_of_nothing_but_zeros_still_produces_a_forecast(
 async def test_a_dataset_too_short_to_backtest_still_answers_every_endpoint(
     client: AsyncClient,
 ) -> None:
-    """
-    Two rows leaves nothing to hold out, so every accuracy metric is NaN. Those
-    reached the response untouched and turned `GET /forecasts/{id}` into a 500,
-    which meant the run could not even be looked at, let alone deleted.
-    """
     rows = ["month,value", "2024-01-01,10", "2024-02-01,12"]
 
     detail = await _forecast_csv(client, "two_rows", rows, horizon=1)
@@ -839,16 +763,6 @@ async def test_a_dataset_too_short_to_backtest_still_answers_every_endpoint(
     assert all(
         kpi["display_value"] not in ("nan", "NaN", "inf", "") for kpi in summary.json()["kpis"]
     )
-
-
-# ------------------------------------------------- refusing what cannot be run
-#
-# Every one of these used to be accepted and then quietly not done: a text
-# column read as the target came back as a column of nulls, a driver that was
-# not numeric was filtered out of the list without a word, a model roster that
-# matched nothing fell back to running everything, and a horizon longer than
-# the history produced a forecast whose accuracy had never been measured at
-# that range. A run that says "completed" has to have done what it was asked.
 
 
 async def _dataset(client: AsyncClient, name: str, rows: list[str]) -> dict:
@@ -934,10 +848,6 @@ async def test_a_model_name_the_engine_does_not_know_is_refused(client: AsyncCli
 async def test_a_roster_that_fits_nothing_fails_the_run_rather_than_running_everything(
     client: AsyncClient,
 ) -> None:
-    """Croston is only offered for intermittent demand. Asked for on a smooth
-    series the filter came back empty, and an empty filter fell back to the
-    whole roster — so a run restricted to one model ran nine, and reported the
-    winner as though it had been the one asked for."""
     dataset = await _dataset(client, "wrongmodel", _monthly("month,revenue", "{i}00"))
 
     response = await client.post(
@@ -983,12 +893,60 @@ async def test_a_horizon_the_history_supports_is_accepted(client: AsyncClient) -
 
 
 async def test_the_default_horizon_is_shortened_rather_than_refused(client: AsyncClient) -> None:
-    """Refusing a run over a number nobody typed is no more helpful than
-    answering a question nobody asked. A horizon somebody chose is refused; the
-    default is held to what the history supports."""
     dataset = await _dataset(client, "tiny", _monthly("month,revenue", "{i}00", months=6))
 
     response = await client.post("/api/forecasts/run", json={"dataset_id": dataset["id"]})
 
     assert response.status_code == 202, response.text
     assert response.json()["horizon"] == 3
+
+
+async def test_the_same_idempotency_key_returns_the_same_run(client: AsyncClient) -> None:
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = upload.json()["dataset"]["id"]
+    body = {"dataset_id": dataset_id, "horizon": 6}
+    headers = {"Idempotency-Key": "the-same-submission-twice"}
+
+    first = await client.post("/api/forecasts/run", json=body, headers=headers)
+    second = await client.post("/api/forecasts/run", json=body, headers=headers)
+
+    assert first.status_code == 202, first.text
+    assert second.status_code in {200, 202}, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+
+async def test_losing_the_race_for_an_idempotency_key_returns_the_winners_run(
+    client: AsyncClient, session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    upload = await client.post(
+        "/api/datasets/upload",
+        files={"file": ("sample.csv", generate_csv_bytes(), "text/csv")},
+    )
+    dataset_id = uuid.UUID(upload.json()["dataset"]["id"])
+    key = "both-of-us-looked-and-saw-nothing"
+
+    winner = await forecast_service.create_run(
+        session, dataset_id=dataset_id, horizon=6, idempotency_key=key
+    )
+    await session.commit()
+
+    real_lookup = forecast_service.run_for_idempotency_key
+    calls = {"n": 0}
+
+    async def blind_first_look(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None
+        return await real_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(forecast_service, "run_for_idempotency_key", blind_first_look)
+
+    run, created = await forecast_service.create_or_join_run(
+        session, idempotency_key=key, dataset_id=dataset_id, horizon=6
+    )
+
+    assert created is False, "the loser must not report having created a run"
+    assert run.id == winner.id, "the loser must be answered with the winner's run"

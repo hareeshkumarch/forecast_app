@@ -141,12 +141,6 @@ def test_write_queries_are_rejected(query: str, fragment: str) -> None:
     ],
 )
 def test_a_write_hidden_behind_a_bracket_or_a_newline_is_still_rejected(query: str) -> None:
-    """The guard used to look for a keyword with a space in front of it.
-
-    A bracket or a newline in front of `delete` was enough to walk a write
-    through a filter that only reads are meant to pass, using the connector's
-    own credentials against the customer's database.
-    """
     with pytest.raises(ConnectorError):
         _reject_non_select(query)
 
@@ -162,6 +156,37 @@ def test_a_write_hidden_behind_a_bracket_or_a_newline_is_still_rejected(query: s
     ],
 )
 def test_a_keyword_inside_a_value_or_a_name_does_not_refuse_a_read(query: str) -> None:
+    _reject_non_select(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "select * from t where x = E'\\''; UPDATE canary SET hit=1; --'",
+        "select * from t /*!32302 delete from t */",
+        "select * from t /*/**/ delete from t */",
+        "select * from t /* delete",
+    ],
+)
+def test_a_write_hidden_in_a_quote_or_a_comment_is_rejected(query: str) -> None:
+    with pytest.raises(ConnectorError):
+        _reject_non_select(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "select * from t where x = $$ text says delete but is data $$",
+        "select * from t where x = $tag$ drop table foo $tag$",
+        "select id, notes from tickets where notes like '%don\\'t forget to update this%'",
+        "select * from t where id = 1 for update",
+        "select * from t for no key update",
+        "with updates as (select * from t) select * from updates",
+        "select grant_type, count(*) from t group by grant_type",
+        "select * /* a */ from t /* b */ where id = 1",
+    ],
+)
+def test_a_read_is_not_refused_for_looking_like_a_write(query: str) -> None:
     _reject_non_select(query)
 
 

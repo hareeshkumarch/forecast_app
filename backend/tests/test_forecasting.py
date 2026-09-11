@@ -375,12 +375,6 @@ def test_a_flat_series_keeps_its_zero_width_band() -> None:
 
 
 def test_the_comparison_window_is_a_year_wherever_the_history_holds_two() -> None:
-    """
-    "Versus the period before" has to mean the same span whatever the data
-    arrives at. Fixed per frequency it did not: 90 days is a quarter, 26 weeks
-    is half a year, and 12 months is a year — the same column meaning three
-    different things depending on the dataset.
-    """
     from app.forecasting.frequency import comparison_window, periods_per_year
 
     for frequency, year in (
@@ -397,12 +391,9 @@ def test_the_comparison_window_is_a_year_wherever_the_history_holds_two() -> Non
 def test_a_short_history_is_compared_against_what_it_has() -> None:
     from app.forecasting.frequency import comparison_window
 
-    # Six months of daily data cannot hold two years, so it compares three
-    # months against three rather than reporting nothing at all.
     assert comparison_window(ForecastFrequency.DAILY, 180) == 90
     assert comparison_window(ForecastFrequency.MONTHLY, 18) == 9
 
-    # And never a window of zero, which would make every comparison undefined.
     for observations in (0, 1, 2, 3):
         assert comparison_window(ForecastFrequency.MONTHLY, observations) >= 1
 
@@ -421,10 +412,6 @@ def test_driver_panel_project_future() -> None:
 
 
 def test_a_weighted_run_can_reach_the_ensemble() -> None:
-    # The blend scored itself with the run's whole-series weight column against
-    # the concatenated fold windows, which are a different length. Any weighted
-    # run that got as far as the ensemble died on it — including the seed the
-    # e2e job builds its dashboard from.
     periods, values = make_series(60)
     rng = np.random.default_rng(11)
     weights = list(rng.uniform(0.5, 1.5, size=len(values)))
@@ -456,8 +443,6 @@ def test_the_ensemble_is_weighed_over_the_windows_it_was_tested_on() -> None:
                     test_size=4,
                     y_true=truth,
                     y_pred=[value + error for value in truth],
-                    # Four weights for four test points, not one per period of a
-                    # 24-month history.
                     y_weight=[1.0, 2.0, 3.0, 4.0],
                 )
             ],
@@ -473,5 +458,4 @@ def test_the_ensemble_is_weighed_over_the_windows_it_was_tested_on() -> None:
 
     assert combined is not None, "two offsetting members should blend to something better"
     assert math.isfinite(combined.result.wmape)
-    # The blend carries the fold weights on, so a later reader can weigh it too.
     assert combined.result.folds[0].y_weight == [1.0, 2.0, 3.0, 4.0]

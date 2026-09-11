@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import String, cast, delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -275,6 +276,33 @@ async def run_for_idempotency_key(
         select(ForecastRun).where(ForecastRun.idempotency_key == idempotency_key).limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def create_or_join_run(
+    session: AsyncSession, *, idempotency_key: str | None, **fields: Any
+) -> tuple[ForecastRun, bool]:
+    """The run for this key, creating it only if nobody else already has.
+
+    Looking first and inserting second leaves a window: two requests carrying
+    the same key both find nothing and both insert, and the unique constraint
+    turns the loser into a 500. The key exists so that a retried submission
+    returns the first run rather than a second one, so the loser of that race
+    is answered with the winner's run, which is what it asked for.
+    """
+    existing = await run_for_idempotency_key(session, idempotency_key)
+    if existing is not None:
+        return existing, False
+
+    try:
+        async with session.begin_nested():
+            run = await create_run(session, idempotency_key=idempotency_key, **fields)
+    except IntegrityError:
+        winner = await run_for_idempotency_key(session, idempotency_key)
+        if winner is None:
+            raise
+        return winner, False
+
+    return run, True
 
 
 async def create_run(

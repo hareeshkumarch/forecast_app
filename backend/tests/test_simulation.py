@@ -1,14 +1,3 @@
-"""
-What-if simulation on a finished run, and the two paths beside it that had
-never actually executed.
-
-A simulation is only worth the name if the levers mean something. The ones
-here do: a driver moves the total by its own share of the movement the run
-measured, and a driver this run never found is refused rather than quietly
-scaling everything. The rest of the module covers the treatments and helpers
-that reach the same code from other directions.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -106,8 +95,6 @@ async def test_a_shift_and_a_multiplier_compound_rather_than_fight(
 async def test_a_driver_moves_the_total_by_its_own_share_of_the_movement(
     session: AsyncSession, run_id: uuid.UUID
 ) -> None:
-    # A driver holding 40% of the impact should carry 40% of what is asked of it:
-    # doubling it lifts the total by 40%, not by 100%.
     session.add(
         ForecastDriver(run_id=run_id, driver="promotions", impact_value=1.0, impact_pct=40.0)
     )
@@ -198,8 +185,6 @@ async def test_the_endpoint_refuses_a_multiplier_outside_its_range(
 
 
 async def test_a_run_asked_to_winsorise_actually_runs(session: AsyncSession) -> None:
-    # The service passed a keyword `winsorise` does not accept, so choosing this
-    # treatment raised TypeError before the forecast ever started.
     run_id = await _completed_run(session, outlier_treatment=OutlierTreatment.WINSORISE)
 
     run = await forecast_service.get_run(session, run_id)
@@ -237,8 +222,6 @@ def test_attribution_of_nothing_is_all_baseline() -> None:
 def test_a_driver_projection_lands_on_the_same_steps_a_gap_free_one_does() -> None:
     from app.forecasting.drivers import DriverLink, DriverPanel
 
-    # Both series carry the same +1.0 step; the second just has a hole in it.
-    # Fitting on compressed positions used to pull the projection off the grid.
     straight = np.array([10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0])
     gapped = np.array([10.0, 11.0, np.nan, 13.0, 14.0, 15.0, 16.0, 17.0])
 
@@ -268,3 +251,46 @@ async def test_the_simulated_points_come_back_in_period_order(
     periods = [point["period"] for point in result["points"]]
     assert all(isinstance(period, date) for period in periods)
     assert periods == sorted(periods)
+
+
+def test_a_band_too_large_to_measure_can_still_be_rendered() -> None:
+    import json
+
+    import numpy as np
+
+    from app.forecasting.backtest import BacktestResult, FoldResult
+    from app.forecasting.scenarios import build_intervals
+    from app.models.enums import ModelKind
+
+    huge = np.finfo(np.float64).max
+    result = BacktestResult(model=ModelKind.NAIVE)
+    result.folds = [FoldResult(0, 10, 3, [1e308, -1e308, 1e308], [-1e308, 1e308, -1e308])]
+    point = np.array([100.0, 110.0, 120.0])
+
+    bands = build_intervals(point, result, 0.8, history=np.array([huge, -huge, huge, -huge, huge]))
+
+    for band in (bands.lower, bands.upper, bands.best_case, bands.worst_case, bands.sigma_by_step):
+        assert np.all(np.isfinite(band)), "a band that is not a number cannot be rendered"
+
+    json.dumps({"lower": list(bands.lower), "upper": list(bands.upper)}, allow_nan=False)
+
+
+def test_a_forecast_that_is_not_a_number_does_not_take_the_band_with_it() -> None:
+    import json
+
+    import numpy as np
+
+    from app.forecasting.backtest import BacktestResult, FoldResult
+    from app.forecasting.scenarios import build_intervals
+    from app.models.enums import ModelKind
+
+    result = BacktestResult(model=ModelKind.NAIVE)
+    result.folds = [FoldResult(0, 10, 3, [10.0, 11.0, 12.0], [10.5, 11.5, 12.5])]
+    point = np.array([100.0, np.nan, 120.0])
+
+    bands = build_intervals(point, result, 0.8, history=np.array([10.0, 11.0, 12.0, 13.0]))
+
+    for name in ("lower", "upper", "best_case", "worst_case"):
+        band = getattr(bands, name)
+        assert np.all(np.isfinite(band)) or np.isnan(point).any()
+    json.dumps({"lower": [v if np.isfinite(v) else None for v in bands.lower]}, allow_nan=False)

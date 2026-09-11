@@ -63,7 +63,15 @@ class Forecaster(Protocol):
 
 MemberBuilder = Callable[[ModelKind, FloatArray, list[date]], Forecaster]
 
-RECENCY_HALF_LIVES = [0.0, 1.0, 0.35]
+RECENCY_HALF_LIVES = [0.0, 0.6]
+
+# How many boosting rounds the search may buy. Held here rather than derived
+# from the row count so the number of rounds a candidate was scored under is
+# the number it ships with: the estimator's own early stopping would have
+# settled it against a shuffled hold-out, which reads the future to decide
+# when to stop, and running every trial to a fixed ceiling instead spent most
+# of a run fitting trees that the shorter fits show are not needed.
+GBM_ITERATIONS = [120, 300]
 
 
 def recency_weights(n_rows: int, half_life_fraction: float) -> FloatArray | None:
@@ -858,6 +866,7 @@ class GradientBoostingForecaster:
                 "min_samples_leaf": leaves,
                 "l2_regularization": [0.0, 1.0, 5.0],
                 "recency_half_life": RECENCY_HALF_LIVES,
+                "max_iter": GBM_ITERATIONS,
             }
         )
 
@@ -869,7 +878,7 @@ class GradientBoostingForecaster:
             learning_rate=as_float(params["learning_rate"], 0.06),
             min_samples_leaf=as_int(params["min_samples_leaf"], 2),
             l2_regularization=as_float(params["l2_regularization"], 0.0),
-            max_iter=int(np.clip(n_rows * 6, 120, 600)),
+            max_iter=as_int(params.get("max_iter"), GBM_ITERATIONS[-1]),
             early_stopping=False,
             random_state=RANDOM_STATE,
         )

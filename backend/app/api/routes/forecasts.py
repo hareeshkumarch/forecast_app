@@ -113,12 +113,9 @@ async def start_run(
         str | None, Header(alias="Idempotency-Key", min_length=8, max_length=128)
     ] = None,
 ) -> ForecastRunRead:
-    existing = await forecast_service.run_for_idempotency_key(session, idempotency_key)
-    if existing is not None:
-        return ForecastRunRead.model_validate(existing)
-
-    run = await forecast_service.create_run(
+    run, created = await forecast_service.create_or_join_run(
         session,
+        idempotency_key=idempotency_key,
         created_by_user_id=await user_service.owner_id(session, user),
         dataset_id=payload.dataset_id,
         name=payload.name,
@@ -154,8 +151,10 @@ async def start_run(
         llm_base_url=payload.llm_base_url,
         llm_input_cost_per_million=payload.llm_input_cost_per_million,
         llm_output_cost_per_million=payload.llm_output_cost_per_million,
-        idempotency_key=idempotency_key,
     )
+
+    if not created:
+        return ForecastRunRead.model_validate(run)
 
     await session.commit()
     await forecast_service.dispatch_run(session, run)
