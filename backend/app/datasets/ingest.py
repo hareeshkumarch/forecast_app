@@ -135,13 +135,13 @@ def _header_offset(sample: str, delimiter: str) -> int:
     for index, line in enumerate(lines[:-1]):
         if not line.strip():
             continue
-        fields = _fields_outside_quotes(line, delimiter) + 1
-        following = [other for other in lines[index + 1 : index + 4] if other.strip()]
-        if (
-            fields > 1
-            and following
-            and _fields_outside_quotes(following[0], delimiter) + 1 == fields
-        ):
+        # The first line that is divided into columns at all is the header.
+        # Requiring the row under it to be the same width stepped over it
+        # whenever that row came out wider — which is what an unquoted
+        # thousands separator does — and the file then read one column short,
+        # one row short, and headed by its own first record. A width that
+        # disagrees means a ragged file, and there is a check that says so.
+        if _fields_outside_quotes(line, delimiter) + 1 > 1:
             return index
     return 0
 
@@ -163,7 +163,12 @@ def _read_csv_text(text: str, delimiter: str, skip: int) -> pl.DataFrame:
 
 
 def _ragged_rows(text: str, delimiter: str, skip: int, width: int) -> int:
-    lines = [line for line in text.splitlines()[skip:] if line.strip()]
+    # Split the way the reader splits. `splitlines` also breaks on a bare \r,
+    # which the CSV reader treats as ordinary text, so the guard was counting
+    # different rows than the parser was building and a genuinely ragged file
+    # could pass it unmentioned.
+    rows = [line.rstrip("\r") for line in text.split("\n")]
+    lines = [line for line in rows[skip:] if line.strip()]
     return sum(1 for line in lines[1:] if _fields_outside_quotes(line, delimiter) + 1 > width)
 
 

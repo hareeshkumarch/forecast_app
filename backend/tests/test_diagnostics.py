@@ -385,3 +385,24 @@ def test_a_log_series_is_still_fitted_on_logs() -> None:
 
     assert profile.transform == "log"
     assert transform.kind == "log"
+
+
+def test_a_power_forecast_past_the_bottom_of_its_scale_lands_on_the_floor() -> None:
+    from app.forecasting.transforms import Transform
+
+    transform = Transform(kind="power", shift=0.0, residual_variance=0.0, lam=0.5)
+    falling = np.linspace(0.0, -40.0, 12)
+
+    restored = transform.inverse(falling)
+
+    assert np.all(np.diff(restored) <= 1e-12), "the forecast must not turn back upward"
+    assert restored[-1] == 0.0, "below the scale it was fitted on, the floor is the answer"
+    assert np.all(np.isfinite(restored))
+
+
+def test_a_shifted_power_transform_floors_at_its_own_shift() -> None:
+    from app.forecasting.transforms import Transform
+
+    transform = Transform(kind="power", shift=5.0, residual_variance=0.0, lam=0.5)
+
+    assert transform.inverse(np.array([-100.0]))[0] == -5.0

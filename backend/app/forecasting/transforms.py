@@ -45,12 +45,19 @@ class Transform:
             correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
             return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
 
-        base = np.maximum(self.lam * array + 1.0, 1e-9)
+        # Below `lam * z + 1 == 0` the transform has no inverse: the model is
+        # predicting past the bottom of the scale it was fitted on. The floor
+        # of that scale is the answer, and it is returned exactly rather than
+        # as whatever a clamped power happens to evaluate to.
+        raised = self.lam * array + 1.0
+        inside = raised > 0.0
+        base = np.where(inside, raised, 1.0)
         mean = np.power(base, 1.0 / self.lam)
         if self.residual_variance > 0.0:
             widen = 1.0 + self.residual_variance * (1.0 - self.lam) / (2.0 * np.square(base))
             mean = mean * np.clip(widen, 0.5, 2.0)
-        return np.where(np.isfinite(mean), mean, 0.0) - self.shift
+        mean = np.where(inside & np.isfinite(mean), mean, 0.0)
+        return mean - self.shift
 
 
 @dataclass(slots=True)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.errors import ValidationError
 from app.datasets.ingest import read_tabular
 
 DAYS = [date(2024, 1, 1) + timedelta(days=30 * i) for i in range(12)]
@@ -67,3 +68,35 @@ def test_a_delimiter_inside_a_quoted_value_is_not_a_delimiter(
 
     assert list(frame.columns) == ["date", "name"], label
     assert frame.height == 2, label
+
+
+def test_a_thousands_separator_does_not_eat_the_header(tmp_path: Path) -> None:
+    path = tmp_path / "grouped.csv"
+    path.write_bytes(
+        b"date,amount\n2024-01-01,1,234.56\n2024-01-02,2,345.67\n2024-01-03,3,456.78\n"
+    )
+
+    with pytest.raises(ValidationError) as raised:
+        read_tabular(path, ".csv")
+
+    assert "more values than the header" in str(raised.value)
+
+
+def test_a_bare_carriage_return_is_counted_the_way_the_reader_counts_it(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "macline.csv"
+    path.write_bytes(b"a,b\r\n1,2\n3,4\r5,6\n")
+
+    with pytest.raises(ValidationError):
+        read_tabular(path, ".csv")
+
+
+def test_a_preamble_above_the_header_is_still_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "preamble.csv"
+    path.write_bytes(b"Sales Report\nGenerated 2024\ndate,amount\n2024-01-01,100\n2024-01-02,200\n")
+
+    frame = read_tabular(path, ".csv")
+
+    assert frame.columns == ["date", "amount"]
+    assert frame.height == 2
