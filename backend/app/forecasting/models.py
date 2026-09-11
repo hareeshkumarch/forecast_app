@@ -71,7 +71,7 @@ RECENCY_HALF_LIVES = [0.0, 0.6]
 # settled it against a shuffled hold-out, which reads the future to decide
 # when to stop, and running every trial to a fixed ceiling instead spent most
 # of a run fitting trees that the shorter fits show are not needed.
-GBM_ITERATIONS = [120, 300]
+GBM_ITERATIONS = [60, 150]
 
 
 def recency_weights(n_rows: int, half_life_fraction: float) -> FloatArray | None:
