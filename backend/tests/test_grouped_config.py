@@ -1,12 +1,3 @@
-"""What a breakdown inherits from the run above it.
-
-A grouped run is one forecast question asked at several levels. The settings
-that answer it — how a measure adds up, what to do about a period with no
-data, whether to damp outliers — were only applied to the headline number.
-Everything under it got its own hard-coded rules, and the two disagreed
-without saying so.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -42,18 +33,10 @@ def _parquet(tmp_path, rows: list[tuple[str, str, float]]):
     return path
 
 
-# ------------------------------------------------- a period nobody reported
-
-
 def test_a_period_with_no_row_is_not_a_zero(tmp_path) -> None:
-    """A SKU nobody reported this month and a SKU that sold nothing this month
-    are different facts. Writing the zero here decided which one it was for
-    every grouped series, whatever the run asked for, and made it invisible."""
     calendar = months(6)
     rows = [
-        (period.isoformat(), "A", 100.0)
-        for index, period in enumerate(calendar)
-        if index != 3  # March is simply absent for A
+        (period.isoformat(), "A", 100.0) for index, period in enumerate(calendar) if index != 3
     ] + [(period.isoformat(), "B", 50.0) for period in calendar]
 
     grouped = queries.aggregate_grouped(
@@ -66,8 +49,6 @@ def test_a_period_with_no_row_is_not_a_zero(tmp_path) -> None:
 
 
 def test_the_segments_query_agrees_with_the_run_on_how_a_measure_adds_up(tmp_path) -> None:
-    """It summed, always. A run averaging its target got regions that did not
-    add up to the total shown beside them."""
     calendar = months(3)
     rows = [(period.isoformat(), "North", value) for period in calendar for value in (10.0, 30.0)]
 
@@ -79,9 +60,6 @@ def test_the_segments_query_agrees_with_the_run_on_how_a_measure_adds_up(tmp_pat
 
     assert summed[0].values[0] == pytest.approx(40.0)
     assert averaged[0].values[0] == pytest.approx(20.0)
-
-
-# ------------------------------------------------------- the run's gap policy
 
 
 def test_a_grouped_series_is_filled_by_the_rule_the_run_asked_for() -> None:
@@ -107,15 +85,10 @@ def test_a_grouped_series_is_filled_by_the_rule_the_run_asked_for() -> None:
     )
 
     assert interpolated.fitted and zeroed.fitted
-    # A zero dropped into a rising series is a shock the interpolated one never
-    # sees. Both still end at the same last value, so what separates them is
-    # the accuracy each was measured at — which is the point: the rule reached
-    # the model rather than stopping at the headline number.
     assert interpolated.wmape != zeroed.wmape
 
 
 def test_asking_for_no_fill_leaves_the_series_unforecastable_rather_than_guessing() -> None:
-    """Zero-filling anyway is a modelling decision the run explicitly declined."""
     values = [float("nan") if i == 10 else 100.0 + i for i in range(36)]
 
     fit = fit_leaf("A", months(36), values, MONTHLY, 3, None, 0.8, Preparation(fill=GapFill.NONE))
@@ -123,9 +96,6 @@ def test_asking_for_no_fill_leaves_the_series_unforecastable_rather_than_guessin
     assert not fit.fitted
     assert fit.blocked_reason is not None
     assert "no data" in fit.blocked_reason
-
-
-# --------------------------------------------------- a total that is not positive
 
 
 def _leaves(totals: list[float]) -> list[SegmentInput]:
@@ -144,10 +114,6 @@ def _leaves(totals: list[float]) -> list[SegmentInput]:
 
 
 def test_a_breakdown_of_a_negative_total_still_produces_series() -> None:
-    """Margin, net-of-returns and balance measures go negative. Dividing by the
-    signed total gave a share of the wrong sign or of infinity, so the guard
-    against it threw the whole breakdown away — the run came back with no
-    grouped forecast at all, and no reason why."""
     leaves = _leaves([-400.0, -100.0, 100.0])
     fits = [
         type(
@@ -208,13 +174,7 @@ def test_series_that_are_all_zero_share_the_total_equally() -> None:
     assert leaves_out, "an all-zero breakdown is still a breakdown"
 
 
-# --------------------------------------------------------- a driver's own scale
-
-
 def test_a_driver_is_aggregated_by_what_it_is_not_by_what_the_target_is(tmp_path) -> None:
-    """Summing a conversion rate over the rows in a month gives a number that
-    grows with the row count — the correlation search that follows is then
-    reading traffic volume, not the driver."""
     calendar = months(4)
     frame = pl.DataFrame(
         {
@@ -256,8 +216,6 @@ def test_a_driver_is_aggregated_by_what_it_is_not_by_what_the_target_is(tmp_path
         ("margin_pct", MeasureAggregation.MEAN),
         ("temperature", MeasureAggregation.MEAN),
         ("revenue_per_store", MeasureAggregation.MEAN),
-        # A word that says "level" beside one that says "quantity": the total
-        # wins, because that is what the column is a total of.
         ("total_price", MeasureAggregation.SUM),
     ],
 )

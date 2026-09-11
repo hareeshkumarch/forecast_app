@@ -1,12 +1,3 @@
-"""
-The triage endpoint: which series a planner should look at first.
-
-A grouped run can hold hundreds of series, and the list is only useful if it
-can be ordered by something that answers that question. These check the
-ordering, the paging, and that a series without a measured error cannot elbow
-its way to the top of a list it has no evidence to be in.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -63,11 +54,9 @@ async def test_a_grouped_run_lists_its_series_worst_first(client: AsyncClient) -
     assert len(rows) == body["total"]
     assert {row["level"] for row in rows} == {0, 1, 2}
 
-    # Value at risk is what the default order means, and it has to be ordered.
     at_risk = [row["value_at_risk"] for row in rows if row["value_at_risk"] is not None]
     assert at_risk == sorted(at_risk, reverse=True), at_risk
 
-    # It is also the thing neither error nor size says on its own.
     for row in rows:
         if row["wmape"] is None:
             assert row["value_at_risk"] is None
@@ -100,18 +89,15 @@ async def test_the_trend_compares_two_windows_of_the_same_length(client: AsyncCl
     trends = [row["change_vs_prior"] for row in rows if row["change_vs_prior"] is not None]
     assert trends, "the sample data has enough history to trend"
 
-    # The forecast covers three periods and a window covers twelve, so comparing
-    # them would read as a collapse of roughly two thirds on every single row.
     assert not all(trend < -40 for trend in trends), trends[:5]
 
     for row in rows:
         if row["prior_total"]:
             assert row["change_vs_prior"] == pytest.approx(
                 (row["current_total"] - row["prior_total"]) / abs(row["prior_total"]) * 100.0,
-                abs=0.01,  # the percentage is reported to two decimals
+                abs=0.01,
             )
 
-    # A parent has no series of its own, so its history is its children's.
     parents = {row["id"]: row for row in rows if row["level"] < 2}
     for parent_id, parent in parents.items():
         children = [row for row in rows if row["parent_id"] == parent_id]
@@ -184,9 +170,6 @@ async def test_a_series_scopes_the_points_to_its_own_curve(client: AsyncClient) 
     assert headline["points"], "the run keeps its own top line"
     assert scoped["points"], "a series has a curve of its own"
 
-    # Its own past as well as its horizon, on the same calendar as the top
-    # line: a chart scoped to one series would otherwise be a handful of
-    # forecast points hanging on nothing.
     assert scoped["boundary_index"] == headline["boundary_index"]
     assert [p["period"] for p in scoped["points"]] == [p["period"] for p in headline["points"]]
 
@@ -201,11 +184,6 @@ async def test_a_series_scopes_the_points_to_its_own_curve(client: AsyncClient) 
 
 
 async def test_exporting_a_grouped_run_says_which_series_each_row_is(client: AsyncClient) -> None:
-    """
-    A grouped run stores a curve per series as well as its own line. Flattened
-    without a label they export as dozens of identical-looking rows per period,
-    which is a tree with the tree left out.
-    """
     run = await _grouped_run(client, GRAIN)
 
     csv = (await client.get(f"/api/exports/{run['id']}?format=csv")).text
@@ -215,14 +193,10 @@ async def test_exporting_a_grouped_run_says_which_series_each_row_is(client: Asy
     labels = {line.split(",", 1)[0] for line in lines}
     assert "Total" in labels, "the run's own line is named rather than left blank"
 
-    # Every series below the root, plus "Total" standing in for the root —
-    # whose own curve is not stored, being the top line already.
     assert len(labels) == run["series_count"], sorted(labels)[:5]
     assert "Europe · Product A" in labels
     assert "Europe" in labels, "the levels between the total and the grain are exported too"
 
-    # The PDF reports the top line and ranks the series; it must not print the
-    # whole tree as one undifferentiated column of dates.
     pdf = (await client.get(f"/api/exports/{run['id']}?format=pdf")).content
     assert pdf.startswith(b"%PDF-")
     assert pdf.rstrip().endswith(b"%%EOF")
@@ -267,15 +241,6 @@ async def test_a_bad_grain_is_refused_before_the_run_starts(
 
 
 async def test_every_offered_order_actually_answers(client: AsyncClient) -> None:
-    """Each sort the UI offers returns rows, in that order, without erroring.
-
-    `label` is the one that mattered. Its ORDER BY carried a literal `NULL` as
-    a stand-in for the "unscored last" term the other orders use, which SQLite
-    accepts and Postgres rejects outright — so the name order was a 500 in
-    production and a pass in this suite, which runs on SQLite. The compiled-SQL
-    check below is the part that would have caught it; this one is here because
-    an endpoint should be asked for what the interface can ask it for.
-    """
     run = await _grouped_run(client, GRAIN)
 
     for sort in ("value_at_risk", "wmape", "forecast_total", "label"):
@@ -297,13 +262,6 @@ async def test_every_offered_order_actually_answers(client: AsyncClient) -> None
 
 
 def test_no_order_asks_the_database_to_sort_by_a_constant() -> None:
-    """The name order compiled to `ORDER BY NULL`, which only Postgres refuses.
-
-    Compiled from `series_service.order_terms` itself, against the dialect the
-    product runs on rather than the one this suite runs on. A term that is a
-    bare constant can never order anything, so finding one is finding a bug
-    whichever database is asked to execute it.
-    """
     import uuid as _uuid
 
     from sqlalchemy import select

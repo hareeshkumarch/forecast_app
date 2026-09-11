@@ -1,5 +1,3 @@
-"""Validation judges each series against what that series needs."""
-
 from __future__ import annotations
 
 import datetime as dt

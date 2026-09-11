@@ -1,13 +1,3 @@
-"""Four runs, two workers: which two are running, and what the other two are told.
-
-The reported symptom was that the last of several runs "just takes time". It
-was not slower — it had not started. `FORECAST_WORKERS` pool workers means
-that many model searches at once, and everything else waits. The run had
-already been marked `backtesting` at 30% before it was submitted, so a queued
-run and a slow one looked identical on screen and nothing could tell them
-apart.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -72,7 +62,6 @@ async def test_a_run_that_is_running_is_not_reported_as_waiting(two_slots) -> No
 
 
 async def test_a_free_slot_is_not_taken_over_the_head_of_a_queue(two_slots) -> None:
-    """Otherwise the run that arrived first is the one that waits longest."""
     first, second = uuid.uuid4(), uuid.uuid4()
     await two_slots.acquire(first, MODEL_SEARCH)
     await two_slots.acquire(second, MODEL_SEARCH)
@@ -96,7 +85,6 @@ async def test_a_free_slot_is_not_taken_over_the_head_of_a_queue(two_slots) -> N
 
 
 async def test_one_run_on_its_own_still_gets_the_whole_pool(two_slots) -> None:
-    """Fairness must not cost throughput when there is nobody to be fair to."""
     grouped = uuid.uuid4()
 
     await two_slots.acquire(grouped, SERIES_CHUNK)
@@ -106,7 +94,6 @@ async def test_one_run_on_its_own_still_gets_the_whole_pool(two_slots) -> None:
 
 
 async def test_a_grouped_run_cannot_hold_every_worker_against_another_run(two_slots) -> None:
-    """A run fanning out forty series used to leave everybody else behind all of it."""
     grouped, other = uuid.uuid4(), uuid.uuid4()
 
     await two_slots.acquire(grouped, SERIES_CHUNK)
@@ -120,8 +107,6 @@ async def test_a_grouped_run_cannot_hold_every_worker_against_another_run(two_sl
     two_slots.release(grouped)
     await asyncio.sleep(0)
 
-    # Arrival order alone would have handed this to the seventh chunk of a run
-    # that already had a worker. Fewest-held-first hands it to the run with none.
     assert newcomer.done()
 
     two_slots.release(grouped)
@@ -154,7 +139,6 @@ async def test_a_cancelled_run_does_not_leave_a_slot_behind(two_slots) -> None:
 
 
 async def test_the_queue_is_reportable(two_slots) -> None:
-    """The monitoring endpoint answers "why is nothing happening" from this."""
     running, waiting = uuid.uuid4(), uuid.uuid4()
     await two_slots.acquire(running, MODEL_SEARCH)
     await two_slots.acquire(running, MODEL_SEARCH)
@@ -199,7 +183,6 @@ async def test_positions_are_announced_as_the_queue_moves(monkeypatch, two_slots
     two_slots.release(first)
     await asyncio.sleep(0)
 
-    # The fourth moved up when the third started, and is told so.
     assert (fourth, 0) in said
 
     two_slots.release(second)
@@ -207,7 +190,6 @@ async def test_positions_are_announced_as_the_queue_moves(monkeypatch, two_slots
 
 
 async def test_a_series_chunk_does_not_announce_a_queue_position(monkeypatch, two_slots) -> None:
-    """Its progress already reads "12 of 40 series"; a position per chunk buries that."""
     from app.services import job_runner
 
     said: list[uuid.UUID] = []
@@ -238,14 +220,6 @@ def test_the_message_a_waiting_run_shows_names_the_reason() -> None:
 
 
 class TestInsideOneRun:
-    """The same confusion, one level down: candidates that are queued, not slow.
-
-    Fitting happens `FORECAST_MODEL_CONCURRENCY` at a time, so with six
-    candidates and two lanes the last two have not started when the first two
-    are half done. Reporting only completions left the message unchanged for as
-    long as a fit took, which reads as a search that has stalled.
-    """
-
     def test_the_opening_line_says_how_many_are_waiting_their_turn(self) -> None:
         from app.forecasting.engine import _InFlight
 
@@ -284,8 +258,6 @@ class TestInsideOneRun:
 
 
 class TestWorkerThreads:
-    """One BLAS thread per worker, or four fits fight over two cores."""
-
     def test_a_worker_pins_its_linear_algebra_to_one_thread(self, monkeypatch) -> None:
         from app.services import job_runner
 
@@ -311,8 +283,6 @@ class TestWorkerThreads:
 
 
 class TestWhatAWaitingRunIsTold:
-    """The sequence a watcher actually sees, which is where the report came from."""
-
     @pytest.fixture(autouse=True)
     def _recorded(self, monkeypatch):
         from app.services import forecast_service, job_runner
@@ -328,8 +298,6 @@ class TestWhatAWaitingRunIsTold:
             return func(*args)
 
         monkeypatch.setattr(forecast_service, "checkpoint_progress", record)
-        # The work itself is not the point here; which announcements surround
-        # it, and in what order, is. This keeps a real process pool out of it.
         monkeypatch.setattr(type(job_runner.executors), "run", straight)
         self.said = said
 
@@ -348,7 +316,6 @@ class TestWhatAWaitingRunIsTold:
     async def test_a_run_that_gets_a_worker_is_never_told_it_is_waiting(
         self, monkeypatch, two_slots
     ) -> None:
-        """Most runs never queue, and a queue that flashes for one frame is a lie."""
         from app.services import job_runner
 
         monkeypatch.setattr(job_runner, "scheduler", two_slots)
@@ -399,7 +366,6 @@ class TestWhatAWaitingRunIsTold:
     async def test_the_wait_is_written_once_however_long_it_lasts(
         self, monkeypatch, two_slots
     ) -> None:
-        """A queue moves several times a minute; none of those needs a row rewritten."""
         from app.services import job_runner
 
         monkeypatch.setattr(job_runner, "scheduler", two_slots)

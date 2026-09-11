@@ -1,12 +1,3 @@
-"""The dashboard must be able to say "nothing has changed" for nearly nothing.
-
-These are the tests that make the caching safe to have. Every one of them is
-really the same question asked about a different input: does a change to
-something the answer depends on produce a different validator? If the answer
-is ever no, the cache serves a stale figure and the ETag tells a browser to
-keep one.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -48,11 +39,7 @@ async def _seed_and_run(client: AsyncClient) -> dict:
     return detail.json()
 
 
-# ---- the token itself -----------------------------------------------------
-
-
 def test_a_mapping_hashes_by_its_contents_not_its_insertion_order() -> None:
-    """Two dicts holding the same thing must not evict each other forever."""
     assert version_token({"a": 1, "b": 2}) == version_token({"b": 2, "a": 1})
 
 
@@ -61,13 +48,10 @@ def test_two_different_states_get_two_different_tokens() -> None:
 
 
 def test_none_is_distinguishable_from_the_string_none() -> None:
-    """A date filter that is absent is not a date filter set to the word None."""
     assert version_token(None) != version_token("None")
 
 
 def test_a_changed_response_shape_changes_the_validator() -> None:
-    """The failure this closes is quiet: a deploy renames a field, the data has
-    not moved, so every browser is told 304 and renders last week's shape."""
     from pydantic import BaseModel
 
     class Before(BaseModel):
@@ -81,7 +65,6 @@ def test_a_changed_response_shape_changes_the_validator() -> None:
 
 
 def test_if_none_match_uses_the_weak_comparison() -> None:
-    """`W/"x"` and `"x"` are the same entity for a conditional GET."""
     tag = etag_for("abc")
 
     assert matches(tag, tag) is True
@@ -92,9 +75,6 @@ def test_if_none_match_uses_the_weak_comparison() -> None:
     assert matches('W/"other", W/"abc"', tag) is True
 
 
-# ---- the endpoints --------------------------------------------------------
-
-
 @pytest.mark.parametrize("path", READS)
 async def test_a_read_offers_a_validator(client: AsyncClient, path: str) -> None:
     await _seed_and_run(client)
@@ -103,9 +83,6 @@ async def test_a_read_offers_a_validator(client: AsyncClient, path: str) -> None
 
     assert response.status_code == 200
     assert response.headers["ETag"].startswith('W/"')
-    # `no-cache` does not mean "do not store" — it means "store it, and ask
-    # before using it". A max-age would let a browser show a figure from
-    # before somebody rescored the run.
     assert response.headers["Cache-Control"] == "private, no-cache"
 
 
@@ -120,8 +97,6 @@ async def test_an_unchanged_read_is_answered_304_with_no_body(
 
     assert again.status_code == 304
     assert again.content == b""
-    # The client is updating a stored entry from this answer. One that arrived
-    # without validators could never be revalidated again.
     assert again.headers["ETag"] == first.headers["ETag"]
     assert again.headers["Cache-Control"] == "private, no-cache"
 
@@ -138,7 +113,6 @@ async def test_a_stale_validator_gets_the_whole_answer(client: AsyncClient) -> N
 
 
 async def test_each_scenario_view_has_its_own_validator(client: AsyncClient) -> None:
-    """The base and worst cases are different numbers under one URL path."""
     await _seed_and_run(client)
 
     base = await client.get("/api/dashboard/summary?view=base")
@@ -153,8 +127,6 @@ async def test_each_scenario_view_has_its_own_validator(client: AsyncClient) -> 
 
 
 async def test_a_breakdown_column_is_part_of_the_validator(client: AsyncClient) -> None:
-    """Serving the region split to somebody who asked for the category one is
-    the classic way a cache goes wrong."""
     await _seed_and_run(client)
 
     region = await client.get("/api/dashboard/breakdown", params={"column": "region"})
@@ -184,13 +156,6 @@ async def test_a_date_range_is_part_of_the_validator(client: AsyncClient) -> Non
 async def test_rewriting_the_insights_changes_their_validator(
     client: AsyncClient, monkeypatch
 ) -> None:
-    """The one dependency the run row alone would miss.
-
-    Rewriting insights through a model changes what /insights answers without
-    touching `forecast_runs` at all, so the version has to reach into the
-    insights' own high-water mark. Without that, somebody who has just paid a
-    provider to reword their insights keeps being told 304.
-    """
     await _seed_and_run(client)
     before = await client.get("/api/insights")
 
@@ -237,8 +202,6 @@ async def test_deleting_a_run_reclaims_its_cached_answers(client: AsyncClient) -
 
 
 async def test_a_deployment_with_no_runs_is_not_cached(client: AsyncClient) -> None:
-    """The "no data yet" answer is cheap, and caching it would make the first
-    forecast a deployment ever runs look like it produced nothing."""
     response = await client.get("/api/dashboard/summary")
 
     assert response.status_code == 200
@@ -249,8 +212,6 @@ async def test_a_deployment_with_no_runs_is_not_cached(client: AsyncClient) -> N
 async def test_the_cache_can_be_switched_off_without_losing_the_validator(
     client: AsyncClient, monkeypatch
 ) -> None:
-    """Two independent mechanisms. Turning the memory off must not turn the
-    conditional handshake off with it."""
     from app.core.config import settings
 
     await _seed_and_run(client)

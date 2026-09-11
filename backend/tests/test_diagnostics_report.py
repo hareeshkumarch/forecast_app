@@ -1,5 +1,3 @@
-"""Residual diagnostics: what is paired, what is bucketed, what is withheld."""
-
 from __future__ import annotations
 
 import datetime as dt
@@ -26,7 +24,6 @@ class TestPairing:
         assert [row.period.day for row in pair(points)] == [1]
 
     def test_an_unscored_forecast_is_not_a_zero_error(self) -> None:
-        """A forecast for next month has no outcome; counting it would flatter the model."""
         assert pair([_point(5, None, 100.0)]) == []
 
     def test_the_residual_is_forecast_minus_actual(self) -> None:
@@ -49,7 +46,6 @@ class TestHistogram:
         assert histogram(self._rows([1.0, -1.0])) == []
 
     def test_the_buckets_are_centred_on_zero(self) -> None:
-        """Otherwise the centre lands wherever the data sits and hides the lean."""
         buckets = histogram(self._rows([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
         assert buckets
         assert buckets[0].start == -buckets[-1].end

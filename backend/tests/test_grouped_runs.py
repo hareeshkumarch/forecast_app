@@ -1,12 +1,3 @@
-"""
-A run that forecasts a grain rather than one total.
-
-The fan-out itself is proved against a real broker in `test_worker_roundtrip`;
-what is checked here is everything that has to hold whether the leaves were
-fitted here or on twenty other machines — the wire format, the tree, and the
-fact that a series that failed to fit cannot take its parents with it.
-"""
-
 from __future__ import annotations
 
 import json
@@ -66,9 +57,6 @@ async def _series(session: AsyncSession, run_id: uuid.UUID) -> list[ForecastSeri
     return list(result.scalars().all())
 
 
-# ------------------------------------------------------- the tree, end to end
-
-
 async def test_a_grouped_run_forecasts_every_series_in_the_grain(session: AsyncSession) -> None:
     run_id = await _run_grouped(session, GRAIN)
     rows = await _series(session, run_id)
@@ -120,8 +108,6 @@ async def test_the_headline_is_the_top_line_not_the_sum_of_the_tree(session: Asy
     points = await forecast_service.points_for_run(session, run_id)
     direct = sum(p.forecast or 0.0 for p in points if p.kind is PointKind.FORECAST)
 
-    # Every series stores its own forecast points too; the KPI must count the
-    # run's own line once rather than summing the whole tree on top of it.
     assert card.value == pytest.approx(direct, rel=1e-6)
 
 
@@ -154,12 +140,8 @@ async def test_a_grouped_run_reports_progress_that_only_moves_forward(
     assert "fitting_series" in stages, "the fan-out has to be visible while it runs"
     assert stages[-1] == "complete"
 
-    # The series work lands after the top line, so the bar must never rewind.
     progress = [frame.progress for frame in mine]
     assert progress == sorted(progress), stages
-
-
-# ------------------------------------------------------------ the grain itself
 
 
 @pytest.mark.parametrize(
@@ -178,9 +160,6 @@ async def test_a_grain_is_checked_before_the_run_is_queued(
 
     with pytest.raises(ValidationError):
         await forecast_service.create_run(session, dataset_id=dataset_id, group_by=grain)
-
-
-# ------------------------------------------------------------- the wire format
 
 
 def _leaf(label: str, base: float, slope: float) -> SegmentInput:
@@ -211,8 +190,6 @@ def test_a_chunk_survives_the_trip_a_broker_would_put_it_through() -> None:
         forecast_periods=[date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1)],
     )
 
-    # Dates and numpy scalars do not survive JSON, and a broker carries nothing
-    # else — so the round trip is the test.
     job = json.loads(json.dumps(series_service._chunk_job(uuid.uuid4(), plan, leaves)))
     returned = json.loads(json.dumps(series_service.run_chunk_job(job)))
 

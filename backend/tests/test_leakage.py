@@ -1,15 +1,3 @@
-"""What a fold is allowed to know.
-
-A backtest is a claim about how the model would have done at the time. Every
-step that looks at the values around a point — interpolating a gap, clipping an
-outlier, ranking a driver — breaks that claim if it is done once over the whole
-history, because the fold is then trained on numbers derived from the very
-periods it is about to be scored against.
-
-The leak does not announce itself. It makes the reported accuracy better than
-the real one, which is the direction nobody investigates.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -32,8 +20,6 @@ def months(n: int, start: date = date(2022, 1, 1)) -> list[date]:
 
 
 class _RecordingModel(Forecaster):
-    """A model that remembers exactly what it was trained on."""
-
     kind = ModelKind.NAIVE
     min_observations = 1
 
@@ -73,12 +59,6 @@ def _plan(n: int, horizon: int, cuts: list[int]) -> BacktestPlan:
 
 
 def test_a_gap_is_filled_from_the_past_alone() -> None:
-    """np.interp over the whole series pulls the value after the gap backwards.
-
-    A hole at period 10 filled from the whole history is the average of
-    periods 9 and 11 — and period 11 is in the validation window of the fold
-    that trains up to period 11.
-    """
     values = np.arange(24, dtype=float) * 10.0
     values[10] = np.nan
 
@@ -87,15 +67,11 @@ def test_a_gap_is_filled_from_the_past_alone() -> None:
 
     first_fold = windows[0]
     assert first_fold.size == 11
-    # The training window ends at period 10, which is the hole itself, so
-    # there is nothing to its right and it carries period 9 forward.
     assert first_fold[10] == pytest.approx(90.0)
-    # The whole-series fill would have used period 11 and produced 100.0.
     assert fill_gaps(values, GapFill.INTERPOLATE)[10] == pytest.approx(100.0)
 
 
 def test_outliers_are_clipped_against_the_window_that_can_see_them() -> None:
-    """A spike in the validation window must not move the training window's ceiling."""
     values = np.full(24, 100.0)
     values += np.arange(24, dtype=float)
     values[20] = 100_000.0
@@ -103,10 +79,6 @@ def test_outliers_are_clipped_against_the_window_that_can_see_them() -> None:
     prepared = Preparation(winsorise_sigmas=3.5)
     windows = _training_windows(values, _plan(24, 6, [12, 18]), prepared)
 
-    # Neither training window contains the spike, so neither has its ceiling
-    # dragged up by it. Winsorising the whole series first raises the clip for
-    # every fold, and the folds are then trained on a series shaped by a value
-    # they are supposed not to have seen.
     for window in windows:
         assert float(np.max(window)) < 200.0
 
@@ -115,8 +87,6 @@ def test_outliers_are_clipped_against_the_window_that_can_see_them() -> None:
 
 
 def test_a_period_that_was_never_observed_is_not_scored() -> None:
-    """Filling a gap invents a number; scoring against it reports an accuracy
-    nobody measured, in whichever direction the filling happened to guess."""
     values = np.arange(24, dtype=float) * 10.0
     values[[19, 20]] = np.nan
 
@@ -132,7 +102,6 @@ def test_a_period_that_was_never_observed_is_not_scored() -> None:
 
     assert result.n_folds == 1
     fold = result.folds[0]
-    # Six periods in the window, two of them never reported.
     assert fold.test_size == 4
     assert all(np.isfinite(v) for v in fold.y_true)
 
@@ -156,17 +125,9 @@ def test_a_fold_whose_window_holds_no_observation_at_all_is_dropped() -> None:
 
 
 def test_a_driver_is_chosen_by_the_window_that_can_see_it() -> None:
-    """A wide panel of candidates always contains one that fits the future.
-
-    Ranking them once over the whole history picks the lag that best explains
-    the periods being scored — which is the fastest way to a backtest that
-    looks excellent and a forecast that is not.
-    """
     from app.forecasting.drivers import DriverSource
 
     calendar = months(48)
-    # A column that leads the target for the first half of the history and
-    # goes to noise afterwards, and one that does the opposite.
     rng = np.random.default_rng(11)
     target = np.concatenate([np.arange(24, dtype=float), rng.normal(12, 3, 24)])
     early = np.concatenate([np.arange(24, dtype=float) + 5.0, rng.normal(0, 5, 24)])
@@ -188,8 +149,6 @@ def test_a_driver_is_chosen_by_the_window_that_can_see_it() -> None:
 
 
 def test_a_fold_panel_starts_where_the_fold_starts() -> None:
-    """A rolling fold begins partway through. A panel indexed from the series
-    start would hand it driver values from the wrong periods entirely."""
     from app.forecasting.drivers import DriverSource
 
     calendar = months(48)

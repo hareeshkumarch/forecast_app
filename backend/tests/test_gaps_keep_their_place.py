@@ -39,7 +39,6 @@ class Flat(Forecaster):
 
 
 class Zero(Flat):
-    # Predicts zero whatever it was fitted on, so a residual names its horizon.
     def predict(self, horizon: int, periods: list[date]) -> np.ndarray:
         return np.zeros(horizon)
 
@@ -53,8 +52,6 @@ def _gapped_run(gap_step: int | None) -> tuple[BacktestResult, int]:
     values = np.full(n, 1.0)
 
     plan = plan_backtest(n, 4, DAILY, max_folds=6)
-    # Every validation point is stamped with the horizon it sits at, so a
-    # residual of 3000 can only have come from step 3.
     for cut in plan.cut_points:
         for step in range(plan.horizon):
             values[cut + step] = STEP_MARK * (step + 1)

@@ -1,5 +1,3 @@
-"""Signing in is not the same as being let in."""
-
 from __future__ import annotations
 
 import uuid
@@ -11,11 +9,6 @@ from app.core.config import settings
 
 @pytest.fixture(autouse=True)
 def _settings_restored():
-    """`settings` is one object for the whole session.
-
-    A test that switches authentication on and leaves it on does not fail —
-    it fails every test that runs after it, in files it has never heard of.
-    """
     original = (
         settings.credential_secret_key,
         settings.auth_enabled,
@@ -39,7 +32,6 @@ def test_administrators_are_recognised_by_email() -> None:
     settings.auth_admin_emails_raw = "boss@example.com, Other@Example.com"
     try:
         assert user_service.is_admin("boss@example.com")
-        # Case is not something a person should have to get right in a config.
         assert user_service.is_admin("OTHER@example.com")
         assert not user_service.is_admin("stranger@example.com")
         assert not user_service.is_admin("")
@@ -53,11 +45,6 @@ class _Row:
 
 
 async def test_an_unregistered_account_is_not_treated_as_approved(monkeypatch) -> None:
-    """The absence of a decision is not a decision.
-
-    A new sign-in has a valid token and no row. Reading that as permission
-    would let it skip the endpoint that registers it and walk past the gate.
-    """
     from app.api import deps
     from app.core.auth import AuthenticatedUser, ForbiddenError
     from app.models.enums import AccessStatus
@@ -123,12 +110,6 @@ class _Account:
 
 
 async def test_the_configured_admin_cannot_be_locked_out(monkeypatch) -> None:
-    """The floor under the role column.
-
-    Demote or refuse everyone through the UI and the account named in the
-    environment must still get back in, or a deployment can be left with
-    nobody able to approve anybody — a state with no way out but a shell.
-    """
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
     from app.services.user_service import LastAdminError
@@ -163,7 +144,6 @@ async def test_the_last_administrator_cannot_step_down(monkeypatch) -> None:
 
 
 async def test_promoting_somebody_waiting_lets_them_in(monkeypatch) -> None:
-    """An administrator who cannot sign in is not one."""
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
 
@@ -200,13 +180,6 @@ def test_a_role_in_the_database_grants_admin_without_the_config() -> None:
 
 
 async def test_only_being_let_in_sends_anything(monkeypatch) -> None:
-    """The yes is the only message a decision produces.
-
-    A refusal and a revocation used to send one each. Both told somebody they
-    had lost or been denied something, with nothing in them to act on, and the
-    app says either the moment they next look. The approval is the one
-    somebody is actually waiting for.
-    """
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
 
@@ -240,19 +213,10 @@ async def test_only_being_let_in_sends_anything(monkeypatch) -> None:
     assert await decide(AccessStatus.PENDING, AccessStatus.REJECTED) == []
     assert await decide(AccessStatus.APPROVED, AccessStatus.REJECTED) == []
 
-    # And nothing at all when nothing changed.
     assert await decide(AccessStatus.APPROVED, AccessStatus.APPROVED) == []
 
 
 def test_production_refuses_to_start_on_a_secret_manager_it_cannot_read() -> None:
-    """The fallback stops being a smaller version of the deployment.
-
-    Falling back to the environment is right while the environment still holds
-    everything. Once the file on the box has been emptied — the whole point of
-    adopting a secret manager — the same fallback comes up with AUTH_ENABLED
-    defaulting to false, which is a publicly readable API with nothing saying
-    so out loud.
-    """
     import app.core.config as config
 
     was = (config.secrets_load.configured, config.secrets_load.loaded, config.secrets_load.error)
@@ -274,7 +238,6 @@ def test_production_refuses_to_start_on_a_secret_manager_it_cannot_read() -> Non
         config.secrets_load.loaded = True
         build()
 
-        # A deployment that never adopted it is untouched.
         config.secrets_load.configured, config.secrets_load.loaded = False, False
         build()
     finally:

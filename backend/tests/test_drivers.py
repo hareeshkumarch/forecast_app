@@ -33,13 +33,6 @@ def months(n: int, start: date = date(2019, 1, 1)) -> list[date]:
 def leading_panel(
     n: int = 72, lag: int = HORIZON, noise: float = 0.02
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    A driver that genuinely leads, and the target it leads.
-
-    The target is a seasonal series plus a shock the driver saw `lag` periods
-    earlier. Nothing in the target's own past predicts the shock, so a model
-    that can read the driver has something a model that cannot does not.
-    """
     rng = np.random.default_rng(7)
     driver = rng.normal(0.0, 1.0, n)
 
@@ -110,11 +103,6 @@ def test_the_panel_keeps_only_what_it_can_afford() -> None:
 
 
 def test_a_row_never_reads_a_value_it_could_not_have_known() -> None:
-    """
-    The property the whole design rests on. A backtest fold is a prefix, and a
-    row at index i may only read the driver at i - lag; if that were ever
-    violated the backtest would be scoring a model on the future.
-    """
     raw = np.arange(50, dtype=float)
     panel = DriverPanel(links=[DriverLink(name="d", lag=HORIZON, strength=0.9)], series={"d": raw})
 
@@ -124,8 +112,6 @@ def test_a_row_never_reads_a_value_it_could_not_have_known() -> None:
     for index in range(HORIZON, 50):
         assert columns[index] == raw[index - HORIZON]
 
-    # Asking for rows beyond the panel is the future-row case: each still only
-    # reaches back `lag`, so it stays inside what has already happened.
     extended = panel.columns(56)["driver_d_lag_6"]
     assert extended[55] == raw[49]
     assert np.isfinite(extended[50:]).all()
@@ -180,11 +166,6 @@ def test_an_unrelated_column_does_not_get_used() -> None:
 
 
 def test_a_real_driver_improves_the_backtest() -> None:
-    """
-    The number that justifies the feature. The shock is invisible in the
-    target's own history, so a model that reads the driver should backtest
-    better than the same engine without it.
-    """
     target, driver = leading_panel(n=84, lag=HORIZON, noise=0.01)
     periods = months(len(target))
     series = SeriesInput(periods=periods, values=[float(v) for v in target])

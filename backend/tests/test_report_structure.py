@@ -1,14 +1,3 @@
-"""What the PDF is for.
-
-The report is the picture; the CSV and Excel exports are the numbers. These
-assert that split holds — that every drawn thing is introduced by a heading,
-and that the row-by-row tables which belong in a spreadsheet have not crept
-back onto the page.
-
-The charts themselves are covered by test_report_charts.py. This is about the
-document they sit in.
-"""
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -120,9 +109,6 @@ def _text(tmp_path: Path, run: Any = None, **kwargs: Any) -> str:
         return "\n".join((page.extract_text() or "") for page in document.pages)
 
 
-# ------------------------------------------------------- every drawing is named
-
-
 @pytest.mark.parametrize(
     "heading",
     [
@@ -136,25 +122,16 @@ def _text(tmp_path: Path, run: Any = None, **kwargs: Any) -> str:
     ],
 )
 def test_each_section_announces_itself(tmp_path: Path, heading: str) -> None:
-    # A chart with no heading is a picture the reader has to identify from its
-    # axes. The forecast chart used to open the document unlabelled.
     assert heading in _text(tmp_path)
 
 
 def test_the_forecast_chart_is_introduced_before_it_is_drawn(tmp_path: Path) -> None:
     text = _text(tmp_path)
     assert text.index("THE FORECAST") < text.index("HOW THIS FORECAST ACTUALLY DID")
-    # And the caption says what the band is, since a shaded region is not
-    # self-explanatory.
     assert "95% interval" in text
 
 
-# ------------------------------------------------- numbers belong in the export
-
-
 def test_the_row_by_row_horizon_table_is_not_in_the_pdf(tmp_path: Path) -> None:
-    # One row per period, six columns wide, is a spreadsheet. It was two pages
-    # of the old report and is the whole content of the CSV export.
     text = _text(tmp_path)
     assert "Best case Worst case" not in text
 
@@ -168,19 +145,12 @@ def test_the_risk_section_draws_bars_rather_than_listing_every_series(
     tmp_path: Path,
 ) -> None:
     text = _text(tmp_path)
-    # 28 series in, at most RISK_BARS drawn, and no table of the rest.
     assert "SKU-000" in text
     assert f"SKU-{pdf.RISK_BARS:03d}" not in text
     assert "largest of 28 series" in text
 
 
-# ---------------------------------------------------- a number that means what
-
-
 def test_a_small_driver_impact_does_not_render_as_zero(tmp_path: Path) -> None:
-    # Impacts are in the target's units, and a conversion rate or a margin sits
-    # below one. Fixed zero-decimal formatting turned every such driver into
-    # "0" — a column claiming nothing moved anything.
     text = _text(tmp_path, driver_impact=0.42)
     assert "0.420" in text
 
@@ -198,13 +168,7 @@ def test_magnitude_picks_precision_from_size(value: Any, expected: str) -> None:
     assert pdf._magnitude(value) == expected
 
 
-# ------------------------------------------------------ the answer comes first
-
-
 def test_the_decision_is_above_the_evidence_for_it(tmp_path: Path) -> None:
-    # A planner opens this to find out what to commit to. Everything below is
-    # the working, and a reader who trusts the working should not have to reach
-    # page two to find the answer.
     text = _text(tmp_path)
 
     assert text.index("THE DECISION") < text.index("THE FORECAST")
@@ -219,8 +183,6 @@ def test_the_three_planning_numbers_are_named_not_just_printed(tmp_path: Path) -
 
 
 def test_the_grade_says_what_the_forecast_may_be_used_for(tmp_path: Path) -> None:
-    # The word on its own is a label the reader has to have been told the
-    # meaning of; next to the sentence it stands for, it is a permission.
     text = _text(tmp_path)
 
     assert "PLANNABLE" in text
@@ -236,7 +198,6 @@ def test_a_forecast_too_rough_to_plan_from_refuses_in_the_report(tmp_path: Path)
 
 
 def test_the_lean_the_last_run_earned_leads_the_actions(tmp_path: Path) -> None:
-    # It changes every number under it, so it outranks the rest of the list.
     leaning = _run(realized_bias=-8.0, realized_wmape=12.4)
     body = _text(tmp_path, run=leaning)
 
@@ -245,13 +206,10 @@ def test_the_lean_the_last_run_earned_leads_the_actions(tmp_path: Path) -> None:
 
 
 def test_a_miss_that_scatters_is_not_written_up_as_a_lean(tmp_path: Path) -> None:
-    # The default run misses by 2.1% against 12.4% error: noise, not direction.
     assert "Correct the plan" not in _text(tmp_path)
 
 
 def test_an_unscored_run_still_gets_a_decision(tmp_path: Path) -> None:
-    # Nothing in the decision needs a scored run: the interval alone carries
-    # the commit level, and the backtest carries the grade.
     unscored = _run(
         scored_at=None,
         scored_periods=0,
@@ -267,8 +225,6 @@ def test_an_unscored_run_still_gets_a_decision(tmp_path: Path) -> None:
 
 
 def test_the_grade_travels_on_every_page(tmp_path: Path) -> None:
-    # A chart photographed off page three and pasted into a deck otherwise
-    # arrives with no statement of what it may be used for.
     out = tmp_path / "report.pdf"
     pdf.build(out, _run(), _rows(), _sheets(), max_rows=200)
 

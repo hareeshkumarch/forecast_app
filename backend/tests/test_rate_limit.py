@@ -1,5 +1,3 @@
-"""One busy client must not be able to slow the platform for everybody else."""
-
 from __future__ import annotations
 
 import pytest
@@ -39,7 +37,6 @@ def test_clients_are_counted_separately() -> None:
 
 
 def test_rules_are_counted_separately_for_one_client() -> None:
-    """Spending an upload allowance must not stop somebody reading a page."""
     window = SlidingWindow()
     one = Rule(limit=1, window_seconds=60, name="one")
     two = Rule(limit=1, window_seconds=60, name="two")
@@ -49,12 +46,6 @@ def test_rules_are_counted_separately_for_one_client() -> None:
 
 
 def test_the_window_slides_rather_than_resetting() -> None:
-    """A fixed window allows twice the limit across its boundary.
-
-    Spend the allowance in the last moment of one window and the whole of the
-    next in the first moment of the next, and a limit of three has passed six
-    requests in a blink — which is the burst the limit exists to stop.
-    """
     window = SlidingWindow()
     rule = Rule(limit=3, window_seconds=60, name="t")
 
@@ -65,12 +56,6 @@ def test_the_window_slides_rather_than_resetting() -> None:
 
 
 def test_a_refusal_is_not_counted_against_the_client() -> None:
-    """Otherwise somebody who keeps retrying never comes off the limit.
-
-    Counting refusals turns a momentary burst into an indefinite block, and
-    the client least likely to stop retrying is the one least likely to
-    deserve it.
-    """
     window = SlidingWindow()
     rule = Rule(limit=1, window_seconds=10, name="t")
 
@@ -82,7 +67,6 @@ def test_a_refusal_is_not_counted_against_the_client() -> None:
 
 
 def test_tracking_is_bounded() -> None:
-    """A map keyed by remote address is a memory leak with a public trigger."""
     window = SlidingWindow(max_tracked=10)
     rule = Rule(limit=5, window_seconds=60, name="t")
 
@@ -122,21 +106,14 @@ def test_each_route_lands_on_the_rule_meant_for_it(method, path, expected) -> No
 
 
 def test_health_is_never_limited() -> None:
-    """A rate-limited health check reads as an outage.
-
-    The deploy script polls it in a loop for up to fifteen minutes while an
-    image builds.
-    """
     assert ratelimit.rule_for("GET", "/api/health") is None
 
 
 def test_the_progress_stream_is_never_limited() -> None:
-    """It is one long-lived connection, not a request rate."""
     assert ratelimit.rule_for("GET", "/api/forecasts/x/events") is None
 
 
 def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote() -> None:
-    """The last entry is what the proxy in front saw. Everything left of it is hearsay."""
     assert (
         ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "5.6.7.8"
     )
@@ -146,11 +123,6 @@ def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote() -> None:
 
 
 def test_a_caller_cannot_mint_an_allowance_by_writing_the_header_itself() -> None:
-    """CloudFront appends the viewer to whatever the viewer sent, so the left is theirs.
-
-    Read from the left, `X-Forwarded-For: <a random string>` on every request
-    is a fresh window every time and the limit stops being one.
-    """
     forged = {"x-forwarded-for": "attacker-chose-this, 203.0.113.9"}
     assert ratelimit.client_identity(forged, "10.0.0.1") == "203.0.113.9"
 
@@ -167,7 +139,6 @@ def test_a_second_proxy_is_accounted_for_by_configuration() -> None:
 
 
 def test_a_shorter_chain_than_configured_falls_back_rather_than_wrapping() -> None:
-    """Negative indexing past the start would silently return the caller's own entry."""
     settings = ratelimit.settings
     before = settings.rate_limit_trusted_proxy_hops
     settings.rate_limit_trusted_proxy_hops = 3
@@ -180,7 +151,6 @@ def test_a_shorter_chain_than_configured_falls_back_rather_than_wrapping() -> No
 
 
 def test_a_header_from_somewhere_other_than_the_proxy_is_not_believed() -> None:
-    """The origin still answers the open internet, so the header can arrive unfiltered."""
     settings = ratelimit.settings
     before = settings.rate_limit_trusted_proxies_raw
     settings.rate_limit_trusted_proxies_raw = "10.0.0.0/8"
@@ -194,11 +164,6 @@ def test_a_header_from_somewhere_other_than_the_proxy_is_not_believed() -> None:
 
 
 async def test_the_headers_are_served_on_an_ordinary_answer(client) -> None:
-    """A client that can see it has four left can slow down.
-
-    One that only finds out at zero cannot, which is how a well-behaved
-    integration ends up looking like an attack.
-    """
     response = await client.get("/api/auth/decide", params={"token": "nope"})
 
     assert response.headers["RateLimit-Limit"] == str(ratelimit.DECIDE.limit)
@@ -219,14 +184,10 @@ async def test_going_over_is_answered_as_429_in_the_platform_error_shape(client)
     body = response.json()["error"]
     assert body["code"] == "rate_limited"
     assert body["detail"]["retry_after_seconds"] >= 1
-    # Every other error this platform serves carries one, and a client that
-    # reports a problem quotes it. A 429 without one is the answer nobody can
-    # trace afterwards.
     assert body["request_id"]
 
 
 async def test_health_survives_a_hammering(client) -> None:
-    """The deploy script polls this in a loop while an image builds."""
     for _ in range(ratelimit.DEFAULT.limit + 50):
         response = await client.get("/api/health")
         assert response.status_code == 200

@@ -1,17 +1,3 @@
-"""
-Scoring a forecast against what actually happened.
-
-The setup throughout is the one this feature exists for: a run fitted on data
-that stops partway through the panel, then scored against the same panel once
-the rest of it has arrived. Because the tail is withheld rather than invented,
-the actuals are real and the realized error is a number worth asserting on.
-
-What these mostly check is the refusals. A metric that is confidently wrong is
-worse than an absent one, and every way this could produce a confidently wrong
-number — a half-finished period, a pooled tail, a series the source has never
-heard of — has a test that says so.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -36,10 +22,6 @@ from app.services import dataset_service, forecast_service, scoring_service
 GRAIN = ["region", "product_category"]
 HORIZON = 3
 RESTATEMENT_FACTOR = 1.1
-#: One month more than the horizon is withheld, so the full panel carries data
-#: *after* the last month the run forecast. Without that extra month the last
-#: one could not be settled — nothing following it means nothing to prove it
-#: finished — and the happy path would never reach a full horizon.
 WITHHELD = HORIZON + 1
 
 
@@ -97,16 +79,12 @@ async def _run_on(
 
 @pytest.fixture
 async def truncated_and_full(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
-    """A run's worth of history, and the same panel once the horizon has passed."""
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
 
     partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
     full = await _dataset(session, generate_rows(), "The whole panel")
     return partial, full
-
-
-# ---------------------------------------------------------------- the happy path
 
 
 async def test_a_run_is_scored_against_the_actuals_that_arrived_after_it(
@@ -128,12 +106,6 @@ async def test_a_run_is_scored_against_the_actuals_that_arrived_after_it(
     assert card.mae is not None and card.mae >= 0
     assert card.bias is not None
 
-    # How good the forecast was is not this test's business — the panel puts a
-    # 34% promotion inside the horizon precisely so realized error can diverge
-    # from backtest error. What is asserted is that the two sides of the
-    # comparison are the same kind of number: a factor out here would mean the
-    # windows are misaligned, which is the failure that looks like bad accuracy
-    # and is not.
     assert 0.0 <= card.wmape < 100.0
     assert card.forecast_total == pytest.approx(card.actual_total, rel=0.5)
 
@@ -178,7 +150,6 @@ async def test_the_actuals_are_written_onto_the_points_they_belong_to(
     assert scored, "the run forecast something"
     assert all(point.actual is not None for point in scored), "every settled point is graded"
 
-    # And the graded actual is the panel's own number for that month.
     from app.datasets import queries
 
     dataset = await dataset_service.get_dataset(session, full)
@@ -202,13 +173,8 @@ async def test_coverage_says_whether_the_interval_kept_its_promise(
     card = await scoring_service.score_run(session, run_id, dataset_id=full)
 
     assert card.coverage is not None
-    # Every settled point either fell inside its band or it did not, so over a
-    # three-period horizon the share can only be none, one, two or all of them.
     reachable = [caught * 100.0 / HORIZON for caught in range(HORIZON + 1)]
     assert any(card.coverage == pytest.approx(value) for value in reachable), card.coverage
-
-
-# --------------------------------------------------------- what it was scored against
 
 
 async def test_scoring_records_the_reading_it_graded_against(
@@ -225,10 +191,6 @@ async def test_scoring_records_the_reading_it_graded_against(
 
     believed = await actuals.current(session, run.dataset_id)
     points = await forecast_service.points_for_run(session, run_id)
-    # Only the forecast points were graded. The run also writes an ACTUAL-kind
-    # point per historical period, carrying the history it was fitted on —
-    # that is the input to the forecast, not an outcome that arrived later, and
-    # the outcomes ledger is right not to hold it.
     graded = {
         p.period: p.actual
         for p in points
@@ -301,24 +263,14 @@ async def test_a_grouped_run_records_a_reading_per_combination(
     assert all(set(json.loads(key)) == set(GRAIN) for key in combinations)
 
 
-# ------------------------------------------------------------------ the refusals
-
-
 async def test_a_period_still_being_lived_through_is_not_scored(
     session: AsyncSession,
 ) -> None:
-    """
-    The one number that would be confidently wrong: a whole month's forecast
-    against a fortnight of actuals reads as a collapse that never happened.
-    """
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
     partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
     run_id = await _run_on(session, partial)
 
-    # A source that reaches into the first forecast month but no further. The
-    # panel stamps each month on its first day, so a mid-month row is the only
-    # way to build a genuinely half-finished period.
     half = dict(generate_rows()[0])
     half["order_date"] = (months[-WITHHELD] + timedelta(days=13)).isoformat()
     stops_midway = await _dataset(session, [*_rows_through(cutoff), half], "Stops midway")
@@ -350,7 +302,6 @@ async def test_a_source_that_stops_before_the_horizon_scores_nothing(
 async def test_only_the_periods_that_have_finished_are_scored(
     session: AsyncSession,
 ) -> None:
-    """A horizon settles a period at a time, and the card has to say so."""
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
     partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
@@ -359,8 +310,6 @@ async def test_only_the_periods_that_have_finished_are_scored(
     one_month_on = await _dataset(session, _rows_through(months[-WITHHELD]), "One month on")
     card = await scoring_service.score_run(session, run_id, dataset_id=one_month_on)
 
-    # The first forecast month is present but is the source's last, so it is
-    # not settled; nothing earlier is left to settle. One more month would.
     assert card.scored_periods == 0
     assert card.pending_periods == HORIZON
 
@@ -407,9 +356,6 @@ async def test_a_source_missing_the_run_s_columns_is_refused(session: AsyncSessi
         await scoring_service.score_run(session, run_id, dataset_id=dataset.id)
 
 
-# ------------------------------------------------------------------- the grain
-
-
 async def test_every_series_in_the_tree_is_scored_against_its_own_actuals(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
@@ -426,8 +372,6 @@ async def test_every_series_in_the_tree_is_scored_against_its_own_actuals(
     assert all(row.wmape is not None for row in scored)
     assert all(row.actual_total is not None for row in scored)
 
-    # A parent's actual is its children's, at every level — the same property
-    # the forecast side of the tree already has.
     for level in (1, 2):
         assert sum(
             row.actual_total or 0.0 for row in scored if row.level == level
@@ -439,11 +383,6 @@ async def test_every_series_in_the_tree_is_scored_against_its_own_actuals(
 async def test_the_root_of_the_tree_is_scored_as_the_run_s_own_line(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """
-    The root stores no curve of its own — that would be a second copy of the
-    top line — so it is scored from the top line rather than reported as a
-    series that forecast nothing.
-    """
     partial, full = truncated_and_full
     run_id = await _run_on(session, partial, grain=GRAIN)
 
@@ -458,13 +397,11 @@ async def test_the_root_of_the_tree_is_scored_as_the_run_s_own_line(
 async def test_a_series_the_source_never_recorded_is_scored_as_a_real_zero(
     session: AsyncSession,
 ) -> None:
-    """Under a sum, nothing recorded is nothing sold — which is a genuine miss."""
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
     partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
     run_id = await _run_on(session, partial, grain=["region"])
 
-    # A panel the last region drops out of entirely after the cutoff.
     dropped = "Middle East & Africa"
     thinned = [
         row
@@ -482,10 +419,6 @@ async def test_a_series_the_source_never_recorded_is_scored_as_a_real_zero(
 
 
 async def test_a_mean_run_will_not_call_a_missing_series_zero(session: AsyncSession) -> None:
-    """
-    An average of nothing is unknown, not zero — and scoring it as zero would
-    manufacture a hundred-percent miss out of a gap in the data.
-    """
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
     partial = await _dataset(session, _rows_through(cutoff), "Through the cutoff")
@@ -526,11 +459,7 @@ async def test_a_combination_that_appeared_after_the_run_is_counted_not_hidden(
 
     assert card.unforecast_keys == 1, "the run never forecast Product E"
     assert all(row.label != "Product E" for row in card.series)
-    # It still lands in the top line, which is what makes the count worth having.
     assert card.actual_total > sum(row.actual_total or 0.0 for row in card.series if row.level == 1)
-
-
-# ---------------------------------------------------------- choosing the source
 
 
 async def test_the_newest_dataset_that_covers_the_horizon_is_chosen(
@@ -545,16 +474,7 @@ async def test_the_newest_dataset_that_covers_the_horizon_is_chosen(
     assert card.scored is True
 
 
-# ------------------------------------------------- choosing the right actuals
-#
-# `order_date` and `revenue` are what half the world calls its columns, so
-# holding a run's columns is not the same as being a run's data. These are the
-# tests that stop the platform grading one business against another and
-# reporting the answer as fact.
-
-
 def _scaled(factor: float) -> list[dict[str, object]]:
-    """The same panel, at a different size — a different business entirely."""
     return [{**row, "revenue": float(row["revenue"]) * factor} for row in generate_rows()]  # type: ignore[arg-type]
 
 
@@ -576,13 +496,6 @@ async def test_a_newer_file_at_a_different_scale_is_not_this_run_s_data(
 async def test_a_file_a_fraction_of_the_size_is_refused_too(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """
-    The symmetric half, which a plain wMAPE against the run's history misses.
-
-    Dividing the gap by the run's own total lets anything between nothing and
-    twice the run's size through, so a file a fortieth of the size would have
-    scored as 97.5% wrong rather than as the wrong file.
-    """
     partial, full = truncated_and_full
     run_id = await _run_on(session, partial)
 
@@ -596,7 +509,6 @@ async def test_a_file_a_fraction_of_the_size_is_refused_too(
 async def test_a_restatement_is_still_the_same_data(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """Late corrections are ordinary. Only a different series is refused."""
     partial, _full = truncated_and_full
     run_id = await _run_on(session, partial)
 
@@ -611,13 +523,6 @@ async def test_a_restatement_is_still_the_same_data(
 async def test_a_file_holding_only_the_new_periods_is_still_usable(
     session: AsyncSession,
 ) -> None:
-    """
-    Sharing no history is not evidence against a file.
-
-    Uploading only the months that have happened since is a perfectly ordinary
-    thing to do, and there is nothing in such a file to check — so it is used,
-    rather than refused for failing a test it could not sit.
-    """
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
 
@@ -636,13 +541,6 @@ async def test_a_file_holding_only_the_new_periods_is_still_usable(
 async def test_a_file_recording_nothing_where_the_run_recorded_something_is_refused(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """
-    A flat-zero file is not an unjudgeable file.
-
-    It has rows over the run's history and says every one of them was nothing,
-    which is a claim, and a false one. Scoring against it grades the forecast
-    against zeros and reports a total collapse that never happened.
-    """
     partial, full = truncated_and_full
     run_id = await _run_on(session, partial)
 
@@ -672,8 +570,6 @@ async def test_a_run_whose_only_candidates_contradict_it_says_which_way(
     card = await scoring_service.score_run(session, run_id)
 
     assert card.scored is False
-    # Not "nothing covers this yet" — something does, and it is the wrong data.
-    # The two call for different actions, so they read differently.
     assert card.blocked_reason is not None
     assert "compare like with like" in card.blocked_reason
     assert "Upload a refresh" in card.blocked_reason
@@ -695,9 +591,6 @@ async def test_a_run_with_nothing_to_score_against_says_so_rather_than_failing(
     unscored = await scoring_service.stored_scorecard(session, run_id)
     assert unscored.scored is False
     assert unscored.blocked_reason is not None and "Not scored yet" in unscored.blocked_reason
-
-
-# ------------------------------------------------------------------ over the API
 
 
 async def test_the_endpoint_scores_and_then_reports_what_it_stored(
@@ -744,8 +637,6 @@ async def test_the_endpoint_scores_and_then_reports_what_it_stored(
     assert body["accuracy"] == pytest.approx(round(max(0.0, 100.0 - body["wmape"]), 2))
     assert body["currency"] is True, "revenue is money"
 
-    # The drift verdict travels with the card rather than being recomputed by
-    # every reader from wmape and bias.
     assert isinstance(body["drifted"], bool)
     assert body["tracking_signal"] is None or isinstance(body["tracking_signal"], int | float)
     assert body["series"], "the tree comes back worst first"
@@ -756,21 +647,12 @@ async def test_the_endpoint_scores_and_then_reports_what_it_stored(
     after = await client.get(f"/api/forecasts/{run_id}/score")
     assert after.json()["wmape"] == pytest.approx(body["wmape"])
 
-    # And the run itself now carries the realized number alongside the backtest one.
     detail = await client.get(f"/api/forecasts/{run_id}")
     assert detail.json()["realized_wmape"] == pytest.approx(body["wmape"])
     assert detail.json()["realized_accuracy"] == pytest.approx(body["accuracy"])
 
 
 def _pdf_text(body: bytes) -> str:
-    """
-    The strings a PDF draws, without a PDF library.
-
-    ReportLab writes each page as an ASCII85-then-Flate stream of text
-    operators, and both codecs are in the standard library — worth the twelve
-    lines to keep the report's own rendering under test without adding a
-    dependency the deployment does not need.
-    """
     drawn: list[bytes] = []
     for raw in re.findall(rb"stream\r?\n(.*?)endstream", body, re.S):
         try:
@@ -784,11 +666,6 @@ def _pdf_text(body: bytes) -> str:
 async def test_the_report_gains_a_scorecard_once_the_run_has_one(
     client: AsyncClient,
 ) -> None:
-    """
-    The section is absent before scoring and present after, with the graded
-    numbers in it. An empty "how it did" heading reads as a failure rather
-    than as a horizon still running.
-    """
     months = _months()
     cutoff = months[-(WITHHELD + 1)]
 
@@ -828,7 +705,6 @@ async def test_the_report_gains_a_scorecard_once_the_run_has_one(
     assert "HOW THIS FORECAST ACTUALLY DID" in rendered
     assert f"{card['scored_periods']} of {HORIZON}" in rendered
     assert f"{card['accuracy']:.1f}%" in rendered
-    # And the backtest section still says which kind of number it is.
     assert "backtesting" in rendered
 
 
@@ -870,19 +746,12 @@ async def test_the_series_list_carries_the_realized_error_once_it_exists(
     assert all(row["realized_wmape"] is not None for row in leaves)
     assert all(row["realized_actual_total"] is not None for row in leaves)
 
-    # The backtest number and the realized one are different measurements and
-    # are kept apart; conflating them is the whole failure this guards against.
     assert any(row["realized_wmape"] != row["wmape"] for row in leaves if row["wmape"] is not None)
 
 
 async def test_reading_a_scorecard_back_gives_what_computing_it_gave(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """
-    A reload must not quietly lose half the answer. The first version dropped
-    both the reach of the source and the whole per-series breakdown, so the
-    panel said less after a refresh than it had a moment earlier.
-    """
     partial, full = truncated_and_full
     run_id = await _run_on(session, partial, grain=["region"])
 
@@ -913,7 +782,7 @@ async def test_reading_a_scorecard_back_gives_what_computing_it_gave(
     [
         (100.0, 0.8, True),
         (80.0, 0.8, True),
-        (4 / 5 * 100.0, 0.8, True),  # exactly the promise, arrived at by division
+        (4 / 5 * 100.0, 0.8, True),
         (2 / 3 * 100.0, 0.8, False),
         (0.0, 0.8, False),
         (None, 0.8, None),
@@ -923,10 +792,6 @@ async def test_reading_a_scorecard_back_gives_what_computing_it_gave(
 def test_the_interval_verdict_is_one_predicate_everywhere(
     coverage: float | None, confidence: float | None, held: bool | None
 ) -> None:
-    """
-    The report and the API were each deciding this, one with a float tolerance
-    and one without — so a run could pass on screen and fail on paper.
-    """
     from app.forecasting.metrics import intervals_held
 
     assert intervals_held(coverage, confidence) is held
@@ -935,15 +800,6 @@ def test_the_interval_verdict_is_one_predicate_everywhere(
 async def test_the_dashboard_stops_showing_a_backtest_number_once_it_knows_better(
     session: AsyncSession, truncated_and_full: tuple[uuid.UUID, uuid.UUID]
 ) -> None:
-    """
-    The accuracy KPI has to say which kind of accuracy it is. Left as the
-    backtest figure, a forecast that missed by a fifth reads as 97% accurate
-    on the first screen anyone opens.
-
-    The error card beside it has to move in the same tense, or the pair
-    contradicts itself: 2.8% typical error next to 82% accuracy invites the
-    reader to do the subtraction and conclude the screen is broken.
-    """
     from app.schemas.dashboard import DashboardQuery
     from app.services import dashboard_service
 
@@ -974,8 +830,6 @@ async def test_the_dashboard_stops_showing_a_backtest_number_once_it_knows_bette
     graded = await error_card()
     assert graded.label == "Actual Error"  # type: ignore[attr-defined]
     assert graded.value == pytest.approx(scored.wmape, abs=0.01)  # type: ignore[attr-defined]
-    # A percentage's move is in points; the percent change of a percentage is
-    # both true and useless — 2.8% to 18.3% is not "+543%" to anyone.
     assert graded.delta_display.endswith(" pts")  # type: ignore[attr-defined]
 
 
@@ -992,7 +846,6 @@ def _card(**kwargs: object) -> scoring_service.Scorecard:
 
 
 def test_a_run_whose_misses_cancel_out_is_not_drifting() -> None:
-    # Same absolute error, but landing either side of the truth: noise, not drift.
     card = _card(forecast_total=1000.0, actual_total=1000.0, mae=50.0, wmape=5.0)
 
     assert card.tracking_signal == 0.0
@@ -1000,8 +853,6 @@ def test_a_run_whose_misses_cancel_out_is_not_drifting() -> None:
 
 
 def test_a_run_that_missed_the_same_way_every_period_is_drifting() -> None:
-    # Cumulative error of 300 against a MAD of 50 is six deviations of one-sided
-    # bias, well past the Trigg limit of four.
     card = _card(forecast_total=1300.0, actual_total=1000.0, mae=50.0, wmape=5.0)
 
     assert card.tracking_signal == 6.0
@@ -1024,6 +875,5 @@ def test_a_run_simply_far_out_drifts_even_without_a_one_sided_bias() -> None:
 
 def test_an_unscored_run_has_no_tracking_signal_to_report() -> None:
     assert _card(scored_periods=0).tracking_signal is None
-    # A zero MAD would make the ratio undefined rather than infinite.
     assert _card(mae=0.0).tracking_signal is None
     assert _card(mae=None).tracking_signal is None

@@ -1,11 +1,3 @@
-"""Alive and ready are different questions, and were being answered together.
-
-A redeploy used to look healthy while it was already tearing down, so requests
-kept arriving at a process that could not serve them — and every forecast still
-running was failed outright, which is retryable and is still a progress bar
-that stops for no reason anybody watching can see.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -42,8 +34,6 @@ async def test_a_draining_process_asks_not_to_be_sent_traffic(client) -> None:
 
 
 async def test_it_stays_alive_while_it_drains(client) -> None:
-    """Answering the liveness check false would have the supervisor restart
-    something that is shutting down on purpose."""
     lifecycle.begin_shutdown()
 
     assert (await client.get("/api/health")).status_code == 200
@@ -59,8 +49,6 @@ async def test_shutting_down_twice_keeps_the_first_moment(client) -> None:
 
 class TestDraining:
     async def test_nothing_new_starts_once_the_gate_is_closed(self) -> None:
-        """A minute of model fitting on a worker about to be torn down is work
-        nobody will see the result of."""
         scheduler = Scheduler()
         scheduler._slots = 2
         scheduler.close()

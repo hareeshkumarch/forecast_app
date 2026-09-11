@@ -1,5 +1,3 @@
-"""The metric set follows the data, and says what it withheld and why."""
-
 from __future__ import annotations
 
 import numpy as np
@@ -50,7 +48,6 @@ class TestWhatTheDataCanCarry:
         assert any(item.name == "rmsle" for item in plan.withheld)
 
     def test_zeros_alone_do_not_withhold_log_error(self) -> None:
-        """`log1p` is defined at zero; only a negative breaks it."""
         plan = plan_for(_profile(_bursty()))
         assert "rmsle" in plan.reported
 
@@ -74,7 +71,6 @@ class TestWhatLeads:
         assert plan_for(_profile(_steady())).headline == "wmape"
 
     def test_a_signed_series_is_never_called_bursty(self) -> None:
-        """Syntetos-Boylan counts periods with no demand; a signed series has none."""
         plan = plan_for(_profile(_signed()))
         assert "bursts" not in plan.note
 

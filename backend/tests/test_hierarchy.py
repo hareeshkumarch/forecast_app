@@ -37,7 +37,6 @@ def test_reconciled_segments_add_up_to_the_total() -> None:
 
 def test_each_segment_keeps_its_own_shape() -> None:
     total = np.array([100.0, 100.0, 100.0])
-    # One climbing, one falling, on a flat total.
     segments = [np.array([10.0, 50.0, 90.0]), np.array([90.0, 50.0, 10.0])]
 
     climbing, falling = reconcile_to_total(segments, total, shares=[0.5, 0.5])
@@ -76,7 +75,6 @@ def test_coherence_gap_reports_how_far_the_levels_disagree() -> None:
 
 
 def _diverging_run() -> tuple[list[float], dict[str, list[float]]]:
-    """Two segments pulling in opposite directions under a near-flat total."""
     t = np.arange(HISTORY)
     growing = 1000 + 60 * t
     shrinking = 3000 - 55 * t
@@ -124,8 +122,6 @@ def test_segments_move_apart_when_the_data_says_they_do() -> None:
     assert growing_change is not None and growing_change > 0
     assert shrinking_change is not None and shrinking_change < 0
 
-    # The split is no longer frozen: the growing segment must take a larger
-    # share of the forecast than it held over the last year.
     assert by_label["Growing"].share > 25.0
 
 
@@ -151,7 +147,6 @@ def test_a_segment_too_short_to_backtest_is_marked_estimated() -> None:
     total, _parts = _diverging_run()
     history = periods(HISTORY)
 
-    # Three points is nowhere near enough to validate a model.
     stub = SegmentInput(
         label="Brand new",
         current_total=300.0,
@@ -188,9 +183,6 @@ def test_no_segments_is_not_an_error() -> None:
 
     assert output.regions == []
     assert output.categories == []
-
-
-# ---------------------------------------------------------------- the tree
 
 
 def _leaf(region: str, sku: str, forecast: list[float], share: float):
@@ -299,7 +291,6 @@ def test_grouped_forecasting_measures_every_leaf_it_can() -> None:
     assert all(row.accuracy_measured for row in leaf_rows)
     assert all(row.model is not None for row in leaf_rows)
 
-    # Each level closes on the same number.
     root = next(row for row in results if row.level == 0)
     assert sum(r.forecast_total for r in results if r.level == 1) == pytest.approx(
         root.forecast_total, rel=1e-6
@@ -385,8 +376,6 @@ def test_a_series_carries_a_band_its_own_backtest_earned() -> None:
             continue
 
         assert len(row.lower) == len(row.forecast) == len(row.upper), row.label
-        # The band brackets the line it belongs to, at the reconciled height —
-        # left unscaled it would sit beside the series rather than around it.
         for low, point, high in zip(row.lower, row.forecast, row.upper, strict=True):
             assert low <= point <= high, f"{row.label} band does not contain its own forecast"
 
@@ -423,6 +412,5 @@ def test_an_apportioned_series_gets_no_band_at_all() -> None:
     )
 
     new = next(row for row in results if row.label == "Brand new")
-    # An inherited band would claim a precision this series never demonstrated.
     assert new.lower == [] and new.upper == []
     assert new.forecast_total > 0

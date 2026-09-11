@@ -1,5 +1,3 @@
-"""Access given before somebody has ever signed in."""
-
 from __future__ import annotations
 
 import pytest
@@ -15,11 +13,6 @@ from app.services import user_service
 
 @pytest.fixture(autouse=True)
 def _no_mail_server():
-    """Nothing here should try to reach a mail server.
-
-    Sending is best-effort and swallows its own failures, so an unconfigured
-    host makes these tests exercise the records rather than the network.
-    """
     original = settings.smtp_host
     settings.smtp_host = ""
     yield
@@ -29,8 +22,6 @@ def _no_mail_server():
 async def test_an_invitation_is_an_account_nobody_has_signed_in_to(session: AsyncSession) -> None:
     row = await user_service.invite(session, "Invited@Example.com ", invited_by="boss@example.com")
 
-    # Lower-cased and trimmed, because it is matched against what Google sends
-    # back and that is not going to be capitalised the same way.
     assert row.email == "invited@example.com"
     assert row.subject is None
     assert row.status is AccessStatus.APPROVED
@@ -47,8 +38,6 @@ async def test_signing_in_claims_the_invitation(session: AsyncSession) -> None:
         AuthenticatedUser(id="google-sub-1", email="arrives@example.com", name="Arrives"),
     )
 
-    # The same row, now attached to a real sign-in, and still approved: the
-    # point of an invitation is not joining the queue it let you skip.
     assert resolved is not None
     assert resolved.id == invited.id
     assert resolved.subject == "google-sub-1"
@@ -72,7 +61,6 @@ async def test_somebody_uninvited_still_has_to_wait(session: AsyncSession) -> No
 
 
 async def test_re_inviting_a_refused_account_lets_them_back_in(session: AsyncSession) -> None:
-    """Re-inviting is how a rejection made by mistake is undone."""
     settings.auth_require_approval = True
     settings.auth_admin_emails_raw = ""
 
@@ -89,16 +77,10 @@ async def test_re_inviting_a_refused_account_lets_them_back_in(session: AsyncSes
 
     assert again.id == person.id
     assert again.status is AccessStatus.APPROVED
-    # Still the same sign-in, not a second account for the same person.
     assert again.subject == "google-sub-3"
 
 
 async def test_an_invitation_is_matched_on_the_address_alone(session: AsyncSession) -> None:
-    """Which is the whole security model, and worth stating out loud.
-
-    Anybody who can receive mail at the invited address can claim it. That is
-    the intent — it is why the address has to be one only they control.
-    """
     await user_service.invite(session, "shared@example.com", invited_by="boss@example.com")
 
     claimed = await user_service.resolve(
@@ -111,13 +93,6 @@ async def test_an_invitation_is_matched_on_the_address_alone(session: AsyncSessi
 
 
 async def test_signing_in_again_sends_nothing(session: AsyncSession, monkeypatch) -> None:
-    """The count that matters is per journey, not per page load.
-
-    An approved account used to collect three messages saying a version of the
-    same thing: an acknowledgement when they asked, the approval, and a
-    welcome on their first sign-in. Now the approval is the whole of it, and
-    arriving is silent.
-    """
     sent: list[str] = []
 
     def record(_session, _to, *, subject: str, **_kwargs):
@@ -137,13 +112,6 @@ async def test_signing_in_again_sends_nothing(session: AsyncSession, monkeypatch
 async def test_asking_for_access_tells_the_asker_and_nobody_else(
     session: AsyncSession, monkeypatch
 ) -> None:
-    """One message per request, and it goes to the person who asked.
-
-    Administrators are not emailed about somebody else's request: they see it
-    on the People page the moment it arrives, pushed rather than polled. The
-    person who cannot see anything is the one who asked, so they are the one
-    who gets told.
-    """
     recipients: list[list[str]] = []
 
     def record(_session, to, **_kwargs):
@@ -166,7 +134,6 @@ async def test_asking_for_access_tells_the_asker_and_nobody_else(
 async def test_an_invited_person_arriving_gets_no_second_message(
     session: AsyncSession, monkeypatch
 ) -> None:
-    """The invitation already said everything the welcome would have."""
     subjects: list[str] = []
 
     def record(_session, _to, *, subject: str, **_kwargs):
@@ -189,11 +156,6 @@ async def test_an_invited_person_arriving_gets_no_second_message(
 
 
 async def test_a_bulk_change_still_honours_every_guard(session: AsyncSession, monkeypatch) -> None:
-    """Selecting twelve rows does not suspend the rules that protect one.
-
-    The last administrator does not stop being the last one because somebody
-    ticked a box next to them.
-    """
     from app.api.routes import auth as auth_routes
     from app.core.auth import AuthenticatedUser as Caller
 
@@ -213,7 +175,6 @@ async def test_a_bulk_change_still_honours_every_guard(session: AsyncSession, mo
         ),
     )
 
-    # The administrator is skipped with a reason; the other one goes through.
     assert result.changed == 1
     assert "boss@example.com" in result.skipped
     assert boss.status is AccessStatus.APPROVED
@@ -248,15 +209,6 @@ async def test_a_missing_row_in_a_bulk_change_is_reported_not_fatal(
 
 
 async def test_mail_does_not_hold_up_the_answer(session, monkeypatch) -> None:
-    """A decision returns before the mail server has been spoken to.
-
-    This is the difference between an approval that feels instant and one that
-    sits for three seconds while SMTP negotiates TLS. It used to be true
-    because the send was scheduled on the loop; it is now true because nothing
-    in the request path sends at all — the row is written and the sender picks
-    it up. Structurally rather than by timing, which is the better version of
-    the same guarantee.
-    """
     from app.core import mailer
 
     def explode(*_args, **_kwargs):
@@ -270,13 +222,6 @@ async def test_mail_does_not_hold_up_the_answer(session, monkeypatch) -> None:
 
 
 async def test_two_messages_exist_and_no_more(session: AsyncSession, monkeypatch) -> None:
-    """The whole mail contract, in one place.
-
-    Ten templates once, then seven, now two. Written as one test over a whole
-    journey rather than one per event, because the way a third comes back is
-    somebody wiring a notification to a new event and every existing test
-    still passing.
-    """
     from app.core import email_templates
 
     assert sorted(
@@ -315,11 +260,6 @@ async def test_two_messages_exist_and_no_more(session: AsyncSession, monkeypatch
 async def test_an_invitation_sends_the_same_message_as_an_approval(
     session: AsyncSession, monkeypatch
 ) -> None:
-    """An invitation is an approval that skipped the asking.
-
-    Two templates saying you are in would be two things to keep true, and the
-    second one is always the one that goes stale.
-    """
     subjects: list[str] = []
 
     def record(_session, _to, *, subject: str, **_kwargs):
@@ -336,12 +276,6 @@ async def test_an_invitation_sends_the_same_message_as_an_approval(
 async def test_no_administrator_is_emailed_about_anybody_else(
     session: AsyncSession, monkeypatch
 ) -> None:
-    """Every message this platform sends goes to the person it is about.
-
-    Written as a sweep rather than one assertion per event, because the way
-    this comes back is somebody adding a notification to a new event and
-    nobody noticing it went to the wrong inbox.
-    """
     recipients: list[str] = []
 
     def record(_session, to, **_kwargs):

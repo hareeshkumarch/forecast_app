@@ -1,11 +1,3 @@
-"""What the platform may forget, and the three things it never may.
-
-Nothing here ran before: no code path in the platform deleted anything on its
-own, and the store of record has a ceiling. The risk in adding one is not that
-it fails to delete — it is that it deletes the wrong thing, quietly, at three
-in the morning. So the protections are what these tests are mostly about.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -79,7 +71,7 @@ async def test_an_old_finished_run_is_a_candidate(session) -> None:
 
     intended = await retention_service.plan(session)
 
-    assert intended.would_remove == 2  # four runs, the newest two are kept
+    assert intended.would_remove == 2
     assert intended.enabled
 
 
@@ -92,7 +84,6 @@ async def test_a_recent_run_is_not(session) -> None:
 
 
 async def test_the_newest_runs_are_kept_however_old_they_are() -> None:
-    """A deployment idle for four months should come back to its history."""
     from app.database.session import session_scope
 
     async with session_scope() as session:
@@ -103,17 +94,12 @@ async def test_the_newest_runs_are_kept_however_old_they_are() -> None:
         intended = await retention_service.plan(session)
 
     assert intended.would_remove == 1
-    # Two are held back: the newest is the run the dashboard reads, and the
-    # one behind it is inside the keep-newest floor. Each is named by the
-    # first reason that applied, which is the one worth showing.
     assert len(intended.protected) == 2
     assert any("most recent" in reason for reason in intended.protected.values())
     assert any("dashboard" in reason for reason in intended.protected.values())
 
 
 async def test_a_run_that_has_not_finished_is_never_a_candidate(session) -> None:
-    """Deleting a row underneath a running process is how a forecast fails
-    in a way nobody can explain."""
     for age in (400, 401, 402):
         await _run(session, days_old=age)
     live = await _run(session, days_old=500, status=RunStatus.RUNNING)
@@ -137,7 +123,6 @@ async def test_the_run_the_dashboard_is_showing_is_never_a_candidate(session) ->
 
 
 async def test_a_run_a_saved_scenario_points_at_is_never_a_candidate(session) -> None:
-    """The scenario is somebody's saved work and would be left pointing at nothing."""
     for age in (100, 200):
         await _run(session, days_old=age)
     referenced = await _run(session, days_old=900)
@@ -161,7 +146,6 @@ async def test_a_run_a_saved_scenario_points_at_is_never_a_candidate(session) ->
 
 
 async def test_a_backlog_is_reported_as_a_backlog(session) -> None:
-    """A cap that looks like a policy doing nothing is worse than a slow one."""
     settings.retention_batch = 2
     for age in range(100, 112):
         await _run(session, days_old=age * 10)
@@ -170,11 +154,10 @@ async def test_a_backlog_is_reported_as_a_backlog(session) -> None:
     intended = await retention_service.plan(session)
 
     assert intended.would_remove == 2
-    assert intended.remaining == 8  # twelve, less the two newest, less this batch
+    assert intended.remaining == 8
 
 
 async def test_switched_off_the_preview_still_answers(session) -> None:
-    """The way to decide a policy is to see what it would do before turning it on."""
     settings.retention_enabled = False
     for age in (400, 401, 402, 403):
         await _run(session, days_old=age)
@@ -202,7 +185,6 @@ async def test_switched_off_a_sweep_removes_nothing() -> None:
 
 
 async def test_a_pass_asked_for_by_hand_runs_on_a_deployment_with_it_off() -> None:
-    """Somebody clicking "free up space" has said what they want."""
     from app.database.session import session_scope
 
     settings.retention_enabled = False
@@ -223,13 +205,10 @@ async def test_zero_days_means_age_is_not_a_reason_on_its_own(session) -> None:
         await _run(session, days_old=age)
     await session.commit()
 
-    # Everything past the keep-newest floor, whatever its age.
     assert (await retention_service.plan(session)).would_remove == 2
 
 
 class TestCapacity:
-    """The number that would have said the ceiling was coming."""
-
     async def test_it_reports_the_tables_that_exist(self, session) -> None:
         usage = await capacity_service.measure(session, fresh=True)
 
@@ -247,7 +226,6 @@ class TestCapacity:
         assert runs.rows == 3
 
     async def test_a_repeat_read_is_served_from_the_cache(self, session) -> None:
-        """A scrape every fifteen seconds should not walk the catalogue each time."""
         first = await capacity_service.measure(session, fresh=True)
         second = await capacity_service.measure(session)
 
@@ -287,7 +265,6 @@ class TestTheEndpoints:
             assert await retention_service.stored_runs(session) == 2
 
     async def test_the_reasons_travel_with_the_answer(self, client, session) -> None:
-        """ "Why is that one still here" should not need somebody to read the code."""
         for age in (400, 401, 402):
             await _run(session, days_old=age)
         await session.commit()
@@ -298,7 +275,6 @@ class TestTheEndpoints:
         assert all(isinstance(reason, str) and reason for reason in body["protected"].values())
 
     async def test_it_is_gated_as_a_deletion_rather_than_as_a_run(self) -> None:
-        """A POST under /api/forecasts would otherwise read as "start a forecast"."""
         from app.core.permissions import Permission, permission_for
 
         assert permission_for("POST", "/api/forecasts/retention") is Permission.FORECAST_DELETE
@@ -332,7 +308,6 @@ class TestStorageEndpoint:
         assert body["retention_keep_runs"] == settings.retention_keep_runs
 
     async def test_it_needs_the_metrics_token_where_one_is_set(self, client) -> None:
-        """Row counts say how much a deployment has done, which is more than posture."""
         before = settings.metrics_token
         settings.metrics_token = "a-real-token"
         try:

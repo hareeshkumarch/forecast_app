@@ -1,13 +1,3 @@
-"""
-The settings surface.
-
-These knobs decide what the platform *concludes*, not just how it is wired, so
-a typo in a deployment's environment should stop the boot rather than quietly
-change a forecast. Each test here is one way that could go wrong: a value out
-of range, a set of weights that ranks nothing, or a documented variable that no
-longer exists.
-"""
-
 from __future__ import annotations
 
 import re
@@ -20,8 +10,6 @@ from app.core.config import Settings
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[2] / ".env.example"
 
-#: Documented in .env.example but read by docker-compose or the frontend rather
-#: than by Settings, so they have no field to match.
 NOT_SETTINGS = {
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
@@ -51,8 +39,6 @@ def _setting_names() -> set[str]:
 
 
 def test_every_documented_variable_still_maps_to_a_setting() -> None:
-    # .env.example is the only place these are discoverable, so it drifting out
-    # of step with Settings is the same as not documenting them at all.
     documented = _documented_variables() - NOT_SETTINGS
     orphaned = sorted(documented - _setting_names())
 
@@ -60,8 +46,6 @@ def test_every_documented_variable_still_maps_to_a_setting() -> None:
 
 
 def test_the_forecasting_knobs_are_all_documented() -> None:
-    # The wiring settings (database URLs, Supabase, storage) are covered in prose
-    # above; these are the ones that change what a forecast decides.
     decisive = {
         "FORECAST_MAX_FOLDS",
         "METRIC_WEIGHT_WMAPE",
@@ -121,8 +105,6 @@ def test_a_value_outside_its_range_stops_the_boot(field: str, value: float) -> N
 
 
 def test_the_defaults_are_the_ones_the_platform_shipped_with() -> None:
-    # These were module constants before they became settings. If a default
-    # drifts, every forecast changes without anyone choosing that.
     settings = Settings()
 
     assert settings.metric_weight_wmape == 0.50
@@ -156,27 +138,17 @@ def test_the_scoring_rule_quotes_the_weights_actually_in_force() -> None:
 
 
 def test_the_scoring_rule_spells_each_metric_the_way_it_is_written() -> None:
-    # These names are read by people. wMAPE is not WMAPE, and upper-casing the
-    # dictionary key was enough to change what the metrics endpoint reported.
     from app.forecasting.selection import scoring_rule
 
     assert "norm(wMAPE)" in scoring_rule()
     assert "norm(MASE)" in scoring_rule()
     assert "norm(RMSE)" in scoring_rule()
-    # sMAPE is still displayed beside the others; it just never carries weight.
     assert "norm(sMAPE)" not in scoring_rule()
     assert "norm(sMAPE)" in scoring_rule({"smape": 1.0})
     assert "norm(MAE)" in scoring_rule({"mae": 1.0})
 
 
 def test_candidate_workers_are_reported_as_shadowed_when_they_are() -> None:
-    """A tuning knob that does nothing is worse than one that is not there.
-
-    The engine backtests on threads whenever FORECAST_MODEL_CONCURRENCY is
-    above 1 and only falls through to the process lane below that, so setting
-    both leaves the second dead. The production template shipped exactly that
-    pair and the machine quietly ignored half of it.
-    """
     from app.core.config import settings
 
     before = (settings.forecast_model_concurrency, settings.forecast_candidate_workers)

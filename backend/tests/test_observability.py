@@ -1,10 +1,3 @@
-"""What a scrape says, and what it must never be able to do to the process.
-
-Named for the subject rather than the module: `test_metrics.py` is already
-taken by the forecast accuracy metrics, and two files with that name a
-directory apart is the sort of thing that gets one of them deleted.
-"""
-
 from __future__ import annotations
 
 import math
@@ -35,11 +28,6 @@ def test_a_counter_adds_up_per_label_set() -> None:
 
 
 def test_a_counter_refuses_to_go_backwards() -> None:
-    """A counter that can fall reads to the scraper as a process restart.
-
-    `rate()` sees the drop, assumes a reset, and reports a spike that never
-    happened — on the graph somebody is about to page off.
-    """
     with pytest.raises(ValueError, match="cannot be decremented"):
         Counter("t_total", "help").inc(-1)
 
@@ -55,7 +43,6 @@ def test_a_gauge_moves_in_both_directions() -> None:
 
 
 def test_histogram_buckets_are_cumulative() -> None:
-    """`le` means "at most", so every bucket includes the ones below it."""
     histogram = Histogram("t_seconds", "help", buckets=(0.1, 1.0))
 
     for value in (0.05, 0.5, 5.0):
@@ -72,7 +59,6 @@ def test_histogram_buckets_are_cumulative() -> None:
 
 
 def test_a_nan_observation_is_dropped_rather_than_poisoning_the_sum() -> None:
-    """One NaN makes `_sum` NaN forever, and every quantile with it."""
     histogram = Histogram("t_seconds", "help")
 
     histogram.observe(1.0)
@@ -83,14 +69,6 @@ def test_a_nan_observation_is_dropped_rather_than_poisoning_the_sum() -> None:
 
 
 def test_label_cardinality_is_capped_and_the_total_stays_true() -> None:
-    """An unbounded label is a memory leak with a public trigger.
-
-    One series per request path means one per UUID in a URL, which is a
-    hundred thousand timeseries after a week and an exposition response
-    measured in megabytes. Past the cap the excess folds into one overflow
-    series: the breakdown stops being useful, the total does not stop being
-    right.
-    """
     counter = Counter("t_total", "help", ("path",))
 
     for index in range(metrics.MAX_SERIES + 50):
@@ -102,7 +80,6 @@ def test_label_cardinality_is_capped_and_the_total_stays_true() -> None:
 
 
 def test_a_missing_label_costs_a_dimension_not_a_request() -> None:
-    """These sit in the request path. Raising here would take the answer down."""
     counter = Counter("t_total", "help", ("route", "method"))
 
     counter.inc(route="/a")
@@ -124,7 +101,6 @@ def test_rendering_is_prometheus_text_format() -> None:
 
 
 def test_infinity_renders_the_way_prometheus_spells_it() -> None:
-    """Python writes `inf`; the exposition format demands `+Inf`."""
     registry = Registry()
     registry.histogram("t_seconds", "help", buckets=(1.0,)).observe(0.5)
 
@@ -132,12 +108,6 @@ def test_infinity_renders_the_way_prometheus_spells_it() -> None:
 
 
 def test_registering_the_same_name_twice_returns_the_one_metric() -> None:
-    """A double import is not a second metric.
-
-    The library version of this raises at import time, in a module global,
-    which the test suite and Celery's fork both trip over — and the traceback
-    points at the import rather than at anything anybody can fix.
-    """
     registry = Registry()
 
     first = registry.counter("t_total", "help")
@@ -159,7 +129,6 @@ async def test_the_endpoint_serves_what_the_middleware_recorded(client: AsyncCli
 
 
 async def test_the_endpoint_labels_by_route_template_not_by_url(client: AsyncClient) -> None:
-    """`/api/forecasts/{run_id}` is one series. The URL is one per run."""
     await client.get("/api/forecasts/00000000-0000-0000-0000-000000000000")
 
     body = (await client.get("/api/health/metrics")).text
@@ -195,7 +164,6 @@ async def test_a_configured_token_is_required(client: AsyncClient, monkeypatch) 
 
 
 async def test_metrics_off_answers_404_rather_than_403(client: AsyncClient, monkeypatch) -> None:
-    """403 confirms the endpoint exists. A deployment that turned it off said no."""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "metrics_enabled", False)
@@ -204,8 +172,6 @@ async def test_metrics_off_answers_404_rather_than_403(client: AsyncClient, monk
 
 
 async def test_a_scrape_does_not_spend_the_rate_limit_allowance(client: AsyncClient) -> None:
-    """Scrapes arrive every fifteen seconds forever. Health is exempt for the
-    same reason, and this endpoint lives under that prefix to inherit it."""
     for _ in range(5):
         response = await client.get("/api/health/metrics")
         assert response.status_code == 200
@@ -213,8 +179,7 @@ async def test_a_scrape_does_not_spend_the_rate_limit_allowance(client: AsyncCli
 
 
 async def test_a_failing_request_is_counted_as_a_failure(client: AsyncClient) -> None:
-    """An error rate that improves during an outage is worse than no error rate."""
-    await client.get("/api/dashboard/breakdown")  # missing required query param -> 422
+    await client.get("/api/dashboard/breakdown")
 
     body = (await client.get("/api/health/metrics")).text
 
@@ -224,13 +189,6 @@ async def test_a_failing_request_is_counted_as_a_failure(client: AsyncClient) ->
 async def test_production_with_no_token_refuses_every_scrape(
     client: AsyncClient, monkeypatch
 ) -> None:
-    """An unset token in production is a mistake, not a decision.
-
-    Refusing to boot over it was the other option and is the wrong one: this
-    leaks route names and error rates, which is worth closing and is not worth
-    an outage on somebody's next deploy. Refused here, warned about at
-    startup.
-    """
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "environment", "production")
@@ -247,8 +205,6 @@ def test_a_configured_token_is_enough_anywhere() -> None:
 
 
 class TestSecurityHeaders:
-    """Headers an API answering the public internet has no reason not to send."""
-
     async def test_every_answer_carries_them(self, client) -> None:
         response = await client.get("/api/health")
 
@@ -258,14 +214,12 @@ class TestSecurityHeaders:
         assert "camera=()" in response.headers["Permissions-Policy"]
 
     async def test_a_refusal_carries_them_too(self, client) -> None:
-        """The answers most worth not sniffing are the ones with a message in them."""
         response = await client.get("/api/datasets/not-a-uuid")
 
         assert response.status_code >= 400
         assert response.headers["X-Content-Type-Options"] == "nosniff"
 
     async def test_hsts_is_not_sent_over_plain_http(self, client) -> None:
-        """Sent from an http origin it is ignored, and locks out a local machine if it is not."""
         response = await client.get("/api/health")
 
         assert "Strict-Transport-Security" not in response.headers

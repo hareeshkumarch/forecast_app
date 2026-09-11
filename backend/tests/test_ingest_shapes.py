@@ -1,13 +1,3 @@
-"""
-Getting a file open at all.
-
-Everything the profiler does happens after the file has been read into columns,
-and a surprising number of real uploads never got that far: a semicolon-
-delimited CSV — which is what Excel writes anywhere the comma is the decimal
-separator — arrived as a single column holding the whole line, and a sheet that
-opened with a report title failed outright.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta

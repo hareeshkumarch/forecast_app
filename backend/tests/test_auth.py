@@ -1,9 +1,3 @@
-"""Who gets in, and — mostly — who does not.
-
-The API answers the public internet directly, so these are not tests of a
-convenience layer. Every case below is something an attacker sends on purpose.
-"""
-
 from __future__ import annotations
 
 import time
@@ -61,13 +55,6 @@ async def test_a_valid_token_identifies_its_holder() -> None:
     assert not user.is_anonymous
 
 
-#: Built when the test runs, not when it is collected. These used to be signed
-#: in the parametrize list itself, which put a fresh JWT — carrying an `exp`
-#: taken from the current second — into the test's own id. Two xdist workers
-#: importing this module either side of a second boundary then collected
-#: different names for the same tests, and the whole run aborted before it
-#: started with "Different tests were collected between gw0 and gw1". Deferring
-#: the signing leaves the ids as the labels, which do not move.
 _REJECTABLE: dict[str, Callable[[], str]] = {
     "expired": lambda: _token(exp=int(time.time()) - 1),
     "signed with another key": lambda: _token(secret="not-the-secret"),
@@ -84,7 +71,6 @@ async def test_tokens_that_must_not_be_accepted(label: str) -> None:
 
 
 async def test_an_unsigned_token_is_refused() -> None:
-    """The oldest JWT attack: claim `alg: none` and hope the check is skipped."""
     forged = jwt.encode({"sub": "intruder", "aud": "authenticated"}, "", algorithm="none")
 
     with pytest.raises(Exception) as caught:
@@ -98,7 +84,6 @@ async def test_a_missing_subject_is_refused() -> None:
 
 
 async def test_verification_and_admission_are_separate_questions() -> None:
-    """A token can be genuine and its holder still not belong here."""
     settings.auth_allowed_email_domains_raw = "company.com"
 
     with pytest.raises(ForbiddenError):
@@ -124,7 +109,6 @@ async def test_no_signing_secret_refuses_rather_than_trusts() -> None:
 
 
 async def test_an_unreachable_key_set_is_not_a_bad_token(monkeypatch) -> None:
-    """An outage at the identity provider must not read as 'your login is wrong'."""
     monkeypatch.setattr(auth, "_jwks_cache", {})
     settings.supabase_jwt_secret = ""
 
@@ -139,13 +123,11 @@ async def test_a_token_the_size_of_an_upload_is_refused_before_it_is_parsed() ->
 
 
 async def test_a_token_claiming_to_be_the_anonymous_caller_is_refused() -> None:
-    """`anonymous` is the one subject every gate in this app lets through."""
     with pytest.raises(AuthError):
         await verify_token(_token(sub="anonymous"))
 
 
 async def test_a_verified_token_is_not_verified_twice(monkeypatch) -> None:
-    """A page load is a dozen parallel reads. It should cost one signature check."""
     token = _token()
     await verify_token(token)
 
@@ -157,7 +139,6 @@ async def test_a_verified_token_is_not_verified_twice(monkeypatch) -> None:
 
 
 async def test_the_cache_does_not_survive_a_change_of_signing_key() -> None:
-    """Rotating the secret must not leave a cache answering with the old one."""
     token = _token()
     await verify_token(token)
 
@@ -167,7 +148,6 @@ async def test_the_cache_does_not_survive_a_change_of_signing_key() -> None:
 
 
 async def test_admission_is_re_asked_of_a_token_already_verified() -> None:
-    """Who a token belongs to is fixed. Whether they are let in is configuration."""
     token = _token()
     await verify_token(token)
 
@@ -177,7 +157,6 @@ async def test_admission_is_re_asked_of_a_token_already_verified() -> None:
 
 
 async def test_an_unknown_key_id_is_not_a_fetch_per_request(monkeypatch) -> None:
-    """Otherwise a stream of junk tokens is this deployment's traffic, aimed at Supabase."""
     fetches = 0
 
     async def _count() -> None:
@@ -197,7 +176,6 @@ async def test_an_unknown_key_id_is_not_a_fetch_per_request(monkeypatch) -> None
 
 
 async def test_a_key_set_refresh_serves_everybody_waiting_on_it(monkeypatch) -> None:
-    """A rotation is every in-flight request at once. One of them should fetch."""
     import asyncio
 
     fetches = 0
@@ -249,7 +227,6 @@ async def test_a_key_set_with_nothing_usable_in_it_is_an_outage_not_a_bad_token(
 
 
 def test_a_token_may_only_ride_in_the_url_on_a_stream() -> None:
-    """A token in a query string lands in every access log along the way."""
     from app.api.deps import query_token_allowed
 
     assert query_token_allowed("GET", "/api/forecasts/abc/events")

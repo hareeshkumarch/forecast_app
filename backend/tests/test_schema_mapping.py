@@ -1,12 +1,3 @@
-"""
-Working out what a customer's columns mean.
-
-Detection that only works on the demo file is not detection. A forecasting
-platform meets German ERP exports, warehouse tables with three prefixes on
-every name, and spreadsheets somebody typed by hand — and the answer has to
-come from what the column *is*, never from where it happens to sit in the file.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -98,9 +89,6 @@ def test_the_same_schema_is_read_whatever_the_columns_are_called(
 def test_the_target_does_not_change_when_the_columns_are_reordered(
     measure: str, count: str
 ) -> None:
-    """The failure this replaces: on any schema the English hints did not cover,
-    every numeric column scored the same and the stable sort handed the target
-    to whichever came first in the file."""
     forwards = _target({"d": DAYS, measure: MONEY, count: QUANTITY})
     backwards = _target({"d": DAYS, count: QUANTITY, measure: MONEY})
 
@@ -108,7 +96,6 @@ def test_the_target_does_not_change_when_the_columns_are_reordered(
 
 
 def test_a_word_that_names_the_measure_beats_one_that_only_says_it_is_a_sum() -> None:
-    # An invoice line total is not what the business forecasts.
     columns = {"d": DAYS, "line_total": MONEY, "order_revenue": [m * 3 for m in MONEY]}
 
     assert _target(columns) == "order_revenue"
@@ -129,15 +116,11 @@ def test_a_money_column_formatted_by_excel_can_still_be_the_target() -> None:
 
     assert target.name == "Net Revenue"
     assert target.parsed_as == "currency"
-    # And the stored frame holds numbers, because DuckDB reads that with
-    # TRY_CAST and "$1,234.56" casts to NULL.
     assert profile.normalised is not None
     assert profile.normalised["Net Revenue"].dtype == pl.Float64
 
 
 def test_an_identifier_is_not_offered_as_something_to_group_by() -> None:
-    """A fifth of row count made the ceiling grow with the file: at 200k rows a
-    column with 40,000 distinct values counted as a category."""
     ids = [f"C{i:06d}" for i in range(ROWS)]
     profile = profile_frame(pl.DataFrame({"d": DAYS, "revenue": MONEY, "customer_id": ids}))
 
@@ -203,8 +186,6 @@ def test_how_each_column_was_read_is_recorded() -> None:
 
 
 def test_a_planning_sheet_is_read_rather_than_refused() -> None:
-    """Periods across the top are data, not fields. Before this the profiler
-    found no time column at all and picked a month as the forecast target."""
     wide = pl.DataFrame(
         {
             "product": ["A", "B", "C"],
@@ -226,12 +207,6 @@ def test_a_planning_sheet_is_read_rather_than_refused() -> None:
 
 
 def test_long_format_says_so_rather_than_totalling_two_measures() -> None:
-    """date/metric/value profiles perfectly well and means nothing when summed.
-
-    Revenue on one row and units on the next add to a figure that is not any
-    quantity at all, and by the time it reaches the engine it is a column of
-    doubles like any other.
-    """
     months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(12)]
     tidy = pl.DataFrame(
         {
@@ -247,8 +222,6 @@ def test_long_format_says_so_rather_than_totalling_two_measures() -> None:
 
 
 def test_a_genuine_dimension_is_not_mistaken_for_a_measure_label() -> None:
-    # Four regions of comparable size are slices of one quantity, and summing
-    # them is exactly what the platform is for.
     months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(12)]
     normal = pl.DataFrame(
         {
@@ -264,9 +237,6 @@ def test_a_genuine_dimension_is_not_mistaken_for_a_measure_label() -> None:
 
 
 def test_a_flat_series_is_still_the_thing_being_forecast() -> None:
-    """A discontinued line, or one that has not launched, is all zeros — and it
-    is still the only number in the file. Scoring it below the candidate bar
-    means refusing to run at all rather than forecasting a flat line."""
     months = [date(2022, 1, 1) + timedelta(days=31 * i) for i in range(36)]
     flat = pl.DataFrame({"month": [m.isoformat() for m in months], "value": [0.0] * 36})
 
@@ -276,13 +246,6 @@ def test_a_flat_series_is_still_the_thing_being_forecast() -> None:
 
 
 class TestNamesWithTyposInThem:
-    """Column names in hand-maintained exports are spelled by people.
-
-    `reveneu`, `unts`, `amout` and `sels` all scored zero, which is a target
-    column the platform refuses to notice over a transposition — and then asks
-    somebody to point at it by hand every single upload.
-    """
-
     @pytest.mark.parametrize(
         "name",
         ["reveneu", "quantiy", "amout", "volme", "untis", "saels", "revenu e".replace(" ", "")],
@@ -297,21 +260,13 @@ class TestNamesWithTyposInThem:
         assert name_score(name, TARGET_NAME_HINTS) == 0.0
 
     def test_a_typo_scores_below_a_real_match(self) -> None:
-        """It is a tie-break, not a claim: an exact name must always win."""
         assert name_score("amout", TARGET_NAME_HINTS) < name_score("amount", TARGET_NAME_HINTS)
 
     def test_a_short_name_is_refused_even_though_it_is_one_edit_away(self) -> None:
-        """At four letters one edit reaches far too much.
-
-        `coat` really is one substitution from the target hint `cost` — the
-        distance function is not wrong about that, and this is exactly why the
-        length guard exists rather than the distance being made stricter.
-        """
         assert _within_one_edit("coat", "cost"), "one substitution, genuinely"
         assert name_score("coat", TARGET_NAME_HINTS) == 0.0, "and refused anyway"
 
     def test_a_transposition_is_one_edit_and_not_two(self) -> None:
-        """Levenshtein counts a swap as two substitutions and would miss it."""
         assert _within_one_edit("reveneu", "revenue")
         assert _within_one_edit("untis", "units")
 

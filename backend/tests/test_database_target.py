@@ -37,7 +37,6 @@ def test_project_url_and_password_build_a_dsn() -> None:
 
     assert settings.supabase_project_ref == "abcdefghijklm"
     assert settings.supabase_configured
-    # The password is percent-encoded, or the URL parses into the wrong host.
     assert "p%40ss%20word%2F1" in settings.supabase_dsn
     assert "@db.abcdefghijklm.supabase.co:5432/postgres" in settings.supabase_dsn
 
@@ -72,10 +71,8 @@ def test_libpq_only_parameters_are_kept_away_from_asyncpg(configure) -> None:
     resolved = supabase_target()
 
     assert resolved is not None
-    # asyncpg raises on sslmode; TLS is a connect argument instead.
     assert "sslmode" not in resolved.url
     assert connect_args(resolved)["ssl"] == "require"
-    # Alembic goes through libpq, which does want it.
     assert "sslmode=require" in resolved.sync_url
 
 
@@ -120,11 +117,6 @@ def test_fallback_can_be_refused(configure, monkeypatch) -> None:
 
 
 def test_sqlite_gets_a_busy_timeout_and_none_of_the_postgres_tuning(configure) -> None:
-    """The pgbouncer workarounds are meaningless here; the lock wait is not.
-
-    SQLite's default five seconds is short enough that a teardown DROP TABLE
-    gives up on a loaded machine while a pooled reader is still finishing.
-    """
     configure(database_url="sqlite+aiosqlite:///./test.db")
     resolved = resolve_target()
 

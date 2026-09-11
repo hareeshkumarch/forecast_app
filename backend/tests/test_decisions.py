@@ -1,10 +1,3 @@
-"""The decision read off a forecast, and what it refuses to claim.
-
-These are about the three numbers a plan needs — commit to, be ready for, and
-how far ahead either holds — and about the actions being ordered by how much
-of the plan they move rather than by how alarming they sound.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -37,13 +30,7 @@ def _periods(count: int = 6, *, spread: float = 0.1, forecast: float = 100.0) ->
     ]
 
 
-# ------------------------------------------------------------- the three numbers
-
-
 def test_commit_is_the_floor_and_prepare_is_the_ceiling() -> None:
-    # The point forecast is the middle of the distribution: committing to it is
-    # right about half the time. The decision separates the promise from the
-    # capacity, and the base case sits between them.
     decision = decide(_periods(), frequency=MONTHLY, confidence_level=0.8, accuracy=88.0)
     assert decision is not None
 
@@ -68,9 +55,6 @@ def test_nothing_to_decide_from_nothing() -> None:
     assert decide([], frequency=MONTHLY, confidence_level=0.8, accuracy=90.0) is None
 
 
-# ------------------------------------------------------------------- the grading
-
-
 @pytest.mark.parametrize(
     ("accuracy", "expected"),
     [
@@ -93,12 +77,7 @@ def test_an_ungraded_forecast_says_so_rather_than_assuming_the_best() -> None:
     assert "Do not set targets" in decision.actions[0].headline
 
 
-# ------------------------------------------------------------ the useful horizon
-
-
 def test_the_horizon_stops_at_the_first_period_that_fails() -> None:
-    # Not a count of the good periods: a horizon is a run you can plan through,
-    # and one narrow month behind three wide ones does not extend it.
     periods = [
         Period(date(2026, 1, 1), 100.0, 90.0, 110.0),
         Period(date(2026, 2, 1), 100.0, 85.0, 115.0),
@@ -129,9 +108,6 @@ def test_a_widening_band_asks_for_a_re_forecast() -> None:
     assert any("Re-forecast" in action.headline for action in decision.actions)
 
 
-# ------------------------------------------------------------ where the risk sits
-
-
 def test_concentration_counts_the_series_that_carry_half_the_risk() -> None:
     at_risk = [("A", 50.0), ("B", 30.0), ("C", 10.0), ("D", 10.0)]
     found = concentration_of(at_risk)
@@ -157,7 +133,6 @@ def test_series_with_no_measured_risk_are_left_out() -> None:
 
 
 def test_risk_spread_evenly_across_every_series_raises_no_action() -> None:
-    # count == total means "look at all of them", which is not a place to start.
     decision = decide(
         _periods(spread=0.02),
         frequency=MONTHLY,
@@ -169,11 +144,7 @@ def test_risk_spread_evenly_across_every_series_raises_no_action() -> None:
     assert not any("Start with" in action.headline for action in decision.actions)
 
 
-# ------------------------------------------------------------------- the actions
-
-
 def test_a_repeatable_lean_is_the_first_thing_to_fix() -> None:
-    # It changes every number below it, so it outranks everything else.
     decision = decide(
         _periods(),
         frequency=MONTHLY,
@@ -217,7 +188,6 @@ def test_an_interval_that_did_not_hold_is_called_out() -> None:
 
 
 def test_a_clean_run_still_says_what_to_do() -> None:
-    # An empty action list reads as a missing section rather than as good news.
     decision = decide(
         _periods(spread=0.02),
         frequency=MONTHLY,

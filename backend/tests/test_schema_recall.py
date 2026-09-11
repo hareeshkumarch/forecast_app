@@ -1,13 +1,3 @@
-"""Finding the mapping somebody already made, for a file that has moved on.
-
-The memory was keyed on an exact fingerprint — every column name and every
-dtype. That is the right fast path and was the only path, so the case it
-exists for did not work: the same export uploaded next month is routinely not
-byte-identical, and any difference lost the mapping in silence. Somebody who
-carefully said which column was the target was asked again, with nothing on
-screen explaining why.
-"""
-
 from __future__ import annotations
 
 import polars as pl
@@ -67,8 +57,6 @@ def test_the_same_file_is_an_exact_match() -> None:
 
 
 def test_a_column_that_gained_a_decimal_still_finds_it() -> None:
-    """One value with a decimal reads Float64 where it read Int64, and the
-    fingerprint changes. This is the ordinary month-to-month case."""
     february = JANUARY.with_columns(pl.col("units").cast(pl.Float64))
 
     found = _ask(february, [_stored(JANUARY)])
@@ -100,19 +88,16 @@ def test_a_column_that_went_away_is_named_rather_than_dropped_in_silence() -> No
 
 
 def test_a_renamed_column_is_matched_on_its_normalised_name() -> None:
-    """`Net Revenue (USD)` and `net_revenue_usd` are the same column."""
     stored = _stored(JANUARY, target_col="Units", date_col="Month")
 
     found = _ask(JANUARY, [stored])
 
     assert found is not None
-    # Handed back under the spelling this file uses, not the stored one.
     assert found.fields["target_col"] == "units"
     assert found.fields["date_col"] == "month"
 
 
 def test_a_mapping_whose_target_is_gone_is_not_used_at_all() -> None:
-    """A mapping pointing at a column this file lacks is worse than none."""
     renamed = JANUARY.rename({"units": "quantity"})
 
     assert _ask(renamed, [_stored(JANUARY)]) is None
@@ -154,8 +139,6 @@ class TestSimilarity:
         assert similarity({"a", "b"}, {"a", "b"}) == 1.0
 
     def test_it_is_counted_against_the_union(self) -> None:
-        """A file that lost six of ten columns is not the same report, so
-        scoring against the smaller side would be far too generous."""
         assert similarity({"a", "b"}, {"a", "b", "c", "d"}) == 0.5
 
     def test_nothing_in_common_scores_zero(self) -> None:
@@ -181,9 +164,6 @@ class TestNormalise:
 
 class TestThroughTheProposal:
     def test_a_type_change_is_reported_as_a_type_change(self) -> None:
-        """The ordinary month-to-month case. Nothing about the mapping can have
-        drifted — every column is here under the same name — so it is not
-        dressed up as a partial match somebody has to go and check."""
         february = JANUARY.with_columns(pl.col("units").cast(pl.Float64))
         found = _ask(february, [_stored(JANUARY)])
         assert found is not None and found.same_columns
@@ -196,9 +176,6 @@ class TestThroughTheProposal:
         assert proposal.confidence == 1.0, "the same columns are the same report"
 
     def test_a_genuinely_partial_match_asks_to_be_checked(self) -> None:
-        """A column added or dropped is a different file, and might be a
-        different report — that one is worth a second look before a forecast
-        is built on it."""
         wider = JANUARY.with_columns(pl.lit("x").alias("comment"))
         found = _ask(wider, [_stored(JANUARY)])
         assert found is not None and not found.same_columns
@@ -219,7 +196,6 @@ class TestThroughTheProposal:
         assert proposal.confidence == 1.0
 
     def test_a_near_match_does_not_claim_full_confidence(self) -> None:
-        """Full confidence on a guess is what stops somebody checking it."""
         wider = JANUARY.with_columns(pl.lit("x").alias("comment"))
         found = _ask(wider, [_stored(JANUARY)])
         assert found is not None

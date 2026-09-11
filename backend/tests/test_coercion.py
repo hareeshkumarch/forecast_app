@@ -1,17 +1,3 @@
-"""
-Reading what customers actually export.
-
-A forecasting tool that only accepts clean floats and ISO dates accepts almost
-nothing. These are the shapes real files arrive in — Excel's currency
-formatting, a German ERP's decimal comma, an accounting package's parenthesised
-negatives, a spreadsheet whose dates lost their formatting and came through as
-serial numbers.
-
-The date tests carry more weight than their size suggests. A number that fails
-to parse is a column the user is told about; a date that parses *wrongly* is a
-forecast built on the wrong periods that nobody finds out about.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -51,7 +37,6 @@ def test_the_numbers_a_spreadsheet_writes_are_read_as_numbers(
 
 
 def test_parenthesised_negatives_come_back_negative() -> None:
-    # An accounting export writes a loss as (890.00), not -890.00.
     assert _numeric(["(890.00)", "(120.50)", "(5.00)"]) == pytest.approx([-890.0, -120.5, -5.0])
 
 
@@ -68,7 +53,6 @@ def test_a_column_of_dates_is_not_a_measure() -> None:
 
 
 def test_a_column_that_is_mostly_junk_is_refused() -> None:
-    # Half the rows are unreadable, so no convention explains the column.
     mixed = ["n/a" if i % 2 else str(i) for i in range(100)]
     assert coerce_numeric(pl.Series("revenue", mixed)) is None
 
@@ -109,8 +93,6 @@ def test_excel_serial_numbers_are_dates_when_the_column_says_so() -> None:
 
 
 def test_a_bare_number_is_not_a_date_just_because_it_could_be() -> None:
-    # 45,292 is a plausible Excel serial and a plausible revenue figure. Only
-    # the column name separates them, and "revenue" does not vouch for a date.
     serials = [(d - date(1899, 12, 30)).days for d in DAYS]
 
     assert parse_dates(pl.Series("revenue", serials), name_suggests_date=False) is None
@@ -130,16 +112,7 @@ def test_quarters_and_iso_weeks_are_periods_too() -> None:
     assert _dates(weeks)[0].year == 2024
 
 
-# --------------------------------------------------------- day / month order
-
-
 def test_a_us_monthly_file_keeps_its_months() -> None:
-    """The one that mattered: twelve months used to become twelve days.
-
-    01/01, 02/01, 03/01 is January, February, March with the day held at the
-    first. Read day-first it is the 1st, 2nd and 3rd of January — a year of
-    history collapsed into a fortnight, and the frequency inferred as daily.
-    """
     parsed = _dates([f"{month:02d}/01/2024" for month in range(1, 13)])
 
     assert [d.month for d in parsed] == list(range(1, 13))
@@ -162,7 +135,6 @@ def test_a_day_past_the_twelfth_settles_the_order_by_itself() -> None:
 
 
 def test_a_file_that_cannot_settle_its_own_order_says_so() -> None:
-    # Every value works both ways round, so no reading can be proven.
     values = [f"{day:02d}/{month:02d}/2024" for month in (1, 2, 3) for day in (1, 5, 9, 11)]
 
     parsed = parse_dates(pl.Series("d", values))
@@ -184,8 +156,6 @@ def test_the_order_can_be_set_by_hand_when_the_data_cannot_prove_it() -> None:
 
 
 def test_two_digit_years_land_in_this_century_not_the_first() -> None:
-    # "1/5/24" parsed as %d/%m/%Y gives the year 24, and 0024-05-01 is a date
-    # every downstream calculation would accept without complaint.
     parsed = _dates([f"01/{day:02d}/24" for day in range(1, 29)])
 
     assert all(d.year == 2024 for d in parsed)
@@ -195,11 +165,7 @@ def test_a_column_of_measurements_is_never_mistaken_for_dates() -> None:
     assert parse_dates(pl.Series("revenue", [round(1000 + i * 3.5, 2) for i in range(100)])) is None
 
 
-# ----------------------------------------------------- the shapes found later
-
-
 def test_trailing_minus_negatives_are_negative() -> None:
-    # SAP and most mainframe exports write a loss as 1000-, not -1000.
     parsed = coerce_numeric(pl.Series("revenue", ["1000-", "1001", "1002-", "1003"]))
 
     assert parsed is not None
@@ -258,7 +224,6 @@ def test_a_table_that_is_already_long_is_left_alone() -> None:
 def test_two_date_columns_are_not_a_planning_sheet() -> None:
     from app.datasets.coercion import unpivot_periods
 
-    # order_date and ship_date are fields, not periods across the top.
     frame = pl.DataFrame(
         {"order_date": ["2024-01-01"], "ship_date": ["2024-01-04"], "revenue": [10.0]}
     )

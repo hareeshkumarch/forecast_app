@@ -1,7 +1,3 @@
-"""The archive is a backup, and the tests that matter are the ones proving it
-behaves like one: silent when unconfigured, and never able to fail an upload
-that otherwise succeeded."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -42,8 +38,6 @@ def configured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _Recorder:
-    """Stands in for the boto3 client, recording what it was asked to store."""
-
     def __init__(self, raises: Exception | None = None) -> None:
         self.raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -59,11 +53,7 @@ def _use(monkeypatch: pytest.MonkeyPatch, client: _Recorder) -> None:
     monkeypatch.setattr(object_store, "_build_client", lambda: client)
 
 
-# --------------------------------------------------------------- unconfigured
-
-
 async def test_an_unconfigured_platform_archives_nothing(upload: Path) -> None:
-    # The single-node default: no bucket, no endpoint, no credential, no call.
     assert object_store.configured() is False
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
@@ -75,11 +65,7 @@ async def test_a_bucket_without_credentials_is_not_configured(
     monkeypatch.setattr(settings, "storage_endpoint", "https://x/storage/v1/s3", raising=False)
     monkeypatch.setattr(settings, "storage_access_key_id", "", raising=False)
     monkeypatch.setattr(settings, "storage_secret_access_key", "", raising=False)
-    # Half-configured is unconfigured, rather than a request guaranteed to 403.
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
-
-
-# ------------------------------------------------------------------- the happy
 
 
 async def test_it_puts_the_file_in_the_bucket(
@@ -126,8 +112,6 @@ async def test_an_unknown_suffix_falls_back_to_octet_stream(
 async def test_the_client_is_built_once_and_reused(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    # Building one parses botocore's data files, which is far too much work to
-    # repeat on every upload.
     built = 0
     client = _Recorder()
 
@@ -144,14 +128,9 @@ async def test_the_client_is_built_once_and_reused(
     assert len(client.calls) == 3
 
 
-# ------------------------------------------------------------ nothing may raise
-
-
 async def test_a_refusal_from_storage_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    # A missing bucket and a key without write rights both arrive as botocore
-    # exceptions. Neither may fail an upload that already stored locally.
     _use(monkeypatch, _Recorder(raises=RuntimeError("AccessDenied")))
     assert await object_store.archive_upload(upload, "uploads/sales.csv") is False
 
@@ -173,8 +152,6 @@ async def test_a_missing_local_file_is_reported_not_raised(
 async def test_a_broken_client_build_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, configured: None, upload: Path
 ) -> None:
-    # A malformed endpoint fails when the client is constructed, not when it
-    # is used, and that path must degrade the same way.
     def explode() -> Any:
         raise ValueError("Invalid endpoint")
 

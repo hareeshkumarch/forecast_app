@@ -64,8 +64,6 @@ def test_unknown_stored_keys_are_ignored() -> None:
 def test_the_pool_is_skipped_when_a_broker_takes_over(monkeypatch, broker: str) -> None:
     monkeypatch.setattr(settings, "celery_broker_url", broker)
 
-    # A Celery worker is daemonic and cannot spawn a nested pool; with a broker
-    # configured the fit has to happen inline instead.
     assert executors.inline is bool(broker)
 
 

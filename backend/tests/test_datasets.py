@@ -267,8 +267,6 @@ def test_accounting_negatives_are_read_as_negative() -> None:
 
 
 def test_a_text_year_column_is_left_as_a_label() -> None:
-    # Polars already types a bare integer column as Int64, so the guard only
-    # ever sees a year that arrived as text — a trailing space is enough.
     frame = pl.DataFrame(
         {
             "period": ["2024-01-01", "2024-02-01", "2024-03-01"],
@@ -324,7 +322,6 @@ def test_grouped_aggregation_returns_one_series_per_combination(tmp_path) -> Non
 
 
 def test_every_grouped_series_shares_one_calendar(tmp_path) -> None:
-    # B only trades in the last two months; its earlier periods must still exist.
     rows = [("2024-01-01", "A", "N", 5.0), ("2024-02-01", "A", "N", 6.0)]
     rows += [("2024-03-01", sku, "N", 7.0) for sku in ("A", "B")]
     rows += [("2024-04-01", sku, "N", 8.0) for sku in ("A", "B")]
@@ -336,8 +333,6 @@ def test_every_grouped_series_shares_one_calendar(tmp_path) -> None:
     assert len(calendars) == 1, "series must line up period for period"
 
     late = next(s for s in series if s.key["sku"] == "B")
-    # The calendar is shared; the periods B has no rows for are gaps, not
-    # zeros. Which one they become is the run's gap-fill setting to decide.
     assert all(value != value for value in late.values[:2])
     assert len(late.values) == 4
 
@@ -417,11 +412,6 @@ def test_grouping_by_nothing_is_refused(tmp_path) -> None:
     ],
 )
 def test_an_identifier_is_never_mistaken_for_a_number(values: list[str], why: str) -> None:
-    """
-    Stripping every non-digit as "decoration" read SKU-0093 as -93 and W1 as 1:
-    the identifier was destroyed, and the column was offered as a measure
-    rather than as something to break the forecast down by.
-    """
     frame = pl.DataFrame({"period": ["2024-01-01"] * len(values), "code": values})
 
     coerced = _coerce_formatted_numbers(frame)
@@ -437,7 +427,6 @@ def test_an_identifier_is_never_mistaken_for_a_number(values: list[str], why: st
         ("€1.200,50", 1200.50),
         ("£950", 950.0),
         ("¥12,000", 12000.0),
-        # Indian grouping, and a symbol no hand-written list would have had.
         ("₹1,00,000", 100_000.0),
         ("12.5%", 12.5),
         ("(450)", -450.0),
@@ -467,15 +456,6 @@ def test_a_decorated_number_is_still_a_number(text: str, expected: float) -> Non
 def test_the_decimal_comma_survives_the_upload_itself(
     label: str, csv: str, expected: float
 ) -> None:
-    """The one that mattered, and the one no unit test could see.
-
-    Coercion lived in two places: a locale-aware reader, and a naive one that
-    stripped every comma as decoration before the locale-aware one was ever
-    asked. The naive one ran first, at ingestion — so a German file's 1.234,56
-    was stored as 1.23456, every target in it a thousandfold small, and every
-    test of the good reader still passed because none of them went through the
-    door the file actually comes in.
-    """
     frame = persist_upload(csv.encode(), f"{label}.csv", f"locale-{label}").frame
 
     assert frame["revenue"][0] == pytest.approx(expected), label

@@ -1,11 +1,3 @@
-"""Responses are compressed; the progress stream is not.
-
-The second half is the one worth a test. gzip on a Server-Sent Events response
-is not wrong so much as self-defeating — the frames are tiny and the whole
-point is that each one arrives when it is produced — and it is the kind of
-thing a later "compress everything" cleanup would happily reintroduce.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -64,15 +56,11 @@ async def test_compression_actually_shrinks_the_payload(app: FastAPI) -> None:
 
     on_the_wire = int(compressed.headers["content-length"])
     uncompressed = len(plain.content)
-    # Repetitive JSON is the best case for gzip; anything under half would mean
-    # the middleware is not really engaging.
     assert on_the_wire < uncompressed / 2
-    # And the client still sees the same data once decoded.
     assert compressed.json() == plain.json()
 
 
 async def test_a_small_response_is_left_alone(app: FastAPI) -> None:
-    # Below the threshold the gzip header costs more than it saves.
     response = await _get(app, "/api/tiny")
     assert response.headers.get("content-encoding") is None
 

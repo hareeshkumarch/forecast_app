@@ -214,8 +214,6 @@ def _rewrite_reply(source: str) -> str:
 
 
 def _fake_call(faithful: bool = True):
-    """Stands in for the provider, so the rewriter can be tested without one."""
-
     def call(source: str, config: dict[str, object] | None = None) -> LlmCallResult:
         text = _rewrite_reply(source)
         if not faithful:
@@ -254,7 +252,6 @@ def test_a_rewrite_that_moves_a_figure_is_discarded(monkeypatch) -> None:
 
 
 def test_rewrites_run_together_rather_than_one_after_another(monkeypatch) -> None:
-    """Eight ten-second timeouts in series is over a minute of a run spent waiting."""
     in_flight = 0
     peak = 0
     guard = threading.Lock()

@@ -1,11 +1,3 @@
-"""A statement that never ends is a connection nobody gets back.
-
-The concurrency ceiling refuses requests that have not started. It cannot
-touch one already running, and there are ten pooled connections for a runaway
-aggregate to sit on — so past a certain point the box is up, healthy, and
-answering nothing.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -37,7 +29,6 @@ async def test_a_read_session_is_bounded_by_the_read_timeout(monkeypatch) -> Non
 
 
 async def test_a_persisting_session_gets_the_longer_budget(monkeypatch) -> None:
-    """A grouped run writes tens of thousands of rows. Slow is not stuck."""
     monkeypatch.setattr(db, "_TIMEOUTS_APPLY", True)
     recorder = _Recorder()
 
@@ -50,9 +41,6 @@ async def test_a_persisting_session_gets_the_longer_budget(monkeypatch) -> None:
 
 
 async def test_zero_switches_it_off_rather_than_setting_zero(monkeypatch) -> None:
-    """Postgres reads a statement_timeout of 0 as "no limit", which is the
-    opposite of what somebody setting this to 0 in a panic would want to type
-    — but it is also what they would mean. Sending nothing is the honest form."""
     monkeypatch.setattr(db, "_TIMEOUTS_APPLY", True)
     recorder = _Recorder()
 
@@ -62,7 +50,6 @@ async def test_zero_switches_it_off_rather_than_setting_zero(monkeypatch) -> Non
 
 
 async def test_sqlite_is_left_alone(monkeypatch) -> None:
-    """It takes a lock rather than a deadline, and has no such setting."""
     monkeypatch.setattr(db, "_TIMEOUTS_APPLY", False)
     recorder = _Recorder()
 
@@ -72,7 +59,6 @@ async def test_sqlite_is_left_alone(monkeypatch) -> None:
 
 
 def test_the_driver_carries_a_backstop_under_the_transaction_setting() -> None:
-    """SET LOCAL cannot reach a statement running outside a transaction."""
     target = DatabaseTarget(
         name="local",
         url="postgresql+asyncpg://u:p@localhost:5432/db",
@@ -86,7 +72,6 @@ def test_the_driver_carries_a_backstop_under_the_transaction_setting() -> None:
 
 
 def test_the_backstop_never_fires_before_the_real_control_does() -> None:
-    """A client-side timeout under the write budget would abort valid writes."""
     assert settings.db_write_timeout_seconds >= settings.db_statement_timeout_seconds
 
 
@@ -94,7 +79,6 @@ def test_the_backstop_never_fires_before_the_real_control_does() -> None:
     db._backend != "postgresql", reason="SQLite has no statement_timeout to observe"
 )
 async def test_a_statement_over_the_limit_is_actually_cancelled() -> None:
-    """The property itself, against the engine that ships."""
     async with db.SessionFactory() as session:
         await db._limit(session, 0.05)
         with pytest.raises(DBAPIError):

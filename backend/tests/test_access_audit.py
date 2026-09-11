@@ -1,5 +1,3 @@
-"""What app_users could not answer: what happened before the last thing."""
-
 from __future__ import annotations
 
 import pytest
@@ -46,11 +44,6 @@ async def test_a_decision_is_recorded_with_who_made_it(session) -> None:
 
 
 async def test_the_earlier_decision_is_not_overwritten_by_the_later_one(session) -> None:
-    """The whole reason this table exists.
-
-    app_users has one decided_by and one decided_at, so approving somebody and
-    then revoking them leaves no trace that the approval ever happened.
-    """
     row = await user_service.resolve(
         session, AuthenticatedUser(id="s2", email="two@example.com", name="Two")
     )
@@ -93,7 +86,6 @@ async def test_a_role_change_records_both_ends_of_it(session) -> None:
 
 
 async def test_the_record_outlives_the_account_it_names(session) -> None:
-    """An audit trail that disappears with its subject answers nothing."""
     row = await user_service.resolve(
         session, AuthenticatedUser(id="s5", email="five@example.com", name="Five")
     )
@@ -110,11 +102,6 @@ async def test_the_record_outlives_the_account_it_names(session) -> None:
 
 
 async def test_the_emailed_link_is_recorded_like_any_other_decision(session) -> None:
-    """The path least likely to be watched is the one opened from an inbox.
-
-    Recording in the service rather than the route is what makes it impossible
-    for that path to skip it.
-    """
     row = await user_service.resolve(
         session, AuthenticatedUser(id="s6", email="six@example.com", name="Six")
     )

@@ -99,15 +99,10 @@ def test_a_failing_candidate_does_not_sink_the_search() -> None:
 
     result = tune("resilient", matrix, target, space, fit_predict, 6)
     assert result.params["mode"] == "good"
-    # Refinement steps to the neighbouring setting, which is the broken one,
-    # and it raises there too — so it is tried and never counted.
     assert result.evaluations == 1, "only one of the candidates ever produced a score"
 
 
 def test_a_search_where_nothing_fitted_says_so() -> None:
-    """It used to report the number of candidates *tried*, so a search in which
-    every fit raised looked like a search that ran — and the defaults it fell
-    back to looked like a winner that had been measured."""
     matrix, target = _linear_problem()
     space = SearchSpace({"mode": ["broken", "also_broken"]})
 
@@ -121,13 +116,7 @@ def test_a_search_where_nothing_fitted_says_so() -> None:
     assert not np.isfinite(result.score)
 
 
-# ------------------------------------------------------------------ cache key
-
-
 def test_two_feature_sets_over_the_same_target_are_different_searches() -> None:
-    """Hashing only the shape meant adding or dropping a driver column — which
-    changes the features and not their shape — was answered out of the cache
-    with the other one's hyperparameters."""
     _matrix, target = _linear_problem()
     rng = np.random.default_rng(7)
     left = rng.normal(0, 1, (120, 3))
@@ -162,19 +151,7 @@ def test_the_same_search_is_the_same_key() -> None:
     )
 
 
-# ------------------------------------------------------------------- objective
-
-
 def test_the_search_scores_by_the_metrics_the_run_scores_by() -> None:
-    """The tuner cannot be steered onto a percentage error any more.
-
-    sMAPE rewards forecasting zero on an intermittent series: it scores a zero
-    against a zero as perfect and a small number against a zero as 200% wrong,
-    so the all-zero forecast wins. It is no longer a metric anything can be
-    scored by, and asking for it does not quietly hand back the parameters that
-    were best at the wrong thing — it falls through to the plain error, which
-    ranks these two the right way round.
-    """
     actual = np.array([0.0, 0.0, 10.0, 0.0, 0.0, 8.0])
     all_zeros = np.zeros(6)
     honest = np.array([1.0, 1.0, 7.0, 1.0, 1.0, 6.0])
@@ -200,12 +177,7 @@ def test_no_weights_falls_back_to_the_plain_error() -> None:
     )
 
 
-# ------------------------------------------------------------ successive halving
-
-
 def test_screening_on_one_fold_buys_a_wider_search() -> None:
-    # Every candidate is screened on the earliest fold and only the survivors
-    # pay for the rest, so the same number of fits explores more of the space.
     assert search_width(240, 100, 3) > evaluation_budget(240, 100)
     assert search_width(240, 100, 1) == evaluation_budget(240, 100)
     assert search_width(240, 5, 3) <= 5
@@ -256,13 +228,7 @@ def test_a_candidate_that_fails_screening_is_not_resurrected() -> None:
     assert np.isfinite(result.score)
 
 
-# ---------------------------------------------------------------- scale-free error
-
-
 def test_mase_in_the_objective_is_measured_against_the_seasonal_walk() -> None:
-    # Scaling MAE by the level of the series is a different measure, and on a
-    # seasonal series it ranks candidates differently from the MASE selection
-    # scores by — which is the disagreement the objective exists to close.
     season = 4
     history = np.concatenate([np.array([10.0, 40.0, 10.0, 40.0]) + step * 2.0 for step in range(6)])
     actual = np.array([22.0, 52.0, 22.0, 52.0])
@@ -287,14 +253,6 @@ def test_too_little_history_for_mase_falls_back_rather_than_returning_nan() -> N
 
 
 class TestStratifiedSampling:
-    """Independent draws leave holes a search can never report on.
-
-    With eight candidates over a five-value parameter, better than one time in
-    two some value is never tried at all — and a setting that was never tried
-    cannot be found to be worse. Dealing each parameter's values out like a
-    shuffled deck spreads the levels by construction.
-    """
-
     def test_every_value_of_every_parameter_is_tried(self) -> None:
         space = SearchSpace({"depth": [1, 2, 3, 4, 5], "rate": [0.1, 0.2, 0.3]})
         rng = np.random.default_rng(0)
@@ -318,7 +276,6 @@ class TestStratifiedSampling:
         assert len(signatures) == len(sampled)
 
     def test_the_same_seed_samples_the_same_way(self) -> None:
-        """A run has to be reproducible from its seed, tuning included."""
         space = SearchSpace({"a": [1, 2, 3], "b": [4, 5, 6]})
 
         first = space.stratified(np.random.default_rng(3), 6)
@@ -328,17 +285,8 @@ class TestStratifiedSampling:
 
 
 class TestRefinement:
-    """The search picked the best of a scattered sample and stopped there.
-
-    That leaves it at whichever sampled point happened to be lowest rather
-    than at the bottom of the dip that point sits in, and on a coarse sample
-    the two are routinely a step or two apart.
-    """
-
     @staticmethod
     def _bowl(space: SearchSpace, best: dict[str, object]):
-        """An error surface with one optimum, falling smoothly towards it."""
-
         def distance(params: dict[str, object]) -> int:
             return sum(
                 abs(list(values).index(params[key]) - list(values).index(best[key]))
@@ -376,7 +324,6 @@ class TestRefinement:
         assert result.method.endswith("_refined")
 
     def test_it_never_moves_to_something_worse(self) -> None:
-        """Coordinate descent only steps downhill, so it cannot spoil a winner."""
         space = SearchSpace({"a": [1, 2, 3, 4, 5]})
         scored: dict[int, float] = {1: 5.0, 2: 4.0, 3: 3.0, 4: 9.0, 5: 9.0}
 

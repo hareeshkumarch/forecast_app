@@ -1,13 +1,3 @@
-"""
-The calendar, and the one question scoring depends on: is this period over?
-
-Two implementations decide which period a date belongs to — Python's, when a
-forecast is scored, and DuckDB's `date_trunc`, when the actuals are read. They
-have to agree on every frequency or the two halves of a comparison line up
-against different months, so they are held against each other here rather than
-assumed to match.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -29,7 +19,6 @@ WEEKLY = ForecastFrequency.WEEKLY
 MONTHLY = ForecastFrequency.MONTHLY
 QUARTERLY = ForecastFrequency.QUARTERLY
 
-#: Leap day, a month end, a year end, a Sunday, a Monday, a quarter boundary.
 AWKWARD_DAYS = [
     date(2024, 2, 29),
     date(2023, 2, 28),
@@ -83,10 +72,6 @@ def test_a_period_is_settled_once_the_data_reaches_its_last_day() -> None:
 
 
 def test_a_period_is_settled_once_a_later_one_has_data() -> None:
-    """
-    Monthly extracts stamp every row on the first of the month. Requiring the
-    31st would mean such a file never settles a single period, however old.
-    """
     january = date(2024, 1, 1)
 
     assert period_is_settled(january, date(2024, 2, 1), MONTHLY)
@@ -105,7 +90,6 @@ def test_the_period_still_being_lived_through_is_never_settled() -> None:
 
 
 def test_a_daily_period_settles_the_day_it_happens() -> None:
-    # A day's end is the day itself, so daily data has nothing to wait for.
     assert period_is_settled(date(2024, 3, 4), date(2024, 3, 4), DAILY)
     assert not period_is_settled(date(2024, 3, 5), date(2024, 3, 4), DAILY)
 

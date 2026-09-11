@@ -1,13 +1,3 @@
-"""How many live connections one client may hold, and what happens past that.
-
-The event streams are exempt from the rate limiter and from the concurrency
-ceiling, both for good reasons: a stream is held for as long as a tab is open,
-so counting it as a request would let four dashboards spend an allowance sized
-for a thousand. What that left is the hole these tests close — nothing bounded
-how many a client could open, and each one is a socket, a task and a
-subscriber queue held until the browser lets go.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -61,7 +51,6 @@ def test_releasing_gives_the_slot_back() -> None:
 
 
 def test_releasing_twice_does_not_free_somebody_else_s_slot() -> None:
-    """A generator that is torn down after finishing releases the same lease twice."""
     lease = streams.registry.acquire("user:a", "access")
     lease.release()
     lease.release()
@@ -71,7 +60,6 @@ def test_releasing_twice_does_not_free_somebody_else_s_slot() -> None:
 
 
 def test_two_accounts_behind_one_address_do_not_share_a_ceiling() -> None:
-    """Everybody in one office is behind one NAT. They are not one client."""
     streams.registry.acquire("user:a", "access")
     streams.registry.acquire("user:a", "access")
 
@@ -90,8 +78,6 @@ def test_the_process_ceiling_refuses_a_client_still_under_its_own() -> None:
 
 
 def test_a_refusal_before_the_response_does_not_leak_the_slot() -> None:
-    """`leased` releases on the way out of a failed body, not only a finished one."""
-
     class _Request:
         headers: ClassVar[dict[str, str]] = {}
         client = None
@@ -108,7 +94,6 @@ def test_a_frame_is_shaped_the_way_an_event_source_reads_it() -> None:
 
 
 def test_a_multi_line_payload_stays_one_event() -> None:
-    """One `data:` per line, or everything after the first newline is lost."""
     assert streams.frame("one\ntwo") == b"data: one\ndata: two\n\n"
 
 
@@ -138,7 +123,6 @@ async def test_a_lease_is_given_back_when_the_stream_is_exhausted() -> None:
 
 
 async def test_a_lease_is_given_back_when_the_browser_goes_away_mid_stream() -> None:
-    """The common case: a tab closes and the generator is thrown away unfinished."""
     lease = streams.registry.acquire("user:a", "access")
 
     async def body():
@@ -153,7 +137,6 @@ async def test_a_lease_is_given_back_when_the_browser_goes_away_mid_stream() -> 
 
 
 async def test_the_endpoint_refuses_before_it_looks_the_run_up(client) -> None:
-    """A 429 rather than the 404 this unknown run would otherwise have earned."""
     settings.sse_max_streams_total = 1
     held = streams.registry.acquire("someone-else", "forecast")
 

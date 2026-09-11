@@ -112,9 +112,6 @@ class TestEveryRunChecksTheRangeItIsAboutToPublish:
     def test_a_single_horizon_has_too_few_origins_to_speak_for_itself(
         self, check: dict[str, object]
     ) -> None:
-        # A run affords a handful of origins, so one horizon never reaches the
-        # sample floor on its own. The widths are still computed per horizon;
-        # it is the coverage share that is withheld.
         assert check["conformal_halfwidths"]
         assert check["conformal_worst_gap_pp"] is None
 

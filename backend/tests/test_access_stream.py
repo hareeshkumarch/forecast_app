@@ -1,5 +1,3 @@
-"""A decision has to reach the screen it is about, without being asked for."""
-
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +26,6 @@ async def test_a_topic_nobody_listens_to_costs_nothing() -> None:
 
 
 async def test_subscribers_are_forgotten_on_the_way_out() -> None:
-    """Left behind, this leaks one entry per account that ever connected."""
     async with broadcast.subscribe("t"):
         assert broadcast.subscriber_count("t") == 1
     assert broadcast.subscriber_count("t") == 0
@@ -69,7 +66,6 @@ async def test_a_decision_announces_to_the_person_and_the_list(monkeypatch) -> N
 
 
 async def test_re_approving_announces_nothing() -> None:
-    """Nothing changed, so no screen needs to do anything about it."""
     from app.models.enums import AccessRole, AccessStatus
     from app.services import user_service
     from tests.test_access_approval import _Account
@@ -92,13 +88,6 @@ async def test_re_approving_announces_nothing() -> None:
 
 
 def test_the_stream_is_reachable_while_still_waiting() -> None:
-    """The screen that needs this most is the one that is not in yet.
-
-    Mounted behind the approval gate the endpoint would answer 403 to exactly
-    the people it exists for, and the waiting card would go back to polling
-    forever. Nothing that tests the handler can see that — only asking the
-    application what it exposes.
-    """
     from fastapi.routing import APIRoute
 
     from app.main import app
@@ -115,12 +104,6 @@ def test_the_stream_is_reachable_while_still_waiting() -> None:
 
 
 def test_the_stream_does_not_hold_a_pooled_connection() -> None:
-    """One open tab would otherwise pin a database connection for hours.
-
-    A session from the dependency lives as long as the request, and this
-    request lives as long as the browser tab. A handful of open pages would
-    exhaust the pool while doing nothing at all.
-    """
     from fastapi.routing import APIRoute
 
     from app.main import app
@@ -136,13 +119,6 @@ def test_the_stream_does_not_hold_a_pooled_connection() -> None:
 
 
 class TestAcrossProcesses:
-    """A second API instance used to mean a decision that reached nobody.
-
-    Nothing about approving somebody is instance-local, but the fan-out was: a
-    nudge published on the instance you were not connected to never arrived,
-    and the page sat there looking like it was working.
-    """
-
     async def test_a_frame_from_another_process_is_delivered_here(self) -> None:
         async with broadcast.subscribe("access:7") as queue:
             broadcast._accept(
@@ -151,7 +127,6 @@ class TestAcrossProcesses:
             assert await asyncio.wait_for(queue.get(), timeout=1) == "access"
 
     async def test_this_process_ignores_the_echo_of_its_own_publish(self) -> None:
-        """Otherwise every nudge is delivered twice and every client refetches twice."""
         async with broadcast.subscribe("access:7") as queue:
             broadcast._accept(
                 json.dumps({"origin": broadcast.ORIGIN, "topic": "access:7", "event": "access"})
@@ -165,7 +140,6 @@ class TestAcrossProcesses:
     async def test_nothing_is_announced_anywhere_without_a_channel_to_announce_on(
         self, monkeypatch
     ) -> None:
-        """The deployment this ships to runs one process and no redis."""
         pushed: list[str] = []
         monkeypatch.setattr(broadcast.settings, "redis_url", "")
         monkeypatch.setattr(broadcast, "_push", lambda payload: pushed.append(payload))
