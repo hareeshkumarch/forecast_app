@@ -29,12 +29,6 @@ _LATEST_MAXSIZE = 2_048
 
 
 def as_utc(value: datetime) -> datetime:
-    """Treat a naive timestamp as UTC.
-
-    Progress frames are ordered by `updated_at`, and a naive value read back
-    from Postgres would otherwise be incomparable with an aware one produced
-    in a worker.
-    """
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
@@ -47,10 +41,6 @@ class ProgressEvent:
     message: str | None = None
     selected_model: str | None = None
     error: str | None = None
-    #: Pieces of work ahead of this run in the pool queue, when it is waiting
-    #: for a worker; None when it is not. Carried as a number rather than left
-    #: inside the message so a client can render a queue rather than parse
-    #: prose out of one.
     queue_ahead: int | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -69,13 +59,6 @@ class ProgressEvent:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ProgressEvent:
-        """Rebuild an event written by `to_dict`.
-
-        Every route a frame can take between processes — the worker pipe, the
-        Redis channel — ends here, so there is one definition of what the wire
-        format is. Raises on anything malformed; callers decide whether a bad
-        frame is worth a log line.
-        """
         raw_updated = payload.get("updated_at")
         return cls(
             run_id=uuid.UUID(str(payload["run_id"])),
@@ -169,29 +152,12 @@ class ProgressBus:
 progress_bus = ProgressBus()
 
 
-#: Set in a pool worker, by the initializer below. In the parent it stays None.
-#:
-#: Without it a worker's progress has nowhere to go in the single-node
-#: configuration. `progress_bus` is a module-level object, so the copy a
-#: worker publishes to is its own; the Celery branch needs a broker and the
-#: relay branch needs Redis, and this deployment runs neither. Every
-#: fine-grained event the engine emits — one per candidate model, roughly
-#: sixteen across a backtest — was therefore written into a bus nobody reads,
-#: and a run appeared to freeze at whatever coarse percentage the parent had
-#: last set for itself.
 _worker_channel: Any | None = None
 
 
-#: Put on the channel to retire the drain thread. It has to be `None` rather
-#: than a sentinel object: everything on the channel is pickled and rebuilt on
-#: the way through, and `None` is the only value whose identity survives that.
-#: Frames are always dicts, so there is nothing to confuse it with.
 _STOP = None
 
 
-#: The variables every BLAS build reads to decide how many threads to spawn.
-#: OpenBLAS, MKL, Accelerate and OpenMP each have their own, and a machine can
-#: have more than one of them loaded.
 _BLAS_THREAD_VARS = (
     "OMP_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",
@@ -202,38 +168,18 @@ _BLAS_THREAD_VARS = (
 
 
 def _pin_blas_threads() -> None:
-    """Stop each worker's linear algebra from claiming the whole box.
-
-    OpenBLAS sizes its thread pool from the core count *per process*, so a
-    two-core instance running two pool workers, each fitting two candidate
-    models, can have four fits asking for two BLAS threads each — eight
-    runnable threads over two cores. Every one of them then runs slower than it
-    would have alone, and the cost lands hardest on whatever started last,
-    which is exactly the "the fourth one just takes forever" shape.
-
-    Parallelism is already being taken at the run and candidate level, where it
-    is coarse enough to be worth having. Inside a fit there is nothing left to
-    win and a great deal to lose, so one thread each.
-
-    Set before the module that imports numpy: the pool spawns, so a worker
-    imports the forecasting stack when it unpickles its first task, which is
-    after this has run. An operator who has set one of these themselves keeps
-    their value.
-    """
     threads = max(1, settings.forecast_blas_threads)
     for name in _BLAS_THREAD_VARS:
         os.environ.setdefault(name, str(threads))
 
 
 def _adopt_channel(channel: Any) -> None:
-    """Pool initializer: hand each worker the pipe back to the parent."""
     global _worker_channel
     _pin_blas_threads()
     _worker_channel = channel
 
 
 def _deliver(payload: dict[str, Any]) -> None:
-    """Publish a worker's frame on the event loop that owns the subscribers."""
     try:
         progress_bus.publish(ProgressEvent.from_dict(payload))
     except Exception:
@@ -247,9 +193,6 @@ def publish_progress(event: ProgressEvent) -> None:
         try:
             _worker_channel.put_nowait(event.to_dict())
         except Exception:
-            # A full queue means the parent is behind, and progress is the
-            # most droppable thing in the system — the run itself is
-            # unaffected, and the next event supersedes this one anyway.
             logger.debug("Could not forward progress to the parent", exc_info=True)
 
     if settings.distributed:
@@ -268,15 +211,11 @@ def publish_progress(event: ProgressEvent) -> None:
         publish_from_worker(event)
 
 
-#: What a slot is being taken for. Only the model search announces its wait —
-#: a grouped run's chunks queue too, but their progress is already reported as
-#: "12 of 40 series", and a position line per chunk would bury it.
 MODEL_SEARCH = "model"
 SERIES_CHUNK = "series"
 
 
-class ShuttingDown(RuntimeError):
-    """Raised to a run that asked for a worker while the process is going away."""
+class ShuttingDown(RuntimeError): ...
 
 
 @dataclass(slots=True)
@@ -290,39 +229,14 @@ class Waiting:
 
 @dataclass(frozen=True, slots=True)
 class SlotSnapshot:
-    """What one run is doing to the pool, for the monitoring endpoint."""
-
     run_id: uuid.UUID
     running: int
     waiting: int
-    #: How many pieces of work from *other* runs are ahead of this one's first
-    #: waiter. Zero means it is next.
     ahead: int
     waiting_since: float | None
 
 
 class Scheduler:
-    """Who gets a pool worker next, and who is told they are waiting.
-
-    The pool already queued work — a `ProcessPoolExecutor` takes everything
-    submitted and runs `max_workers` of it — so this is not about queueing.
-    It is about the two things that queue could not do.
-
-    The first is honesty. A run that had been dispatched was marked
-    `backtesting` before it was submitted, so a run waiting behind two others
-    displayed as backtesting at 30% while doing nothing at all. That is the
-    "the fourth one just takes ages" report, and nothing on the screen could
-    have explained it. Waiting is now a state with a position in it.
-
-    The second is fairness. A grouped run submits one piece of work per chunk
-    — forty series is several — and the pool's queue is strictly first in,
-    first out, so a single grouped run could hold every worker and every other
-    run behind it for minutes. When a slot frees, it goes to the waiter whose
-    run holds the fewest slots already, and arrival order decides ties. One run
-    on its own still gets the whole pool; the moment a second wants in, the
-    first stops being able to take all of it.
-    """
-
     def __init__(self) -> None:
         self._slots = 0
         self._held: dict[uuid.UUID, int] = {}
@@ -363,7 +277,6 @@ class Scheduler:
         return sorted(rows, key=lambda row: (-row.running, row.ahead))
 
     def position_of(self, run_id: uuid.UUID) -> int | None:
-        """How many pieces of work are ahead of this run, or None if it is not waiting."""
         mine = [waiter for waiter in self._waiting if waiter.run_id == run_id]
         if not mine:
             return None
@@ -375,21 +288,12 @@ class Scheduler:
         kind: str,
         on_wait: Callable[[int], Awaitable[None]] | None = None,
     ) -> None:
-        """Take a slot, waiting for one if there is none.
-
-        `on_wait` is called with the queue position, once, and only if this
-        actually has to wait. That is what lets a caller say "queued, 2 ahead"
-        without saying it to the common case that never queues at all — a
-        message that flashes for one frame is worse than no message.
-        """
         if self._closed:
             raise ShuttingDown(
                 "This server is restarting and is not starting new model work. The run is "
                 "retryable and will say so."
             )
 
-        # Not just "is there a free slot": jumping a queue that already exists
-        # is how the run that arrived first waits longest.
         if not self._waiting and self.running < self.slots:
             self._held[run_id] = self._held.get(run_id, 0) + 1
             return
@@ -410,8 +314,6 @@ class Scheduler:
         try:
             await waiter.admitted
         except asyncio.CancelledError:
-            # A cancelled run must not leave a waiter nobody will ever admit,
-            # nor a slot handed to it a moment later and never given back.
             if waiter in self._waiting:
                 self._waiting.remove(waiter)
             elif waiter.admitted.done() and not waiter.admitted.cancelled():
@@ -432,8 +334,6 @@ class Scheduler:
     def _promote(self) -> None:
         promoted = False
         while self._waiting and self.running < self.slots:
-            # Fewest slots already held, then arrival order. One run alone
-            # takes the pool; two runs share it.
             waiter = min(
                 self._waiting,
                 key=lambda item: (self._held.get(item.run_id, 0), item.sequence),
@@ -448,12 +348,6 @@ class Scheduler:
             _announce_wait(self)
 
     def close(self) -> None:
-        """Admit nothing further. What is running is left to finish.
-
-        Called when the process is going away: starting a minute of model
-        fitting on a worker that is about to be torn down is work nobody will
-        see the result of, and the run is failed retryably either way.
-        """
         self._closed = True
         for waiter in self._waiting:
             if not waiter.admitted.done():
@@ -476,8 +370,6 @@ class Scheduler:
 scheduler = Scheduler()
 
 
-#: Set by forecast_service, which owns what a progress frame means. Left unset
-#: — in a worker, a script, a test — the scheduler simply schedules.
 announce_wait: Any | None = None
 
 
@@ -514,8 +406,6 @@ class ExecutorRegistry:
             return
         workers = max(1, settings.forecast_workers)
         context = multiprocessing.get_context("spawn")
-        # Bounded: progress is the one thing worth dropping under pressure, and
-        # an unbounded queue would let a stalled parent grow without limit.
         self._channel = context.Queue(maxsize=_QUEUE_MAXSIZE * workers)
         self._executor = ProcessPoolExecutor(
             max_workers=workers,
@@ -524,27 +414,15 @@ class ExecutorRegistry:
             initargs=(self._channel,),
         )
         logger.info("Started forecast process pool with %d worker(s).", workers)
-        # Attached here rather than only from the app's lifespan, so a pool the
-        # `executor` property creates on demand cannot end up without a reader
-        # — which is the same silent hole this whole mechanism closes.
         self.start_relay()
 
     def start_relay(self) -> None:
-        """Drain worker progress into this process's bus.
-
-        The queue's `get` blocks, so it is read on a thread of its own rather
-        than on the default executor — that pool is shared with every
-        `asyncio.to_thread` call in the app, and this reader parks for the
-        life of the process. What crosses back to the loop is a finished dict.
-        """
         if self._channel is None or self._drain is not None:
             return
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No loop: a script or a Celery worker, where nothing is
-            # subscribed in this process anyway.
             return
         channel = self._channel
 
@@ -552,13 +430,13 @@ class ExecutorRegistry:
             while True:
                 try:
                     payload = channel.get()
-                except (OSError, ValueError, EOFError):  # channel closed on shutdown
+                except (OSError, ValueError, EOFError):
                     return
                 if payload is _STOP:
                     return
                 try:
                     loop.call_soon_threadsafe(_deliver, payload)
-                except RuntimeError:  # the loop is gone; so is anyone listening
+                except RuntimeError:
                     return
 
         self._drain = threading.Thread(target=pump, name="progress-drain", daemon=True)
@@ -566,20 +444,6 @@ class ExecutorRegistry:
         logger.info("Relaying worker progress into this process.")
 
     async def drain(self, seconds: float) -> int:
-        """Wait, up to a point, for the forecasts already running to finish.
-
-        Without a broker the pool has no durable queue, so a restart used to
-        fail every in-flight run outright — clean and retryable, and still
-        somebody watching a progress bar that stops for no reason they can
-        see. Most runs are about a minute; most of them now land.
-
-        Only what is *running* is waited for. Anything still queued is not
-        started: it would be beginning a minute of work on a process that has
-        been told to go away, and it comes back as retryable either way.
-
-        Returns how many were still going when the wait ran out, so the caller
-        can say so rather than restarting in silence.
-        """
         if seconds <= 0 or self.inline:
             return scheduler.running
 
@@ -597,8 +461,6 @@ class ExecutorRegistry:
     def shutdown(self) -> None:
         channel, self._channel = self._channel, None
         if channel is not None:
-            # The drain thread is parked on a blocking get, and closing the
-            # queue underneath it is not guaranteed to wake it. A sentinel is.
             try:
                 channel.put_nowait(_STOP)
             except Exception:
@@ -633,20 +495,6 @@ class ExecutorRegistry:
         on_wait: Callable[[int], Awaitable[None]] | None = None,
         on_start: Callable[[], Awaitable[None]] | None = None,
     ) -> Any:
-        """Take a slot, do the work, give the slot back.
-
-        The pool would have queued this anyway. Going through the scheduler is
-        what makes the wait visible and stops one run holding every worker —
-        see `Scheduler`. `inline` skips the queue: a Celery worker's
-        concurrency is the broker's business, and nothing in this process is
-        waiting on it.
-
-        `on_wait` fires only if this has to queue; `on_start` fires the moment
-        the slot is this run's, before the work is submitted. Between them a
-        caller can report "queued, 2 ahead" and then "started" without polling
-        for either — the difference between a screen that is a beat behind and
-        one that is right.
-        """
         if self.inline:
             if on_start is not None:
                 await on_start()

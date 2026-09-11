@@ -103,9 +103,6 @@ class ForecastInput:
     quality: dict[str, object] = field(default_factory=dict)
     drivers: dict[str, list[float]] = field(default_factory=dict)
     target_label: str = "the total"
-    #: What to do to a window of history before fitting on it. Held as an
-    #: instruction rather than applied to `series.values` up front, so each
-    #: backtest fold can apply it to its own training slice.
     preparation: Preparation = field(default_factory=Preparation)
 
 
@@ -145,7 +142,6 @@ class ForecastOutput:
     candidates: list[CandidateRow]
     interval_method: str
     diagnostics: dict[str, object] = field(default_factory=dict)
-    #: What each stage of this run cost, against what it was allowed to cost.
     timings: RunTimings = field(default_factory=RunTimings)
 
     regions: list[SegmentOutput] = field(default_factory=list)
@@ -227,18 +223,6 @@ def _make_factory(
     drivers: DriverSource | None = None,
     feature_cache: WindowFeatureCache | None = None,
 ) -> ModelFactory:
-    """A model built from the window it is about to be fitted on.
-
-    Everything the model configures itself from — the seasonal period, the
-    variance transform, which columns lead the target — is measured inside
-    the window. The factory is handed each fold's training slice, so none of
-    those choices can be made with the fold's validation data in hand.
-    """
-
-    # Shared by every fold of one backtest: the shape of a series does not
-    # change between folds, so ETS and Holt-Winters search for it once and
-    # refit only its parameters afterwards. Chosen on the first fold's
-    # training slice, so nothing sees a period it is about to be scored on.
     shape_cache: dict[str, object] = {}
 
     def factory(y_train: FloatArray, periods_train: list[date]) -> Forecaster:
@@ -264,15 +248,6 @@ def _make_factory(
 
 
 class _InFlight:
-    """What the model search is doing right now, not only what it has finished.
-
-    Fitting is done `lanes` at a time, so with six candidates and two lanes the
-    last two have not started when the first two are half done. Reporting only
-    completions leaves the message unchanged for as long as a fit takes, which
-    reads as a search that has stalled — and reads worst for the candidates
-    that are merely queued, which is the ones that look slowest.
-    """
-
     __slots__ = ("_done", "_lanes", "_lock", "_running", "_total")
 
     def __init__(self, total: int, lanes: int) -> None:
@@ -330,7 +305,6 @@ def _backtest_candidate(
         Preparation | None,
     ],
 ) -> BacktestResult:
-    """One candidate, scored. Module level so it can be sent to a subprocess."""
     kind, frequency, options, source, observed, periods, plan, weights, level, prepare = args
     return run_backtest(
         _make_factory(kind, frequency, options, source),
@@ -363,12 +337,7 @@ ProgressCallback = Callable[[str, int, int, str], None]
 def run_forecast(
     payload: ForecastInput, progress_callback: ProgressCallback | None = None
 ) -> ForecastOutput:
-    #: As observed, NaN where the calendar expects a period the data never had.
     observed = np.asarray(payload.series.values, dtype=float)
-    #: The same series with the run's gap fill and outlier treatment applied
-    #: over its whole length. Correct for the final fit, where the whole
-    #: history is the training data, and for everything the user is shown —
-    #: but never handed to the backtest, which prepares each fold for itself.
     values = payload.preparation.apply(observed)
     periods = list(payload.series.periods)
     weights = (
@@ -390,9 +359,6 @@ def run_forecast(
         profile = profile_series(values, frequency)
     floor = minimum_history(profile)
 
-    # Every model that tunes its own hyperparameters searches against the
-    # metrics this run is scored by, so the search and the selection cannot
-    # disagree about what a good forecast is.
     scoring_weights = payload.metric_weights or metric_weights_for(profile.intermittent)
     model_options = {**(payload.model_options or {}), "metric_weights": scoring_weights}
 
@@ -402,10 +368,6 @@ def run_forecast(
         horizon=horizon,
         frequency=frequency,
     )
-    # The roster of candidate models is a structural choice — whether it is
-    # worth offering a driver-using variant at all — so it is made from the
-    # whole history, which is also what the final model is fitted on. What
-    # each fold *fits* is discovered inside that fold.
     with timings.measure(Stage.FEATURES):
         panel = source.panel_for(values, periods)
 
@@ -483,14 +445,7 @@ def run_forecast(
     lanes = min(settings.forecast_candidate_workers, candidate_total)
 
     if model_workers > 1:
-        # Thread-level parallelism with feature caching.
         indexed: dict[int, BacktestResult] = {}
-        # Only `model_workers` candidates are being fitted at any moment; the
-        # rest are queued inside the pool. Reporting completions alone left
-        # nothing moving between them and made the candidates that had not
-        # started yet look like candidates that were taking a long time — the
-        # same confusion the run queue caused, one level down. So say what is
-        # in flight as well as what is finished.
         watch = _InFlight(candidate_total, model_workers)
         if progress_callback is not None:
             progress_callback("backtesting", 0, candidate_total, watch.opening())
@@ -517,7 +472,6 @@ def run_forecast(
                     progress_callback("backtesting", completed, candidate_total, watch.line(kind))
         results = [indexed[index] for index in range(candidate_total)]
     elif lanes > 1:
-        # Process-level parallelism without feature caching.
         results = [None] * candidate_total  # type: ignore[list-item]
         announce(0, f"Backtesting {candidate_total} candidate models...")
         with ProcessPoolExecutor(max_workers=lanes) as process_pool:
@@ -556,13 +510,9 @@ def run_forecast(
     timings.record(Stage.FIT, time.perf_counter() - fit_started)
 
     for kind, status in unavailable_models().items():
-        # The user-facing half only. The operator half is logged once per
-        # process by the probe itself, where somebody can act on it.
         results.append(BacktestResult(model=kind, failed=True, failure_reason=status.reason))
 
     cps = payload.model_options.get("complexity_penalty_scale") if payload.model_options else None
-    # model_options round-trips through stored JSON, so the value is only a number
-    # if whoever wrote it put one there.
     penalty_scale = (
         float(cps) if isinstance(cps, int | float) and not isinstance(cps, bool) else None
     )
@@ -625,10 +575,6 @@ def run_forecast(
         final_model = build_candidate(winner_kind, frequency, model_options, profile)
         final_model.fit(values, periods)
 
-    # The backtest recorded whatever the *last* fold happened to configure,
-    # and the model that gets shipped is the one refitted on the whole
-    # history — a different search over more data. Reporting the fold's
-    # settings beside the shipped forecast describes a model nobody has.
     winner_params = dict(final_model.params)
     if winner_params:
         selection.winner.result.params = winner_params
@@ -681,9 +627,6 @@ def run_forecast(
         "backtest_folds": float(winner_result.n_folds),
         "seasonal_period": float(profile.seasonal_period),
         "seasonal_strength": round(profile.seasonal_strength * 100.0, 2),
-        # What the chosen model was worth over the best baseline that ran
-        # beside it. Negative means the baseline should have shipped, which is
-        # the answer this exists to be able to give.
         "forecast_value_add": _value_add(results, winner_result),
     }
 
@@ -761,10 +704,6 @@ def run_forecast(
             "validated_horizon": plan.horizon,
             "changepoints": [periods[index].isoformat() for index in changepoints],
             "quality": payload.quality,
-            # Which models this series was allowed to reach, and whether a
-            # single number is a defensible thing to show for it. A lumpy
-            # series gets quantiles and no point-accuracy claim, and the UI
-            # needs to be told that rather than inferring it.
             "routing": route(profile).as_dict(),
             "timings": timings.as_dict(),
             "interval_check": interval_check,
@@ -801,9 +740,6 @@ def _interval_check(
     if reach == 0:
         return {"measured": False, "reason": "This run published no interval to check."}
 
-    # A band floored at zero no longer carries an offset that means anything
-    # away from its own point forecast, so those steps are skipped rather than
-    # transferred onto a fold and counted as a miss.
     clipped = (lower <= 0.0) & (point_forecast > 0.0)
     below = lower - point_forecast
     above = upper - point_forecast
@@ -823,10 +759,6 @@ def _interval_check(
         for point, step in transferable
     ]
     served = realised_coverage(transferred, confidence_level)
-    # A run affords a handful of origins, so no single horizon reaches the
-    # sample floor and every per-horizon share reads as unmeasurable. Pooling
-    # the steps gives one figure the evidence does support, which is the
-    # difference between reporting nothing and reporting what is known.
     pooled = realised_coverage(
         (
             Interval(horizon=1, actual=one.actual, lower=one.lower, upper=one.upper)
@@ -835,10 +767,6 @@ def _interval_check(
         confidence_level,
     )
     repaired = calibrate(points, confidence_level)
-    # Pooled conformal is fitted on the pooled residuals, not handed the widest
-    # per-horizon width: that width was chosen to cover the longest step and
-    # over-covers everything shorter, so quoting it as an overall figure
-    # reports the band as far safer than it is.
     flattened = [HeldOutPoint(horizon=1, actual=p.actual, predicted=p.predicted) for p in points]
     repaired_pooled = measure_coverage(
         flattened, conformal_halfwidths(flattened, confidence_level), confidence_level
@@ -870,13 +798,6 @@ def _finite_or_none(value: float) -> float | None:
 
 
 def _value_add(results: list[BacktestResult], winner: BacktestResult) -> float:
-    """The winner's improvement over the strongest baseline, in percent.
-
-    Measured on wMAPE where both have one, and on MAE otherwise so that a
-    series whose validation windows total zero still gets an answer. Returns
-    NaN when no baseline was scoreable — an unmeasured comparison is not a
-    zero-value one.
-    """
     baselines = [
         result
         for result in results
@@ -895,19 +816,10 @@ def _value_add(results: list[BacktestResult], winner: BacktestResult) -> float:
     return float("nan")
 
 
-#: A level shift closer to the end of the history than this leaves too little
-#: of the new regime to fit on, which is worth saying out loud.
 RECENT_CHANGEPOINT_SHARE = 0.25
 
 
 def _changepoint_note(changepoints: list[int], periods: list[date], n: int) -> str:
-    """Say when the series changed level, because the fit cannot show it.
-
-    A model fitted across a step change splits the difference: it sits above
-    the new regime and below the old one, and every metric averages the two.
-    Nothing in the accuracy figure distinguishes that from ordinary noise, so
-    the dates are named and the recent ones are called out.
-    """
     latest = changepoints[-1]
     when = ", ".join(periods[index].isoformat() for index in changepoints[-3:])
     if latest >= n * (1.0 - RECENT_CHANGEPOINT_SHARE):
@@ -1108,10 +1020,6 @@ def _fit_leaf(
     confidence_level: float,
     preparation: Preparation | None = None,
 ) -> LeafFit:
-    # A grouped series arrives with NaN wherever it has no row for a period,
-    # and is prepared by the same rules as the total — the run asked for one
-    # gap-fill policy, not one for the headline number and a silent zero-fill
-    # for everything under it.
     prepare = preparation or Preparation()
     observed = np.asarray(values, dtype=float)
     history = prepare.apply(observed)
@@ -1247,19 +1155,9 @@ def forecast_grouped(
 
 
 def _shares(leaves: list[SegmentInput]) -> list[float] | None:
-    """Each leaf's share of the whole, or None when there is no whole to divide.
-
-    Taken from magnitude rather than from the signed total. A margin, a
-    net-of-returns figure or a balance can sum to zero or below while every
-    series under it is real, and dividing by that total gave a share of
-    infinity — so the guard against it discarded the entire breakdown and the
-    run came back with no grouped forecast at all and no reason why.
-    """
     weights = [abs(leaf.current_total) for leaf in leaves]
     total = sum(weights)
     if total <= 0:
-        # Every series is flat at zero over the comparison window. Nothing in
-        # the data says one is bigger than another, so they share equally.
         return [1.0 / len(leaves)] * len(leaves) if leaves else None
     return [weight / total for weight in weights]
 
@@ -1349,10 +1247,6 @@ class _Actuals:
     history: FloatArray
 
 
-#: How far reconciliation may move a series before its interval stops meaning
-#: anything. The band was measured around the series' own forecast; stretched
-#: to fit a path twice the size, or one of the opposite sign, it is no longer
-#: a measurement of anything and showing it as one is worse than showing none.
 MAX_RECONCILIATION_STRETCH = 2.0
 
 
@@ -1361,15 +1255,6 @@ def _rescale_band(
     fitted: list[float] | None,
     reconciled: FloatArray,
 ) -> list[float]:
-    """Carry a leaf's interval onto its reconciled path.
-
-    Proportional, which is an approximation: the exact answer needs the
-    covariance between the series, and nothing here has it. It holds while the
-    reconciliation is a modest adjustment, which is the case it is for — a
-    coherence correction, not a rewrite. Past that the band is dropped rather
-    than stretched, because an interval nobody measured is not improved by
-    being drawn.
-    """
     if bound is None or fitted is None:
         return []
 
@@ -1425,11 +1310,6 @@ def _roll_up_actuals(root: Node, leaves: dict[str, SegmentInput]) -> dict[str, _
 
 
 def _sum_histories(histories: list[FloatArray]) -> FloatArray:
-    """Roll children up into their parent, over the periods they reported.
-
-    A period no child reported stays unreported rather than becoming a zero —
-    the parent did not observe nothing there, it observed nothing at all.
-    """
     usable = [history for history in histories if history.size]
     if not usable:
         return np.zeros(0)

@@ -55,9 +55,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 request.url.path,
                 elapsed_ms,
             )
-            # An exception that escapes here still becomes a 500 further out,
-            # so it is counted as one. Leaving it uncounted would make the
-            # error rate look best exactly when the failures are worst.
             self._measure(request, elapsed_ms, "5xx")
             raise
         finally:
@@ -66,12 +63,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _measure(request: Request, elapsed_ms: float, status_class: str) -> None:
-        """One request, recorded against its route template.
-
-        The template rather than the URL: see `route_label`. Status is bucketed
-        to its class for the same reason — a counter per distinct code buys a
-        breakdown nobody reads at the cost of five times the series.
-        """
         label = route_label(request)
         metrics.http_requests.inc(route=label, method=request.method, status=status_class)
         metrics.http_request_seconds.observe(
@@ -80,19 +71,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Counts first, answers second.
-
-    Ahead of routing on purpose: a request that is over its limit should cost a
-    dictionary lookup, not a database round trip and a JSON body. That is also
-    why identity here is the client address rather than the account — nothing
-    at this point has verified a token, and counting against an unverified
-    claim would let anybody reset their own allowance by editing it.
-
-    The RateLimit-* headers go on every answer, not only the refusals. A client
-    that can see it has four left can slow down; one that only finds out at
-    zero cannot.
-    """
-
     def __init__(self, app: ASGIApp, enabled: bool = True) -> None:
         super().__init__(app)
         self.enabled = enabled
@@ -141,21 +119,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 class CompressExceptStreams:
-    """gzip every response except the progress stream.
-
-    The JSON this API returns compresses by roughly three quarters, and the
-    hop between a viewer and this box is long enough that the bytes matter
-    more than the CPU does.
-
-    The forecast progress endpoint is deliberately left alone. It is
-    Server-Sent Events, and its whole contract is that each frame reaches the
-    browser as it is produced — a keep-alive comment is fourteen bytes, well
-    under any compressor's flush threshold, so gzipping the stream trades the
-    liveness it exists for against nothing worth having. This is the same
-    reason the CloudFront behaviour for /api/* has compression switched off.
-    """
-
-    #: Anything whose path ends here streams and must not be buffered.
     STREAMING_SUFFIX = "/events"
 
     def __init__(self, app: ASGIApp, minimum_size: int = 512) -> None:
@@ -170,43 +133,9 @@ class CompressExceptStreams:
 
 
 class ConcurrencyLimitMiddleware:
-    """Refuse quickly rather than queue forever.
-
-    A rate limit answers "is this client asking for too much?". This answers a
-    different question — "is this box already doing as much as it usefully
-    can?" — and the two failures it protects against are not the same. One
-    abusive client is the limiter's problem. Fifty honest clients arriving at
-    once while a forecast has both vCPUs is this one's: every request then
-    takes longer than the last, the event loop's queue grows, and the answers
-    that eventually come out go to browsers that gave up several minutes ago.
-    Work done for a client that has left is the purest waste a server can do.
-
-    So past a ceiling this returns 503 with `Retry-After` immediately. That is
-    a worse answer than the right one and a much better answer than a timeout:
-    the client learns now, the queue stops growing, and the requests already
-    in flight finish at the speed they were going to.
-
-    **Streams do not count.** A progress stream is open for the length of a
-    forecast run, so counting it would let a handful of dashboards sitting on
-    `/events` consume the whole allowance and shed everything else. They cost
-    a socket and a keep-alive every fifteen seconds, not a slot.
-
-    **Health does not count either**, and for a sharper reason: the load
-    balancer decides whether this instance is alive by asking it. An instance
-    that sheds its own health check under load gets taken out of service at
-    exactly the moment the traffic needs somewhere to go.
-
-    Pure ASGI rather than `BaseHTTPMiddleware`, because a shed request should
-    cost a comparison and a small response — not the task group, queue and
-    two coroutines that the base class allocates before it can decide.
-    """
-
-    #: Paths whose in-flight time says nothing about how busy this box is.
     EXEMPT_PREFIXES = ("/api/health", "/docs", "/redoc", "/openapi.json")
     EXEMPT_SUFFIXES = ("/events",)
 
-    #: What a shed client is told to wait. Short on purpose: the condition it
-    #: describes is a burst, and a burst is usually over in a second.
     RETRY_AFTER_SECONDS = 2
 
     def __init__(self, app: ASGIApp, limit: int = 64, enabled: bool = True) -> None:
@@ -216,8 +145,6 @@ class ConcurrencyLimitMiddleware:
         self.limit = limit
         self.enabled = enabled
         self._in_flight = 0
-        # A single event loop does not need this, and a test that drives the
-        # app from a thread pool does. It is uncontended in the normal case.
         self._lock = threading.Lock()
 
     def _exempt(self, path: str) -> bool:
@@ -247,10 +174,6 @@ class ConcurrencyLimitMiddleware:
                 path,
                 self.limit,
             )
-            # The raw path, unrouted, would be one series per URL — and a
-            # shed request has not been routed, so no template exists yet.
-            # The first two segments are bounded and enough to say which part
-            # of the API the pressure is on.
             metrics.http_shed.inc(route="/".join(path.split("/")[:3]) or "/")
             response = JSONResponse(
                 status_code=503,
@@ -281,24 +204,6 @@ class ConcurrencyLimitMiddleware:
 
 
 class SecurityHeaders:
-    """Headers this API had no reason not to be sending.
-
-    It answers the public internet directly and serves its own documentation,
-    so the two that matter are not theoretical. `nosniff` stops a browser
-    deciding for itself that a JSON error body is really HTML — which is how a
-    reflected value in a message becomes script. `frame-options: DENY` stops
-    the whole thing being embedded in somebody else's page, which for an API
-    with a cookie-free bearer scheme is mostly about the docs UI, and costs
-    nothing because nothing here is meant to be framed.
-
-    HSTS is only sent where the request already arrived over TLS. Sent from a
-    plain-HTTP origin it is ignored by every browser and, if it were not,
-    would be a way to lock a development machine out of its own localhost.
-
-    Pure ASGI, and it wraps the send rather than the response object, so it
-    covers the streams too — a `BaseHTTPMiddleware` here would buffer them.
-    """
-
     HEADERS = (
         (b"x-content-type-options", b"nosniff"),
         (b"x-frame-options", b"DENY"),

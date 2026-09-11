@@ -13,9 +13,6 @@ from app.models.enums import ModelKind
 FloatArray = npt.NDArray[np.float64]
 
 
-#: How far the estimated exponent has to sit from 1 before a power transform
-#: is worth applying at all. Below this the transform is within rounding of
-#: the identity and only costs a round trip.
 POWER_LAMBDA_MARGIN = 0.05
 
 
@@ -48,9 +45,6 @@ class Transform:
             correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
             return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
 
-        # Back on the original scale the inverse of a power transform is the
-        # median, not the mean. The second-order term is what turns one into
-        # the other, and it is the same correction the log branch makes.
         base = np.maximum(self.lam * array + 1.0, 1e-9)
         mean = np.power(base, 1.0 / self.lam)
         if self.residual_variance > 0.0:
@@ -111,9 +105,6 @@ def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
             kind="log", shift=shift, residual_variance=min(_step_variance(transformed), 1.0)
         )
 
-    # The exponent the profile measured is used as measured. Collapsing it to
-    # log-or-nothing left a series whose variance grows like a square root
-    # fitted on the raw scale, which is the case the search was run to find.
     lam = float(profile.box_cox_lambda)
     if profile.transform != "none" or not np.isfinite(lam):
         return Transform(kind="none")

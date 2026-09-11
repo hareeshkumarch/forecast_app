@@ -1,17 +1,3 @@
-"""How much of the store this deployment has actually used.
-
-Nothing in the platform ever deleted anything on its own, and the store of
-record is a Supabase project with a fixed ceiling. `admission()` caps the
-series in one run; nothing caps the sum of every run ever made. A grouped
-forecast writes one row per period per series per kind — tens of thousands —
-and the tables that hold them have no reason to stop growing.
-
-The failure that produces is the quiet kind: everything works, and then one
-insert fails and the run that fails is somebody's. This is the number that
-would have said it was coming, and the input to any decision about what to
-keep. Read it before setting a retention policy, not after.
-"""
-
 from __future__ import annotations
 
 import time
@@ -26,8 +12,6 @@ from app.database.session import active_target
 
 logger = get_logger(__name__)
 
-#: Long enough that a scrape every fifteen seconds does not walk the catalogue
-#: each time, short enough that a person watching a big run land sees it move.
 CACHE_SECONDS = 60.0
 
 
@@ -35,8 +19,6 @@ CACHE_SECONDS = 60.0
 class TableUsage:
     name: str
     rows: int
-    #: Bytes on disk including indexes and TOAST, or None where the engine
-    #: cannot say — SQLite reports no per-table size.
     bytes: int | None
 
 
@@ -54,9 +36,6 @@ class Usage:
 _cached: Usage | None = None
 
 
-#: `pg_class.reltuples` is what the planner believes, kept current by autovacuum
-#: and free to read. `COUNT(*)` is exact and scans the table — on the one table
-#: worth measuring that is the whole point of not doing it.
 _POSTGRES = text(
     """
     SELECT c.relname AS name,
@@ -94,12 +73,6 @@ async def _postgres(session: AsyncSession) -> list[TableUsage]:
 
 
 async def _fallback(session: AsyncSession) -> list[TableUsage]:
-    """SQLite, and anything else without a catalogue to ask.
-
-    Counted rather than estimated, because there is no estimate to read — and
-    the deployments that land here are a laptop and a test suite, where the
-    tables are small enough that it does not matter.
-    """
     counted: list[TableUsage] = []
     for table in Base.metadata.sorted_tables:
         try:

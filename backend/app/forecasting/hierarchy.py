@@ -27,14 +27,6 @@ def reconcile_to_total(
     *,
     non_negative: bool = True,
 ) -> list[FloatArray]:
-    """Scale segment paths so they add to the total the top line forecast.
-
-    `non_negative` says whether a negative segment is a modelling artefact or a
-    real part of the business. Clipping unconditionally is what turns a returns
-    line of -40 into 0 and quietly rescales its siblings to cover the
-    difference: the breakdown still adds to the total, so nothing looks wrong,
-    and every figure in it is off.
-    """
     if not segment_forecasts:
         return []
 

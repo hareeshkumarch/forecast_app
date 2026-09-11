@@ -77,7 +77,6 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
 
 
 def _member_errors(aligned: _Aligned, skip: int | None = None) -> list[float]:
-    """Each member's absolute error, optionally with one fold left out."""
     errors: list[float] = []
     for member in aligned.predictions:
         total = 0.0
@@ -122,9 +121,6 @@ def blend(
     if aligned is None:
         return None
 
-    # What the fitted ensemble will use: every member weighed by how it did
-    # over the whole backtest. Correct for the model that gets shipped, and
-    # not for scoring it — see below.
     share = inverse_error_weights(_member_errors(aligned))
 
     folds: list[FoldResult] = []
@@ -137,12 +133,6 @@ def blend(
         stacked = np.vstack(
             [np.asarray(member[index], dtype=float) for member in aligned.predictions]
         )
-        # The blend scored on this fold is weighed by how the members did on
-        # every *other* fold. Weighing them by an error that includes this one
-        # tunes the combination on the window it is about to be judged over,
-        # and the ensemble then beats its own best member on paper more often
-        # than it does in use — which is exactly the comparison that decides
-        # whether it is offered at all.
         held_out = inverse_error_weights(_member_errors(aligned, skip=index))
         combined = np.average(stacked, axis=0, weights=held_out)
         fold_weights = aligned.weights[index]
@@ -167,9 +157,6 @@ def blend(
         return None
 
     result = BacktestResult(model=ModelKind.ENSEMBLE, folds=folds)
-    # The members were scored over these same test windows, so the blend has to
-    # be weighed over them too. The run's whole-series weight column is a
-    # different length entirely and used to raise here.
     fold_weight_array = np.array(all_weights) if len(all_weights) == len(all_true) else None
     scores = evaluate(np.array(all_true), np.array(all_pred), fold_weight_array)
     result.mae = scores["mae"]

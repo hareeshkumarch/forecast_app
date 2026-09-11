@@ -242,8 +242,6 @@ FLAT_ATTRIBUTION: dict[str, float] = {
 def forecast_attribution(
     forecast: FloatArray, history: FloatArray, frequency: ForecastFrequency
 ) -> dict[str, float]:
-    """Split the projected volume into the level it starts from, the trend carried
-    into it, and the seasonal swing laid on top."""
     horizon = int(forecast.size)
     clean = history[np.isfinite(history)]
 
@@ -256,14 +254,10 @@ def forecast_attribution(
     finite_trend = trend[np.isfinite(trend)]
     base_level = float(finite_trend[-1]) if finite_trend.size else float(np.mean(clean))
 
-    # The forecast covers steps 1..horizon, so a constant slope contributes the
-    # sum of that arithmetic series rather than slope * horizon.
     baseline_value = base_level * horizon
     trend_value = _trend_slope(trend) * (horizon * (horizon + 1) / 2.0)
 
     if period > 1 and seasonal.size >= period:
-        # pattern[k] sits at absolute index size - period + k, which has the same
-        # phase as forecast step k, so the phase continues without an offset.
         pattern = seasonal[-period:]
         seasonal_value = float(np.sum([pattern[step % period] for step in range(horizon)]))
     else:

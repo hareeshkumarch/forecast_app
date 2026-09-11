@@ -102,10 +102,6 @@ def period_is_settled(period: date, covered_through: date, frequency: ForecastFr
     return period_start(period, frequency) < period_start(covered_through, frequency)
 
 
-#: What a real calendar step measures, in days. Bands rather than a nominal
-#: length with one flat tolerance, because months are 28 to 31 days long and
-#: quarters 89 to 92 — a rule written as "within 40% of 30.44" accepts a
-#: 43-day gap as monthly and rejects nothing that matters.
 FREQUENCY_BANDS: tuple[tuple[ForecastFrequency, int, int], ...] = (
     (ForecastFrequency.DAILY, 1, 1),
     (ForecastFrequency.WEEKLY, 6, 8),
@@ -113,14 +109,8 @@ FREQUENCY_BANDS: tuple[tuple[ForecastFrequency, int, int], ...] = (
     (ForecastFrequency.QUARTERLY, 88, 93),
 )
 
-#: How much of the inferred calendar the data has to actually occupy. Five
-#: readings a day apart and one a year later have a median gap of one day, and
-#: calling that daily asks for a calendar of four hundred periods holding six
-#: observations.
 MIN_GRID_COVERAGE = 0.3
 
-#: How many gaps have to agree with the winning band. Below this the series
-#: has no regular step and saying which one it has is a guess.
 MIN_GAP_AGREEMENT = 0.5
 
 
@@ -129,15 +119,6 @@ def _in_band(gap: int, low: int, high: int) -> bool:
 
 
 def infer_frequency(periods: list[date]) -> ForecastFrequency | None:
-    """The calendar step this series is actually on, or None if it has none.
-
-    Two things have to hold, not one. The typical gap has to land inside a
-    real calendar band — and most of the gaps have to agree with it, so a
-    handful of regular readings inside a long irregular history cannot decide
-    the answer for the rest. Then the inferred calendar has to be one the data
-    largely occupies, because a frequency the series only fills a fiftieth of
-    is not the frequency it was recorded at.
-    """
     if len(periods) < 3:
         return None
 
@@ -164,9 +145,6 @@ def infer_frequency(periods: list[date]) -> ForecastFrequency | None:
         if len(ordered) >= MIN_GRID_COVERAGE * expected:
             return frequency
 
-    # Nothing regular. Fall back to the coarsest calendar the span can carry,
-    # so an irregular series is still put on a grid rather than refused — but
-    # only when that grid is one the observations could plausibly fill.
     for frequency, _low, _high in reversed(FREQUENCY_BANDS):
         expected = max(1, round(span_days / APPROX_DAYS[frequency]) + 1)
         if len(ordered) >= MIN_GRID_COVERAGE * expected:

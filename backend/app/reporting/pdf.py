@@ -107,13 +107,6 @@ def _number(value: Any, digits: int = 0) -> str:
 
 
 def _magnitude(value: Any) -> str:
-    """A number formatted to the precision its own size deserves.
-
-    Driver impacts are in the target's units, and the target can be revenue in
-    the millions or a conversion rate under one. Rounding everything to whole
-    numbers rendered every small driver as "0" — a column of zeroes that
-    silently claimed nothing was moving anything.
-    """
     if value is None:
         return "—"
     try:
@@ -436,7 +429,6 @@ def _decision_for(
     backtested = next(
         (m["value"] for m in sheets.get("metrics") or [] if m.get("name") == "accuracy"), None
     )
-    # A scored run beats a backtest: it grades this forecast, not the method.
     realized = None if run.realized_wmape is None else accuracy_from_wmape(run.realized_wmape)
     accuracy = realized if realized is not None else backtested
 
@@ -582,12 +574,6 @@ def _method_section(
     width: float,
     style: dict[str, ParagraphStyle],
 ) -> list[Any]:
-    """What the reader needs to know before trusting any of the above.
-
-    Last rather than first, deliberately. It is reference material: the reader
-    came for the forecast, and reaches this when they want to know what
-    produced it. Leading with eleven rows of configuration buries the answer.
-    """
     out: list[Any] = [Paragraph("HOW THIS FORECAST WAS MADE", style["section"])]
     grain = ", ".join(run.group_by) if run.group_by else "one total series"
     out.append(
@@ -669,8 +655,6 @@ def _scorecard_section(
     )
     verdict = _verdict(run)
 
-    # Chart kept with its heading; the measures below may break. Holding all
-    # three needs most of a page, and a near-miss blanks the page before it.
     return [
         KeepTogether(
             [

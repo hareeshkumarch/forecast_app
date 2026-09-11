@@ -1,13 +1,3 @@
-"""Which database the platform actually talks to.
-
-Supabase is the store of record. Everything the platform persists — connectors,
-datasets, forecast runs, series, insights — belongs there. A local PostgreSQL is
-the fallback, used when Supabase is not configured at all (a plain
-`docker compose up`, or the test suite) or when it is configured but cannot be
-reached at boot. The choice is made once, at import, and reported through
-`/api/health` so it is never a guess which store a given process is writing to.
-"""
-
 from __future__ import annotations
 
 import socket
@@ -24,8 +14,6 @@ logger = get_logger(__name__)
 ASYNC_DRIVER = "postgresql+asyncpg"
 SYNC_DRIVER = "postgresql+psycopg"
 
-# asyncpg takes its TLS settings as a connect argument, not as a query
-# parameter, and raises on anything in the URL it does not recognise.
 _LIBPQ_ONLY = frozenset(
     {
         "sslmode",
@@ -55,14 +43,12 @@ class DatabaseTarget:
 
     @property
     def safe_url(self) -> str:
-        """The URL with the password masked, for logs and health output."""
         return make_url(self.url).render_as_string(hide_password=True)
 
 
 def _with_driver(url: URL, driver: str) -> URL:
     backend = url.get_backend_name()
     if backend != "postgresql":
-        # SQLite in the test suite, or anything else deliberately configured.
         return url
     return url.set(drivername=driver)
 
@@ -86,7 +72,6 @@ def _for_psycopg(raw: str, *, require_ssl: bool) -> str:
 
 
 def _is_pooled(raw: str) -> bool:
-    """Supabase's pooler is pgbouncer, which cannot hold server-side state."""
     url = make_url(raw)
     host = (url.host or "").lower()
     return "pooler.supabase" in host or url.port == 6543
@@ -137,8 +122,6 @@ def resolve_target() -> DatabaseTarget:
         return supabase
 
     if not settings.database_fallback_enabled:
-        # Configured to insist on Supabase: fail loudly rather than write rows
-        # somewhere nobody will look for them.
         raise RuntimeError(
             "Supabase is configured but unreachable, and DATABASE_FALLBACK_ENABLED is false."
         )
@@ -155,33 +138,17 @@ def connect_args(target: DatabaseTarget) -> dict[str, object]:
     backend = make_url(target.url).get_backend_name()
 
     if backend == "sqlite":
-        # SQLite takes a database-wide lock to write, and the default five
-        # seconds is not long enough when several connections in one process
-        # want it at once. The symptom is a teardown DROP TABLE giving up with
-        # "database is locked" while a pooled reader is still finishing —
-        # which under xdist means whole test files erroring on a loaded
-        # machine and passing on an idle one. Waiting longer costs nothing:
-        # SQLite reports a genuine deadlock immediately regardless, and this
-        # is the local and test store, never the one production writes to.
         return {"timeout": 30}
 
     if backend != "postgresql":
         return {}
 
     args: dict[str, object] = {}
-    # A client-side backstop under the per-transaction `SET LOCAL` in
-    # session.py. That one is the real control; this catches the case it cannot
-    # reach — a connection doing something outside a transaction, or a pooler
-    # that dropped the setting — and is sized to the longest legitimate write
-    # so it never fires before the tighter one does.
     if settings.db_write_timeout_seconds > 0:
         args["command_timeout"] = settings.db_write_timeout_seconds
     if target.name == "supabase":
         args["ssl"] = "require"
     if target.pooled:
-        # pgbouncer in transaction mode reuses server connections between
-        # statements, so a prepared statement cached by one client is not
-        # there for the next.  Disable both layers of caching asyncpg has.
         args["statement_cache_size"] = 0
         args["prepared_statement_cache_size"] = 0
         args["prepared_statement_name_func"] = lambda: ""

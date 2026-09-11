@@ -83,27 +83,14 @@ def _assert_readable_excel(path: Path) -> None:
         )
 
 
-#: Delimiters worth trying, in the order they are worth trying. A semicolon is
-#: what Excel writes anywhere the comma is the decimal separator, which is most
-#: of continental Europe — reading it as a comma file yields exactly one column
-#: holding the whole line.
 CSV_DELIMITERS = (",", ";", "\t", "|")
 
-#: Text encodings, most likely first. UTF-8 covers almost everything; the rest
-#: are what a Windows export from a non-English locale produces.
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
-#: How far down the file to look for the real header. Exports often open with a
-#: report title and a blank line before the column names.
 MAX_PREAMBLE_LINES = 12
 
 
 def _decode(raw: bytes) -> tuple[str, str]:
-    """Decode a file, returning the text and the encoding that worked.
-
-    Latin-1 accepts any byte sequence, so it is last and acts as the backstop:
-    reaching it means the text may be wrong, but it will not be an exception.
-    """
     for encoding in TEXT_ENCODINGS:
         try:
             return raw.decode(encoding), encoding
@@ -113,12 +100,6 @@ def _decode(raw: bytes) -> tuple[str, str]:
 
 
 def _fields_outside_quotes(line: str, delimiter: str) -> int:
-    """Count delimiters that actually separate fields.
-
-    A quoted value is allowed to contain the delimiter — "Smith, John" is one
-    field in a comma file — so counting raw characters makes the header look a
-    column narrower than the rows beneath it.
-    """
     count = 0
     quoted = False
     for character in line:
@@ -130,13 +111,6 @@ def _fields_outside_quotes(line: str, delimiter: str) -> int:
 
 
 def _sniff_delimiter(sample: str) -> str:
-    """The delimiter most of the file agrees on.
-
-    Agreement rather than the first line, because a report title above the
-    header splits into one field under every delimiter and would otherwise
-    decide the answer. The winner is the one where the largest number of lines
-    share the same field count.
-    """
     lines = [line for line in sample.splitlines() if line.strip()][:20]
     if not lines:
         return ","
@@ -150,8 +124,6 @@ def _sniff_delimiter(sample: str) -> str:
             continue
         modal = max(set(counts), key=counts.count)
         agreeing = counts.count(modal)
-        # More lines agreeing wins; ties go to the delimiter that yields more
-        # columns, since a stray comma inside a semicolon file splits fewer.
         if (agreeing, modal) > (best_score, best_fields - 1):
             best, best_score, best_fields = delimiter, agreeing, modal + 1
 
@@ -159,12 +131,6 @@ def _sniff_delimiter(sample: str) -> str:
 
 
 def _header_offset(sample: str, delimiter: str) -> int:
-    """Rows to skip before the header.
-
-    A sheet that opens with "Monthly Sales Report" and a blank line used to
-    fail outright, because the first line has one field and the rest have many.
-    The header is the first line carrying as many fields as the row below it.
-    """
     lines = sample.splitlines()[: MAX_PREAMBLE_LINES + 2]
     for index, line in enumerate(lines[:-1]):
         if not line.strip():
@@ -197,29 +163,14 @@ def _read_csv_text(text: str, delimiter: str, skip: int) -> pl.DataFrame:
 
 
 def _ragged_rows(text: str, delimiter: str, skip: int, width: int) -> int:
-    """Rows carrying more fields than the header has columns.
-
-    Polars is told to truncate them, because refusing the whole file over one
-    stray delimiter helps nobody. But truncation drops real values off the end
-    of a row, and doing that in silence is how a file imports cleanly and
-    forecasts something else. The count is reported instead.
-    """
     lines = [line for line in text.splitlines()[skip:] if line.strip()]
     return sum(1 for line in lines[1:] if _fields_outside_quotes(line, delimiter) + 1 > width)
 
 
-#: How many rows of a sheet to look at when deciding whether it holds a table.
 SHEET_PROBE_ROWS = 40
 
 
 def _read_excel(path: Path) -> pl.DataFrame:
-    """The sheet that holds the data, not simply the first one.
-
-    A workbook that opens on a cover sheet, a parameters tab or a chart used to
-    import as whatever that sheet happened to contain. The widest sheet with
-    real rows under its header is the table; ties go to the earliest, which is
-    where the main tab almost always sits.
-    """
     try:
         sheets = pl.read_excel(path, sheet_id=0)
     except Exception:
@@ -245,13 +196,6 @@ def _read_excel(path: Path) -> pl.DataFrame:
 
 
 def _fill_merged_cells(frame: pl.DataFrame) -> pl.DataFrame:
-    """Carry a merged label down the rows it spans.
-
-    Excel stores a vertical merge as the value in the top cell and nothing
-    underneath. Read literally, a sheet with the region written once per block
-    yields one labelled row and a column of nulls below it — and the rows that
-    lost their label are dropped or pooled later without a word.
-    """
     label_columns = [
         name
         for name in frame.columns
@@ -264,8 +208,6 @@ def _fill_merged_cells(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.with_columns([pl.col(name).forward_fill() for name in label_columns])
 
 
-#: A column filled in less often than this, and only in runs, is a merged
-#: label rather than a column with missing values.
 MERGED_LABEL_SHARE = 0.5
 
 
@@ -311,7 +253,6 @@ def read_tabular(path: Path, suffix: str) -> pl.DataFrame:
 
 
 def _drop_empty_rows(frame: pl.DataFrame) -> pl.DataFrame:
-    """Trailing blank lines arrive as rows of nothing; they are not data."""
     if frame.height == 0:
         return frame
     keep = pl.any_horizontal(pl.all().is_not_null())
@@ -337,15 +278,6 @@ def _clean_headers(frame: pl.DataFrame) -> pl.DataFrame:
 
 
 def _coerce_formatted_numbers(frame: pl.DataFrame) -> pl.DataFrame:
-    """Read the numbers a spreadsheet wrote as text.
-
-    There is one coercion path and it is the locale-aware one in
-    `app.datasets.coercion`. Stripping every comma as decoration before asking
-    what the comma *meant* reads the German ``1.234,56`` as 1.23456 — a
-    thousandfold error in the forecast target, on a file that looked like it
-    imported cleanly, in the half of the world that writes its decimals that
-    way. Two coercions cannot both be right, so there is no longer a second.
-    """
     converted: list[pl.Series] = []
 
     for name in frame.columns:

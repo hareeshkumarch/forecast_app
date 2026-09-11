@@ -167,8 +167,6 @@ async def _summary_sheets(session: AsyncSession, run: ForecastRun) -> dict[str, 
 
 
 async def _leaf_series(session: AsyncSession, run: ForecastRun) -> list[ForecastSeries]:
-    # Leaves only: a roll-up cannot be smaller than what rolls up into it, so
-    # ranking every level together puts each parent above its own children.
     leaves = leaf_depth(run.group_by)
     if leaves == 0:
         return []

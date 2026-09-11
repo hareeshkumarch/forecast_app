@@ -96,13 +96,6 @@ def _calendar_features(periods: list[date], frequency: ForecastFrequency) -> dic
 
 
 def _rolling(lag1: FloatArray, window: int) -> tuple[FloatArray, FloatArray]:
-    """Mean and population standard deviation over each full trailing window.
-
-    A window holding any hole yields NaN, which is what NaN arithmetic does on
-    its own — so this needs no mask and no Python loop. It is worth the stride
-    trick: a recursive forecast rebuilds these columns once per step, and a
-    hyperparameter search does that for every candidate on every split.
-    """
     n = lag1.size
     means = np.full(n, np.nan)
     stds = np.full(n, np.nan)

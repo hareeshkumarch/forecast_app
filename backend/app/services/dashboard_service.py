@@ -47,59 +47,18 @@ VIEW_COLUMN: dict[str, str] = {
 }
 
 
-#: Distinguishes "the caller has not resolved the run" from "the caller
-#: resolved it and there is none". Without it, `run=None` would mean both, and
-#: a dashboard with no completed runs would re-run the lookup on every read
-#: just to be told the same thing again.
 _UNRESOLVED: Final = cast(ForecastRun, object())
 
 
 async def _resolved(
     session: AsyncSession, query: DashboardQuery, run: ForecastRun | None
 ) -> ForecastRun | None:
-    """The run this answer is about, looked up only if nobody has already.
-
-    The route layer resolves it to build the cache validator (see
-    `app/api/routes/dashboard.py`), so passing it back down is the difference
-    between one lookup per read and two.
-    """
     if run is not _UNRESOLVED:
         return run
     return await forecast_service.resolve_run(session, query.run_id)
 
 
 async def revision(session: AsyncSession, run: ForecastRun | None) -> tuple[object, ...]:
-    """Everything a dashboard answer for this run depends on, as a few values.
-
-    This is what makes both the `ETag` and the read-through cache honest: an
-    answer computed from this run's rows is valid exactly as long as these
-    values are unchanged, so a token derived from them can key a cache entry
-    that is incapable of going stale.
-
-    What is in it, and why:
-
-    * `updated_at` moves on every write to the run row — completion, scoring,
-      cancellation, a rename.
-    * `scored_at` and `scored_periods` because comparing a forecast against
-      actuals writes points and metrics, and a run that has just been scored
-      is a different answer with the same `id`.
-    * `status`, so a run moving from running to completed cannot be served
-      from whatever was cached while it was still filling in.
-    * The insights' own high-water mark, because rewriting them through a
-      model changes what `/insights` answers *without touching the run row* —
-      the one dependency that `updated_at` alone would miss. It is one indexed
-      aggregate over a handful of rows.
-
-    One revision for all five dashboard endpoints rather than a per-endpoint
-    dependency table. Rewriting insights therefore also invalidates the KPI
-    cards, which do not depend on them — over-invalidation, deliberately. The
-    alternative is a table of which endpoint depends on what, and the entry
-    somebody gets wrong in that table is a wrong number on a screen. This way
-    the mistake costs a recomputation.
-
-    A run that does not exist has no version and no answer to cache; the empty
-    tuple keeps callers from having to special-case it twice.
-    """
     if run is None:
         return ()
 
@@ -379,14 +338,6 @@ def _card(
     symbol: str = "$",
     label_describes_the_window: bool = False,
 ) -> KpiCard:
-    """Build one KPI card.
-
-    `comparison_label` normally names what the delta is measured against ("vs
-    previous run"), and is dropped when there is no delta — a first run has no
-    previous one, and a caption pointing at a comparison nobody made reads as a
-    card that failed to load. Set `label_describes_the_window` where the caption
-    stands on its own, like the date range under Actual YTD.
-    """
     import math
 
     safe_value = value if math.isfinite(value) else 0.0
@@ -478,7 +429,6 @@ async def decision(
 
     backtested = metrics.get("accuracy")
     realized = None if run.realized_wmape is None else accuracy_from_wmape(run.realized_wmape)
-    # A scored run beats a backtest: it grades this forecast, not the method.
     accuracy = realized if realized is not None else (backtested.value if backtested else None)
 
     found = decisions.decide(

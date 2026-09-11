@@ -24,8 +24,6 @@ class AppError(Exception):
         super().__init__(message)
         self.message = message
         self.detail = detail or {}
-        #: Carried onto the response. A 429 or a 503 whose Retry-After is only
-        #: in the body is a header the client's own retry logic never sees.
         self.headers = headers or {}
 
 

@@ -1,20 +1,3 @@
-"""Which metrics a given series can actually be scored on.
-
-A fixed set of error metrics reported for every series is a set that is wrong
-for most of them. MAPE is undefined wherever an actual is zero and silently
-scores the subset it can reach; RMSLE cannot see a negative; R² has nothing to
-divide by when the target never moves; and on intermittent demand the point
-metrics are measuring a number the router has already said is not meaningful.
-
-So the metrics follow the data. `plan_for` reads the profile the diagnostics
-already build — the same one that routes the models — and answers three
-questions: which number to lead with, which may carry weight in a ranking,
-and which are being withheld and for what reason. Nothing is dropped
-silently: a metric that cannot be computed here is reported as withheld with
-the reason, because "we did not show you MAPE" and "MAPE is undefined on a
-third of your weeks" are very different messages.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,12 +11,8 @@ from app.forecasting.diagnostics import SeriesProfile
 
 FloatArray = npt.NDArray[np.float64]
 
-#: Scale-free, defined on every real value, and therefore askable of any
-#: series at all. Everything else below has to earn its place.
 UNIVERSAL: tuple[str, ...] = ("mae", "rmse", "medae", "bias", "wmape", "relative_bias")
 
-#: Scaled against the series' own history, so they compare across products of
-#: different volume. Unavailable only when there is no history to scale by.
 SCALED: tuple[str, ...] = ("mase", "rmsse", "theil_u2")
 
 
@@ -74,7 +53,6 @@ class MetricPlan:
 
 
 def plan_for(profile: SeriesProfile | None) -> MetricPlan:
-    """Choose the metric set this series can be honestly scored on."""
     if profile is None:
         return MetricPlan(
             demand_class=routing.SMOOTH,
@@ -93,12 +71,6 @@ def plan_for(profile: SeriesProfile | None) -> MetricPlan:
     reported = list(UNIVERSAL)
     withheld: list[Withheld] = []
     demand_class = profile.demand_class
-    # Bursty demand is a statement about a series that counts things. A signed
-    # series has no periods "with no demand" in it — every reading either side
-    # of zero is an observation — so its interval and CV² are describing
-    # something the Syntetos-Boylan grid was not drawn for, and leading with
-    # "demand arrives in bursts" would be telling the reader a fact about
-    # their data that is not true of it.
     intermittent = profile.non_negative and demand_class in {
         routing.INTERMITTENT,
         routing.LUMPY,
@@ -136,9 +108,6 @@ def plan_for(profile: SeriesProfile | None) -> MetricPlan:
         reported.append("mape")
         reported.append("smape")
 
-    # Non-negative, not strictly positive: `log1p` is defined at zero, so a
-    # series that legitimately sells nothing some weeks can still be scored in
-    # log space. Only an actual negative breaks it.
     if profile.non_negative:
         reported.append("rmsle")
     else:
@@ -194,12 +163,6 @@ def evaluate_plan(
     insample: FloatArray | None = None,
     weights: FloatArray | None = None,
 ) -> dict[str, float]:
-    """Compute exactly the metrics the plan says this series can carry.
-
-    The withheld ones are not computed and then hidden — they are not
-    computed. A number that is undefined for the data has no value worth
-    keeping around for something downstream to pick up by mistake.
-    """
     history = (
         np.asarray(insample, dtype=float).ravel()
         if insample is not None

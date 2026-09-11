@@ -18,10 +18,6 @@ FALLBACK_VOLATILITY_WEIGHT = 0.75
 
 MIN_RELATIVE_SIGMA = 1e-9
 
-# The least of the band's width that has to fall on each side of the forecast.
-# Residuals that all point one way — a model that has run low in every fold —
-# otherwise flatten the other side onto the point forecast, and an interval
-# with no room below it says demand cannot come in under the number.
 MIN_SIDE_SHARE = 0.1
 
 
@@ -60,9 +56,6 @@ def _volatility_sigma(history: FloatArray, horizon: int) -> FloatArray:
     finite = history[np.isfinite(history)]
 
     scale = _step_scale(history)
-    # Nothing measurable moved, and a band still has to be drawn: a share of
-    # the level stands in. Only for the case where no residual exists at all —
-    # a series that genuinely never moves gets no width from this.
     if scale <= 0.0 and finite.size:
         scale = float(np.max(np.abs(finite))) * 0.1
 
@@ -101,11 +94,6 @@ def _sigma_by_step(
 
     sigmas = np.maximum.accumulate(sigmas)
 
-    # A run that affords one fold measures its spread from a handful of errors,
-    # and a handful of errors can happen to be small. The series' own
-    # step-to-step movement is the other thing known about how far it travels,
-    # and while the residuals are this thin the band does not claim to be
-    # tighter than that.
     if len(pooled) < MIN_EMPIRICAL_RESIDUALS and history.size:
         sigmas = np.maximum(sigmas, _movement_floor(history, horizon))
 
@@ -114,14 +102,6 @@ def _sigma_by_step(
 
 
 def _spread_quantile(coverage: float, residual_count: int) -> float:
-    """How many sigmas 80% is worth, given how few residuals measured sigma.
-
-    A run that affords one fold measures its spread from a handful of errors,
-    and a normal quantile spends that estimate as though it were the truth:
-    the band comes out too narrow and covers well under what it promises. The
-    t quantile prices in the uncertainty of the estimate itself and converges
-    back to the normal one once there are enough residuals to be sure.
-    """
     probability = 0.5 + coverage / 2.0
     if residual_count < 2:
         return float(stats.norm.ppf(probability))
@@ -150,17 +130,6 @@ def _quantile_offsets(
     lower = np.zeros(horizon)
     upper = np.zeros(horizon)
 
-    # The residuals are used as they came out, bias and all. Subtracting their
-    # median first was throwing away the one thing an empirical interval knows
-    # that a formula does not: a model that has forecast low in every fold will
-    # forecast low again, and a band centred on it covers the truth from one
-    # side only while claiming to do it from both. Kept as they are, the band
-    # leans the way the model has been wrong.
-    #
-    # The order statistic is picked the way split conformal picks it, rather
-    # than by interpolating between neighbours: at these sample sizes the
-    # interpolated quantile sits inside the residuals it was fitted on and the
-    # band it draws covers less often than it claims.
     pooled_low, pooled_high = _conformal_bounds(pooled, coverage)
 
     if pooled_high - pooled_low <= 0:

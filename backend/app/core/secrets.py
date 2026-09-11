@@ -1,13 +1,3 @@
-"""Secrets from Infisical, loaded before anything reads configuration.
-
-The values land in the process environment rather than in a bespoke settings
-path, so every setting already defined keeps working exactly as written — the
-change is where the values come from, not how sixty of them are declared.
-
-Bootstrap credentials are read from the real environment, and have to be: a
-secret manager cannot hold the credential used to reach it.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -32,7 +22,6 @@ DEFAULT_PATH = "/"
 class SecretsLoad:
     configured: bool = False
     loaded: bool = False
-    #: Names only. The values are secrets and never reach a log line.
     keys: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -50,12 +39,6 @@ def configured() -> bool:
 
 
 def hydrate() -> SecretsLoad:
-    """Fetch every secret for this environment and put it in os.environ.
-
-    Infisical wins over a value already in the environment. It has been made
-    the source of truth, and a leftover variable on a box silently overriding
-    the thing everyone is editing is the failure that wastes an afternoon.
-    """
     load = SecretsLoad(configured=configured())
     if not load.configured:
         return load
@@ -99,12 +82,6 @@ def hydrate() -> SecretsLoad:
 
 
 def _entries(response: object) -> list:
-    """The secrets out of whatever shape the SDK returned.
-
-    Read defensively rather than against one version's attribute name: this
-    runs before the app has a config to fall back on, and a rename upstream
-    should degrade to "no secrets" rather than to a crash at import time.
-    """
     for name in ("secrets", "data"):
         found = getattr(response, name, None)
         if isinstance(found, list):

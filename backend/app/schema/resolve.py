@@ -145,13 +145,6 @@ def propose(
 
 
 def _apply_recall(proposal: MappingProposal, remembered: Recall) -> None:
-    """Carry a stored mapping over, and be honest about how well it fits.
-
-    An exact fingerprint is the same file and is worth full confidence. A near
-    match is a judgement — the columns line up well enough to believe it is the
-    same report — and saying so out loud is what lets somebody disagree before
-    a forecast is built on it rather than after.
-    """
     apply_override(proposal, remembered.fields, source=SOURCE_REMEMBERED)
 
     if remembered.exact:
@@ -162,11 +155,6 @@ def _apply_recall(proposal: MappingProposal, remembered: Recall) -> None:
     )
 
     if remembered.same_columns:
-        # Every column is still here under the same name; only how they were
-        # read has moved — one value gaining a decimal is enough. That is the
-        # same report, so it keeps its confidence, and telling somebody to
-        # check a mapping that cannot have drifted is noise that teaches them
-        # to skip the warnings that matter.
         proposal.warnings.append(
             MappingWarning(
                 code="remembered_across_a_type_change",
@@ -214,9 +202,6 @@ def apply_override(
         proposal.date_col = str(value)
     if value := override.get("target_col"):
         proposal.target_col = str(value)
-    # The override is a decoded JSON body, so every value arrives as `object`
-    # and each field is coerced to the shape it is meant to have. A value of
-    # the wrong shape raises here, which is the same answer as before.
     if (keys := override.get("series_keys")) is not None:
         proposal.series_keys = [str(key) for key in cast("Iterable[object]", keys)]
     if (covariates := override.get("covariates")) is not None:

@@ -18,8 +18,6 @@ def metric_weights_for(intermittent: bool) -> dict[str, float]:
     return dict(INTERMITTENT_METRIC_WEIGHTS if intermittent else settings.metric_weights)
 
 
-#: How each metric is written when it is shown to someone, rather than how it
-#: is spelled as a key. These names are read, so wMAPE is not WMAPE.
 METRIC_DISPLAY_NAMES: dict[str, str] = {
     "wmape": "wMAPE",
     "smape": "sMAPE",
@@ -36,11 +34,6 @@ def metric_display_name(metric: str) -> str:
 def scoring_rule(
     weights: dict[str, float] | None = None, interval_weight: float | None = None
 ) -> str:
-    """The formula a run was actually scored by, spelled out in its own numbers.
-
-    Read from settings rather than written down, so a deployment that reweighs
-    the metrics does not go on telling people it used the defaults.
-    """
     weights = weights if weights is not None else settings.metric_weights
     interval = interval_weight if interval_weight is not None else settings.interval_weight
     return (
@@ -141,15 +134,6 @@ def _normalise(values: list[float]) -> list[float]:
 
 
 def _scoreable(result: BacktestResult, weights: dict[str, float]) -> bool:
-    """Whether this candidate can be scored by the metrics the run is using.
-
-    The gate used to be wMAPE alone, whatever the run was scoring by. On
-    intermittent demand the validation windows can total zero, wMAPE is then
-    undefined, and Croston — the model that exists for exactly that series —
-    was dropped before selection began, by a metric the run had already
-    decided not to use. Every weighted metric being unusable is a real reason
-    to drop a candidate; one unused metric is not.
-    """
     return any(
         math.isfinite(float(getattr(result, metric, float("nan"))))
         for metric in weights
@@ -229,12 +213,6 @@ def select_model(
 
 
 def _headline(result: BacktestResult) -> str:
-    """How wrong this candidate was, in whichever measure it actually has.
-
-    A percentage is the natural thing to say and it is not always available:
-    an intermittent series whose validation windows total zero has no wMAPE,
-    and "off by nan%" is worse than saying it in absolute terms.
-    """
     if math.isfinite(result.wmape):
         return f"off by {result.wmape:.1f}% on average"
     if math.isfinite(result.mae):

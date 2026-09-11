@@ -1,24 +1,3 @@
-"""What the platform is allowed to forget, and what it never is.
-
-Nothing here runs unless `RETENTION_ENABLED` says so. That default is not
-timidity: an issued forecast is a record of what was claimed and when — the
-thing `install_append_only_guard` exists to keep honest — and a platform that
-prunes it because nobody chose a policy has quietly decided one.
-
-When it is on, three protections hold whatever the limits say. A run that has
-not finished is never touched, because deleting a row underneath a running
-process is how a forecast fails in a way nobody can explain. The latest
-completed run is never touched, because the dashboard reads it and the
-alternative is a workspace that empties itself overnight. And a run a saved
-scenario points at is never touched, because the scenario is somebody's saved
-work and would be left pointing at nothing.
-
-Deletion goes through `forecast_service.delete_run`, which already clears the
-points, the series, the exports on disk, the cached aggregates and the
-progress state. One deletion path, so a sweeper cannot leave behind the thing
-a person deleting by hand would not have.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -55,11 +34,8 @@ class Plan:
     enabled: bool
     keep_runs: int
     older_than_days: int
-    #: Runs that would go on the next pass, oldest first, capped at the batch.
     removing: tuple[Candidate, ...]
-    #: How many more are past the limits and will follow on later passes.
     remaining: int
-    #: Named so the answer to "why is that one still here" does not need code.
     protected: dict[str, str]
 
     @property
@@ -68,7 +44,6 @@ class Plan:
 
 
 async def plan(session: AsyncSession, *, limit: int | None = None) -> Plan:
-    """What a pass would do, without doing any of it."""
     batch = limit if limit is not None else settings.retention_batch
     protected: dict[str, str] = {}
 
@@ -124,7 +99,6 @@ async def plan(session: AsyncSession, *, limit: int | None = None) -> Plan:
 
 
 def _aware(value: datetime, reference: datetime) -> datetime:
-    """A naive timestamp from SQLite compared against an aware one from utcnow."""
     return value if value.tzinfo is not None else value.replace(tzinfo=reference.tzinfo)
 
 
@@ -143,13 +117,6 @@ async def _most_recent(session: AsyncSession, count: int) -> set[uuid.UUID]:
 
 
 async def sweep(*, force: bool = False) -> Plan:
-    """Do one pass. Returns what it removed, in the shape `plan` reports.
-
-    `force` is for the endpoint that asks for it by hand, which is allowed to
-    run a pass on a deployment where the periodic sweeper is switched off —
-    somebody clicking "free up space" has said what they want more clearly
-    than a configuration flag can.
-    """
     from app.services import forecast_service
 
     if not settings.retention_enabled and not force:
@@ -166,8 +133,6 @@ async def sweep(*, force: bool = False) -> Plan:
                 await forecast_service.delete_run(session, candidate.run_id)
             removed.append(candidate)
         except Exception:
-            # A run deleted by somebody else between the plan and the pass, or
-            # one that started again. Neither is worth stopping the sweep for.
             logger.warning("Retention could not remove run %s", candidate.run_id, exc_info=True)
 
     if removed:
@@ -192,8 +157,6 @@ async def stored_runs(session: AsyncSession) -> int:
 
 
 class Sweeper:
-    """The periodic pass, on its own task, doing nothing at all when off."""
-
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
 
@@ -216,9 +179,6 @@ class Sweeper:
         self._task = None
 
     async def _run(self) -> None:
-        # Not at boot. A process that has just come up is either being deployed
-        # or recovering from something, and neither is the moment to start
-        # deleting rows.
         while True:
             await asyncio.sleep(settings.retention_interval_seconds)
             try:

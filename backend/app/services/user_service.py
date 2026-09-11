@@ -18,13 +18,6 @@ logger = get_logger(__name__)
 
 
 def is_configured_admin(email: str) -> bool:
-    """Named in AUTH_ADMIN_EMAILS.
-
-    The floor under the role column: whatever the database says, these
-    accounts are administrators. It is what makes it impossible to end up with
-    a deployment nobody can administer — demote everyone in the UI and the
-    configured account still gets in on its next sign-in.
-    """
     return bool(email) and email.lower() in settings.auth_admin_emails
 
 
@@ -33,32 +26,17 @@ def is_admin(email: str, role: AccessRole | None = None) -> bool:
 
 
 async def status_of(session: AsyncSession, user: AuthenticatedUser) -> AppUser | None:
-    """This account as it stands, read and not written.
-
-    The admission gate runs on every request, and `resolve` writes — a
-    last-seen stamp and a flush per API call is a write for every read the
-    platform serves. This asks the question the gate actually has, which is
-    what the status is right now.
-    """
     if user.is_anonymous or not user.id:
         return None
     return await session.scalar(select(AppUser).where(AppUser.subject == user.id))
 
 
 async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | None:
-    """The row for this identity, created the first time it is seen.
-
-    Returns None when nobody is signed in, so callers stamp a null owner
-    rather than inventing a user to own the work.
-    """
     if user.is_anonymous or not user.id:
         return None
 
     row = await session.scalar(select(AppUser).where(AppUser.subject == user.id))
 
-    # No row for this subject, but there may be an invitation waiting under the
-    # address. Claiming it here is what makes an invited person walk straight
-    # in rather than joining the queue they were invited to skip.
     invited = False
     if row is None and user.email:
         row = await session.scalar(
@@ -79,16 +57,11 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
         )
         session.add(row)
 
-    # Refreshed every time: a display name or avatar changed at Google should
-    # follow the person here rather than freeze at whatever it was the day
-    # they first signed in.
     row.email = user.email or row.email
     row.name = user.name or row.name
     row.picture_url = user.picture or row.picture_url
     row.last_seen_at = utcnow()
 
-    # An account added to the configured list after it first signed in is let
-    # through on its next visit, rather than having to approve itself.
     if is_configured_admin(row.email):
         row.role = AccessRole.ADMIN
         if row.status is not AccessStatus.APPROVED:
@@ -124,17 +97,6 @@ def _initial_status(email: str) -> AccessStatus:
 
 
 async def mark_requested(session: AsyncSession, row: AppUser) -> None:
-    """Stamp when this person asked, and tell them it landed.
-
-    Nobody is emailed about somebody else's request. An administrator sees it
-    on the People page the moment it arrives — the list is pushed, not polled,
-    so a request appears on an open page without anybody reloading anything —
-    and the stamp here is what that page shows as "asked 5 minutes ago".
-
-    The one message worth sending goes to the person who asked. They are the
-    one who cannot see what is happening, and they are the one who will
-    otherwise sign in again tomorrow to find out.
-    """
     row.requested_at = utcnow()
     await session.flush()
     mailer.queue(session, [row.email], **_as_mail(email_templates.request_received(_app_url())))
@@ -155,11 +117,6 @@ async def owner_id(session: AsyncSession, user: AuthenticatedUser) -> uuid.UUID 
 
 
 async def everyone(session: AsyncSession) -> list[AppUser]:
-    """All accounts, most recently seen first.
-
-    Pending ones lead, because the list exists to be acted on rather than
-    browsed — somebody waiting is the only row that needs a decision.
-    """
     result = await session.execute(
         select(AppUser).order_by(
             (AppUser.status != AccessStatus.PENDING),
@@ -189,8 +146,6 @@ async def set_status(
     target.decided_by = decided_by
     await session.flush()
 
-    # Only on a change. Re-approving somebody already approved should not send
-    # them a second "you're in".
     if status is not was:
         if status is AccessStatus.APPROVED:
             action = RESTORED if was is AccessStatus.REJECTED else APPROVED
@@ -221,12 +176,6 @@ def _record(
     actor: str | None = None,
     detail: str | None = None,
 ) -> None:
-    """Append, in the transaction that did the thing.
-
-    Written here rather than in the route so it cannot be skipped by a caller
-    that went straight to the service — the emailed approve/reject link does
-    exactly that, and it is the path least likely to be watched.
-    """
     session.add(
         AccessAudit(
             action=action,
@@ -244,12 +193,6 @@ async def history(session: AsyncSession, limit: int = 200) -> list[AccessAudit]:
 
 
 def _announce(row: AppUser) -> None:
-    """Tell the person it happened to, and the list the administrators watch.
-
-    Only a topic name goes out. Everything the screens then show is refetched
-    through the endpoints that check permission, so this cannot become a way
-    to learn something about an account you could not already ask about.
-    """
     _announce_id(row.id)
 
 
@@ -259,35 +202,16 @@ def _announce_id(user_id: object) -> None:
 
 
 async def _tell_decision(session: AsyncSession, row: AppUser, status: AccessStatus) -> None:
-    """Only the yes.
-
-    A refusal, a revocation and a demotion all used to send something. Each
-    was a message telling somebody they had lost or been denied a thing, with
-    nothing in it for them to act on — and the app says all three the moment
-    they next look. What is left is the mail somebody is waiting for.
-
-    The status being replaced was a parameter here while those other messages
-    existed and had to be worded against it. Nothing left reads it, and the
-    caller already refuses to call on an unchanged status.
-    """
     if status is not AccessStatus.APPROVED:
         return
     mailer.queue(session, [row.email], **_as_mail(email_templates.access_approved(_app_url())))
 
 
 async def invite(session: AsyncSession, email: str, *, invited_by: str) -> AppUser:
-    """Give somebody access before they have ever signed in.
-
-    The row is created approved and without a subject; whoever next signs in
-    with that address claims it. That is the whole mechanism, and it is why
-    the address has to be one only they can receive mail at.
-    """
     address = email.strip().lower()
     existing = await session.scalar(select(AppUser).where(AppUser.email == address))
 
     if existing is not None:
-        # Already known. Re-inviting is how somebody refused by mistake is let
-        # back in, so it approves rather than refusing to act.
         existing.status = AccessStatus.APPROVED
         existing.decided_at = utcnow()
         existing.decided_by = invited_by
@@ -335,8 +259,6 @@ async def set_role(
 
     was = target.role
     target.role = role
-    # Promoting somebody who is still waiting approves them: an administrator
-    # who cannot get in is not one.
     if role is AccessRole.ADMIN and target.status is not AccessStatus.APPROVED:
         target.status = AccessStatus.APPROVED
         target.decided_at = utcnow()
@@ -356,14 +278,6 @@ async def set_role(
 
 
 async def remove(session: AsyncSession, target: AppUser, *, removed_by: str | None = None) -> None:
-    """Forget an account entirely.
-
-    Distinct from refusing one. Refusing is a decision that is kept — the row
-    stays, the reason stays, and a second sign-in is turned away. Removing is
-    for rows that should not be in the list at all: an invitation sent to the
-    wrong address, a duplicate, somebody who never arrived. If they sign in
-    again afterwards they are a new request, not a refused one.
-    """
     if is_configured_admin(target.email):
         raise LastAdminError(
             f"{target.email} is named in this deployment's administrator list. Remove them from "
@@ -378,8 +292,6 @@ async def remove(session: AsyncSession, target: AppUser, *, removed_by: str | No
 
     identifier = target.id
 
-    # Recorded before the delete, and the record outlives it: an audit trail
-    # that disappears with its subject cannot answer the question it is for.
     _record(session, REMOVED, target, actor=removed_by, detail=f"was {target.status.value}")
 
     await session.delete(target)

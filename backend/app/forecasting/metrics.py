@@ -30,14 +30,6 @@ def rmse(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def smape(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Kept for display beside the others; never weighted in selection.
-
-    sMAPE is undefined wherever an actual and its forecast are both zero, and
-    on a series that is mostly zeros the periods it *can* score are the
-    unrepresentative ones. Ranking candidates on it hands intermittent demand
-    to whichever model happened to be measured on the fewest weeks. `mase` is
-    the scale-free metric selection uses instead.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -49,12 +41,6 @@ def smape(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def bias(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Signed mean error. Positive means the forecast ran high.
-
-    Tracked apart from the error metrics because it is the actionable half:
-    a planner can correct a forecast that is consistently ten per cent over,
-    and can do nothing at all about the same magnitude of scatter.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -62,7 +48,6 @@ def bias(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def relative_bias(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Signed error as a share of volume, so it reads beside wMAPE."""
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -73,14 +58,6 @@ def relative_bias(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def pinball(y_true: FloatArray, y_pred: FloatArray, quantile: float) -> float:
-    """Pinball (quantile) loss at one nominal level.
-
-    The loss a quantile forecast is actually optimising: being under the
-    actual costs `q` per unit and being over costs `1 - q`, so the minimiser
-    of the expected loss is the true q-th quantile. This is what makes it a
-    proper score for an interval bound, where an error metric on the bound is
-    not.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -93,13 +70,6 @@ def crps_from_quantiles(
     y_true: FloatArray,
     quantile_forecasts: dict[float, FloatArray],
 ) -> float:
-    """CRPS approximated by averaging pinball loss over the served quantiles.
-
-    The mean pinball loss across evenly spaced quantiles converges to CRPS as
-    the grid fills in, so the whole predictive distribution is scored rather
-    than a point out of the middle of it. With an uneven grid each level is
-    weighted by the span it represents.
-    """
     levels = sorted(quantile_forecasts)
     if not levels:
         return float("nan")
@@ -125,7 +95,6 @@ def crps_from_quantiles(
 
 
 def coverage(y_true: FloatArray, lower: FloatArray, upper: FloatArray) -> float:
-    """The share of actuals that landed inside the interval, as a percentage."""
     t = np.asarray(y_true, dtype=float).ravel()
     lo = np.asarray(lower, dtype=float).ravel()
     hi = np.asarray(upper, dtype=float).ravel()
@@ -140,11 +109,6 @@ def coverage(y_true: FloatArray, lower: FloatArray, upper: FloatArray) -> float:
 
 
 def forecast_value_add(model_error: float, baseline_error: float) -> float:
-    """How much better than the baseline the model was, as a percentage.
-
-    Positive is an improvement. Negative means the baseline should ship —
-    which is the answer this exists to be able to give.
-    """
     if not np.isfinite(model_error) or not np.isfinite(baseline_error):
         return float("nan")
     if baseline_error == 0:
@@ -203,14 +167,6 @@ def mase(
 
 
 def _seasonal_step(history: FloatArray, lag: int) -> float:
-    """How far the series moves in one season, over pairs it actually observed.
-
-    Compacting the finite values first and differencing those is what makes a
-    gap invisible: the survivors close up, `history[lag:] - history[:-lag]`
-    stops comparing periods a season apart, and the scale drifts. It drifts
-    upward on a trending series, which divides the error by too much and
-    reports a model as more skilful than it was.
-    """
     if history.size <= lag:
         return float("nan")
 
@@ -254,14 +210,6 @@ def rmsse(
     insample: FloatArray,
     seasonal_period: int = 1,
 ) -> float:
-    """MASE's squared sibling, and the one that survives a zero.
-
-    Scaled by the same in-sample seasonal step MASE uses, so it is unitless
-    and comparable across series of wildly different volume — but squared, so
-    a single badly missed peak is not averaged away by a run of easy weeks.
-    That is the trade to make when what the plan actually cannot absorb is the
-    big miss rather than the typical one.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -293,13 +241,6 @@ def _squared_seasonal_step(history: FloatArray, lag: int) -> float:
 
 
 def medae(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Median absolute error: the typical miss, with the outliers ignored.
-
-    Reported beside `mae` rather than instead of it. The pair is the tell —
-    an MAE far above the median says the error is concentrated in a handful
-    of periods, which is a different problem from being uniformly loose and
-    has a different fix.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0:
         return float("nan")
@@ -307,13 +248,6 @@ def medae(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def mape(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Only defined where the actual is non-zero, and it says how many it used.
-
-    Kept because it is the number most planners already have a feel for, and
-    kept out of selection for the reason in `FORBIDDEN_SELECTION_METRICS`. On
-    a series with zeros in it this scores a subset of the periods and cannot
-    be compared with a metric that scored all of them.
-    """
     t, p = _aligned(y_true, y_pred)
     usable = t != 0
     if not np.any(usable):
@@ -322,12 +256,6 @@ def mape(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def rmsle(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Error in log space: proportional, and it punishes under-forecasting.
-
-    For strictly positive series that move across orders of magnitude, where
-    missing 10 by 5 matters as much as missing 1000 by 500. Undefined on
-    negatives, so it is offered only where the data is non-negative.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size == 0 or np.any(t < 0) or np.any(p < 0):
         return float("nan")
@@ -340,13 +268,6 @@ def theil_u2(
     insample: FloatArray,
     seasonal_period: int = 1,
 ) -> float:
-    """Skill against the naive forecast: below 1 beat it, above 1 lost to it.
-
-    The one number that answers "was any of this worth doing" without needing
-    to know the units or the volume. `forecast_value_add` answers the same
-    question against whichever baseline a run actually chose; this answers it
-    against the naive one every series has.
-    """
     naive = rmsse(y_true, y_pred, insample, seasonal_period)
     if not np.isfinite(naive):
         return float("nan")
@@ -354,12 +275,6 @@ def theil_u2(
 
 
 def r_squared(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Share of the actuals' own variance the forecast accounts for.
-
-    Negative when the forecast is worse than having predicted the mean, which
-    is the reading worth having: it is not a floor of zero, and a model can
-    genuinely land below one.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size < 2:
         return float("nan")
@@ -370,13 +285,6 @@ def r_squared(y_true: FloatArray, y_pred: FloatArray) -> float:
 
 
 def residual_acf1(y_true: FloatArray, y_pred: FloatArray) -> float:
-    """Lag-one autocorrelation of what the model left behind.
-
-    Residuals that correlate with themselves are signal the model did not
-    take: something predictable is still in there. Near zero is the healthy
-    reading, and the sign says which way — persistent runs of over- or
-    under-forecasting rather than scatter.
-    """
     t, p = _aligned(y_true, y_pred)
     if t.size < 3:
         return float("nan")
@@ -396,13 +304,6 @@ def interval_skill(
     confidence_level: float,
     seasonal_period: int = 1,
 ) -> float:
-    """Winkler's interval score, scaled — so two series can be compared.
-
-    `winkler` is in the units of the data, which makes it unusable for saying
-    whether the intervals on one product are better than the intervals on
-    another. Dividing by the same in-sample seasonal step MASE uses removes
-    the units and leaves the answer.
-    """
     raw = winkler(y_true, lower, upper, confidence_level)
     if not np.isfinite(raw):
         return float("nan")
@@ -435,9 +336,6 @@ def intervals_held(coverage: float | None, confidence_level: float | None) -> bo
     return coverage + FLOAT_TOLERANCE >= confidence_level * 100.0
 
 
-#: Metrics that must never carry weight in model selection. MAPE and sMAPE
-#: are undefined on zeros and rank models backwards on exactly the
-#: intermittent series the classifier exists to find. Asserted in CI.
 FORBIDDEN_SELECTION_METRICS = frozenset({"mape", "smape", "wmape_symmetric"})
 
 

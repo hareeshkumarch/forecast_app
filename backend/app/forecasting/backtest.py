@@ -24,12 +24,6 @@ logger = get_logger(__name__)
 
 
 def normal_quantile(confidence_level: float) -> float:
-    """The two-sided z for this confidence level, computed rather than looked up.
-
-    A five-entry table answered anything not in it with the 80% z. Ask for a
-    92% interval and the cost of the bands was scored as though they were 80%
-    ones — quietly, and only for the levels nobody had thought to tabulate.
-    """
     level = min(max(float(confidence_level), 0.0), 1.0)
     if level <= 0.0:
         return 0.0
@@ -42,10 +36,6 @@ MIN_FOLDS = 1
 MAX_FOLDS_CEILING = 12
 ROLLING_WINDOW_SEASONS = 4
 
-#: How much of the plan a candidate has to survive to be scored at all. Below
-#: it there is too little left to compare fairly against a model that fitted
-#: everywhere — a model that only works on the two easiest folds should not be
-#: ranked on those two alone.
 MIN_FOLD_SHARE = 0.5
 
 
@@ -56,15 +46,7 @@ class FoldResult:
     test_size: int
     y_true: list[float]
     y_pred: list[float]
-    #: The run's observation weights over this fold's test window, when it has
-    #: any. Kept per fold so anything rebuilding a score out of these folds —
-    #: the ensemble does — can weigh it the way the members were weighed.
     y_weight: list[float] | None = None
-    #: How many steps ahead each scored point actually was, counting from the
-    #: cut. Only observed periods are kept, so a hole in the window makes
-    #: position-in-list stop meaning horizon: drop one period and every error
-    #: after it is attributed a step early. Anything that buckets residuals by
-    #: horizon reads this rather than enumerating.
     y_step: list[int] = field(default_factory=list)
 
     def steps(self) -> list[int]:
@@ -85,9 +67,6 @@ class BacktestResult:
     params: dict[str, object] = field(default_factory=dict)
     failed: bool = False
     failure_reason: str | None = None
-    #: Folds the model could not produce a forecast for. A candidate scored on
-    #: fewer folds than it was offered has been measured over less evidence,
-    #: and the count is carried so that is visible rather than implied.
     folds_failed: int = 0
 
     @property
@@ -223,18 +202,6 @@ def run_backtest(
     confidence_level: float = 0.8,
     prepare: Preparation | None = None,
 ) -> BacktestResult:
-    """Score a model over the plan's folds.
-
-    `y` is the series as observed, with NaN in any period the data never had.
-    `prepare` is applied to each fold's training slice — so a gap is
-    interpolated from the training window alone, and outliers are clipped
-    against its spread, rather than against a history that includes the very
-    periods the fold is about to be scored on.
-
-    A period that was never observed is not scored. Filling one and then
-    counting the model's error against the number that filling invented
-    reports an accuracy nobody measured.
-    """
     result = BacktestResult(model=model_kind)
 
     if plan.n_folds == 0:
@@ -293,10 +260,6 @@ def run_backtest(
             predictions = model.predict(y_test.size, forecast_periods)
             last_params = dict(model.params)
         except Exception as exc:
-            # One fold is not the verdict. SARIMAX fails to converge on the
-            # shortest early window and fits every later one; discarding the
-            # candidate outright threw away the model that would have won, and
-            # reported the reason as though it were the whole story.
             result.folds_failed += 1
             if result.failure_reason is None:
                 result.failure_reason = f"{type(exc).__name__}: {exc}"
@@ -305,9 +268,6 @@ def run_backtest(
 
         predictions = np.asarray(predictions, dtype=float).ravel()[: y_test.size]
         if predictions.size < y_test.size:
-            # Padding the tail with the last value scores a forecast the model
-            # never made, and it lands on the longest horizons — the ones the
-            # intervals most depend on getting right.
             result.folds_failed += 1
             if result.failure_reason is None:
                 result.failure_reason = (

@@ -166,14 +166,8 @@ RUN_SORTS: dict[str, Any] = {
 DEFAULT_RUN_SORT = "newest"
 MAX_RUN_PAGE = settings.api_max_page_size
 
-# Deliberately looser than quality.OUTLIER_SIGMAS: clipping a series a run was
-# asked to forecast should only catch the spikes nothing can explain.
 WINSORISE_SIGMAS = 6.0
 
-#: How much a simulated interval widens per unit of intervention. A scenario
-#: that moves the total by half again is a long way outside anything the
-#: backtest measured, and a band that stayed the same relative width would be
-#: claiming an accuracy nobody has for a world that does not exist yet.
 SIMULATION_BAND_WIDENING = 0.5
 
 
@@ -491,8 +485,6 @@ async def retry_run(
     )
 
 
-#: What each role needs the column to actually hold, in the words a customer
-#: would use for it.
 KIND_DESCRIPTION: dict[ColumnKind, str] = {
     ColumnKind.DATE: "dates",
     ColumnKind.NUMERIC: "numbers",
@@ -505,12 +497,6 @@ KIND_DESCRIPTION: dict[ColumnKind, str] = {
 def _require_kind(
     kinds: dict[str, ColumnKind], column: str | None, expected: ColumnKind, role: str
 ) -> None:
-    """Refuse a column that cannot play the part it was given.
-
-    Checking only that the name exists lets a text column be chosen as the
-    target: DuckDB's TRY_CAST turns every row of it into NULL, the series comes
-    back empty, and the run fails somewhere far from the choice that caused it.
-    """
     if not column:
         return
 
@@ -532,29 +518,10 @@ def _require_kind(
 
 
 def _validated_aggregation(requested: MeasureAggregation | None, target: str) -> MeasureAggregation:
-    """How the target adds up over the rows inside a period.
-
-    Nothing checked this. Summing is right for a quantity and meaningless for
-    a level: add up a unit price or a conversion rate over the rows in a month
-    and the figure grows with how many rows there were, so the series being
-    forecast is order volume wearing the target's name.
-
-    An explicit choice is honoured — somebody who asks to sum a column called
-    price may have a reason, and a run that answers a different question from
-    the one it was asked is worse than one that answers awkwardly. Left unset,
-    the column's own name decides.
-    """
     return requested if requested is not None else natural_aggregation(target)
 
 
 def _validated_drivers(driver_columns: list[str] | None, kinds: dict[str, ColumnKind]) -> None:
-    """A driver that was asked for and cannot be used has to say so.
-
-    The selection used to be filtered down to the numeric columns still going
-    spare, and anything left over was dropped without a word — so a run
-    configured to read three drivers could read none of them and still report
-    success.
-    """
     if not driver_columns:
         return
 
@@ -580,12 +547,6 @@ def _validated_drivers(driver_columns: list[str] | None, kinds: dict[str, Column
 
 
 def _validated_models(candidate_models: list[str] | None) -> None:
-    """Refuse a model roster that names something the engine does not have.
-
-    A name that matched nothing used to leave the filter empty, and an empty
-    filter fell back to the full roster — so restricting a run to one model
-    could quietly run all of them.
-    """
     if not candidate_models:
         return
 
@@ -598,27 +559,12 @@ def _validated_models(candidate_models: list[str] | None) -> None:
         )
 
 
-#: A forecast may reach this far past the history it was fitted on. Beyond it
-#: the horizon is longer than the evidence, and no backtest fold can be built
-#: that measures it.
 MAX_HORIZON_SHARE = 0.5
 
 
 def _validated_horizon(
     horizon: int, dataset: Dataset, frequency: ForecastFrequency, *, requested: bool
 ) -> int:
-    """Hold the horizon to what the history can speak to.
-
-    Asking for twenty-four months from twelve months of history is not a hard
-    forecast, it is an unmeasurable one: no backtest fold can hold out a window
-    that long, so the accuracy shown beside it was never tested at that range.
-
-    A horizon somebody chose is refused rather than quietly shortened — a run
-    that answers a different question from the one it was asked is worse than
-    one that does not answer. A horizon nobody chose is the default, and that
-    is clamped, because failing a run over a number the user never typed is
-    just as unhelpful.
-    """
     if horizon <= 0:
         raise ValidationError("The forecast horizon has to be at least one period.")
 
@@ -685,12 +631,6 @@ _background_tasks: dict[uuid.UUID, asyncio.Task[RunStatus]] = {}
 
 
 async def recover_interrupted_runs() -> int:
-    """Turn orphaned single-process jobs into explicit, retryable failures.
-
-    An in-process executor has no durable queue across a service restart. A run
-    left as pending/running would otherwise look alive forever. Distributed
-    Celery jobs are durable and are deliberately left alone.
-    """
     if settings.distributed:
         return 0
     async with session_scope() as session:
@@ -782,10 +722,6 @@ async def cancel_run(session: AsyncSession, run_id: uuid.UUID) -> ForecastRun:
     run.completed_at = utcnow()
     await session.flush()
 
-    # Counted apart from a failure even though the row records both the same
-    # way. An operator watching the failure rate needs to know which half of
-    # it is the platform breaking and which half is somebody changing their
-    # mind — a graph that cannot tell them apart is a graph nobody trusts.
     _record_terminal(
         RunStatus.FAILED,
         started_at=run.started_at,
@@ -813,20 +749,6 @@ def _record_terminal(
     finished_at: datetime | None,
     label: str | None = None,
 ) -> None:
-    """Count a run that has finished, and how long it took.
-
-    Duration comes from the row's own timestamps rather than a stopwatch in
-    this process, which is the only version that works when the run executed
-    on a Celery worker and this is the process that noticed. A run with no
-    `started_at` never began, so it is counted but not timed — a zero in the
-    histogram would drag every percentile down and make an outage look fast.
-
-    Both ends go through `as_utc` first. SQLite hands back a naive datetime
-    from the same column Postgres returns aware, and subtracting one from the
-    other raises — inside the completion path, which would turn a finished
-    forecast into a failed one over a measurement nobody asked for.
-    Instrumentation must never be able to break the thing it instruments.
-    """
     metrics.forecast_runs.inc(status=label or status.value)
     if started_at is None or finished_at is None:
         return
@@ -852,9 +774,6 @@ async def delete_run(session: AsyncSession, run_id: uuid.UUID) -> None:
     from app.services.progress_relay import forget_progress
 
     await forget_progress(run_id)
-    # The dashboard entries derived from this run can never be served again —
-    # their keys carry a revision that no longer exists — but there is no
-    # reason to hold the memory until they expire.
     cache.forget_run(run_id)
 
     if settings.distributed and task_id:
@@ -904,22 +823,7 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
 
     payload = await asyncio.to_thread(_build_payload, run, parquet_path, driver_candidates)
 
-    # Deliberately *not* announcing "backtesting" here. The model search cannot
-    # start until a pool worker is free, and there are only `FORECAST_WORKERS`
-    # of those: start four runs at once and two of them wait. Marking a run
-    # backtesting before it was submitted is what made a queued run read as a
-    # slow one — it showed 30% and "Backtesting candidate models..." while
-    # doing nothing at all, for as long as the runs ahead of it took.
-    #
-    # The scheduler says which of the two this run is, the moment it knows:
-    # `on_wait` only if it has to queue, `on_start` when a worker is its own.
     try:
-        # The reporting variant used to be reserved for the distributed
-        # deployment, on the assumption that only a Celery worker had a way to
-        # report back. A pool worker has one too, so the single-node path used
-        # the silent variant and sat at 30% for the whole model search — the
-        # slowest and least predictable part of a run, and the one stretch a
-        # watching user most needs to see moving.
         output: ForecastOutput = await executors.run_for(
             run_id,
             job_runner.MODEL_SEARCH,
@@ -977,7 +881,6 @@ async def _execute(run_id: uuid.UUID) -> RunStatus:
 
 
 def _waiting_message(ahead: int | None) -> str:
-    """What a run that cannot start yet is told, in the only terms that help."""
     workers = max(1, settings.forecast_workers)
     plural = "" if workers == 1 else "s"
     if not ahead:
@@ -990,12 +893,6 @@ def _waiting_message(ahead: int | None) -> str:
 
 
 def announce_wait(run_id: uuid.UUID, ahead: int, workers: int) -> None:
-    """The scheduler's position updates, as progress frames.
-
-    Streamed rather than written: a queue of four moves several times a minute
-    and the row in the database is only what a page load reads. Entering the
-    wait is checkpointed, so a reload during one still says so.
-    """
     del workers
     _publish(run_id, RunStatus.RUNNING, 0.22, "waiting", _waiting_message(ahead), queue_ahead=ahead)
 
@@ -1004,14 +901,6 @@ job_runner.announce_wait = announce_wait
 
 
 def _queued(run_id: uuid.UUID) -> Callable[[int], Awaitable[None]]:
-    """Called only when the run actually has to wait, with its place in line.
-
-    Written to the row once, on entering the wait, so a page loaded mid-queue
-    reads `waiting` rather than the stage before it. Every move after that is
-    streamed by the scheduler — a queue shifts several times a minute and none
-    of those needs a row rewritten.
-    """
-
     async def announce(ahead: int) -> None:
         await checkpoint_progress(
             run_id, 0.22, "waiting", _waiting_message(ahead), queue_ahead=ahead
@@ -1021,13 +910,6 @@ def _queued(run_id: uuid.UUID) -> Callable[[int], Awaitable[None]]:
 
 
 def _started(run_id: uuid.UUID) -> Callable[[], Awaitable[None]]:
-    """Called the moment a worker is this run's, before the work is submitted.
-
-    The engine's own first frame arrives a beat later — it has a payload to
-    unpack before it can say anything — and without this the screen keeps
-    reporting a queue the run has already left.
-    """
-
     async def announce() -> None:
         await checkpoint_progress(run_id, 0.30, "backtesting", "Backtesting candidate models...")
 
@@ -1171,10 +1053,6 @@ def _build_payload(
         fill=run.gap_fill,
     )
 
-    # A severe issue is the profiler saying this series cannot be forecast —
-    # no usable rows, too few periods, a target that never changes. Running
-    # anyway produces a number, and a number produced from that is worse than
-    # no answer, because it is indistinguishable from a real one.
     if report.blocked:
         severe = [issue for issue in report.issues if issue.severity is IssueSeverity.SEVERE]
         raise ForecastError(
@@ -1183,10 +1061,6 @@ def _build_payload(
             detail={"issues": [issue.as_dict() for issue in severe]},
         )
 
-    # The calendar is made regular here; the holes in it are left as holes.
-    # Filling them, and clipping the outliers, are modelling decisions the
-    # engine makes fold by fold — done once over the whole history they would
-    # put the validation windows into their own training data.
     aligned = quality.align_calendar(
         series.periods, series.values, series.weights, run.frequency, run.gap_fill
     )
@@ -1196,7 +1070,6 @@ def _build_payload(
 
     preparation = Preparation(
         fill=run.gap_fill if aligned.missing and aligned.regular else GapFill.NONE,
-        # The override is a count of robust deviations, which is what `sigmas` is.
         winsorise_sigmas=(
             (overrides.outlier_mad_threshold or WINSORISE_SIGMAS)
             if run.outlier_treatment is OutlierTreatment.WINSORISE
@@ -1219,10 +1092,6 @@ def _build_payload(
         run.frequency,
         periods,
         aggregation=run.aggregation,
-        # A driver adds up the way its own name says it does. Taking the
-        # target's aggregation says something about the target and nothing
-        # about the driver, and summing a price or a conversion rate over the
-        # rows in a month produces a number that tracks the row count.
         per_column={name: natural_aggregation(name) for name in driver_candidates or []},
     )
 
@@ -1267,9 +1136,6 @@ def _segments(parquet_path: Path, run: ForecastRun, column: str | None) -> list[
         run.target_column,
         column,
         run.frequency,
-        # The same reducer the headline number uses. Summing a breakdown of a
-        # measure the run averages gives regions that do not add up to the
-        # total they are shown beside.
         aggregation=run.aggregation,
     )
     return [
@@ -1605,11 +1471,6 @@ async def points_for_run(
 
 
 async def driver_leverage(session: AsyncSession, run_id: uuid.UUID) -> dict[str, float]:
-    """Each driver's share of the movement this run explained, as a 0..1 fraction.
-
-    A driver holding 40% of the impact moves the total by 40% of whatever is asked
-    of it, so a 1.5x on that driver lifts the forecast by 20%, not 50%.
-    """
     result = await session.execute(
         select(ForecastDriver.driver, ForecastDriver.impact_pct).where(
             ForecastDriver.run_id == run_id
@@ -1619,7 +1480,6 @@ async def driver_leverage(session: AsyncSession, run_id: uuid.UUID) -> dict[str,
 
 
 def _driver_scale(multipliers: dict[str, float], leverage: dict[str, float]) -> float:
-    """Combine per-driver multipliers into one factor, weighted by their leverage."""
     scale = 1.0
     for name, multiplier in multipliers.items():
         scale *= 1.0 + leverage.get(name, 0.0) * (multiplier - 1.0)
@@ -1663,11 +1523,6 @@ async def simulate_what_if(
     simulated_best_total = 0.0
     simulated_worst_total = 0.0
 
-    # An assumption the model was never fitted under is less certain than the
-    # forecast it came from, and scaling the band by the same factor as the
-    # point claims otherwise: it reports the measured relative uncertainty for
-    # a scenario nothing measured. The band widens with the size of the
-    # intervention, around the re-priced point rather than around zero.
     intervention = abs(effective_scale - 1.0)
     widening = 1.0 + SIMULATION_BAND_WIDENING * intervention
 

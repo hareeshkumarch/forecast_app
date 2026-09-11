@@ -18,11 +18,7 @@ ROWS_PER_EVALUATION = 12
 CACHE_LIMIT = 64
 SURVIVOR_SHARE = 1.0 / 3.0
 MIN_SURVIVORS = 3
-#: Coordinate-descent passes from the winner. Two is enough to leave a plateau
-#: it landed beside; more is a series with a hundred rows being polished while
-#: the run's minute goes somewhere else.
 MAX_REFINEMENT_STEPS = 2
-#: Fits the refinement may spend even when the sampling budget was tiny.
 MIN_REFINEMENT = 4
 
 
@@ -54,15 +50,6 @@ class SearchSpace:
         return combinations
 
     def stratified(self, rng: np.random.Generator, count: int) -> list[dict[str, object]]:
-        """`count` distinct settings, covering every value of every parameter.
-
-        Independent random draws leave holes: with eight candidates over a
-        five-value parameter, the chance that some value is never tried at all
-        is better than one in two, and a search that never tried a setting
-        cannot report that it was worse. This deals each parameter's values out
-        like a shuffled deck instead, so the levels are spread by construction
-        and only which ones meet each other is left to chance.
-        """
         columns: dict[str, list[object]] = {}
         for key, values in self.choices.items():
             dealt: list[object] = []
@@ -127,7 +114,6 @@ def evaluation_budget(n_rows: int, space_size: int) -> int:
 
 
 def search_width(n_rows: int, space_size: int, folds: int) -> int:
-    """How many candidates the budget buys once cheap screening is priced in."""
     budget = evaluation_budget(n_rows, space_size)
     if folds < 2:
         return budget
@@ -163,15 +149,6 @@ def cache_key(
     space: SearchSpace,
     horizon: int,
 ) -> str:
-    """Everything the answer depends on, and nothing it does not.
-
-    The features have to be hashed by content. Hashing only their shape means
-    two different feature sets over the same target — which is exactly what a
-    driver column being added or dropped produces — collide, and the second
-    one is answered with the first one's hyperparameters. So do the search
-    space's *values*: a space with the same keys and different candidates is a
-    different search.
-    """
     digest = hashlib.blake2s(digest_size=16)
     digest.update(name.encode())
     digest.update(repr([(key, list(space.choices[key])) for key in sorted(space.choices)]).encode())
@@ -196,12 +173,6 @@ def blended_error(
     insample: FloatArray | None = None,
     season: int = 1,
 ) -> float:
-    """Score a candidate the way the run will score the model it belongs to.
-
-    Tuning that minimises one error and selection that minimises another will
-    disagree, and the disagreement is silent: the search hands over the
-    hyperparameters that were best at the wrong thing.
-    """
     if not weights:
         return tuning_error(actual, predicted)
 
@@ -212,10 +183,6 @@ def blended_error(
     if not np.isfinite(scale) or scale <= 0.0:
         scale = 1.0
 
-    # Real MASE where the training window is on hand. Scaling MAE by the level
-    # of the series instead measures something else, and on a seasonal series
-    # the two rank candidates differently — which is the disagreement with
-    # selection this function exists to close.
     scaled_mae = scores["mae"] / scale * 100.0
     seasonal = (
         mase(actual, predicted, insample, max(1, season)) * 100.0
@@ -244,12 +211,6 @@ def blended_error(
     )
 
 
-#: Given the parameters and a half-open range of validation rows, train on
-#: everything before `start` and predict rows `[start, end)`. The caller owns
-#: the prediction because only the caller knows how the model will really be
-#: asked for a forecast — reading the answers out of a design matrix built
-#: from the actuals measures one-step-ahead accuracy with the truth in hand,
-#: and a recursive model never has that.
 FitPredict = Callable[[dict[str, object], int, int], FloatArray]
 
 
@@ -305,9 +266,6 @@ def tune(
 
     contenders = candidates
     if len(splits) >= 2 and len(candidates) > MIN_SURVIVORS:
-        # Successive halving: every candidate is screened on the earliest fold,
-        # and only the survivors pay for the rest. A candidate that fails a fold
-        # is dropped either way, so screening on one loses nothing.
         screened = [
             (score_over(params, splits[:1]), index) for index, params in enumerate(candidates)
         ]
@@ -336,9 +294,6 @@ def tune(
         if refined:
             method = f"{method}_refined"
 
-    # `evaluations` counts candidates that produced a score. Reporting the
-    # number tried made a search where every fit raised look like a search
-    # that ran, and the defaults it fell back to look like a winner.
     method = method if evaluated else "defaults_all_candidates_failed"
     result = TuningResult(best_params, best_score, evaluated, method, len(splits))
     _CACHE.put(key, result)
@@ -346,13 +301,6 @@ def tune(
 
 
 def _neighbours(space: SearchSpace, params: dict[str, object]) -> list[dict[str, object]]:
-    """The settings one step from this one, along each parameter in turn.
-
-    A step means the adjacent entry in that parameter's list, so the lists are
-    read as ordered — which they are: every space in `app/forecasting/models.py`
-    lists depths, rates and window lengths in order. For an unordered list this
-    still works, it just explores in the order the values were written.
-    """
     around: list[dict[str, object]] = []
     for key, values in space.choices.items():
         ordered = list(values)
@@ -375,24 +323,6 @@ def _refine(
     splits: list[tuple[int, int]],
     budget: int,
 ) -> tuple[dict[str, object], float, int]:
-    """Walk downhill from the winner, one parameter at a time.
-
-    The search picked the best of a scattered sample and stopped, which leaves
-    it at whichever sampled point happened to be lowest rather than at the
-    bottom of the dip that point is in — and with a coarse sample the two are
-    routinely a step or two apart. Coordinate descent from the winner is the
-    cheapest way to close that: it costs a couple of fits per parameter and it
-    only ever moves to something measurably better, so it cannot make the
-    answer worse than the point it started from.
-
-    Bounded twice over — by a step count, and by a share of the same budget the
-    sampling was drawn against — because refining forever on a series that has
-    a hundred rows is spending the run's minute in the wrong place.
-
-    Returns the number of neighbours that produced a score, not the number
-    tried: `evaluations` means the same thing everywhere it is reported, and a
-    refinement whose every fit raised must not look like one that ran.
-    """
     allowance = max(MIN_REFINEMENT, budget // 2)
     attempts = 0
     scored = 0
@@ -412,9 +342,6 @@ def _refine(
 
             trial = score_over(candidate, splits)
             if not np.isfinite(trial):
-                # A setting the model could not fit. It cost a fit and it did
-                # not produce a score, and `evaluations` counts scores — see
-                # the note where it is reported.
                 continue
             scored += 1
             if trial < score:

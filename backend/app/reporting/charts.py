@@ -24,8 +24,6 @@ GRID_LINES = 4
 MIN_BAND_HEIGHT = 0.4
 
 
-# Quarters cleanly under a four-line grid. One significant digit is too coarse
-# near a power of ten: 1.01M rounds to 2M and the chart loses half its height.
 NICE_STEPS = (1.0, 1.2, 1.6, 2.0, 2.4, 3.2, 4.0, 5.0, 6.0, 8.0, 10.0)
 STEP_SLACK = 1e-9
 
@@ -243,8 +241,6 @@ class RiskChart(Flowable):
 
         at = self.height - cut * gap
 
-        # Rows leave ~7pt between bars, which a 6pt caption clears at neither
-        # end; on the rule, in the gutter between value labels, it has room.
         canvas.setFont("Helvetica-Bold", 6)
         caption = "HALF THE RISK IS ABOVE THIS LINE"
         caption_width = canvas.stringWidth(caption, "Helvetica-Bold", 6)

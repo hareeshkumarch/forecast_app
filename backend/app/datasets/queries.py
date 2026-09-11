@@ -36,11 +36,6 @@ AGGREGATIONS: dict[MeasureAggregation, str] = {
     MeasureAggregation.MAX: "MAX",
 }
 
-#: A period a series has no row for. Not zero — a SKU nobody reported this
-#: month and a SKU that sold nothing this month are different facts, and only
-#: the run's gap-fill setting decides which one to treat it as. Writing the
-#: zero here made that decision for every grouped series, whatever was asked
-#: for, and made it invisible.
 NOT_REPORTED = float("nan")
 
 
@@ -101,14 +96,6 @@ def aggregate_candidate_drivers(
     aggregation: MeasureAggregation = MeasureAggregation.SUM,
     per_column: dict[str, MeasureAggregation] | None = None,
 ) -> dict[str, list[float]]:
-    """Bring each driver to the run's calendar, reduced by what it *is*.
-
-    A driver took the target's aggregation, which is a statement about the
-    target and not about the driver. Sum a price, an index, a temperature or a
-    conversion rate across the rows in a month and the number that comes out
-    grows with the row count and means nothing — and the correlation search
-    that follows it is then reading traffic volume, not the driver.
-    """
     if not columns or not periods:
         return {}
 

@@ -1,14 +1,3 @@
-"""The HTML for the mail this platform sends.
-
-Written the way email has to be written rather than the way the app is: one
-table, inline styles, hex colours, no stylesheet and no web font. Mail clients
-strip a <style> block, ignore CSS variables and often refuse to load anything
-remote, so every rule that matters has to sit on the element it styles.
-
-Kept in one place because the alternative is four messages that gradually stop
-looking like each other.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,9 +20,6 @@ PRODUCT = "Forecast Hub"
 class Action:
     label: str
     url: str
-    #: The first action is the one being recommended and is drawn as a filled
-    #: button; anything after it is a plain link, so a message never asks
-    #: somebody to choose between two things that look equally intended.
     primary: bool = True
 
 
@@ -46,16 +32,11 @@ class Message:
 
 def _button(action: Action) -> str:
     if not action.primary:
-        # vertical-align matters: without it the secondary link sits on the
-        # text baseline and the button on its own box, so the two land at
-        # different heights and the row reads as a mistake.
         return (
             f'<a href="{action.url}" style="display:inline-block;vertical-align:middle;'
             f"color:{INK_SOFT};font-size:14px;line-height:40px;text-decoration:underline;"
             f'padding:0 14px;font-family:{FONT};">{action.label}</a>'
         )
-    # A table rather than a padded anchor: Outlook ignores padding on inline
-    # elements and the button collapses to bare text.
     return (
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
         'style="display:inline-block;vertical-align:middle;"><tr><td '
@@ -66,8 +47,6 @@ def _button(action: Action) -> str:
     )
 
 
-#: Why this message arrived. Not decoration — a message that cannot say why it
-#: was sent is the shape of one people report as spam.
 REASON_DECIDED = "you asked for access to it"
 
 
@@ -155,13 +134,6 @@ def _message(
 
 
 def request_received(app_url: str) -> Message:
-    """The only message a request produces, and the only one it needs.
-
-    Nobody is emailed about somebody else's request any more. The person who
-    can act on it sees it on the People page, live, the moment it arrives —
-    so the one message worth sending is to the person who asked, telling them
-    it landed and that they do not have to do anything else.
-    """
     return _message(
         subject="Your access request is with an administrator",
         heading="Thanks — your request is in",
@@ -176,14 +148,6 @@ def request_received(app_url: str) -> Message:
 
 
 def access_approved(app_url: str) -> Message:
-    """The one message that says you are in, however you got here.
-
-    Sent to somebody approved after asking and to somebody invited without
-    asking, so the wording carries neither assumption — no "the address you
-    asked with" for a person who never asked, and no "somebody invited you"
-    for a person who did. Two templates saying the same thing would be two
-    things to keep true.
-    """
     return _message(
         subject="You have access to Forecast Hub",
         heading="You're in",

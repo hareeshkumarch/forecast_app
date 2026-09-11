@@ -23,17 +23,11 @@ from app.services import user_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-#: Mounted without the session guard, because the one endpoint on it is opened
-#: from a mail client that has no session to present. Its authority comes from
-#: the signature on the link instead — which is the entire point of signing it.
-#: Everything else belongs on `router`.
-
 
 class CurrentUserRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     authenticated: bool
-    #: pending, approved or rejected. Null when nobody is signed in.
     status: AccessStatus | None = None
     role: AccessRole | None = None
     is_admin: bool = False
@@ -66,11 +60,7 @@ class ManagedUserRead(BaseModel):
     decided_by: str | None
     last_seen_at: str | None
     invited_by: str | None
-    #: True for an invitation nobody has signed in to yet — the row exists,
-    #: the person has not arrived.
     subject_pending: bool
-    #: True for the account making the request, so the UI can stop somebody
-    #: refusing or demoting themselves by accident.
     is_self: bool
 
 
@@ -82,14 +72,9 @@ class RoleRequest(StrictModel):
     role: AccessRole
 
 
-#: Deliberately loose. The only test that means anything is whether the mail
-#: arrives, and a stricter pattern would reject valid addresses to no benefit —
-#: an invitation nobody can receive is self-correcting.
 EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
-#: Capped so one request cannot walk the whole table. Well above any list
-#: somebody selects by hand.
 UserIds = Annotated[list[uuid.UUID], Field(min_length=1, max_length=200)]
 
 
@@ -106,9 +91,6 @@ class BulkResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     changed: int
-    #: Accounts the request named and did not touch, and why — a guard that
-    #: refused, or an id that is not there. Reported rather than swallowed, so
-    #: selecting twelve and changing nine is visible.
     skipped: dict[str, str]
 
 
@@ -280,13 +262,6 @@ async def _each(
     user_ids: list[uuid.UUID],
     act: Callable[[AppUser], Awaitable[object]],
 ) -> BulkResult:
-    """Apply one action across many accounts, one at a time.
-
-    Not a single UPDATE, because every guard that protects a single account
-    protects it here too — the last administrator does not stop being the last
-    one because twelve rows were selected. A refusal is recorded against that
-    account and the rest carry on.
-    """
     changed = 0
     skipped: dict[str, str] = {}
 
@@ -400,9 +375,6 @@ async def read_audit(
     ]
 
 
-#: Long enough that an idle stream costs nothing, short enough that a proxy
-#: which drops silent connections never gets the chance. Vercel's is the one
-#: in the path here.
 KEEPALIVE_SECONDS = 25.0
 
 
@@ -420,31 +392,19 @@ KEEPALIVE_SECONDS = 25.0
 )
 async def stream_access(request: Request, user: CurrentUser) -> StreamingResponse:
     if not settings.auth_enabled or user.is_anonymous:
-        # Nothing can change, so hold nothing open. An empty stream that closes
-        # at once is a clearer answer to the client than a connection that
-        # never says anything.
         return StreamingResponse(
             iter([b"event: idle\ndata: {}\n\n"]), media_type="text/event-stream"
         )
 
-    # Admitted before anything is read. A client already at its ceiling should
-    # cost a dictionary lookup, not a database round trip it will not be shown.
     with streams.leased(request, user.id, "access") as lease:
         return await _access_stream(user, lease)
 
 
 async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> StreamingResponse:
-    # Deliberately not SessionDep. A dependency-provided session lives as long
-    # as the request, and this request lives as long as the browser tab — one
-    # open page would hold a pooled connection for hours, and a handful would
-    # exhaust the pool while doing nothing at all. Read what is needed, give
-    # the connection back, then stream.
     async with session_scope() as session:
         row = await user_service.status_of(session, user)
         topics = [broadcast.topic_for_user(row.id)] if row is not None else []
         is_admin = row is not None and user_service.is_admin(user.email, row.role)
-    # Administrators also watch the list itself, so a request arriving lands on
-    # the page they were told to look at.
     if is_admin:
         topics.append(broadcast.PEOPLE)
 
@@ -452,9 +412,6 @@ async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> Strea
         deadline = streams.Deadline()
         async with broadcast.subscribe(*topics) as queue:
             yield streams.preamble()
-            # Said once on connect. A client that reconnects after missing a
-            # decision refetches immediately rather than waiting for the next
-            # thing to happen, which may be never.
             yield streams.frame(event="sync")
             while not deadline.passed:
                 try:

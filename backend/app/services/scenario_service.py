@@ -82,8 +82,6 @@ async def _forecast_total(session: AsyncSession, run_id: uuid.UUID) -> float:
             ForecastPoint.series_id.is_(None),
         )
     )
-    # COALESCE guarantees a value, but the column is nullable so the checker
-    # still types the result as optional.
     return round(float(result.scalar_one() or 0.0), 4)
 
 
@@ -169,9 +167,6 @@ def _monitor_item(run: ForecastRun) -> ForecastMonitorItem:
     drifted = bool(
         run.realized_wmape is not None and run.realized_wmape > settings.drift_wmape_limit
     )
-    # Bound once rather than called twice in the branch below: two calls are two
-    # separate Optionals as far as a type checker is concerned, so the second
-    # cannot be compared without narrowing the first all over again.
     realized_accuracy = _accuracy(run.realized_wmape)
 
     if run.status == RunStatus.FAILED:

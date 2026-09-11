@@ -10,10 +10,6 @@ import numpy as np
 import numpy.typing as npt
 
 from app.core.config import settings
-
-# `availability` is imported as a module and called through, not imported by
-# name: the probe is the seam tests fake a deployment through, and a by-value
-# import would bind past the patch.
 from app.forecasting import availability
 from app.forecasting.availability import ModelAvailability
 from app.forecasting.diagnostics import SeriesProfile
@@ -38,9 +34,6 @@ FittedModel = Any
 RANDOM_STATE = 20260804
 
 OBSERVATIONS_PER_PARAMETER = 3
-#: Hold-out windows the Prophet prior search uses. Every evaluation compiles
-#: and fits a Stan model, so this buys most of the variance reduction that a
-#: full pass over the splits would, at a cost anybody will actually wait for.
 PROPHET_TUNING_SPLITS = 2
 MAX_STATE_SPACE_PERIOD = 24
 MAX_FOURIER_HARMONICS = 3
@@ -70,9 +63,6 @@ class Forecaster(Protocol):
 
 MemberBuilder = Callable[[ModelKind, FloatArray, list[date]], Forecaster]
 
-#: How fast an observation loses its say, as a fraction of the window: at 1.0
-#: the oldest row counts half of the newest, at 0.35 about a tenth. 0.0 keeps
-#: every row equal, and is in the list so a stationary series can choose it.
 RECENCY_HALF_LIVES = [0.0, 1.0, 0.35]
 
 
@@ -219,8 +209,6 @@ class HoltWintersForecaster:
         best_score = float("inf")
         errors: list[str] = []
 
-        # One cache holds every model's remembered shape, so it is typed to the
-        # widest thing any of them stores. Each reader knows what it wrote.
         remembered = cast("dict[str, object] | None", (self.shape_cache or {}).get("hw_config"))
         for config in [remembered] if remembered else self._configurations(y):
             try:
@@ -395,8 +383,6 @@ class ProphetForecaster:
     profile: SeriesProfile | None = None
     changepoint_prior_scale: float | None = None
     interval_width: float = 0.8
-    #: The metrics the run scores by, so the prior search minimises the same
-    #: thing model selection will.
     metric_weights: dict[str, float] | None = None
     kind: ModelKind = field(default=ModelKind.PROPHET, init=False)
     _fitted: FittedModel = field(default=None, init=False)
@@ -404,9 +390,6 @@ class ProphetForecaster:
 
     @staticmethod
     def available() -> bool:
-        # Not `find_spec("prophet")`. A Prophet whose Stan backend will not
-        # load imports cleanly and only fails at fit, so an import check puts
-        # it on the roster and then loses every backtest to an exception.
         return availability.prophet_availability().available
 
     def _seasonality_flags(self, y: FloatArray) -> dict[str, bool]:
@@ -486,11 +469,6 @@ class ProphetForecaster:
         if not splits:
             return default, {"tuning_method": "defaults_short_history", "tuning_evaluations": 0}
 
-        # More than one window. A single hold-out picks the prior that suited
-        # one stretch of history, and a changepoint prior in particular is
-        # exactly the setting a single window cannot separate — whichever
-        # value happens to bend towards that window's last turn wins. Capped
-        # at two, because every evaluation here is a Stan fit.
         used_splits = splits[-PROPHET_TUNING_SPLITS:]
         windows = [
             (
@@ -859,8 +837,6 @@ class GradientBoostingForecaster:
     max_depth: int | None = None
     learning_rate: float | None = None
     drivers: DriverPanel = field(default_factory=DriverPanel)
-    #: The metrics the run scores by, so the hyperparameter search minimises
-    #: the same thing model selection will.
     metric_weights: dict[str, float] | None = None
     kind: ModelKind = field(default=ModelKind.GRADIENT_BOOSTING, init=False)
     _model: FittedModel = field(default=None, init=False)
@@ -888,10 +864,6 @@ class GradientBoostingForecaster:
     def _estimator(self, params: dict[str, object], n_rows: int) -> FittedModel:
         from sklearn.ensemble import HistGradientBoostingRegressor
 
-        # Left off deliberately. The estimator's own early stopping holds out a
-        # shuffled slice, so it decides when to stop against rows that come
-        # after the ones it keeps training on. Capacity is settled instead by
-        # the search in `tuning`, which splits the history in time order.
         return HistGradientBoostingRegressor(
             max_depth=as_int(params["max_depth"], 3),
             learning_rate=as_float(params["learning_rate"], 0.06),
@@ -943,15 +915,6 @@ class GradientBoostingForecaster:
             space = SearchSpace({**space.choices, "drivers": [True, False]})
 
         def fit_predict(params: dict[str, object], start: int, end: int) -> FloatArray:
-            """Score these parameters the way the model will really be asked.
-
-            Reading the validation block out of the design matrix hands the
-            model the true lag-1 value at every step — it is being graded on
-            one-step-ahead accuracy with the answers in front of it. Used for
-            real it feeds its own output back, so a candidate that leans hard
-            on the last observation looks superb here and drifts badly there.
-            The search then picks exactly the wrong depth and learning rate.
-            """
             keep = self._kept_columns(params, from_driver)
             estimator = self._estimator(params, start)
             weights = recency_weights(start, as_float(params.get("recency_half_life"), 0.0))
@@ -1017,7 +980,6 @@ class GradientBoostingForecaster:
         start: int,
         end: int,
     ) -> FloatArray:
-        """Walk the validation block forward, feeding each step its own output."""
         from app.forecasting.features import build_future_row
 
         first, last = rows[start], rows[end - 1]
@@ -1088,9 +1050,6 @@ class EnsembleForecaster:
         ModelKind.SARIMAX,
     )
     weights: dict[ModelKind, float] | None = None
-    #: Builds a member the way the backtest built it — same options, same
-    #: driver columns, same variance transform. Without it a member is rebuilt
-    #: bare, and the combination that ships is not the one that was scored.
     member_builder: MemberBuilder | None = None
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
     _fitted: list[Forecaster] = field(default_factory=list, init=False)
@@ -1176,7 +1135,6 @@ def _default_period(frequency: ForecastFrequency) -> int:
 def _metric_weights(
     options: dict[str, object], profile: SeriesProfile | None
 ) -> dict[str, float] | None:
-    """The run's scoring weights, or the ones its profile implies."""
     from app.forecasting.selection import metric_weights_for
 
     supplied = options.get("metric_weights")
@@ -1242,11 +1200,6 @@ def build_candidates(
     if profile is None or profile.intermittent:
         candidates.append(CrostonForecaster(frequency, profile))
 
-    # The demand class is a gate, not a hint. Offering Croston alongside the
-    # smooth-demand models leaves the selector free to pick one of them on an
-    # intermittent series whenever the zeros happen to line up over a fold,
-    # which is the confident-nonsense case the classification exists to
-    # prevent. Baselines survive every class — they are the floor.
     routing = route(profile)
     routed = [candidate for candidate in candidates if routing.permits(candidate.kind)]
     if routed:
@@ -1256,22 +1209,12 @@ def build_candidates(
         allowed_set = {str(model).lower() for model in allowed_models}
         filtered = [c for c in candidates if c.kind.value.lower() in allowed_set]
         if not filtered:
-            # Falling back to the full roster made restricting a run to models
-            # this deployment cannot fit — Prophet without Prophet installed,
-            # Croston on a series that is not intermittent — run everything
-            # instead, and report the winner as though it had been asked for.
-            #
-            # Two very different reasons land here, and the message says which:
-            # a model missing from the deployment is the operator's to fix,
-            # while one ruled out for this series is the user's to reconsider.
             raise ValueError(_no_candidates_message(allowed_set, candidates))
         return filtered
 
     return candidates
 
 
-#: Titles for error copy. The wire format stays `ModelKind`; this is only for
-#: sentences a person reads.
 MODEL_LABELS: dict[ModelKind, str] = {
     ModelKind.NAIVE: "Naive",
     ModelKind.SEASONAL_NAIVE: "Seasonal Naive",
@@ -1287,7 +1230,6 @@ MODEL_LABELS: dict[ModelKind, str] = {
 
 
 def label_for(kind: ModelKind | str) -> str:
-    """`ModelKind.SEASONAL_NAIVE` -> "Seasonal Naive"; unknown values pass through."""
     try:
         return MODEL_LABELS[ModelKind(kind)]
     except ValueError:
@@ -1301,7 +1243,6 @@ def _join(names: list[str]) -> str:
 
 
 def _no_candidates_message(allowed: set[str], offered: list[Forecaster]) -> str:
-    """Why a model restriction left nothing to fit, in terms a user can act on."""
     unavailable = unavailable_models()
     asked_for_unavailable = sorted(
         label_for(kind) for kind in unavailable if kind.value.lower() in allowed
@@ -1309,9 +1250,6 @@ def _no_candidates_message(allowed: set[str], offered: list[Forecaster]) -> str:
     runnable = _join(sorted({label_for(c.kind) for c in offered}))
 
     if asked_for_unavailable and len(asked_for_unavailable) == len(allowed):
-        # Everything they ticked is missing from the deployment, so pointing
-        # at the series would be a red herring — nothing about their data is
-        # the problem.
         return (
             f"{_join(asked_for_unavailable)} "
             f"{'is' if len(asked_for_unavailable) == 1 else 'are'} not available on this "
@@ -1327,13 +1265,6 @@ def _no_candidates_message(allowed: set[str], offered: list[Forecaster]) -> str:
 
 
 def unavailable_models() -> dict[ModelKind, ModelAvailability]:
-    """Models this deployment cannot fit, keyed by kind.
-
-    Returns the whole availability record rather than a string, because the
-    two halves of it go to different places: `reason` is rendered next to the
-    run's other candidates, and `operator_hint` is for logs and the health
-    endpoint. Flattening them is what put `pip install` in the dashboard.
-    """
     status = availability.prophet_availability()
     return {} if status.available else {ModelKind.PROPHET: status}
 

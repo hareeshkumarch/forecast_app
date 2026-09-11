@@ -1,10 +1,3 @@
-"""The loop that drains the mail outbox.
-
-Separate from the mailer so the thing that writes a message down and the thing
-that delivers it are not the same object with two jobs. Everything about *how*
-to send lives in app/core/mailer.py; this decides *when*.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -17,14 +10,8 @@ from app.database.session import session_scope
 
 logger = get_logger(__name__)
 
-#: Long enough that an empty outbox costs one cheap indexed query per tick,
-#: short enough that nobody watching their inbox after being approved notices
-#: the wait. The index this reads is partial on status, so an idle poll stays
-#: cheap however much history the table accumulates.
 INTERVAL_SECONDS = 5.0
 
-#: A first pass held back a moment, so the loop is not competing with migrations
-#: and the executor pool for a cold database connection at boot.
 STARTUP_DELAY_SECONDS = 3.0
 
 
@@ -56,10 +43,6 @@ class MailSender:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                # A database that is briefly unreachable must not end the loop.
-                # Ending it would mean no mail until the next deploy, and
-                # nothing saying so — the failure this whole table exists to
-                # stop, arrived at by another road.
                 logger.exception("The outbox pass failed; carrying on.")
             await asyncio.sleep(INTERVAL_SECONDS)
 

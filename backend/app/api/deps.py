@@ -20,7 +20,6 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 BEARER_PREFIX = "bearer "
 
 
-#: The only shape of request that may carry its token in the URL.
 STREAM_SUFFIX = "/events"
 
 
@@ -29,15 +28,6 @@ def query_token_allowed(method: str, path: str) -> bool:
 
 
 def bearer_token(request: Request) -> str | None:
-    """The token on this request, from the header or — for SSE — the query.
-
-    EventSource cannot set headers, so the endpoints a browser opens that way
-    have no other means of presenting a token. It is accepted from the query
-    string there and nowhere else: a token in a URL is written to every access
-    log, proxy trace and browser history along the path, so the blast radius of
-    one leaking is kept to the two endpoints that can only stream, never to a
-    DELETE that a copied link would then carry out.
-    """
     header = request.headers.get("Authorization", "")
     if header.lower().startswith(BEARER_PREFIX):
         return header[len(BEARER_PREFIX) :].strip() or None
@@ -69,13 +59,6 @@ async def approved_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> AuthenticatedUser:
-    """A signed-in account that an administrator has let in.
-
-    Separate from `current_user` because /auth/me has to answer *while*
-    somebody is waiting for approval — a gate that refuses everything would
-    leave the frontend unable to tell "waiting" from "signed out", and the
-    person staring at a sign-in button they have already used.
-    """
     user = await current_user(request)
     if user.is_anonymous or not settings.auth_require_approval:
         return user
@@ -83,16 +66,10 @@ async def approved_user(
     from app.models.enums import AccessStatus
     from app.services import user_service
 
-    # Read, never write: this runs on every request, and recording a visit here
-    # would put a database write behind every read the platform serves. The
-    # account is created and stamped by /auth/me, which runs once a session.
     row = await user_service.status_of(session, user)
     if row is not None and row.status is AccessStatus.APPROVED:
         return user
 
-    # No row means this account has never been registered, which is not the
-    # same as being approved. Treating the absence as permission would let a
-    # new sign-in skip /auth/me and walk straight past the gate.
     if row is None:
         raise ForbiddenError(
             "This account is not registered on this deployment yet.",
@@ -116,14 +93,6 @@ ApprovedUser = Annotated[AuthenticatedUser, Depends(approved_user)]
 async def permitted(
     request: Request, session: AsyncSession = Depends(get_session)
 ) -> AuthenticatedUser:
-    """The permission this request needs, decided from what it is.
-
-    Mounted once on the guarded routers rather than annotated on each handler,
-    so a route added later is covered by the table in permissions.py instead of
-    by somebody remembering. Wraps `approved_user`, so it is still one gate: a
-    request that has no business here is refused before the permission question
-    is even asked.
-    """
     user = await approved_user(request, session)
     if user.is_anonymous or not settings.auth_enabled:
         return user
@@ -146,16 +115,6 @@ async def permitted(
 
 
 def require(permission: Permission) -> Callable[..., Awaitable[AuthenticatedUser]]:
-    """A route saying what it needs rather than who it trusts.
-
-    Returns a dependency, so it reads as
-    `dependencies=[Depends(require(Permission.FORECAST_RUN))]` on the router or
-    the handler. The check is a database read on every call, deliberately:
-    permissions carried in a token would mean a demotion or a revocation
-    taking effect whenever that token happened to expire, and this platform's
-    revocation is expected to bite on the next request.
-    """
-
     async def guard(
         request: Request, session: AsyncSession = Depends(get_session)
     ) -> AuthenticatedUser:
@@ -181,8 +140,6 @@ def require(permission: Permission) -> Callable[..., Awaitable[AuthenticatedUser
     return guard
 
 
-#: The message somebody actually reads. "not allowed to forecast:run" is a
-#: log line; "not allowed to start forecasts" is an answer.
 _ENGLISH = {
     Permission.READ: "see this",
     Permission.DATASET_WRITE: "add or change datasets",

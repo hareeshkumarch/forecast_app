@@ -58,10 +58,6 @@ class GroupedPlan:
     confidence_level: float
     total_path: list[float]
     forecast_periods: list[date]
-    #: The run's gap-fill setting, carried down so a series under the total is
-    #: prepared by the same rules as the total. Sent as the two plain values
-    #: rather than as a `Preparation`, because this plan crosses a Celery
-    #: boundary and only what JSON can carry survives it.
     gap_fill: GapFill = GapFill.NONE
     winsorise_sigmas: float | None = None
 
@@ -486,19 +482,6 @@ MAX_PAGE = settings.api_max_page_size
 
 
 def order_terms(sort: str) -> list[Any]:
-    """The ORDER BY for a requested sort, worst first, ties broken by name.
-
-    Series that were never scored sort last, whatever the chosen order is
-    measuring — except by name, where "no accuracy yet" is not a reason to come
-    after Z.
-
-    That term is left out for the name order rather than passed as a no-op. It
-    was `null()`, which renders as `ORDER BY NULL`: legal in SQLite, where the
-    tests run, and rejected outright by Postgres, where the product runs, with
-    "non-integer constant in ORDER BY". Every request for the name order was a
-    500 and nothing in the suite could see it — so this lives out here where a
-    test can compile it against the dialect that actually matters.
-    """
     ordering = SORTS.get(sort, SORTS[DEFAULT_SORT])
     unscored_last = sort != "label"
     return [

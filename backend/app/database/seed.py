@@ -138,12 +138,6 @@ async def seed_forecast(dataset_id: uuid.UUID) -> bool:
 
 
 async def seed() -> bool:
-    """Seed the demo rows. False when the sample forecast did not complete.
-
-    Callers that need a populated dashboard — the e2e job does — should treat
-    that as a failure rather than reading it back as an empty list several
-    steps later.
-    """
     configure_logging()
     await seed_connectors()
     dataset = await seed_dataset()
@@ -153,8 +147,6 @@ async def seed() -> bool:
 
 
 def main() -> None:
-    # Non-zero when the sample forecast did not complete, so a broken engine
-    # fails here with its own error rather than as a timeout further down.
     if not asyncio.run(seed()):
         raise SystemExit(1)
 

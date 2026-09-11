@@ -16,16 +16,6 @@ logger = get_logger(__name__)
 
 
 def provider_breaker(provider: str) -> CircuitBreaker:
-    """The breaker in front of one model provider.
-
-    Per provider rather than one for everything: a deployment can be pointed
-    at OpenAI and probed against a local endpoint in the same afternoon, and
-    the second having a bad time is no reason to stop calling the first.
-
-    Per provider rather than per model, too. When a provider is timing out it
-    is timing out for every model it serves, and a breaker per model would
-    need each of them to fail four times over before any of them stopped.
-    """
     return breaker(
         f"llm:{provider}",
         failure_threshold=settings.llm_breaker_failure_threshold,
@@ -87,10 +77,6 @@ PROVIDER_BASE_URLS: dict[str, str] = {
     "groq": "https://api.groq.com/openai/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "openrouter": "https://openrouter.ai/api/v1",
-    #: NVIDIA's hosted catalogue from build.nvidia.com, OpenAI-shaped like the
-    #: rest. Keys are issued free and look like nvapi-…, which is the reason it
-    #: is here: it is the one provider on this list a deployment with no budget
-    #: can actually turn on.
     "nvidia": "https://integrate.api.nvidia.com/v1",
 }
 
@@ -234,12 +220,6 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
     override_url = str(cfg.get("llm_base_url")) if cfg.get("llm_base_url") else None
     started = perf_counter()
 
-    # This function *records* what the breaker learns; it does not decide
-    # whether the call happens. Admission lives one level up, in
-    # `_apply_rewrite`, because that is where calls arrive eight at a time and
-    # where refusing costs nothing. Keeping the two apart is what lets `probe`
-    # go straight through: an operator asking "does this key work now" is the
-    # best half-open trial there is, and its outcome still counts here.
     guard = provider_breaker(provider)
 
     try:
@@ -322,10 +302,6 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
     except Exception as exc:
         logger.warning("LLM API call failed for provider %s: %s", provider, exc)
         status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-        # A 401 or a 404 is an answer, and a prompt one: the provider is up,
-        # the configuration is wrong, and a person is about to fix it. Only a
-        # timeout, a refused connection, a 429 or a 5xx says calling again
-        # right now is expensive and pointless — see app/core/breaker.py.
         if is_transport_failure(exc):
             guard.record_failure()
         else:
@@ -341,9 +317,6 @@ def _call_llm_api(source: str, config: dict[str, object] | None = None) -> LlmCa
             ),
         )
 
-    # Reached when the provider answered and the answer had nothing in it.
-    # That is the model disappointing us, not the network failing, so it does
-    # not count against the breaker.
     guard.record_success()
     return LlmCallResult(
         text=None,
@@ -364,10 +337,6 @@ def _apply_rewrite(
 
     guard = provider_breaker(resolve_provider(config))
     if not guard.allows():
-        # Refused before a socket is opened. This is the case the breaker
-        # exists for: eight insights fanned out at a provider that is timing
-        # out is eighty seconds of waiting for an answer that already failed,
-        # and whoever pressed the button has been told once already.
         return LlmUsageRecord(
             provider=resolve_provider(config),
             model=resolve_model(config),
@@ -379,9 +348,6 @@ def _apply_rewrite(
 
     result = _call_llm_api(source, config=config)
     if result is None:
-        # No key, so no call was made and the breaker learned nothing. If this
-        # was the one half-open trial, hand it back rather than leaving the
-        # breaker waiting on a probe that never went out.
         guard.release_trial()
         return None
 
@@ -482,12 +448,6 @@ def probe(llm_config: dict[str, object] | None = None) -> LlmProbe:
             message="No API key is configured for this provider.",
         )
 
-    # Deliberately not behind the breaker's admission check. This endpoint
-    # exists because somebody has just changed a key or a model name and wants
-    # to know whether it works; answering "we are not calling that provider
-    # for another twenty seconds" would be true and useless. The outcome is
-    # still recorded, so a probe that succeeds closes the breaker for the
-    # rewrite path too.
     result = _call_llm_api(PROBE_PROMPT, config=llm_config)
     if result is None:
         return LlmProbe(

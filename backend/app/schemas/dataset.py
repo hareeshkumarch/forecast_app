@@ -263,7 +263,6 @@ class CoverageRowRead(BaseModel):
     zeros: NonNegativeInt
     status: str
     route: str
-    #: One entry per period, null where the series has no row for that period.
     values: list[float | None] = Field(default_factory=list)
 
 

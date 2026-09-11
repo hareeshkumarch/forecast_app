@@ -88,19 +88,12 @@ class Scorecard:
 
     @property
     def tracking_signal(self) -> float | None:
-        """Trigg's tracking signal: cumulative error expressed in MADs.
-
-        Near zero the misses cancel out, which is what an unbiased forecast
-        looks like. A large positive or negative value means the run has been
-        wrong the same way every period, which is drift rather than noise.
-        """
         if not self.scored_periods or not self.mae:
             return None
         return round((self.forecast_total - self.actual_total) / self.mae, 2)
 
     @property
     def is_drifted(self) -> bool:
-        """Whether the run is consistently biased, or simply far enough out."""
         signal = self.tracking_signal
         if signal is not None and abs(signal) > settings.drift_tracking_signal_limit:
             return True

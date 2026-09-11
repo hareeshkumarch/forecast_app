@@ -63,10 +63,6 @@ def is_currency_like(column: str) -> bool:
     return currency_symbol(column) is not None
 
 
-#: Words that say a measure is a level rather than a quantity. Adding up the
-#: rows in a month gives a total for a quantity and nonsense for a level: sum
-#: a conversion rate over thirty rows and you get a number thirty times too
-#: big that grows with the row count and moves with nothing real.
 RATE_NAME_HINTS = (
     "rate",
     "ratio",
@@ -94,16 +90,13 @@ RATE_NAME_HINTS = (
 
 
 def is_rate_like(column: str) -> bool:
-    """Whether this column is a level, and so has to be averaged rather than summed."""
     lowered = column.lower()
     if any(word in lowered for word in RATE_NAME_HINTS):
-        # "average selling price" is a level; "sales price total" is not.
         return not any(word in lowered for word in ("total", "sum", "count"))
     return False
 
 
 def natural_aggregation(column: str) -> MeasureAggregation:
-    """How this column adds up, from what its name says it holds."""
     return MeasureAggregation.MEAN if is_rate_like(column) else MeasureAggregation.SUM
 
 
@@ -130,9 +123,6 @@ DATE_NAME_HINTS = (
     "year_month",
     "fiscal",
 )
-#: What a company is actually forecasting. Split by how much the word tells
-#: you: "revenue" names the measure, "total" only says it is a sum of
-#: something, and an invoice line total is not the run's target.
 STRONG_TARGET_HINTS = (
     "revenue",
     "sales",
@@ -141,8 +131,6 @@ STRONG_TARGET_HINTS = (
     "gmv",
     "turnover",
     "billings",
-    # The same word in the languages this is most often deployed in, so a
-    # non-English schema is read rather than fallen back on.
     "umsatz",
     "erlos",
     "ventas",
@@ -158,7 +146,6 @@ STRONG_TARGET_HINTS = (
     "myynti",
 )
 
-#: Real signals, but generic enough that a stronger word should win.
 WEAK_TARGET_HINTS = (
     "amount",
     "value",
@@ -184,9 +171,6 @@ WEAK_TARGET_HINTS = (
 
 TARGET_NAME_HINTS = STRONG_TARGET_HINTS + WEAK_TARGET_HINTS
 
-#: Shortenings that appear in warehouse and ERP schemas and match no hint on
-#: their own. Mapped rather than guessed, because "amt" is not a prefix of
-#: "amount" and no amount of substring matching will find it.
 NAME_ABBREVIATIONS: dict[str, str] = {
     "rev": "revenue",
     "revs": "revenue",
@@ -222,10 +206,6 @@ NAME_ABBREVIATIONS: dict[str, str] = {
     "seg": "segment",
 }
 
-#: How long a column name must be before one typo in it is allowed to match a
-#: hint. Short tokens are one edit from far too much: at four letters "cost"
-#: reaches "cast", "coat" and "cots". Five is where a single edit stops being a
-#: coincidence.
 MIN_FUZZY_LENGTH = 5
 
 DIMENSION_NAME_HINTS = (
@@ -249,24 +229,14 @@ DIMENSION_NAME_HINTS = (
 WEIGHT_NAME_HINTS = ("weight", "units", "quantity", "qty", "volume")
 
 
-#: Column names that say outright the rows hold different measures.
 MEASURE_NAME_HINTS = ("metric", "kpi", "measure", "indicator", "variable", "series")
 
-#: How far apart two groups' typical magnitudes have to be before they are
-#: different quantities rather than slices of one. Revenue against units is
-#: thousands against tens; two sales regions are the same order of magnitude.
 MIXED_MEASURE_RATIO = 50.0
 
-#: Only worth checking a column that could plausibly be a measure label.
 MAX_MEASURE_LABELS = 20
 
-#: A column with more distinct values than this is an identifier, not a
-#: category, however large the file. Grouping by one asks for a forecast per
-#: customer, and the run cap would pool almost all of it into "Others".
 MAX_CATEGORICAL_VALUES = 200
 
-#: Above this many distinct values a categorical column stays selectable but is
-#: no longer auto-assigned as a dimension.
 MAX_AUTO_DIMENSION_VALUES = 60
 
 DATE_FORMATS = (
@@ -299,10 +269,6 @@ class ColumnProfile:
     min_value: str | None
     max_value: str | None
     mean_value: float | None
-    #: Values that were present in the file and could not be read as whatever
-    #: the column turned out to hold. Separate from `null_count`, because a
-    #: blank cell and an unreadable one are different problems: one is missing
-    #: data, the other is a column being read the wrong way.
     unreadable_count: int = 0
     sample_values: list = field(default_factory=list)
     is_date_candidate: bool = False
@@ -312,11 +278,7 @@ class ColumnProfile:
     target_score: float = 0.0
     reason: str = ""
 
-    #: How the raw text was read, when it was not already the right type —
-    #: "currency", "european", "Excel serial", "MM/DD/YYYY" and so on. Shown to
-    #: whoever uploaded the file so a wrong reading is visible before a run.
     parsed_as: str = ""
-    #: Set when day/month order was guessed because the data could not settle it.
     order_ambiguous: bool = False
 
 
@@ -331,18 +293,10 @@ class DatasetProfileResult:
     detected_frequency: ForecastFrequency | None
     preview_rows: list[dict]
     warnings: list[str] = field(default_factory=list)
-    #: The frame with formatted columns replaced by real dates and numbers.
-    #: This is what gets written to Parquet: DuckDB reads that file with
-    #: TRY_CAST, and "$1,234.56" casts to NULL.
     normalised: pl.DataFrame | None = field(default=None, repr=False)
 
 
 def _tokens(name: str) -> set[str]:
-    """The words in a column name, with known shortenings spelled out.
-
-    Warehouse names arrive as fct_order__net_rev_usd, ERPs as NETWR, and a
-    hand-made export as "Net Revenue". All three reduce to the same words.
-    """
     lowered = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
     lowered = re.sub(r"[^a-z0-9]+", " ", lowered.lower()).strip()
     words = {word for word in lowered.split() if word}
@@ -354,8 +308,6 @@ def name_score(name: str, hints: tuple[str, ...]) -> float:
     if tokens & set(hints):
         return 1.0
 
-    # A prefix of at least three letters, so "revenu" finds "revenue" but "y"
-    # does not find everything.
     for token in tokens:
         if len(token) >= 3 and any(hint.startswith(token) for hint in hints):
             return 0.8
@@ -364,13 +316,6 @@ def name_score(name: str, hints: tuple[str, ...]) -> float:
     if any(hint in lowered for hint in hints):
         return 0.6
 
-    # One typo, and only one. Column names in hand-maintained exports are
-    # spelled by people: "reveneu", "unts", "amout" and "sels" all scored zero
-    # here, which is a target column the platform refuses to notice over a
-    # transposition. `_within_one_edit` is deliberately strict — it costs a
-    # tier below substring matching, and it is bounded by a length guard,
-    # because at two edits "sale" reaches "date" and the hint list stops
-    # meaning anything.
     for token in tokens:
         if len(token) >= MIN_FUZZY_LENGTH and any(_within_one_edit(token, hint) for hint in hints):
             return 0.5
@@ -378,13 +323,6 @@ def name_score(name: str, hints: tuple[str, ...]) -> float:
 
 
 def _within_one_edit(token: str, hint: str) -> bool:
-    """Whether one insertion, deletion or substitution turns one into the other.
-
-    Written out rather than reached for from difflib: this runs once per token
-    per hint per column, the hint lists are long, and `SequenceMatcher` is a
-    great deal of machinery for a question that is answered by walking two
-    strings once.
-    """
     if abs(len(token) - len(hint)) > 1:
         return False
     if token == hint:
@@ -398,10 +336,6 @@ def _within_one_edit(token: str, hint: str) -> bool:
         ]
         if len(differing) == 1:
             return True
-        # Two adjacent letters swapped — "reveneu" for "revenue". Levenshtein
-        # counts that as two substitutions and would miss it, and it is the
-        # single most common way a name is mistyped, so it is worth the four
-        # lines that make this Damerau rather than plain edit distance.
         if len(differing) == 2:
             first, second = differing
             return (
@@ -416,7 +350,6 @@ def _within_one_edit(token: str, hint: str) -> bool:
 
 
 def _try_parse_dates(series: pl.Series, *, name_suggests_date: bool = False) -> pl.Series | None:
-    """Back-compat shim: the values only, no parse story."""
     parsed = parse_dates(series, name_suggests_date=name_suggests_date)
     return None if parsed is None else parsed.values
 
@@ -441,9 +374,6 @@ def _classify(
         return ColumnKind.TEXT
 
     distinct = series.n_unique() if distinct_count is None else distinct_count
-    # A share of row count alone makes the ceiling grow with the file: on 200k
-    # rows a fifth is 40,000, which called customer_id a category. The absolute
-    # cap is what stops an identifier being offered as something to group by.
     ceiling = min(max(50, non_null.len() * 0.2), MAX_CATEGORICAL_VALUES)
     if distinct <= ceiling:
         return ColumnKind.CATEGORICAL
@@ -471,20 +401,12 @@ def profile_frame(
     preview_rows: int = 8,
     day_first: bool | None = None,
 ) -> DatasetProfileResult:
-    """Read a frame's schema.
-
-    `day_first` settles slash dates a customer knows the order of and the data
-    does not — pass True for 15/01/2024, False for 01/15/2024. Left as None
-    every column decides for itself and says when it could not.
-    """
     profiles: list[ColumnProfile] = []
     warnings: list[str] = []
     total_missing = 0
 
     parsed_date_columns: dict[str, pl.Series] = {}
 
-    # A planning sheet writes its periods across the top. Those headings are
-    # data, so the table is turned on its side before anything is read from it.
     reshaped = unpivot_periods(frame)
     if reshaped is not None:
         frame, periods = reshaped
@@ -502,9 +424,6 @@ def profile_frame(
         null_count = int(series.null_count())
         distinct_count = int(series.n_unique())
 
-        # The name only ever gates the readings that would otherwise misfire —
-        # a bare 45000 is a date if the column says "date", and a number if it
-        # says "revenue".
         name_suggests_date = name_score(name, DATE_NAME_HINTS) > 0.0
         date_parse = parse_dates(series, day_first=day_first, name_suggests_date=name_suggests_date)
         numeric_parse = None if date_parse is not None else coerce_numeric(series)
@@ -519,10 +438,6 @@ def profile_frame(
         elif numeric_parse is not None and not series.dtype.is_numeric():
             normalised[name] = numeric_parse.values
 
-        # A value that arrived and could not be read is missing. Counting only
-        # the blanks in the raw column reported a date column where a third of
-        # the rows failed to parse as complete, and the rows vanished later
-        # with nothing pointing back to why.
         unreadable = 0
         if name in normalised:
             unreadable = max(0, int(normalised[name].null_count()) - null_count)
@@ -536,7 +451,6 @@ def profile_frame(
             None if numeric_parse is None else numeric_parse.values,
             distinct_count=distinct_count,
         )
-        # Statistics belong to the values, not to the text that encoded them.
         if name in normalised:
             series = normalised[name]
         non_null = series.drop_nulls()
@@ -675,10 +589,6 @@ def profile_frame(
     )
 
 
-#: The score at which a column is a plausible reading of a role rather than a
-#: guess at one. Not a probability — it is the scale `_score_column` builds, and
-#: it is named here so the refusal layer can defer to it instead of inventing a
-#: second threshold that disagrees.
 DATE_CANDIDATE_FLOOR = 0.5
 TARGET_CANDIDATE_FLOOR = 0.4
 
@@ -717,8 +627,6 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
         strong = name_score(profile.name, STRONG_TARGET_HINTS)
         weak = name_score(profile.name, WEAK_TARGET_HINTS)
 
-        # A word that names the measure beats one that only says it is a sum,
-        # so order_revenue wins over line_total instead of losing on file order.
         if strong:
             score += 0.40 * strong
             reasons.append("name states what is being measured")
@@ -750,10 +658,6 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
             score -= 0.2
             reasons.append("sparsely populated")
 
-        # Last resort when everything above ties — which is what happens on a
-        # schema in a language none of the hints cover. A measure moves; a
-        # status flag or a small integer code does not. Deliberately tiny, so
-        # it only ever separates columns nothing else could.
         if row_count and profile.distinct_count > 1:
             score += 0.02 * min(1.0, profile.distinct_count / max(row_count, 1) * 4)
 
@@ -764,14 +668,6 @@ def _score_column(profile: ColumnProfile, row_count: int) -> None:
 
 
 def _mixed_measures(frame: pl.DataFrame, target: str, candidates: list[str]) -> list[str]:
-    """Categorical columns whose groups hold quantities of different sizes.
-
-    Long-format data — date, metric, value — is the shape this catches. It
-    profiles perfectly well: a date column, a category and a number. But the
-    number means revenue on one row and units on the next, and totalling them
-    produces a figure that is not any quantity at all. Nothing downstream can
-    notice, because by then it is just a column of doubles.
-    """
     if target not in frame.columns:
         return []
 
@@ -811,7 +707,6 @@ def _mixed_measures(frame: pl.DataFrame, target: str, candidates: list[str]) -> 
 
 
 def _assign_roles(profiles: list[ColumnProfile]) -> bool:
-    """Give each column its role. Returns True when the target was a fallback."""
     dates = sorted(
         (p for p in profiles if p.is_date_candidate), key=lambda p: p.date_score, reverse=True
     )
@@ -824,15 +719,6 @@ def _assign_roles(profiles: list[ColumnProfile]) -> bool:
 
     fell_back = False
     if not targets:
-        # Nothing cleared the bar, but a column that is flat — a discontinued
-        # line, a product that has not launched — is still the thing being
-        # forecast when it is the only number in the file. Refusing to name a
-        # target here means refusing to run at all.
-        #
-        # It is a guess all the same, and forecasting the wrong column is a
-        # mistake nothing downstream can catch: the run completes, the chart
-        # draws, and the number is of something nobody asked about. So the
-        # caller is told, and says so.
         targets = sorted(
             (p for p in profiles if p.kind is ColumnKind.NUMERIC and p.role is ColumnRole.IGNORED),
             key=lambda p: p.target_score,
@@ -852,9 +738,6 @@ def _assign_roles(profiles: list[ColumnProfile]) -> bool:
         if profile.role is not ColumnRole.IGNORED:
             continue
         if profile.kind is ColumnKind.CATEGORICAL:
-            # Still offered in the grain picker, but not assigned by default:
-            # a column with hundreds of values is a key, and grouping by it
-            # would pool almost every series into "Others".
             if profile.distinct_count <= MAX_AUTO_DIMENSION_VALUES:
                 profile.role = ColumnRole.DIMENSION
         elif profile.kind is ColumnKind.NUMERIC:

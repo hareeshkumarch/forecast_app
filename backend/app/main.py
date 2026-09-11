@@ -91,11 +91,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     yield
 
-    # Readiness goes false before anything is torn down, so the load balancer
-    # stops sending traffic here while the runs already going are given a
-    # chance to land. Without a broker the pool has no durable queue: what is
-    # not finished by the end of the wait comes back as retryable, which is
-    # honest but is still a progress bar that stopped for no visible reason.
     lifecycle.begin_shutdown()
     stranded = await executors.drain(settings.shutdown_drain_seconds)
     if stranded:
@@ -140,18 +135,6 @@ app = FastAPI(
     },
 )
 
-# Order matters and reads backwards: add_middleware prepends, so the last one
-# added is the outermost. RequestContextMiddleware therefore wraps the limiter,
-# which is what lets a 429 carry a request id like every other answer. The
-# limiter in turn wraps routing, so a request over its limit costs a dictionary
-# lookup rather than a database round trip.
-#
-# The concurrency ceiling sits *inside* the rate limiter, which is the order
-# that matters when both would fire. A flood from one client should be refused
-# as that client's flood — counted, logged against its identity, and 429 — not
-# absorbed as anonymous load that then sheds everybody else's requests too.
-# By the time a request reaches the ceiling it has already been established as
-# somebody's fair share, and shedding it means the box genuinely has no room.
 app.add_middleware(
     ConcurrencyLimitMiddleware,
     limit=settings.max_concurrent_requests,
@@ -160,8 +143,6 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware, enabled=settings.rate_limit_enabled)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(CompressExceptStreams)
-# Outermost of the four, so the headers are on every answer this process
-# produces — a 429 from the limiter and a 503 from the ceiling included.
 app.add_middleware(SecurityHeaders)
 app.add_middleware(
     CORSMiddleware,
@@ -169,13 +150,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # A header the browser cannot read is a header the client does not have.
-    # Retry-After is the one that matters: the frontend is served from a
-    # different origin, so without it here every 429 and 503 reaches the client
-    # stripped of the delay it was told to wait, and the retry logic falls back
-    # to guessing — which is the behaviour the header exists to replace. The
-    # RateLimit-* trio is what lets a well-behaved client slow down before it
-    # is refused at all.
     expose_headers=[
         "Content-Disposition",
         "X-Request-ID",
@@ -190,23 +164,10 @@ register_error_handlers(app)
 
 api = APIRouter(prefix="/api")
 
-# Health stays open on purpose: the redeploy script polls it to decide whether
-# what came back up is healthy, and a deployment that cannot answer that
-# question cannot be deployed. It reports posture, never data.
 api.include_router(health.router)
 
-# Everything else is gated at the router, not per endpoint, so a route added
-# later is protected by default rather than by whoever remembers to say so.
-# The rest of the auth router takes the weaker gate on purpose: it has to be
-# able to answer "you are waiting for approval", which a gate that requires
-# approval could never say.
 api.include_router(auth.router, dependencies=[Depends(current_user)])
 
-# `permitted` wraps `approved_user`, so this is still one gate rather than
-# two: being let in at all is checked first, then what this particular
-# request needs. The mapping from route to permission lives in
-# app/core/permissions.py, so a route added later is covered by a table
-# rather than by somebody remembering to decorate it.
 guarded = [Depends(permitted)]
 api.include_router(connectors.router, dependencies=guarded)
 api.include_router(datasets.router, dependencies=guarded)

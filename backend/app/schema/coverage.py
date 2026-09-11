@@ -75,12 +75,6 @@ def coverage_matrix(
     max_series: int = DEFAULT_MAX_SERIES,
     max_periods: int = DEFAULT_MAX_PERIODS,
 ) -> CoverageMatrix:
-    """A series-by-period grid of what the file actually holds.
-
-    Built over the calendar the frequency implies rather than over the periods
-    present, so a month nobody reported is a column with a hole in it instead
-    of a column that silently does not exist.
-    """
     assert_canonical(frame)
 
     matrix = CoverageMatrix(
@@ -121,10 +115,6 @@ def coverage_matrix(
             )
         )
 
-    # When there are more series than the grid can carry, the patchiest are the
-    # ones worth looking at — a page of complete series says nothing. They are
-    # then put back into first-period order, so ragged starts still read as a
-    # staircase rather than as noise.
     if len(rows) > max_series:
         rows.sort(key=lambda row: (-row.gaps, row.series_id))
         rows = rows[:max_series]

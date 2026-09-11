@@ -117,8 +117,6 @@ class Connector(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_connectors_name"),
-        # Named for the column's role rather than its name, which is how 0020
-        # created it across all three owned tables.
         Index("ix_connectors_created_by", "created_by_user_id"),
     )
 
@@ -170,9 +168,6 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     error_message: Mapped[str | None] = mapped_column(Text)
     intake: Mapped[dict] = mapped_column(JSONType, default=dict)
-    #: Who uploaded this, when anybody was signed in. Nullable because every
-    #: row that predates sign-in has no answer, and inventing one would be a
-    #: worse record than admitting the gap.
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("app_users.id", ondelete="SET NULL")
     )
@@ -215,9 +210,6 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mean_value: Mapped[float | None] = mapped_column(Float)
     sample_values: Mapped[list] = mapped_column(JSONType, default=list)
 
-    #: How the raw text was read when it was not already the right type —
-    #: "currency", "european", "MM/DD/YYYY", "Excel serial". Stored so the
-    #: reading a run was built on stays visible after the upload screen.
     parsed_as: Mapped[str | None] = mapped_column(String(40))
 
     is_date_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -233,8 +225,6 @@ class DatasetColumn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ForecastRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "forecast_runs"
 
-    #: Who started this run, when anybody was signed in. Nullable for the same
-    #: reason as on datasets.
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("app_users.id", ondelete="SET NULL")
     )
@@ -487,30 +477,15 @@ class ForecastPoint(UUIDPrimaryKeyMixin, Base):
 
 
 class ActualObservation(UUIDPrimaryKeyMixin, Base):
-    """What a period turned out to be, as read on a particular day.
-
-    A restatement does not overwrite the earlier reading — it adds a row with a
-    later `revised_at`. Both survive, so "what did the model know when it was
-    scored" and "what do we believe now" stay separable questions. Overwriting
-    makes a forecast look better or worse than it was against a number that did
-    not exist when it was issued, and leaves nothing behind to show it.
-
-    Keyed on the series rather than on a run: an actual is a fact about the
-    world, and every run over the same grain is scored against the same one.
-    """
-
     __tablename__ = "actual_observations"
 
     dataset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False
     )
-    #: The grain this observation belongs to, canonicalised. Empty for the
-    #: whole-business total.
     series_key: Mapped[str] = mapped_column(String(600), nullable=False, default="")
     target_date: Mapped[date] = mapped_column(Date, nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     revised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    #: The upload this reading came out of, when it came from one.
     source_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("datasets.id", ondelete="SET NULL")
     )
@@ -598,13 +573,6 @@ class ForecastDriver(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ForecastScenario(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A named, reproducible what-if view over an issued forecast.
-
-    Results are stored with the assumptions so a planning decision does not
-    silently change when the same run is opened later. The source forecast is
-    append-only; scenarios are separate overlays and never mutate it.
-    """
-
     __tablename__ = "forecast_scenarios"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -719,8 +687,6 @@ class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class SchemaMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "schema_mappings"
 
-    #: Sorted column names and dtypes, hashed. The same export run again next
-    #: month arrives with the same fingerprint and is mapped without asking.
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     date_col: Mapped[str] = mapped_column(String(200), nullable=False)
     target_col: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -744,20 +710,8 @@ class SchemaMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Somebody who has signed in, recorded on the way past.
-
-    Deliberately not the authority on identity — Supabase is, and this table
-    holds no password, no token and nothing that could authenticate anybody.
-    It exists so the platform can say who uploaded a file and who started a
-    run, which nothing in the schema could answer before.
-    """
-
     __tablename__ = "app_users"
 
-    #: The `sub` claim: stable for the life of the account, unlike the email.
-    #: Null on an invitation, which exists before the person it names has ever
-    #: signed in — the row is claimed, and the subject filled, the first time
-    #: somebody arrives with that address.
     subject: Mapped[str | None] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     name: Mapped[str | None] = mapped_column(String(200))
@@ -770,13 +724,8 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     role: Mapped[AccessRole] = mapped_column(
         _enum(AccessRole, "access_role"), default=AccessRole.MEMBER, nullable=False
     )
-    #: Who decided, and when. Kept because "why does this person have access?"
-    #: is a question that gets asked months later, and an audit trail nobody
-    #: wrote down is one nobody can answer.
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decided_by: Mapped[str | None] = mapped_column(String(320))
-    #: When the request to approve them was last emailed out, so a reminder can
-    #: be sent without spamming on every page load.
     requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -785,28 +734,14 @@ class AppUser(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("subject", name="uq_app_users_subject"),
         UniqueConstraint("email", name="uq_app_users_email"),
         Index("ix_app_users_email", "email"),
-        # The People page reads by status and by role, and both were indexed
-        # when those columns arrived — 0021 and 0022. Declared here so the
-        # models say what the database actually holds.
         Index("ix_app_users_status", "status"),
         Index("ix_app_users_role", "role"),
     )
 
 
 class MailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Mail written down before it is sent.
-
-    The row goes in inside the same transaction as whatever caused it, so an
-    approval and its email cannot disagree: the decision does not commit
-    without the message, and a rolled-back decision leaves no message behind.
-    Sending then happens on its own, out of the request's way, and a restart
-    mid-flight costs a retry rather than the message.
-    """
-
     __tablename__ = "mail_outbox"
 
-    #: Comma separated, as the header itself is. Every message this platform
-    #: sends today goes to one address or to the administrator list.
     recipients: Mapped[str] = mapped_column(Text, nullable=False)
     subject: Mapped[str] = mapped_column(Text, nullable=False)
     body_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -832,16 +767,6 @@ class MailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class AccessAudit(UUIDPrimaryKeyMixin, Base):
-    """An append-only record of who changed whose access.
-
-    app_users holds `decided_by` and `decided_at`, which is the last thing that
-    happened and nothing before it — the second decision overwrites the first,
-    so "why did this person lose access in March" has no answer.
-
-    The subject's email is copied rather than joined. Removing an account must
-    not turn the record of removing it into a row about nobody.
-    """
-
     __tablename__ = "access_audit"
 
     at: Mapped[datetime] = mapped_column(
@@ -850,8 +775,6 @@ class AccessAudit(UUIDPrimaryKeyMixin, Base):
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     subject_email: Mapped[str] = mapped_column(Text, nullable=False)
     subject_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    #: Null when the platform acted on its own — an invitation claimed, an
-    #: account admitted because it is named in AUTH_ADMIN_EMAILS.
     actor_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 

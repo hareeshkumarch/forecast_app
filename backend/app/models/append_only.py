@@ -44,8 +44,7 @@ FROZEN_COLUMNS: dict[str, frozenset[str]] = {
 NO_INDIVIDUAL_DELETE: frozenset[str] = frozenset(FROZEN_COLUMNS)
 
 
-class AppendOnlyViolation(RuntimeError):
-    """Raised when something tries to rewrite an issued forecast."""
+class AppendOnlyViolation(RuntimeError): ...
 
 
 def _table_of(instance: object) -> str | None:

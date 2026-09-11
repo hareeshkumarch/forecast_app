@@ -392,8 +392,6 @@ def _backtest_interval_caveats(diagnostics: dict[str, object], nominal: float | 
     if nominal is None or not isinstance(check, dict) or not check.get("measured"):
         return []
 
-    # Per-horizon shares rest on a handful of origins each; the pooled one is
-    # the figure with enough behind it to say out loud.
     if check.get("served_pooled_holds"):
         return []
 

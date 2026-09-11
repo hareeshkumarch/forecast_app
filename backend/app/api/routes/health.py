@@ -32,20 +32,11 @@ router = APIRouter(tags=["health"])
 
 
 class ModelCapabilityRead(BaseModel):
-    """One model kind, and whether this deployment can fit it.
-
-    Deliberately without the availability record's `operator_hint`. That field
-    carries exception text and absolute paths from inside the container, and
-    this response is served to any browser that can reach the distribution —
-    the hint goes to the logs, where the person who can act on it is looking.
-    """
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     model: ModelKind
     label: Annotated[str, Field(min_length=1)]
     available: bool
-    #: Present only when `available` is false. Safe to render to a user.
     reason: str | None = None
 
 
@@ -61,15 +52,6 @@ class CapabilitiesResponse(BaseModel):
 
 
 class FeaturesResponse(BaseModel):
-    """What this backend serves, in a few bytes.
-
-    The frontend used to answer this by fetching /openapi.json — 158 KB and
-    over a second on a phone, once per session, to learn two booleans. The
-    document is still the fallback, because it is the only source that is true
-    of a backend older than the frontend asking; this is the fast path for the
-    usual case where they match.
-    """
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     series_status_filter: bool = True
@@ -79,21 +61,15 @@ class FeaturesResponse(BaseModel):
 
 
 class DependencyRead(BaseModel):
-    """One outbound dependency and whether calls to it are getting through."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: Annotated[str, Field(min_length=1)]
     state: Literal["closed", "half_open", "open"]
     consecutive_failures: Annotated[int, Field(ge=0)]
-    #: Seconds until the breaker will let one trial call through. 0 when it is
-    #: not open.
     retry_after_seconds: Annotated[int, Field(ge=0)]
 
 
 class CacheRead(BaseModel):
-    """One read-through cache, as it stands in this process."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: Annotated[str, Field(min_length=1)]
@@ -121,26 +97,12 @@ class HealthResponse(BaseModel):
     queued_forecast_runs: Annotated[int, Field(ge=0)]
     running_forecast_runs: Annotated[int, Field(ge=0)]
     failed_forecast_runs: Annotated[int, Field(ge=0)]
-    #: Model kinds this deployment cannot fit — empty on a complete install.
-    #: Here so that one `curl /api/health` answers "is Prophet live on this
-    #: box?", which otherwise takes a shell on the instance to find out.
     unavailable_models: tuple[ModelKind, ...]
-    #: Whether sign-in is being enforced, and where configuration came from.
-    #: Posture, never data: it says a gate exists, not who is behind it.
     auth_enabled: bool
     auth_requires_approval: bool
     secrets_source: str
-    #: Outbound dependencies, by the state of the breaker in front of each.
-    #: Reported, never folded into `status` — see the property below.
     dependencies: tuple[DependencyRead, ...] = ()
-    #: The read-through caches in this process. Operational, not diagnostic:
-    #: a hit ratio that has collapsed is how you find out that something is
-    #: writing to the runs on every request.
     caches: tuple[CacheRead, ...] = ()
-    #: Live event-stream connections this process is holding, against its
-    #: ceiling. Streams are exempt from the concurrency limit, so this is the
-    #: only place the number shows up — and a figure sitting at the ceiling is
-    #: how a deployment finds out its clients are reconnecting in a loop.
     open_streams: Annotated[int, Field(ge=0)] = 0
     max_streams: Annotated[int, Field(ge=1)] = 1
     timestamp: Annotated[str, Field(min_length=1)]
@@ -150,17 +112,8 @@ class HealthResponse(BaseModel):
     def status(self) -> Literal["ok", "degraded"]:
         if self.database != "ok" or not self.storage_writable:
             return "degraded"
-        # Serving from the fallback while Supabase is configured is working,
-        # but not what the deployment asked for.
         if self.supabase_configured and self.database_target != "supabase":
             return "degraded"
-        # A tripped breaker is deliberately *not* degraded. This field is what
-        # the load balancer reads, and the only dependency behind a breaker
-        # today is the optional model provider that rewrites insight wording.
-        # Pulling an instance out of service because an optional nicety is
-        # unreachable would turn somebody else's outage into ours, at the
-        # moment the remaining instances can least afford it. The state is
-        # reported in `dependencies` for the person who wants to know.
         return "ok"
 
 
@@ -176,8 +129,6 @@ def _probe_storage() -> bool:
 
 
 async def _capabilities() -> CapabilitiesResponse:
-    # The probe shells out and imports Prophet, so it is slow exactly once per
-    # process and instant after that. Off the event loop either way.
     statuses = {
         row.model: row for row in await asyncio.to_thread(availability.optional_model_status)
     }
@@ -187,9 +138,6 @@ async def _capabilities() -> CapabilitiesResponse:
             ModelCapabilityRead(
                 model=kind,
                 label=label_for(kind),
-                # Anything the probe does not speak about is a model that is
-                # always compiled in — statsmodels and scikit-learn are hard
-                # requirements, so those kinds cannot be missing.
                 available=statuses[kind.value].available if kind.value in statuses else True,
                 reason=statuses[kind.value].reason if kind.value in statuses else None,
             )
@@ -204,21 +152,11 @@ async def _capabilities() -> CapabilitiesResponse:
     summary="Which models this deployment can fit",
 )
 async def capabilities() -> CapabilitiesResponse:
-    """The model roster, as this particular server can actually run it.
-
-    The picker in the forecast dialog is built from this rather than from a
-    list compiled into the frontend. A hardcoded roster offers Prophet on a
-    deployment that has no Prophet, and the user finds out after waiting for
-    a run that comes back with one dead candidate in it.
-    """
     return await _capabilities()
 
 
 class ReadyRead(StrictModel):
-    """Should this process be sent traffic right now."""
-
     ready: bool
-    #: Forecast runs still finishing while the process drains.
     finishing: NonNegativeInt
     draining_seconds: float
 
@@ -319,9 +257,6 @@ async def health(session: SessionDep) -> HealthResponse:
     ),
 )
 async def get_features() -> FeaturesResponse:
-    # Every field defaults true. A deployment serving this endpoint at all is
-    # new enough to have the features it describes — the version that lacked
-    # them also lacks this route, which is what the fallback is for.
     return FeaturesResponse()
 
 
@@ -332,15 +267,6 @@ class TableUsageRead(StrictModel):
 
 
 class StorageRead(StrictModel):
-    """What has been stored, and what the retention policy would do about it.
-
-    Behind the metrics token for the same reason the metrics are: row counts
-    say how much a deployment has done, which is more than posture. The
-    numbers are what any decision about retention has to start from — nothing
-    in the platform used to delete anything, and the store of record has a
-    ceiling.
-    """
-
     total_bytes: NonNegativeInt | None
     total_rows: NonNegativeInt
     tables: tuple[TableUsageRead, ...]
@@ -348,7 +274,6 @@ class StorageRead(StrictModel):
     retention_enabled: bool
     retention_keep_runs: NonNegativeInt
     retention_older_than_days: NonNegativeInt
-    #: Runs the next pass would remove, were retention on.
     prunable_runs: NonNegativeInt
 
 
@@ -384,26 +309,10 @@ async def storage(
     )
 
 
-#: Prometheus' text exposition content type. The version parameter is part of
-#: the contract, not decoration: a scraper uses it to decide how to parse.
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
 def _scrape_permitted(authorization: str | None) -> bool:
-    """Whether this scrape may read the metrics.
-
-    A configured token is required whenever there is one. With none set, the
-    answer depends on where this is running: open outside production, because
-    the alternative is a developer needing a secret to look at their own
-    counters and nothing on a laptop is worth protecting from the laptop —
-    and refused in production, because an unset token there is a mistake, not
-    a decision. The startup log says so when that happens; the endpoint does
-    not quietly serve the route and error profile of a deployment on the
-    internet while somebody gets round to it.
-
-    `compare_digest` rather than `==` so the check does not leak the token one
-    character at a time to somebody willing to measure.
-    """
     if not settings.metrics_token:
         return settings.environment != "production"
 
@@ -429,18 +338,6 @@ async def prometheus_metrics(
     session: SessionDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
-    """What this process has measured since it started.
-
-    Not in the OpenAPI document, and not JSON: this is for a scraper, and the
-    frontend has no use for it. Under `/api/health` so it inherits that
-    prefix's exemption from rate limiting — a scrape every fifteen seconds
-    would otherwise spend an allowance sized for a person clicking.
-
-    404 rather than 403 when metrics are switched off. There is nothing here
-    to be coy about, but an endpoint that answers "forbidden" has confirmed it
-    exists, and a deployment that has turned this off has said it does not
-    want to be asked.
-    """
     if not settings.metrics_enabled:
         raise NotFoundError("This deployment does not serve metrics.")
     if not _scrape_permitted(authorization):
@@ -448,25 +345,10 @@ async def prometheus_metrics(
 
     await _refresh_storage_gauges(session)
 
-    # This request is counted like any other, and worth saying why that is
-    # harmless: the middleware measures it on the way out, after this body has
-    # rendered, so a scrape never appears in its own output. It turns up in
-    # the next one, which is what a scraper expects.
     return Response(content=metrics.registry.render(), media_type=PROMETHEUS_CONTENT_TYPE)
 
 
 async def _refresh_storage_gauges(session: SessionDep) -> None:
-    """Table sizes, read on scrape rather than kept up to date continuously.
-
-    They only move when a run lands, and a counter maintained at write time is
-    a second place for the number to be wrong. `measure` caches for a minute,
-    so a scrape every fifteen seconds walks the catalogue once in four.
-
-    Never allowed to fail the scrape. Everything else in this response is a
-    process counter that cannot go wrong; this one asks the database, and a
-    database having a bad moment must not also take away the metrics somebody
-    is using to find out why.
-    """
     try:
         usage = await capacity_service.measure(session)
     except Exception:

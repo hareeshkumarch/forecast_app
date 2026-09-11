@@ -32,12 +32,6 @@ class SeriesProfile:
     seasonal_scores: dict[int, float]
     trend_strength: float
     strictly_positive: bool
-    #: Every observation is at or above zero. Distinct from
-    #: `strictly_positive`, which a single legitimate zero turns off — and the
-    #: two answer different questions. Log-space error metrics need only this
-    #: one, and the demand classification means nothing without it: a series
-    #: that swings either side of zero has no "periods with no demand" to
-    #: count, so its interval and its CV² describe something else entirely.
     non_negative: bool
     zero_share: float
     intermittent: bool
@@ -469,17 +463,6 @@ MIN_CHANGEPOINT_HISTORY = 16
 
 
 def detect_changepoints(values: FloatArray) -> list[int]:
-    """Indices where the level of a history steps onto a new plateau.
-
-    Each candidate split is measured against the spread *within* the two halves
-    it creates, never against the spread of the series as a whole: the break
-    itself inflates the latter, so scoring against it makes a bigger step
-    harder to find rather than easier — the opposite of what is wanted.
-
-    This is a single-split scan, so on a history that steps twice it names the
-    larger of the two rather than both. Recursing into the halves would find
-    the rest; nothing here needs that yet.
-    """
     finite = values[np.isfinite(values)]
     n = int(finite.size)
     if n < MIN_CHANGEPOINT_HISTORY:
@@ -489,8 +472,6 @@ def detect_changepoints(values: FloatArray) -> list[int]:
     if n - window <= window:
         return []
 
-    # Prefix sums, so each candidate's segment mean and variance cost O(1)
-    # rather than re-averaging both halves at every index.
     running = np.concatenate([[0.0], np.cumsum(finite)])
     running_sq = np.concatenate([[0.0], np.cumsum(finite * finite)])
 
@@ -507,7 +488,6 @@ def detect_changepoints(values: FloatArray) -> list[int]:
 
         within = float(np.sqrt((left_var * left_n + right_var * right_n) / n))
         if within <= 0.0:
-            # Two perfectly flat plateaus: any difference at all is the break.
             if left_mean != right_mean:
                 found.append((index, float("inf")))
             continue
@@ -519,9 +499,6 @@ def detect_changepoints(values: FloatArray) -> list[int]:
     if not found:
         return []
 
-    # One break makes its neighbours look like breaks too. Collapse each run of
-    # adjacent candidates to the index that scored highest, so the answer names
-    # where the level actually moved rather than where the evidence started.
     clusters: list[list[tuple[int, float]]] = [[found[0]]]
     for candidate in found[1:]:
         if candidate[0] - clusters[-1][-1][0] < window:

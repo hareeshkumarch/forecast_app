@@ -166,10 +166,6 @@ async def create_from_upload(
             " ".join(verdict.refusals), detail={"intake": intake_payload(verdict)}
         )
 
-    # Only now, past the refusal gate. A refused upload is deleted a few lines
-    # up, and archiving one would leave a copy of a file the platform decided
-    # it could not read. Best-effort: the local file is what the run reads, so
-    # an unreachable bucket must not fail an otherwise good upload.
     await object_store.archive_upload(ingested.raw_path, f"uploads/{ingested.raw_path.name}")
 
     parquet_path = await asyncio.to_thread(write_parquet, readable, str(dataset_id))
@@ -261,12 +257,6 @@ async def create_from_frame(
 async def _mapped_columns(
     session: AsyncSession, profile: DatasetProfileResult, frame: pl.DataFrame
 ) -> tuple[str | None, str | None, ForecastFrequency | None]:
-    """The columns to run on: the ones accepted for this schema before, if any.
-
-    A file whose column names and types have been mapped once is mapped that
-    way again, rather than re-inferred and possibly read differently on the
-    second upload of the same monthly export.
-    """
     from app.services import mapping_service
 
     inferred = (
@@ -279,9 +269,6 @@ async def _mapped_columns(
     if remembered is None:
         return inferred
 
-    # `recall` has already checked that the columns it names are in this file
-    # and handed them back under this file's spelling, so there is nothing to
-    # re-verify here.
     fields = remembered.fields
     return (
         str(fields["date_col"]),

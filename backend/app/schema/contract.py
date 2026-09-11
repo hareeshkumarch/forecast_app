@@ -27,18 +27,10 @@ ROLE_DIMENSION = "dimension"
 ROLE_COVARIATE = "covariate"
 ROLE_IGNORE = "ignore"
 
-#: Below this a proposal is put to the user rather than acted on. It is the
-#: floor the refusal layer already uses for a target column, so one file cannot
-#: be confident enough to run and not confident enough to ingest.
 CONFIDENCE_FLOOR = 0.55
 
-#: How far ahead of the runner-up a column has to score before the choice is
-#: made without asking.
 MIN_MARGIN = 0.12
 
-#: Warnings that stand in the way of running. A high score on a column that a
-#: second column matches is still a guess, and a guess about what is being
-#: forecast is not one to make silently.
 BLOCKING_WARNINGS = frozenset(
     {
         "contested_date",

@@ -196,22 +196,16 @@ class RetentionCandidateRead(StrictModel):
 
 
 class RetentionRead(StrictModel):
-    """What the platform would forget, or has just forgotten."""
-
     enabled: bool
     keep_runs: int
     older_than_days: int
     runs: list[RetentionCandidateRead]
-    #: Past the limits and waiting for a later pass, so a large backlog is
-    #: visible as a backlog rather than as a policy that is not working.
     remaining: int
-    #: Run id to the reason it was left alone. The answer to "why is that one
-    #: still here" without reading the code.
     protected: dict[str, str]
 
 
 def _retention(result: object) -> RetentionRead:
-    plan = result  # typed loosely so both plan() and sweep() land here
+    plan = result
     return RetentionRead(
         enabled=plan.enabled,  # type: ignore[attr-defined]
         keep_runs=plan.keep_runs,  # type: ignore[attr-defined]
@@ -623,8 +617,6 @@ async def stream_events(
     user: CurrentUser,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
-    # Admitted first: a client already holding as many streams as it may should
-    # cost a dictionary lookup rather than a run lookup it will not be shown.
     with streams.leased(request, None if user.is_anonymous else user.id, "forecast") as lease:
         return await _progress_stream(run_id, last_event_id, lease)
 
@@ -637,9 +629,6 @@ async def _progress_stream(
         initial = await _current_progress(run)
         terminal = initial.status in (RunStatus.COMPLETED, RunStatus.FAILED)
 
-    # A browser reconnecting replays the id of the last frame it saw. Sending
-    # the same frame back would re-fire the completion toast on a run the user
-    # was already told about.
     seen = _parse_event_id(last_event_id)
 
     async def event_source() -> AsyncIterator[bytes]:
@@ -709,9 +698,6 @@ def _parse_event_id(raw: str | None) -> datetime | None:
 
 
 async def _current_progress(run: ForecastRun) -> ProgressEvent:
-    # The position is read live rather than from the row: a page loaded while a
-    # run waits should show where it is now, not where it was when the wait
-    # started. Only the frame the stream sends carries the number otherwise.
     database = ProgressEvent(
         run_id=run.id,
         status=run.status,

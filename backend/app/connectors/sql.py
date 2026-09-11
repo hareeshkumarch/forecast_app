@@ -235,18 +235,11 @@ class SqlServerAdapter(SqlAdapter):
         return f"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY"
 
 
-#: Quoted text and comments are carved out before the query is searched for
-#: statements, so a keyword that is only ever part of a value or an identifier
-#: does not refuse an import that was always a read.
 _QUOTED_OR_COMMENT = re.compile(
     r"'(?:[^']|'')*'" r"|\"(?:[^\"]|\"\")*\"" r"|`(?:[^`]|``)*`" r"|--[^\n]*" r"|/\*.*?\*/",
     re.DOTALL,
 )
 
-#: Matched on word boundaries rather than by padding the query with spaces.
-#: The keyword only had to follow a literal space to be missed, so a bracket
-#: or a newline in front of it — `with x as (delete ... returning 1) select` —
-#: walked a write straight through a filter that only reads are meant to pass.
 _WRITE_STATEMENT = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|call|merge|into)\b"
 )

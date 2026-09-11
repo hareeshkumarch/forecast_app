@@ -28,10 +28,6 @@ from app.schemas.common import (
     StrictModel,
 )
 
-#: What a caller may weigh model selection by. sMAPE is deliberately absent:
-#: it is undefined wherever an actual and its forecast are both zero, so on
-#: intermittent demand it scores only the weeks that had sales and ranks
-#: candidates on that slice. It is still reported; it just cannot decide.
 SCORABLE_METRICS = frozenset({"wmape", "mase", "rmse", "mae"})
 
 
@@ -64,9 +60,6 @@ class ForecastRunRequest(StrictModel):
     frequency: ForecastFrequency | None = None
     horizon: Horizon | None = None
     confidence_level: Probability = 0.8
-    #: Left unset, the run picks the reducer that suits the target — summing a
-    #: price or a conversion rate gives a number that grows with the row count.
-    #: Set explicitly, what was asked for is what runs.
     aggregation: MeasureAggregation | None = None
     gap_fill: GapFill = GapFill.AUTO
     outlier_treatment: OutlierTreatment = OutlierTreatment.NONE
@@ -271,8 +264,6 @@ class SeriesScoreRow(BaseModel):
 
 
 class MetricWithheldRead(BaseModel):
-    """A metric this series cannot carry, and the reason it cannot."""
-
     model_config = ConfigDict(extra="forbid")
 
     name: str
@@ -280,8 +271,6 @@ class MetricWithheldRead(BaseModel):
 
 
 class MetricPlanRead(BaseModel):
-    """Which metrics the data itself supports, and which one leads."""
-
     model_config = ConfigDict(extra="forbid")
 
     demand_class: str
@@ -312,16 +301,12 @@ class ResidualBucketRead(BaseModel):
 
 
 class DiagnosticResponse(BaseModel):
-    """How the forecast is wrong, not only how much."""
-
     model_config = ConfigDict(extra="forbid")
 
     run_id: uuid.UUID
     series_id: uuid.UUID | None
     frequency: ForecastFrequency
     plan: MetricPlanRead
-    #: Only the metrics the plan admits. A withheld metric is absent here
-    #: rather than present and null: it was never computed.
     scored: dict[str, float | None]
     residuals: list[ResidualRead]
     histogram: list[ResidualBucketRead]
@@ -353,11 +338,7 @@ class ScorecardResponse(BaseModel):
     unforecast_keys: NonNegativeInt
     currency: bool
     blocked_reason: str | None
-    #: Readings this run was scored against that have since been restated. The
-    #: score stands as measured; this says the world moved under it.
     restated_since_scoring: NonNegativeInt = 0
-    #: Cumulative error in mean absolute deviations. Near zero the misses cancel;
-    #: a large value means the run missed the same way every period.
     tracking_signal: float | None = None
     drifted: bool = False
     series: list[SeriesScoreRow] = Field(default_factory=list)
@@ -503,9 +484,6 @@ class ForecastProgressEvent(BaseModel):
     message: str | None = None
     selected_model: ModelKind | None = None
     error: str | None = None
-    #: Pieces of work ahead of this run in the model-fitting queue while it is
-    #: waiting for a worker; null when it is not waiting. A number rather than
-    #: prose, so a client can show a queue instead of parsing a sentence.
     queue_ahead: NonNegativeInt | None = None
     updated_at: datetime
 
@@ -521,8 +499,6 @@ DriverMultiplier = Annotated[float, Field(ge=0.1, le=10.0)]
 class WhatIfSimulationRequest(StrictModel):
     volume_multiplier: float = Field(default=1.0, ge=0.1, le=10.0)
     target_shift_pct: float = Field(default=0.0, ge=-90.0, le=1000.0)
-    # Bounded like volume_multiplier: an unbounded dict lets a request overflow the
-    # forecast to inf, which is not representable in the response.
     driver_multipliers: dict[str, DriverMultiplier] = Field(default_factory=dict, max_length=50)
 
 
@@ -553,12 +529,7 @@ class WhatIfSimulationResponse(BaseModel):
     total_delta_pct: float
     simulated_best_case_total: float
     simulated_worst_case_total: float
-    #: What this simulation is, so nobody reads it as a refit. The run is
-    #: re-priced under the assumption; the model is not fitted again against
-    #: it, because the history under the new assumption does not exist.
     method: str
-    #: How far outside the measured scenario the assumption sits, as the
-    #: fraction the total was moved by. The bands widen with it.
     intervention_size: float
     points: list[PointSimulationResult]
 
@@ -645,24 +616,13 @@ class QueuedRunRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str
-    #: Pool workers this run currently occupies.
     running: NonNegativeInt
-    #: Pieces of its work still waiting for one.
     waiting: NonNegativeInt
-    #: How much work from other runs is ahead of it. Zero means next.
     ahead: NonNegativeInt
     waiting_seconds: float | None
 
 
 class ForecastQueueRead(BaseModel):
-    """What the model-fitting pool is doing right now.
-
-    The answer to "why has the fourth run not started". Model fitting is the
-    only part of a run that needs a whole core, so there are `workers` of them
-    and everything else waits — which is a queue, not slowness, and the two
-    are indistinguishable without this.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     workers: NonNegativeInt

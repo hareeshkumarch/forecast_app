@@ -16,13 +16,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     app_name: str = "Forecasting Platform"
-    #: This build. It is the API's advertised version, and it is mixed into
-    #: every cache validator (see app/core/httpcache.py) so that a release
-    #: invalidates each client's stored copy exactly once. A response whose
-    #: *shape* changed is caught automatically; one where the same shape
-    #: carries a different number — a fixed aggregate, a changed rounding —
-    #: has no automatic signal, and this is it. A deployment that stamps its
-    #: build id here gets that for free on every deploy.
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     environment: Literal["development", "test", "production"] = Field(
         default="development", alias="APP_ENV"
@@ -30,8 +23,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["text", "json"] = "text"
 
-    # Supabase is the platform's store of record. `database_url` is what it
-    # falls back to when Supabase is not configured or cannot be reached.
     supabase_db_url: str = ""
     supabase_url: str = ""
     supabase_db_password: str = ""
@@ -49,55 +40,21 @@ class Settings(BaseSettings):
 
     storage_root: Path = Path("./storage")
 
-    # ---- Off-box archival of uploads --------------------------------------
-    #: A Supabase Storage bucket that finished uploads are copied into. Left
-    #: empty the copy is skipped entirely and everything stays on local disk,
-    #: which is the single-node default. This is a backup of the one artifact
-    #: that cannot be regenerated, not a relocation of the read path — see
-    #: app/core/object_store.py.
     storage_bucket: str = Field(default="", alias="STORAGE_BUCKET")
-    #: Supabase exposes an S3-compatible endpoint per project, of the form
-    #: https://<ref>.storage.supabase.co/storage/v1/s3. Any other
-    #: S3-compatible endpoint works here too, real S3 included.
     storage_endpoint: str = Field(default="", alias="STORAGE_ENDPOINT")
-    #: A storage-scoped S3 access key, from Supabase's Project Settings ->
-    #: Storage. Deliberately not the service role key: that one bypasses
-    #: row-level security across the whole database, where this needs only
-    #: "may write one bucket".
     storage_access_key_id: str = Field(default="", alias="STORAGE_ACCESS_KEY_ID")
     storage_secret_access_key: str = Field(default="", alias="STORAGE_SECRET_ACCESS_KEY")
-    #: Supabase reports the project's region; SigV4 needs it to match.
     storage_region: str = Field(default="ap-south-1", alias="STORAGE_REGION")
 
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
-    # ---- Authentication ----------------------------------------------------
-    #: Off by default, and deliberately. Auth cannot work until the Supabase
-    #: Google provider is configured and the keys are in the environment, so a
-    #: deployment that turned it on by default would answer 401 to everything
-    #: the moment it shipped. Turn it on once sign-in has been proven to work.
     auth_enabled: bool = Field(default=False, alias="AUTH_ENABLED")
-    #: Supabase projects sign either with the project's shared secret (HS256)
-    #: or with a rotating key pair published as JWKS. Which one a project uses
-    #: depends on when it was created, so both are supported and the token's
-    #: own header decides. Set this only if the project signs with HS256.
     supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
-    #: Empty means any Google account. Set to "company.com" to admit only that
-    #: domain — the check is on the verified email in the token, server side.
     auth_allowed_email_domains_raw: str = Field(default="", alias="AUTH_ALLOWED_EMAIL_DOMAINS")
-    #: Individual addresses admitted whatever the domain rule says.
     auth_allowlist_raw: str = Field(default="", alias="AUTH_ALLOWLIST")
-    #: Who is told when somebody new signs in, and who may approve them. These
-    #: accounts are approved on sight — without that the first administrator
-    #: would be waiting on themselves for access.
     auth_admin_emails_raw: str = Field(default="", alias="AUTH_ADMIN_EMAILS")
-    #: Off means anyone who can sign in is in. On means a new account waits for
-    #: an administrator, which is the point of the approval mail.
     auth_require_approval: bool = Field(default=True, alias="AUTH_REQUIRE_APPROVAL")
 
-    # ---- Outbound email ----------------------------------------------------
-    # Plain SMTP rather than a provider SDK, so this works on a Gmail app
-    # password, a Brevo free tier or a paid service without a code change.
     smtp_host: str = Field(default="", alias="SMTP_HOST")
     smtp_port: int = Field(default=587, alias="SMTP_PORT")
     smtp_username: str = Field(default="", alias="SMTP_USERNAME")
@@ -105,153 +62,51 @@ class Settings(BaseSettings):
     smtp_from: str = Field(default="", alias="SMTP_FROM")
     smtp_starttls: bool = Field(default=True, alias="SMTP_STARTTLS")
     smtp_timeout_seconds: float = Field(default=15.0, gt=0.0)
-    #: Where the approve/reject links point. The API's own address, reachable
-    #: from wherever the administrator opens their mail.
     public_api_base_url: str = Field(default="", alias="PUBLIC_API_BASE_URL")
 
-    # ---- Database ----------------------------------------------------------
-    #: How long one statement may run before the driver cancels it. A query
-    #: with nothing to stop it holds a pooled connection for as long as it
-    #: takes, and there are ten of those: the concurrency ceiling sheds new
-    #: requests, but nothing at all interrupts work already in flight. Long
-    #: enough that no dashboard read comes close, short enough that a runaway
-    #: aggregate frees its connection while somebody is still waiting.
-    #:
-    #: Reads only — see `db_write_timeout_seconds`. Zero switches it off.
     db_statement_timeout_seconds: float = Field(
         default=30.0, ge=0.0, le=3600.0, alias="DB_STATEMENT_TIMEOUT_SECONDS"
     )
-    #: The same for the sessions that persist a run. A grouped forecast writes
-    #: one row per period per series per kind — tens of thousands — and that is
-    #: slow on purpose rather than stuck. Sharing the read timeout would abort
-    #: exactly the runs worth keeping.
     db_write_timeout_seconds: float = Field(
         default=300.0, ge=0.0, le=7200.0, alias="DB_WRITE_TIMEOUT_SECONDS"
     )
 
-    #: Off is for a load test or a local script, never for a deployment facing
-    #: the internet. The limits themselves live in app/core/ratelimit.py, where
-    #: each one carries the reason it is the number it is.
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
-    #: How many proxies of this deployment's own sit in front of the API. The
-    #: entry that many places from the *right* of X-Forwarded-For is the client;
-    #: everything to its left was written by whoever called the outermost proxy,
-    #: which includes the caller. One is right for CloudFront alone.
     rate_limit_trusted_proxy_hops: int = Field(
         default=1, ge=1, le=8, alias="RATE_LIMIT_TRUSTED_PROXY_HOPS"
     )
-    #: Addresses or CIDR ranges whose forwarding headers are believed. Empty
-    #: believes them from anywhere, which is only safe where nothing can reach
-    #: the API except through the proxy. Set this the day the origin is exposed:
-    #: a request from anywhere else is then counted against its own socket
-    #: address, which is the one thing a caller cannot choose.
     rate_limit_trusted_proxies_raw: str = Field(default="", alias="RATE_LIMIT_TRUSTED_PROXIES")
 
-    # ---- Load shedding -----------------------------------------------------
-    #: Requests this process will have in flight before it starts refusing.
-    #: A ceiling is not a limit on how fast the box goes — it is what keeps a
-    #: burst from turning into a queue nobody is still waiting on. Past this,
-    #: every request is slower than the timeout of the client that sent it, so
-    #: answering 503 immediately is strictly better than answering slowly.
-    #: Sized for two vCPUs with async I/O: enough concurrency to keep the
-    #: event loop fed while the database is answering, well short of the depth
-    #: at which memory becomes the problem.
     max_concurrent_requests: int = Field(default=64, ge=1, le=4096, alias="MAX_CONCURRENT_REQUESTS")
-    #: Off switches shedding entirely, for a load test that wants to find the
-    #: real ceiling rather than the configured one.
     load_shedding_enabled: bool = Field(default=True, alias="LOAD_SHEDDING_ENABLED")
 
-    # ---- Live streams ------------------------------------------------------
-    #: Server-Sent Events connections one account (or one address, without
-    #: sign-in) may hold at once. A tab holds one for access changes and a
-    #: second while a forecast runs, so this is four tabs' worth. Past it the
-    #: page keeps working: the client falls back to polling.
     sse_max_streams_per_client: int = Field(
         default=8, ge=1, le=256, alias="SSE_MAX_STREAMS_PER_CLIENT"
     )
-    #: And across everybody. Streams are exempt from the concurrency ceiling
-    #: because they are held rather than served, so this is the only thing
-    #: standing between an open socket per tab and an open socket per attempt.
     sse_max_streams_total: int = Field(default=256, ge=1, le=10_000, alias="SSE_MAX_STREAMS_TOTAL")
-    #: How long one connection is held before it is closed and the browser
-    #: reconnects. Long enough that nobody sees it, short enough that a
-    #: forgotten tab does not hold a socket for a week.
     sse_max_lifetime_seconds: float = Field(
         default=1_800.0, ge=30.0, le=86_400.0, alias="SSE_MAX_LIFETIME_SECONDS"
     )
-    #: The reconnect delay this server asks browsers to use. EventSource's own
-    #: default is three seconds, which after a restart is every tab at once.
     sse_retry_hint_ms: int = Field(default=5_000, ge=500, le=120_000, alias="SSE_RETRY_HINT_MS")
-    #: What a refused stream is told to wait.
     sse_retry_after_seconds: int = Field(
         default=15, ge=1, le=3_600, alias="SSE_RETRY_AFTER_SECONDS"
     )
 
-    # ---- Shutdown ----------------------------------------------------------
-    #: How long a redeploy waits for the forecasts already running to finish.
-    #: Without a broker the pool has no durable queue, so a restart used to
-    #: fail every in-flight run outright — clean and retryable, but somebody is
-    #: watching a progress bar that stops. Most runs are about a minute, so
-    #: most of them now land. Zero restores the old behaviour.
-    #:
-    #: The instance is behind a load balancer that stops sending traffic when
-    #: readiness goes false, which is what makes the wait free: nothing new
-    #: arrives during it.
-    #: Sized to fit inside the container's stop grace period, which in turn
-    #: fits inside systemd's default TimeoutStopSec of 90s. Raise this and both
-    #: of those have to be raised with it, or the drain is killed part-way
-    #: through and buys nothing.
     shutdown_drain_seconds: float = Field(
         default=45.0, ge=0.0, le=1800.0, alias="SHUTDOWN_DRAIN_SECONDS"
     )
 
-    # ---- Retention ---------------------------------------------------------
-    #: Off. Nothing is deleted until somebody says so, and this is that
-    #: somebody — a platform that prunes forecast history by default is one
-    #: that loses the record of what was claimed and when, which is the thing
-    #: the append-only guard exists to protect.
-    #:
-    #: On, with the two limits below, the sweeper removes completed and failed
-    #: runs that are past both. It never touches a run that is still going, the
-    #: latest completed run (the dashboard reads it), or one a saved scenario
-    #: refers to.
     retention_enabled: bool = Field(default=False, alias="RETENTION_ENABLED")
-    #: Runs older than this may go. Zero means age is not a reason on its own.
     retention_run_days: int = Field(default=90, ge=0, le=3650, alias="RETENTION_RUN_DAYS")
-    #: However old they are, this many of the most recent stay. The floor under
-    #: the age rule: a deployment that has not run a forecast in four months
-    #: should come back to its history, not to an empty dashboard.
     retention_keep_runs: int = Field(default=20, ge=1, le=10_000, alias="RETENTION_KEEP_RUNS")
-    #: How often the sweeper looks. It holds no lock, so a second instance
-    #: would sweep too — harmless, because deleting an already-deleted run is
-    #: a no-op, and each pass is bounded by the batch below.
     retention_interval_seconds: float = Field(
         default=3_600.0, ge=60.0, le=86_400.0, alias="RETENTION_INTERVAL_SECONDS"
     )
-    #: Runs removed in one pass. A cap rather than a target: deleting a grouped
-    #: run is tens of thousands of rows, and a sweeper that takes the database
-    #: away for a minute has traded one outage for another.
     retention_batch: int = Field(default=10, ge=1, le=1_000, alias="RETENTION_BATCH")
 
-    # ---- Metrics -----------------------------------------------------------
-    #: Serves /api/health/metrics in Prometheus' text format.
     metrics_enabled: bool = Field(default=True, alias="METRICS_ENABLED")
-    #: A bearer token the scraper must present. Metrics say more than health
-    #: does — which routes exist, how much traffic each takes, how often each
-    #: fails — so in production the endpoint answers nothing without one: an
-    #: unset token there refuses every scrape rather than serving them openly.
-    #:
-    #: Refusing to *boot* was the other option and is the wrong one. The
-    #: Infisical check below does refuse, because the configuration it guards
-    #: against comes up with sign-in silently switched off. This leaks route
-    #: names and error rates, which is worth closing and is not worth an
-    #: outage on somebody's next deploy. Safe by default, loud at startup —
-    #: see `metrics_need_a_token`.
     metrics_token: str = Field(default="", alias="METRICS_TOKEN")
 
-    # ---- Read-through cache ------------------------------------------------
-    #: Dashboard aggregates are keyed by a version derived from the run's own
-    #: row, so an entry cannot go stale — only unused. See app/core/cache.py.
     dashboard_cache_enabled: bool = Field(default=True, alias="DASHBOARD_CACHE_ENABLED")
     dashboard_cache_ttl_seconds: float = Field(
         default=300.0, gt=0.0, le=86_400.0, alias="DASHBOARD_CACHE_TTL_SECONDS"
@@ -260,15 +115,9 @@ class Settings(BaseSettings):
         default=600, ge=1, le=100_000, alias="DASHBOARD_CACHE_MAX_ENTRIES"
     )
 
-    # ---- Circuit breaking --------------------------------------------------
-    #: Consecutive transport failures before calls to a provider are paused.
-    #: Four rather than one: a single timeout is ordinary, four in a row is a
-    #: pattern. What counts as a transport failure is deliberately narrow —
-    #: see app/core/breaker.py.
     llm_breaker_failure_threshold: int = Field(
         default=4, ge=1, le=100, alias="LLM_BREAKER_FAILURE_THRESHOLD"
     )
-    #: How long calls stay paused before one trial is let through.
     llm_breaker_reset_seconds: float = Field(
         default=30.0, gt=0.0, le=3600.0, alias="LLM_BREAKER_RESET_SECONDS"
     )
@@ -280,22 +129,8 @@ class Settings(BaseSettings):
     currency_symbol: str = "$"
 
     forecast_workers: int = 2
-    #: Candidates backtested at once inside one run, on threads, with the
-    #: feature cache shared between them. Takes precedence over
-    #: `forecast_candidate_workers`: above 1 the engine never reaches the
-    #: process-based lane at all — see `candidate_workers_shadowed`.
     forecast_model_concurrency: int = Field(default=2, ge=1, le=8)
-    #: Threads each pool worker's linear algebra may use. One, deliberately:
-    #: OpenBLAS sizes its pool from the core count *per process*, so two
-    #: workers each fitting two candidates on a two-core box ask for eight
-    #: runnable threads over two cores, and every fit ends up slower than it
-    #: would have been alone — worst for whatever started last. The
-    #: parallelism worth having is already taken at the run and candidate
-    #: level. Raise it only on a box with cores to spare and one run at a time.
     forecast_blas_threads: int = Field(default=1, ge=1, le=64, alias="FORECAST_BLAS_THREADS")
-    #: Candidates backtested at once inside one run. Above 1 this multiplies
-    #: with forecast_workers, so a two-core box wants one of them set to 1 —
-    #: oversubscribing the cores is slower than not parallelising at all.
     forecast_candidate_workers: int = Field(default=1, ge=1, le=8)
 
     celery_broker_url: str = ""
@@ -305,59 +140,33 @@ class Settings(BaseSettings):
     forecast_task_time_limit: int = 1_800
     forecast_task_max_retries: int = 2
 
-    # ---- Model selection -------------------------------------------------
-    # How many backtest folds a run gets, and how the metrics it measures are
-    # weighed against each other when the winner is picked. The three metric
-    # weights are relative, not required to sum to 1, but they cannot all be 0
-    # or there would be nothing left to rank candidates on.
     forecast_max_folds: int = Field(default=5, ge=1, le=20)
     metric_weight_wmape: float = Field(default=0.50, ge=0.0, le=1.0)
-    #: MASE, not sMAPE. sMAPE is undefined wherever an actual and its forecast
-    #: are both zero, so on intermittent demand it scores only the weeks that
-    #: happened to have sales and ranks candidates on that unrepresentative
-    #: slice. MASE divides by the in-sample naive error, which is defined on
-    #: series full of zeros and puts every series on one scale.
     metric_weight_mase: float = Field(default=0.30, ge=0.0, le=1.0)
     metric_weight_rmse: float = Field(default=0.20, ge=0.0, le=1.0)
-    #: What a candidate's interval quality (Winkler) is worth beside its point error.
     interval_weight: float = Field(default=0.15, ge=0.0, le=1.0)
 
-    # ---- Model hyperparameters -------------------------------------------
     sarimax_order_p: int = Field(default=1, ge=0, le=5)
     sarimax_order_d: int = Field(default=1, ge=0, le=2)
     sarimax_order_q: int = Field(default=1, ge=0, le=5)
     gbm_max_depth: int = Field(default=3, ge=1, le=10)
     gbm_learning_rate: float = Field(default=0.06, gt=0.0, le=1.0)
-    #: Rows a design matrix needs after lag construction before GBM is worth trying.
     min_gbm_rows: int = Field(default=8, ge=2)
 
-    # ---- Search and ensembling -------------------------------------------
     tuning_max_evaluations: int = Field(default=24, ge=1, le=500)
     tuning_min_validation_rows: int = Field(default=6, ge=2)
     ensemble_max_members: int = Field(default=4, ge=2, le=10)
-    #: How much better than its best member a blend must be to be worth the complication.
     ensemble_min_improvement: float = Field(default=0.02, ge=0.0, lt=1.0)
-    #: How far a backtest prediction may wander from the training level before it
-    #: is called divergent and thrown away.
     divergence_sigmas: float = Field(default=12.0, gt=0.0)
 
-    # ---- Forecast defaults -----------------------------------------------
-    #: The horizon a dataset gets when nobody picks one, per detected frequency.
     default_horizon_daily: int = Field(default=30, ge=1, le=365)
     default_horizon_weekly: int = Field(default=13, ge=1, le=365)
     default_horizon_monthly: int = Field(default=6, ge=1, le=365)
     default_horizon_quarterly: int = Field(default=4, ge=1, le=365)
-    #: The band the best/worst case quote, as distinct from the reported interval.
     scenario_confidence: float = Field(default=0.95, gt=0.0, lt=1.0)
 
-    # ---- Calendar ----------------------------------------------------------
-    #: The calendar month a fiscal year starts in. An ERP writing FY24-P01
-    #: means the first period of its own year, not January — a US federal
-    #: calendar starts in October, an Indian one in April, and reading P01 as
-    #: January puts every period of that file three to nine months out.
     fiscal_year_start_month: int = Field(default=1, ge=1, le=12)
 
-    # ---- LLM ---------------------------------------------------------------
     llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
     llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
@@ -370,25 +179,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     insight_llm_model: str = "claude-opus-5"
 
-    # ---- Insight thresholds ------------------------------------------------
-    #: Below this backtested accuracy an insight warns the figures are directional.
     insight_accuracy_warning: float = Field(default=80.0, ge=0.0, le=100.0)
-    #: Below this the recommendation stops treating the forecast as plannable.
     insight_accuracy_plannable: float = Field(default=75.0, ge=0.0, le=100.0)
-    #: Standard deviations from fit before a period is called an anomaly.
     insight_anomaly_z_threshold: float = Field(default=2.5, gt=0.0)
-    #: Downside percentage at which worst-case risk is raised to critical.
     insight_downside_severe_pct: float = Field(default=15.0, ge=0.0, le=100.0)
 
-    # ---- Drift ------------------------------------------------------------
-    #: Tracking signal (cumulative error over MAD) past which a scored run is
-    #: called drifted — the classic Trigg limit is 4 mean absolute deviations.
     drift_tracking_signal_limit: float = Field(default=4.0, gt=0.0)
-    #: Realized wMAPE past which a run is called drifted whatever its bias.
     drift_wmape_limit: float = Field(default=50.0, gt=0.0, le=100.0)
 
-    # ---- API and fan-out ---------------------------------------------------
-    #: Leaves dispatched per chunk when a grouped run is fanned out to workers.
     series_fan_out_chunk: int = Field(default=10, ge=1, le=1000)
     usage_events_limit: int = Field(default=5000, ge=1)
     api_max_page_size: int = Field(default=200, ge=1, le=1000)
@@ -418,15 +216,6 @@ class Settings(BaseSettings):
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS cannot contain '*' in production.")
             if secrets_load.configured and not secrets_load.loaded:
-                # Degrading to the environment is right while the environment
-                # still holds everything — a secret manager having a bad
-                # minute should not take a working deployment with it. Once
-                # the file on the box has been emptied, which is the whole
-                # point of adopting one, that same fallback is no longer a
-                # smaller version of this deployment. It is a different one:
-                # AUTH_ENABLED defaults to false, so the API comes up with no
-                # sign-in at all, publicly readable, and nothing says so.
-                # Refusing to start is the only honest option.
                 raise ValueError(
                     "Infisical is configured but its secrets could not be read "
                     f"({secrets_load.error}). Refusing to start in production on partial "
@@ -437,17 +226,10 @@ class Settings(BaseSettings):
 
     @property
     def metrics_need_a_token(self) -> bool:
-        """Metrics are switched on in production and no scrape token is set.
-
-        Every scrape is refused in that state, so nothing leaks — but nothing
-        is collected either, and an operator staring at an empty dashboard
-        should be told why. The startup log says so once.
-        """
         return self.metrics_enabled and self.environment == "production" and not self.metrics_token
 
     @property
     def metric_weights(self) -> dict[str, float]:
-        """The scoring weights for a series that is not intermittent."""
         return {
             "wmape": self.metric_weight_wmape,
             "mase": self.metric_weight_mase,
@@ -466,12 +248,6 @@ class Settings(BaseSettings):
 
     @property
     def supabase_dsn(self) -> str:
-        """A plain ``postgresql://`` DSN for Supabase, or "" when unconfigured.
-
-        Either give the whole connection string Supabase shows under Project
-        Settings → Database, or give the project URL and the database password
-        and let the host be derived from the project ref.
-        """
         explicit = self.supabase_db_url.strip()
         if explicit:
             return explicit
@@ -549,15 +325,6 @@ class Settings(BaseSettings):
 
     @property
     def candidate_workers_shadowed(self) -> bool:
-        """FORECAST_CANDIDATE_WORKERS was set, and cannot take effect.
-
-        The engine picks the threaded lane whenever
-        `forecast_model_concurrency` is above 1 and only falls through to the
-        process lane below that, so setting both leaves the second one dead.
-        It reads as a tuning knob that does nothing, which is worse than a knob
-        that is not there — the production template shipped exactly that
-        combination and the machine quietly ignored half of it.
-        """
         return self.forecast_candidate_workers > 1 and self.forecast_model_concurrency > 1
 
     @property
@@ -590,9 +357,6 @@ class Settings(BaseSettings):
             directory.mkdir(parents=True, exist_ok=True)
 
 
-#: Pulled in before any Settings is built. Every field is read from the
-#: environment as the object is constructed, so a secret fetched afterwards
-#: would arrive too late for anything to see it.
 secrets_load = hydrate()
 
 

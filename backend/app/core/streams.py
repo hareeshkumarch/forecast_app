@@ -1,13 +1,3 @@
-"""Admission, framing and lifetime for the Server-Sent Events endpoints.
-
-Streams are exempt from the rate limiter and from the concurrency ceiling, both
-deliberately: one is open for as long as a browser tab is, so counting it as a
-request would let a handful of dashboards spend the whole allowance. What that
-left is a hole — nothing at all bounded how many a client could open, and each
-one costs a socket, a task and a subscriber queue for as long as it is held.
-This is the bound the other two step aside for.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -132,7 +122,6 @@ registry = StreamRegistry()
 
 
 def identify(request: Request, user_id: str | None) -> str:
-    """The account when there is one, so an office NAT is not one client."""
     if user_id:
         return f"user:{user_id}"
     host = request.client.host if request.client else None
@@ -164,17 +153,10 @@ def json_frame(payload: dict, *, event: str | None = None, event_id: str | None 
 
 
 def preamble() -> bytes:
-    """Sets the browser's own reconnect delay, so every dropped tab does not return at once."""
     return f"retry: {settings.sse_retry_hint_ms}\n\n".encode()
 
 
 class Deadline:
-    """A ceiling on one connection, not on watching: the browser reconnects by itself.
-
-    An ended stream is the only moment this process can drop a client that went
-    away without closing its socket.
-    """
-
     __slots__ = ("_expires_at",)
 
     def __init__(self, seconds: float | None = None) -> None:

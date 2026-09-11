@@ -139,14 +139,6 @@ async def remembered_for(session: AsyncSession, frame: pl.DataFrame) -> Recall |
 
 
 async def _remembered(session: AsyncSession, frame: pl.DataFrame) -> Recall | None:
-    """The mapping somebody already made for a file like this one.
-
-    The exact fingerprint is tried first and is one indexed read. Everything
-    else is scored in Python over the stored rows, because the near-match
-    cases — a dtype that moved, a column added — cannot be expressed as an
-    equality on a hash, and there is one row here per distinct schema ever
-    accepted rather than one per upload.
-    """
     columns = {name: str(dtype) for name, dtype in frame.schema.items()}
     fingerprint = fingerprint_of(frame)
 

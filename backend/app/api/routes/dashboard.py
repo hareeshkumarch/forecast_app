@@ -50,40 +50,6 @@ async def _read(
     compute: Callable[[ForecastRun | None], Awaitable[T]],
     extra: tuple[object, ...] = (),
 ) -> T | Response:
-    """One dashboard read, answered as cheaply as it honestly can be.
-
-    Three tiers, in order of what they cost:
-
-    1. The browser already has this exact version — `304`, no aggregates, no
-       body. One indexed run lookup and one insight high-water read is the
-       whole cost of the request.
-    2. This process computed it recently — the read-through cache answers, and
-       a second tab opening the same dashboard waits on the first tab's
-       computation instead of starting its own.
-    3. Nobody has it — compute, store, stamp, return.
-
-    The same token drives all three, which is the point. It is built from the
-    run's own revision (`dashboard_service.revision`), the query that selected
-    it, this endpoint's response *shape*, and the release. Nothing an answer
-    depends on is outside it, so a cached entry cannot be stale — a change to
-    any of those produces a different key and misses. Tags carry the run id so
-    a deleted run's entries can be reclaimed at once rather than waiting out
-    their TTL.
-
-    A run that does not exist is not cached at all: the "no data yet" answer is
-    cheap to build, and caching it would mean the first forecast a deployment
-    ever runs appears to produce nothing until the entry expired.
-
-    One invariant the types do not enforce: what is stored is the assembled
-    response model, and every subsequent reader gets that same object.
-    Serialising it does not mutate it, which is why this is safe — but a
-    handler that reached in and changed a field would be changing it for
-    everybody. Build a new model instead.
-    """
-    # Resolved once, here, and handed to `compute` — the services take it back
-    # rather than looking it up again. Without that the cheap path is not
-    # cheap: every uncached read would pay for the same lookup twice, once to
-    # decide the validator and once to build the answer.
     run = await forecast_service.resolve_run(session, query.run_id)
     token = version_token(
         endpoint,
@@ -159,9 +125,6 @@ async def breakdown(
         endpoint="breakdown",
         model=BreakdownResponse,
         compute=lambda run: dashboard_service.breakdown(session, query, column, run=run),
-        # The column is part of the answer, so it has to be part of the key.
-        # Leaving it out would serve the region split to somebody who asked
-        # for the category one, which is the classic way a cache goes wrong.
         extra=(column,),
     )
 
@@ -252,10 +215,6 @@ async def rewrite_insights(
 
     config = payload.model_dump(exclude={"run_id"})
     outcome = await insight_service.rewrite(session, run.id, config)
-    # The rewrite has changed what /insights answers, and the entries holding
-    # the previous wording are already unreachable — their keys carry the old
-    # insight high-water mark. Dropping them now returns the memory instead of
-    # leaving it to the TTL.
     forget_run(run.id)
     stored = await dashboard_service.insights(session, _query_for(run.id))
 

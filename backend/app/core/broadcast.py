@@ -1,28 +1,3 @@
-"""In-process fan-out, so a decision reaches a screen without being asked for.
-
-Approving somebody happens on one person's screen and has to appear on
-another's. Polling can only ever be late, and the interval is a choice between
-a stale page and a query every few seconds from everybody who has the tab
-open. This carries a nudge instead.
-
-What travels is a topic name and nothing else. Subscribers respond by
-refetching through the ordinary authenticated endpoint, which means the stream
-cannot leak anything the reader was not already allowed to fetch, and a
-subscription that outlives someone's access shows them nothing.
-
-In-process when there is nothing else, and across processes when there is.
-The deployment this serves runs one uvicorn on one instance — the production
-compose drops redis specifically to leave the RAM for forecasting — and on
-that shape the dictionary below is the whole mechanism. Add a second API
-instance and the failure used to be silent: a decision made on the instance
-you are not connected to never reaches your screen, and the page sits there
-looking like it is working. Where a Redis is configured the nudge now also
-goes out on a channel and comes back in on every other process, which is the
-same bridge the forecast progress relay already crosses.
-
-What travels between processes is still a topic name and nothing else.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -38,18 +13,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-#: The channel other API processes are listening on. Named apart from the
-#: progress channel so a subscriber never has to sort one kind from the other.
 CHANNEL = "access:events"
 
-#: This process, so it can recognise and drop the echo of its own publish —
-#: which a local subscriber has already been handed directly.
 ORIGIN = uuid.uuid4().hex
 
-#: A subscriber that has not been read from is a browser that went away
-#: without closing the connection. Eight is far more than the two or three a
-#: live page could be behind, so hitting it means nobody is listening and the
-#: right thing is to drop the nudge rather than grow a queue forever.
 QUEUE_LIMIT = 8
 
 ACCESS = "access"
@@ -63,7 +30,6 @@ def topic_for_user(user_id: object) -> str:
 
 
 def deliver(topic: str, event: str) -> int:
-    """Hand a nudge to the subscribers in this process, and nowhere else."""
     delivered = 0
     for queue in tuple(_subscribers.get(topic, ())):
         try:
@@ -75,20 +41,12 @@ def deliver(topic: str, event: str) -> int:
 
 
 def publish(topic: str, event: str) -> int:
-    """Deliver here, and — where there is somewhere else — announce it there too.
-
-    The return value counts this process's subscribers only. It is what the
-    tests assert on and what a caller can actually know; how many screens are
-    attached to another instance is not answerable from here.
-    """
     delivered = deliver(topic, event)
     _announce_elsewhere(topic, event)
     return delivered
 
 
 _client: Any | None = None
-#: Tasks are only weakly referenced by the loop, so one dropped here is one
-#: the garbage collector may cancel before it has published anything.
 _in_flight: set[asyncio.Task[None]] = set()
 
 
@@ -99,9 +57,6 @@ def _announce_elsewhere(topic: str, event: str) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No loop: a script, or a worker process. The pooled client below
-        # belongs to whichever loop opened it, so a one-shot connection is used
-        # here rather than one that would be dead by the next call.
         asyncio.run(_push_once(payload))
         return
 
@@ -114,8 +69,6 @@ async def _push(payload: str) -> None:
     try:
         await _redis().publish(CHANNEL, payload)
     except Exception:
-        # A nudge is an optimisation over the polling the clients still do, so
-        # losing one costs latency rather than correctness.
         logger.warning("Could not announce an access change to other processes", exc_info=True)
 
 
@@ -147,8 +100,6 @@ def _redis() -> Any:
 
 
 class AccessRelay:
-    """Nudges from the other API processes, delivered into this one."""
-
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
 
@@ -202,7 +153,6 @@ def _accept(raw: str | bytes) -> None:
         logger.warning("Discarded a malformed access frame")
         return
 
-    # Our own publish, come back around. The local subscribers already have it.
     if origin == ORIGIN:
         return
     deliver(topic, event)
@@ -224,9 +174,6 @@ async def subscribe(*topics: str) -> AsyncIterator[asyncio.Queue[str]]:
             if remaining is None:
                 continue
             remaining.discard(queue)
-            # Left in place an empty set per topic accumulates one entry per
-            # account that has ever connected, which on a long-running process
-            # is a slow leak keyed by user id.
             if not remaining:
                 del _subscribers[topic]
 

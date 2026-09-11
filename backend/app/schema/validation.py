@@ -57,13 +57,7 @@ class SeriesReport:
     start: date | None
     end: date | None
     findings: list[Finding] = field(default_factory=list)
-    #: What *this* series needed, which is not what the frequency needs in
-    #: general — a weekly series with a yearly shape in it needs two of those
-    #: years, and a flat one needs a fraction of that.
     required_history: int | None = None
-    #: How the series was read: the same profile the engine routes models on.
-    #: Carried here so the reader is told what the checks below were measured
-    #: against rather than being handed a verdict with no basis.
     profile: dict[str, object] | None = None
 
     @property
@@ -121,18 +115,6 @@ def validate_canonical(
     min_history: int | None = None,
     adaptive: bool = True,
 ) -> ValidationReport:
-    """Check every series against what that series actually needs.
-
-    The floor on the report stays the frequency's, because it is what a reader
-    comparing two datasets wants to see. What each series is *judged* against
-    is its own: `adaptive` reads the same profile the engine routes models on
-    and takes the history requirement, the intermittency verdict and the level
-    shifts from it, rather than from constants that cannot know whether this
-    particular series has a season in it.
-
-    Pass `min_history` to pin the requirement for every series — an explicit
-    number always wins — or `adaptive=False` for the fixed thresholds alone.
-    """
     assert_canonical(frame, covariates=covariates)
 
     required = min_history if min_history is not None else _required_history(frequency)
@@ -223,10 +205,6 @@ def _check_series(
         )
 
     profile = profile_series(finite, frequency) if adaptive else None
-    #: What this series needs, not what the frequency needs on average. A
-    #: weekly series carrying a yearly shape needs two of those years before
-    #: anything can be fitted to it; a flat one needs a fraction of that, and
-    #: warning about it is noise the reader has to learn to ignore.
     needed = max(MIN_FITTABLE, minimum_history(profile)) if profile else required
 
     if values.size < needed:
@@ -322,10 +300,6 @@ def _check_series(
         )
 
     if profile is not None:
-        # A step onto a new plateau is the one finding that changes what the
-        # rest of the history is worth: everything before the break describes
-        # a business that no longer exists, and a model fitted across it will
-        # average the two.
         step = _level_shift(finite)
         if step is not None:
             findings.append(
@@ -372,31 +346,14 @@ def _check_series(
     )
 
 
-#: How far apart the two plateaus have to be, in units of the scatter inside
-#: them, before the split is worth telling anybody about.
 LEVEL_SHIFT_SIGMAS = 3.0
 
-#: And how much bigger than either side's own drift. This is the whole test.
-#: A rising series splits under any mean-difference scan — the second half of
-#: anything trending has a higher mean than the first — so the question is not
-#: "do the halves differ" but "are they each flat and yet different". Without
-#: it every trending series in the dataset carries a level-shift warning, and
-#: a warning that fires on healthy data is one the reader learns to skip.
 LEVEL_SHIFT_OVER_DRIFT = 2.0
 
-#: Below this there is not enough either side to say anything about the shape
-#: of either side.
 MIN_LEVEL_SHIFT_HISTORY = 12
 
 
 def _level_shift(values: np.ndarray) -> int | None:
-    """The index a genuine step sits at, or None when the change is a slope.
-
-    Deliberately stricter than `detect_changepoints`, which the engine uses to
-    decide how far back to fit from. Being wrong there costs a slightly short
-    training window; being wrong here puts a warning in front of a person, and
-    those have to be worth reading.
-    """
     if values.size < MIN_LEVEL_SHIFT_HISTORY:
         return None
 
@@ -416,8 +373,6 @@ def _level_shift(values: np.ndarray) -> int | None:
     if step < LEVEL_SHIFT_SIGMAS * scatter:
         return None
 
-    # How far each half travels under its own straight line. A plateau barely
-    # moves; half of a trend moves about as much as the step does.
     drift = max(_span(before), _span(after))
     if step < LEVEL_SHIFT_OVER_DRIFT * drift:
         return None
@@ -426,7 +381,6 @@ def _level_shift(values: np.ndarray) -> int | None:
 
 
 def _span(values: np.ndarray) -> float:
-    """How far a straight line through these points rises across them."""
     if values.size < 2:
         return 0.0
     x = np.arange(values.size, dtype=float)
@@ -435,13 +389,6 @@ def _span(values: np.ndarray) -> float:
 
 
 def _is_intermittent(profile: SeriesProfile | None, zero_share: float) -> bool:
-    """Whether this series is bursty, judged the way the router judges it.
-
-    The fixed share is kept as the answer when there is no profile, and as a
-    floor when there is: the demand class is the better instrument, but it is
-    built from the interval between sales and a series can clear that bar
-    while still being mostly empty.
-    """
     if zero_share >= INTERMITTENT_ZERO_SHARE:
         return True
     if profile is None or not profile.non_negative:

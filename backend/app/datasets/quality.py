@@ -123,21 +123,10 @@ def resolve_fill(values: list[float], requested: GapFill) -> GapFill:
 
 @dataclass(slots=True)
 class AlignedSeries:
-    """A series on its regular calendar, with the holes still holes.
-
-    `values` carries NaN wherever the calendar expects a period the data does
-    not have. Filling them is a modelling decision that belongs to whoever is
-    about to fit — done here it would be done once, over the whole history,
-    and every backtest fold would train on numbers derived from its own
-    validation window.
-    """
-
     periods: list[date]
     values: list[float]
     weights: list[float] | None
     missing: list[int]
-    #: False when the series was left on its own irregular index, because no
-    #: filling was asked for and a fabricated calendar would be worse.
     regular: bool = True
 
 
@@ -148,7 +137,6 @@ def align_calendar(
     frequency: ForecastFrequency,
     fill: GapFill = GapFill.AUTO,
 ) -> AlignedSeries:
-    """Put a series on its regular calendar without filling the gaps."""
     if len(periods) < 2:
         return AlignedSeries(periods, values, weights, [], regular=False)
 
@@ -159,8 +147,6 @@ def align_calendar(
     if not missing:
         return AlignedSeries(periods, values, weights, [])
     if fill is GapFill.NONE:
-        # Nothing will fill them, so a calendar full of holes is worse than the
-        # irregular index the data actually has.
         return AlignedSeries(periods, values, weights, missing, regular=False)
 
     holed: list[float] = []
@@ -187,7 +173,6 @@ def regularise(
     frequency: ForecastFrequency,
     fill: GapFill = GapFill.AUTO,
 ) -> tuple[list[date], list[float], list[float] | None, GapFill, list[int]]:
-    """Align and fill in one step, for callers that want the whole series at once."""
     aligned = align_calendar(periods, values, weights, frequency, fill)
     if not aligned.missing or not aligned.regular:
         return aligned.periods, aligned.values, aligned.weights, GapFill.NONE, aligned.missing
@@ -310,11 +295,6 @@ def build_report(
         issues.append(
             QualityIssue(
                 "constant_target",
-                # A warning rather than a refusal. A discontinued line, or one
-                # that has not launched, is the same value in every period —
-                # usually zero — and the flat forecast is the right answer for
-                # it. What cannot be done is *measuring* that forecast: every
-                # percentage error divides by the series total.
                 IssueSeverity.WARNING,
                 "The target is the same value in every period.",
                 "The forecast will be that same value, and its accuracy cannot be "

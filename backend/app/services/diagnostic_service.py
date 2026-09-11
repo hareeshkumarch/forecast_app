@@ -1,16 +1,3 @@
-"""What the residuals say, and which metrics this series can carry.
-
-The scorecard answers "how did the forecast do" with one number. This answers
-the question underneath it: *how* is it wrong. A model that is loose in both
-directions and a model that has drifted are the same wMAPE and different
-problems, and the residuals are where they separate — their spread says how
-much noise is left, their sign says whether the forecast leans, and their
-autocorrelation says whether there is signal still sitting in them.
-
-The metric set comes from `metric_plan`, so a series that cannot carry MAPE is
-not shown a MAPE. What it is shown instead is the reason.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -26,11 +13,8 @@ from app.models.entities import ForecastPoint
 from app.models.enums import ForecastFrequency, PointKind
 from app.services import forecast_service
 
-#: Below this there is no distribution to describe and no autocorrelation to
-#: measure — a handful of residuals is a list, not a diagnosis.
 MIN_RESIDUALS = 4
 
-#: Enough buckets to show a shape, few enough that each one holds something.
 HISTOGRAM_BINS = 11
 
 
@@ -52,8 +36,6 @@ class Residual:
 
 @dataclass(slots=True, frozen=True)
 class Bucket:
-    """One column of the error histogram, in the units of the series."""
-
     start: float
     end: float
     count: int
@@ -89,7 +71,6 @@ class DiagnosticReport:
 
 
 def _finite(value: float | None) -> float | None:
-    """JSON has no NaN. A metric that could not be computed is absent, not zero."""
     if value is None:
         return None
     number = float(value)
@@ -97,12 +78,6 @@ def _finite(value: float | None) -> float | None:
 
 
 def pair(points: list[ForecastPoint]) -> list[Residual]:
-    """Periods where a prediction and an outcome both exist.
-
-    A point carries both columns, so the pairing is a filter rather than a
-    join — but only some kinds carry both. A forecast for next month has no
-    actual against it yet and must not be counted as a zero error.
-    """
     rows: list[Residual] = []
     for point in points:
         actual, predicted = point.actual, point.forecast
@@ -123,13 +98,6 @@ def pair(points: list[ForecastPoint]) -> list[Residual]:
 
 
 def histogram(residuals: list[Residual], bins: int = HISTOGRAM_BINS) -> list[Bucket]:
-    """The shape of the error, bucketed symmetrically about zero.
-
-    Centred on zero rather than on the data's own range, because the question
-    the chart answers is whether the misses are balanced. A range that starts
-    at the smallest residual puts the centre wherever the data happens to sit
-    and hides exactly the lean the reader is looking for.
-    """
     if len(residuals) < MIN_RESIDUALS:
         return []
 
@@ -159,9 +127,6 @@ async def build(
 
     residuals = pair(points)
 
-    # The plan is read from the history, never from the residuals: which
-    # metrics a series can carry is a fact about the data that was measured,
-    # not about how well something predicted it.
     history = np.array(
         [p.actual for p in points if p.actual is not None and np.isfinite(p.actual)],
         dtype=float,
@@ -186,9 +151,6 @@ async def build(
     actual = np.array([row.actual for row in residuals], dtype=float)
     predicted = np.array([row.predicted for row in residuals], dtype=float)
 
-    # Scaled metrics divide by a step measured on history the forecast did not
-    # see. Scoring against the same periods it is being graded on would flatter
-    # every model that overfits.
     fitted_periods = {row.period for row in residuals}
     insample = np.array(
         [
