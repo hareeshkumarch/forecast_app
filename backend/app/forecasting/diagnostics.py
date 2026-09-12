@@ -55,6 +55,10 @@ class SeriesProfile:
     def has_trend(self) -> bool:
         return self.trend_strength > self.trend_noise_floor
 
+    @property
+    def mase_lag(self) -> int:
+        return self.seasonal_period if self.has_seasonality else 1
+
     def as_dict(self) -> dict[str, object]:
         return {
             "n_observations": self.n_observations,

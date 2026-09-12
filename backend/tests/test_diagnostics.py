@@ -390,7 +390,7 @@ def test_a_log_series_is_still_fitted_on_logs() -> None:
 def test_a_power_forecast_past_the_bottom_of_its_scale_lands_on_the_floor() -> None:
     from app.forecasting.transforms import Transform
 
-    transform = Transform(kind="power", shift=0.0, residual_variance=0.0, lam=0.5)
+    transform = Transform(kind="power", shift=0.0, lam=0.5)
     falling = np.linspace(0.0, -40.0, 12)
 
     restored = transform.inverse(falling)
@@ -403,6 +403,6 @@ def test_a_power_forecast_past_the_bottom_of_its_scale_lands_on_the_floor() -> N
 def test_a_shifted_power_transform_floors_at_its_own_shift() -> None:
     from app.forecasting.transforms import Transform
 
-    transform = Transform(kind="power", shift=5.0, residual_variance=0.0, lam=0.5)
+    transform = Transform(kind="power", shift=5.0, lam=0.5)
 
     assert transform.inverse(np.array([-100.0]))[0] == -5.0

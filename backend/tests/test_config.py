@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -165,3 +166,35 @@ def test_candidate_workers_are_reported_as_shadowed_when_they_are() -> None:
         assert not settings.candidate_workers_shadowed
     finally:
         settings.forecast_model_concurrency, settings.forecast_candidate_workers = before
+
+
+def test_production_refuses_to_start_with_sign_in_switched_off(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CREDENTIAL_SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("DATABASE_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+    with pytest.raises(ValueError, match="AUTH_ENABLED"):
+        Settings()
+
+
+def test_the_blas_thread_setting_overrides_a_value_already_in_the_environment() -> None:
+    import subprocess
+    import sys
+
+    def pinned(env: dict[str, str]) -> str:
+        return subprocess.run(
+            [sys.executable, "-c", "import app, os; print(os.environ['OPENBLAS_NUM_THREADS'])"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env={**os.environ, **env},
+        ).stdout.strip()
+
+    preset = {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS")}
+
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": "4"}) == "4"
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": ""}) == "1"
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": "not-a-number"}) == "1"

@@ -222,6 +222,11 @@ class Settings(BaseSettings):
                     "configuration — the defaults it would fall back to include sign-in "
                     "being switched off."
                 )
+            if not self.auth_enabled:
+                raise ValueError(
+                    "AUTH_ENABLED must be true in production. With it off every guarded route "
+                    "resolves to the anonymous user and the whole API is served unauthenticated."
+                )
         return self
 
     @property

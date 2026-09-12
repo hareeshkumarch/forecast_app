@@ -106,7 +106,7 @@ def _member(model: ModelKind, per_fold: list[list[float]], truth: list[list[floa
     return result
 
 
-def test_the_weights_a_fold_is_scored_under_never_saw_that_fold() -> None:
+def test_the_weights_a_fold_is_scored_under_come_only_from_earlier_folds() -> None:
     truth = [[10.0, 10.0], [10.0, 10.0], [10.0, 10.0]]
     left = _member(ModelKind.THETA, [[10.0, 10.0], [10.0, 10.0], [30.0, 30.0]], truth)
     right = _member(ModelKind.NAIVE, [[30.0, 30.0], [30.0, 30.0], [10.0, 10.0]], truth)
@@ -115,14 +115,19 @@ def test_the_weights_a_fold_is_scored_under_never_saw_that_fold() -> None:
     assert aligned is not None
 
     everything = combination._member_errors(aligned)
-    without_last = combination._member_errors(aligned, skip=2)
+    earlier_only = combination._member_errors(aligned, before=2)
 
     assert everything[0] < everything[1]
-    assert without_last[0] == pytest.approx(0.0)
-    assert without_last[1] > without_last[0]
+    assert earlier_only[0] == pytest.approx(0.0)
+    assert earlier_only[1] > earlier_only[0]
 
-    scored_under = combination.inverse_error_weights(without_last)
+    scored_under = combination.inverse_error_weights(earlier_only)
     assert scored_under[0] > scored_under[1]
+
+    rewritten = _member(ModelKind.THETA, [[10.0, 10.0], [10.0, 10.0], [999.0, 999.0]], truth)
+    moved = combination._align([rewritten, right])
+    assert moved is not None
+    assert combination._member_errors(moved, before=2) == pytest.approx(earlier_only)
 
 
 def test_a_member_that_is_useless_everywhere_gets_little_weight() -> None:
@@ -133,7 +138,7 @@ def test_a_member_that_is_useless_everywhere_gets_little_weight() -> None:
     aligned = combination._align([good, bad])
     assert aligned is not None
 
-    share = combination.inverse_error_weights(combination._member_errors(aligned, skip=0))
+    share = combination.inverse_error_weights(combination._member_errors(aligned, before=3))
 
     assert share[0] > share[1]
 

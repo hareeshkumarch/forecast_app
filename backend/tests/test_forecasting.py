@@ -453,7 +453,7 @@ def test_the_ensemble_is_weighed_over_the_windows_it_was_tested_on() -> None:
 
     combined = blend(
         [result(ModelKind.NAIVE, 1.0), result(ModelKind.THETA, -1.0)],
-        frequency=MONTHLY,
+        insample=np.arange(20.0, 40.0),
     )
 
     assert combined is not None, "two offsetting members should blend to something better"

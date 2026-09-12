@@ -19,6 +19,7 @@ from app.forecasting.backtest import (
     BacktestPlan,
     BacktestResult,
     ModelFactory,
+    mase_baseline,
     plan_backtest,
     run_backtest,
 )
@@ -386,6 +387,7 @@ def run_forecast(
         frequency,
         max_folds=payload.max_folds,
         seasonal_period=profile.seasonal_period,
+        mase_lag=profile.mase_lag,
     )
 
     if values.size < floor or plan.n_folds == 0:
@@ -502,7 +504,8 @@ def run_forecast(
 
     combined = combination.blend(
         results,
-        frequency=frequency,
+        insample=mase_baseline(values, plan, payload.preparation),
+        seasonal_lag=plan.mase_lag,
         confidence_level=payload.confidence_level,
     )
     if combined is not None:
@@ -1037,6 +1040,7 @@ def _fit_leaf(
         frequency,
         max_folds=max_folds,
         seasonal_period=profile.seasonal_period,
+        mase_lag=profile.mase_lag,
     )
     if history.size < minimum_history(profile) or plan.n_folds == 0:
         return LeafFit(label=label, blocked_reason=TOO_LITTLE_HISTORY)

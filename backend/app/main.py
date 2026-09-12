@@ -77,6 +77,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             settings.forecast_candidate_workers,
             settings.forecast_model_concurrency,
         )
+    if settings.rate_limit_enabled and not settings.rate_limit_trusted_proxies:
+        logger.warning(
+            "RATE_LIMIT_TRUSTED_PROXIES is empty, so X-Forwarded-For is ignored and every "
+            "caller is counted by the address the socket reports. Behind a proxy that is the "
+            "proxy, so all callers share one bucket; set it to the proxy's network to count "
+            "them apart."
+        )
     if "*" in settings.cors_origins:
         logger.warning(
             "CORS_ORIGINS is '*' while credentials are allowed, which no browser honours: it "

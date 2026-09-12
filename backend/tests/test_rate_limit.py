@@ -113,7 +113,12 @@ def test_the_progress_stream_is_never_limited() -> None:
     assert ratelimit.rule_for("GET", "/api/forecasts/x/events") is None
 
 
-def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote() -> None:
+@pytest.fixture
+def _declared_proxy(monkeypatch):
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxies_raw", "10.0.0.0/8")
+
+
+def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote(_declared_proxy) -> None:
     assert (
         ratelimit.client_identity({"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, "10.0.0.1") == "5.6.7.8"
     )
@@ -122,32 +127,31 @@ def test_identity_is_read_from_the_end_of_the_chain_the_proxies_wrote() -> None:
     assert ratelimit.client_identity({}, None) == "unknown"
 
 
-def test_a_caller_cannot_mint_an_allowance_by_writing_the_header_itself() -> None:
+def test_a_caller_cannot_mint_an_allowance_by_writing_the_header_itself(_declared_proxy) -> None:
     forged = {"x-forwarded-for": "attacker-chose-this, 203.0.113.9"}
     assert ratelimit.client_identity(forged, "10.0.0.1") == "203.0.113.9"
 
 
-def test_a_second_proxy_is_accounted_for_by_configuration() -> None:
-    settings = ratelimit.settings
-    before = settings.rate_limit_trusted_proxy_hops
-    settings.rate_limit_trusted_proxy_hops = 2
-    try:
-        chain = {"x-forwarded-for": "9.9.9.9, 203.0.113.9, 10.0.0.5"}
-        assert ratelimit.client_identity(chain, "10.0.0.1") == "203.0.113.9"
-    finally:
-        settings.rate_limit_trusted_proxy_hops = before
+def test_a_peer_outside_the_declared_proxies_is_counted_by_its_socket(_declared_proxy) -> None:
+    forged = {"x-forwarded-for": "1.1.1.1, 2.2.2.2"}
+    assert ratelimit.client_identity(forged, "198.51.100.4") == "198.51.100.4"
 
 
-def test_a_shorter_chain_than_configured_falls_back_rather_than_wrapping() -> None:
-    settings = ratelimit.settings
-    before = settings.rate_limit_trusted_proxy_hops
-    settings.rate_limit_trusted_proxy_hops = 3
-    try:
-        assert ratelimit.client_identity({"x-forwarded-for": "203.0.113.9"}, "10.0.0.1") == (
-            "203.0.113.9"
-        )
-    finally:
-        settings.rate_limit_trusted_proxy_hops = before
+def test_a_second_proxy_is_accounted_for_by_configuration(_declared_proxy, monkeypatch) -> None:
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxy_hops", 2)
+
+    chain = {"x-forwarded-for": "9.9.9.9, 203.0.113.9, 10.0.0.5"}
+    assert ratelimit.client_identity(chain, "10.0.0.1") == "203.0.113.9"
+
+
+def test_a_shorter_chain_than_configured_falls_back_rather_than_wrapping(
+    _declared_proxy, monkeypatch
+) -> None:
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxy_hops", 3)
+
+    assert ratelimit.client_identity({"x-forwarded-for": "203.0.113.9"}, "10.0.0.1") == (
+        "203.0.113.9"
+    )
 
 
 def test_a_header_from_somewhere_other_than_the_proxy_is_not_believed() -> None:
@@ -192,3 +196,36 @@ async def test_health_survives_a_hammering(client) -> None:
         response = await client.get("/api/health")
         assert response.status_code == 200
     assert "RateLimit-Limit" not in response.headers
+
+
+def test_a_forwarded_for_header_is_ignored_when_no_proxy_is_declared(monkeypatch) -> None:
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxies_raw", "")
+
+    identity = ratelimit.client_identity({"x-forwarded-for": "9.9.9.9"}, "203.0.113.7")
+
+    assert identity == "203.0.113.7", "an undeclared proxy must not let a caller pick its bucket"
+
+
+def test_a_forwarded_for_header_is_read_from_a_declared_proxy(monkeypatch) -> None:
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxies_raw", "203.0.113.0/24")
+
+    identity = ratelimit.client_identity({"x-forwarded-for": "9.9.9.9"}, "203.0.113.7")
+
+    assert identity == "9.9.9.9"
+
+
+def test_rotating_the_header_cannot_buy_extra_requests(monkeypatch) -> None:
+    monkeypatch.setattr(ratelimit.settings, "rate_limit_trusted_proxies_raw", "")
+    window = SlidingWindow()
+    rule = Rule(limit=2, window_seconds=60, name="t")
+
+    allowed = [
+        window.check(
+            ratelimit.client_identity({"x-forwarded-for": f"9.9.9.{n}"}, "198.51.100.4"),
+            rule,
+            now=1.0,
+        )[0]
+        for n in range(4)
+    ]
+
+    assert allowed == [True, True, False, False]

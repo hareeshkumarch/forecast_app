@@ -12,7 +12,6 @@ import numpy.typing as npt
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.forecasting.frequency import future_periods as make_future_periods
-from app.forecasting.frequency import seasonal_period
 from app.forecasting.metrics import evaluate, mase, winkler
 from app.forecasting.models import Forecaster
 from app.forecasting.preparation import Preparation
@@ -81,10 +80,18 @@ class BacktestPlan:
     cut_points: list[int]
     initial_train: int
     window: int | None = None
+    mase_lag: int = 1
 
     @property
     def n_folds(self) -> int:
         return len(self.cut_points)
+
+
+def mase_baseline(
+    y: FloatArray, plan: BacktestPlan, preparation: Preparation | None = None
+) -> FloatArray:
+    prepare = preparation or Preparation()
+    return prepare.apply(y[: plan.cut_points[0]] if plan.cut_points else y)
 
 
 def _affordable_folds(n_observations: int, test_horizon: int, initial_train: int) -> int:
@@ -102,8 +109,10 @@ def plan_backtest(
     max_folds: int | None = None,
     scheme: str | None = None,
     seasonal_period: int | None = None,
+    mase_lag: int | None = None,
 ) -> BacktestPlan:
     period = seasonal_period if seasonal_period and seasonal_period > 1 else _season(frequency)
+    lag = max(1, mase_lag) if mase_lag is not None else 1
     test_horizon = max(1, min(horizon, max(1, n_observations // 4)))
 
     initial_train = max(
@@ -114,7 +123,11 @@ def plan_backtest(
 
     if initial_train < 3:
         return BacktestPlan(
-            scheme=scheme or "expanding", horizon=test_horizon, cut_points=[], initial_train=0
+            scheme=scheme or "expanding",
+            horizon=test_horizon,
+            cut_points=[],
+            initial_train=0,
+            mase_lag=lag,
         )
 
     affordable = _affordable_folds(n_observations, test_horizon, initial_train)
@@ -140,6 +153,7 @@ def plan_backtest(
         cut_points=cut_points,
         initial_train=initial_train,
         window=initial_train if resolved_scheme == "rolling" else None,
+        mase_lag=lag,
     )
 
 
@@ -341,8 +355,8 @@ def run_backtest(
     result.mase = mase(
         np.array(all_true),
         np.array(all_pred),
-        preparation.apply(y[: plan.cut_points[0]]) if plan.cut_points else preparation.apply(y),
-        seasonal_period(frequency),
+        mase_baseline(y, plan, preparation),
+        plan.mase_lag,
     )
     result.winkler = interval_cost(result, confidence_level)
     return result

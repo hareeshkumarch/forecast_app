@@ -227,6 +227,7 @@ def test_production_refuses_to_start_on_a_secret_manager_it_cannot_read() -> Non
             credential_secret_key="x" * 40,
             database_fallback_enabled=False,
             cors_origins_raw="https://example.com",
+            auth_enabled=True,
         )
 
     try:
