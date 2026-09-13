@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core import streams
+from app.core import lifecycle, streams
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.database.session import session_scope
@@ -645,11 +645,14 @@ async def _progress_stream(
         )
         last_updated = max(as_utc(initial.updated_at), seen) if seen else as_utc(initial.updated_at)
 
+        draining = asyncio.ensure_future(lifecycle.drain_event().wait())
         try:
             while next_event is not None and not deadline.passed:
                 wait = min(SSE_KEEPALIVE_SECONDS, deadline.remaining or 1.0)
-                ready, _ = await asyncio.wait((next_event,), timeout=wait)
-                if not ready:
+                ready, _ = await asyncio.wait(
+                    (next_event, draining), timeout=wait, return_when=asyncio.FIRST_COMPLETED
+                )
+                if next_event not in ready:
                     yield streams.KEEPALIVE
                     continue
 
@@ -666,8 +669,9 @@ async def _progress_stream(
                 next_event = asyncio.create_task(subscription.__anext__())
             else:
                 if next_event is not None and deadline.passed:
-                    yield streams.EXPIRED
+                    yield streams.closing_frame()
         finally:
+            draining.cancel()
             if next_event is not None and not next_event.done():
                 next_event.cancel()
                 with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):

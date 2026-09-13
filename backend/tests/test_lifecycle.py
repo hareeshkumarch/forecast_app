@@ -124,3 +124,94 @@ class TestDraining:
         from app.services.job_runner import executors
 
         assert await executors.drain(0.0) >= 0
+
+
+class TestStreamsLetGoOfADrainingProcess:
+    """Uvicorn waits for open connections before lifespan shutdown runs, so a
+    stream that only watches its own lifetime holds the drain off until SIGKILL.
+    """
+
+    def test_a_live_deadline_is_not_passed(self) -> None:
+        from app.core import streams
+
+        assert streams.Deadline(60.0).passed is False
+
+    def test_draining_ends_every_open_stream(self) -> None:
+        from app.core import streams
+
+        deadline = streams.Deadline(3600.0)
+        lifecycle.begin_shutdown()
+
+        assert deadline.passed is True
+
+    def test_draining_collapses_the_keepalive_wait(self) -> None:
+        from app.core import streams
+
+        deadline = streams.Deadline(3600.0)
+        assert deadline.remaining > 3000.0
+
+        lifecycle.begin_shutdown()
+
+        assert deadline.remaining == 0.0
+
+    def test_the_client_is_told_which_ending_it_got(self) -> None:
+        from app.core import streams
+
+        assert streams.closing_frame() == streams.EXPIRED
+        assert b"lifetime" in streams.closing_frame()
+
+        lifecycle.begin_shutdown()
+
+        assert streams.closing_frame() == streams.RESTARTING
+        assert b"restarting" in streams.closing_frame()
+
+
+class TestTheSignalMarksTheProcessDraining:
+    def test_the_handler_it_replaced_still_runs(self) -> None:
+        import signal
+
+        seen: list[int] = []
+        previous = signal.signal(signal.SIGTERM, lambda sig, frame: seen.append(sig))
+        try:
+            lifecycle.watch_signals()
+            handler = signal.getsignal(signal.SIGTERM)
+            assert callable(handler)
+
+            handler(signal.SIGTERM, None)
+
+            assert lifecycle.shutting_down() is True
+            assert seen == [signal.SIGTERM], "the server's own handler must still fire"
+        finally:
+            lifecycle.release_signals()
+            signal.signal(signal.SIGTERM, previous)
+
+    def test_releasing_puts_the_original_handler_back(self) -> None:
+        import signal
+
+        def original(sig, frame):
+            return None
+
+        previous = signal.signal(signal.SIGTERM, original)
+        try:
+            lifecycle.watch_signals()
+            assert signal.getsignal(signal.SIGTERM) is not original
+
+            lifecycle.release_signals()
+
+            assert signal.getsignal(signal.SIGTERM) is original
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+    def test_a_default_disposition_is_left_alone(self) -> None:
+        import signal
+
+        previous = signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        try:
+            lifecycle.watch_signals()
+
+            assert (
+                signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+            ), "with nothing to delegate to, replacing SIG_DFL would swallow the signal"
+        finally:
+            lifecycle.release_signals()
+            signal.signal(signal.SIGTERM, previous)

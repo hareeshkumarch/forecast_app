@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Iterator
 
 from starlette.requests import Request
 
-from app.core import metrics
+from app.core import lifecycle, metrics
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -165,14 +165,21 @@ class Deadline:
 
     @property
     def passed(self) -> bool:
-        return time.monotonic() >= self._expires_at
+        return lifecycle.shutting_down() or time.monotonic() >= self._expires_at
 
     @property
     def remaining(self) -> float:
+        if lifecycle.shutting_down():
+            return 0.0
         return max(0.0, self._expires_at - time.monotonic())
 
 
 EXPIRED = frame('{"reason":"lifetime"}', event="expired")
+RESTARTING = frame('{"reason":"restarting"}', event="expired")
+
+
+def closing_frame() -> bytes:
+    return RESTARTING if lifecycle.shutting_down() else EXPIRED
 
 
 async def released_after(source: AsyncIterator[bytes], lease: Lease) -> AsyncIterator[bytes]:

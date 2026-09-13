@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core import broadcast, streams
+from app.core import broadcast, lifecycle, streams
 from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
 from app.core.errors import AppError, NotFoundError
@@ -413,16 +414,26 @@ async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> Strea
         async with broadcast.subscribe(*topics) as queue:
             yield streams.preamble()
             yield streams.frame(event="sync")
-            while not deadline.passed:
-                try:
-                    topic = await asyncio.wait_for(
-                        queue.get(), timeout=min(KEEPALIVE_SECONDS, deadline.remaining or 1.0)
+            draining = asyncio.ensure_future(lifecycle.drain_event().wait())
+            try:
+                while not deadline.passed:
+                    getter = asyncio.ensure_future(queue.get())
+                    ready, _ = await asyncio.wait(
+                        (getter, draining),
+                        timeout=min(KEEPALIVE_SECONDS, deadline.remaining or 1.0),
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                except TimeoutError:
-                    yield streams.KEEPALIVE
-                    continue
-                yield streams.frame(event=topic)
-            yield streams.EXPIRED
+                    if getter in ready:
+                        yield streams.frame(event=getter.result())
+                        continue
+                    getter.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await getter
+                    if draining not in ready:
+                        yield streams.KEEPALIVE
+            finally:
+                draining.cancel()
+            yield streams.closing_frame()
 
     return StreamingResponse(
         streams.released_after(events(), lease),

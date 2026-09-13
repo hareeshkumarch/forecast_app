@@ -177,7 +177,6 @@ class Settings(BaseSettings):
     llm_max_concurrent_rewrites: int = Field(default=8, ge=1, le=64)
 
     anthropic_api_key: str | None = None
-    insight_llm_model: str = "claude-opus-5"
 
     insight_accuracy_warning: float = Field(default=80.0, ge=0.0, le=100.0)
     insight_accuracy_plannable: float = Field(default=75.0, ge=0.0, le=100.0)

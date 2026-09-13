@@ -29,6 +29,7 @@ from app.core.middleware import (
     SecurityHeaders,
 )
 from app.database.session import active_target, engine
+from app.insights.llm import llm_enabled
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
@@ -43,6 +44,7 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings.ensure_directories()
+    lifecycle.watch_signals()
 
     executors.start()
     relay.start()
@@ -61,6 +63,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         active_target.label,
         active_target.safe_url,
         "on Celery workers" if settings.distributed else "in this process",
+    )
+    logger.info(
+        "Insight rewriting is %s.",
+        "on" if llm_enabled() else "off — insights ship as the rules wrote them",
     )
     if settings.metrics_need_a_token:
         logger.warning(
@@ -113,6 +119,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()
+    lifecycle.release_signals()
     logger.info("Shutdown complete.")
 
 
