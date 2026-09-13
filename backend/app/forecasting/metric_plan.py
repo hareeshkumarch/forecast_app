@@ -77,7 +77,7 @@ def plan_for(profile: SeriesProfile | None) -> MetricPlan:
         routing.NO_DEMAND,
     }
 
-    lag = profile.seasonal_period if profile.has_seasonality else 1
+    lag = profile.mase_lag
 
     if profile.n_observations > lag:
         reported.extend(SCALED)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -165,3 +166,88 @@ def test_candidate_workers_are_reported_as_shadowed_when_they_are() -> None:
         assert not settings.candidate_workers_shadowed
     finally:
         settings.forecast_model_concurrency, settings.forecast_candidate_workers = before
+
+
+def test_production_refuses_to_start_with_sign_in_switched_off(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CREDENTIAL_SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("DATABASE_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+    with pytest.raises(ValueError, match="AUTH_ENABLED"):
+        Settings()
+
+
+def test_the_blas_thread_setting_overrides_a_value_already_in_the_environment() -> None:
+    import subprocess
+    import sys
+
+    def pinned(env: dict[str, str]) -> str:
+        return subprocess.run(
+            [sys.executable, "-c", "import app, os; print(os.environ['OPENBLAS_NUM_THREADS'])"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            env={**os.environ, **env},
+        ).stdout.strip()
+
+    preset = {name: "1" for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS")}
+
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": "4"}) == "4"
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": ""}) == "1"
+    assert pinned({**preset, "FORECAST_BLAS_THREADS": "not-a-number"}) == "1"
+
+
+COMPOSE_FILES = (
+    Path(__file__).resolve().parents[2] / "docker-compose.yml",
+    Path(__file__).resolve().parents[2] / "deploy" / "aws" / "docker-compose.prod.yml",
+)
+
+
+def _env_var_for(name: str) -> str:
+    field = Settings.model_fields[name]
+    return (field.alias or name).upper()
+
+
+def _llm_settings() -> set[str]:
+    return {
+        _env_var_for(name)
+        for name in Settings.model_fields
+        if name.startswith("llm_") or name == "anthropic_api_key"
+    }
+
+
+class TestTheComposeFilesCarryTheLlmSettings:
+    """A variable a compose file does not name is one the container never sees.
+
+    The whole rewriter was configurable in .env.example and unreachable in every
+    deployment, which reads as the feature being switched off with nothing
+    disagreeing out loud.
+    """
+
+    def test_there_are_settings_to_check(self) -> None:
+        assert len(_llm_settings()) >= 10
+
+    @pytest.mark.parametrize("compose", COMPOSE_FILES, ids=lambda p: p.name)
+    def test_every_one_is_passed_through(self, compose: Path) -> None:
+        body = compose.read_text()
+        missing = sorted(name for name in _llm_settings() if f"{name}:" not in body)
+
+        assert not missing, f"{compose.name} never passes: {', '.join(missing)}"
+
+
+def test_no_setting_is_declared_without_being_read() -> None:
+    source = "\n".join(
+        path.read_text()
+        for path in (Path(__file__).resolve().parents[1] / "app").rglob("*.py")
+        if path.name != "config.py"
+    )
+    unread = [
+        name
+        for name in Settings.model_fields
+        if name.startswith(("llm_", "insight_llm")) and f"settings.{name}" not in source
+    ]
+
+    assert not unread, f"declared but never read: {', '.join(sorted(unread))}"

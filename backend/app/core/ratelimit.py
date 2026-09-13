@@ -100,7 +100,10 @@ limiter = SlidingWindow()
 def _trusted_peer(client_host: str | None) -> bool:
     networks = settings.rate_limit_trusted_proxies
     if not networks:
-        return True
+        # No proxy declared means believe the socket, not the header. Trusting
+        # it here instead would let any caller pick their own bucket, and every
+        # limit below becomes a header they choose.
+        return False
     if not client_host:
         return False
     try:

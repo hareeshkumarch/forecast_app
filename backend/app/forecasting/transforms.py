@@ -20,7 +20,6 @@ POWER_LAMBDA_MARGIN = 0.05
 class Transform:
     kind: str
     shift: float = 0.0
-    residual_variance: float = 0.0
     lam: float = 1.0
 
     @property
@@ -42,8 +41,7 @@ class Transform:
             return array.copy()
 
         if self.kind == "log":
-            correction = self.residual_variance / 2.0 if self.residual_variance > 0 else 0.0
-            return np.exp(np.clip(array + correction, -700.0, 700.0)) - self.shift
+            return np.exp(np.clip(array, -700.0, 700.0)) - self.shift
 
         # Below `lam * z + 1 == 0` the transform has no inverse: the model is
         # predicting past the bottom of the scale it was fitted on. The floor
@@ -53,9 +51,6 @@ class Transform:
         inside = raised > 0.0
         base = np.where(inside, raised, 1.0)
         mean = np.power(base, 1.0 / self.lam)
-        if self.residual_variance > 0.0:
-            widen = 1.0 + self.residual_variance * (1.0 - self.lam) / (2.0 * np.square(base))
-            mean = mean * np.clip(widen, 0.5, 2.0)
         mean = np.where(inside & np.isfinite(mean), mean, 0.0)
         return mean - self.shift
 
@@ -90,13 +85,6 @@ class TransformedForecaster:
         return self.transform.inverse(np.asarray(raw, dtype=float).ravel())
 
 
-def _step_variance(transformed: FloatArray) -> float:
-    if transformed.size <= 2:
-        return 0.0
-    variance = float(np.var(np.diff(transformed), ddof=1))
-    return variance if np.isfinite(variance) else 0.0
-
-
 def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
@@ -107,10 +95,7 @@ def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
     shift = 0.0 if minimum > 0 else abs(minimum) + 1.0
 
     if profile.transform == "log":
-        transformed = np.log(np.maximum(finite + shift, 1e-9))
-        return Transform(
-            kind="log", shift=shift, residual_variance=min(_step_variance(transformed), 1.0)
-        )
+        return Transform(kind="log", shift=shift)
 
     lam = float(profile.box_cox_lambda)
     if profile.transform != "none" or not np.isfinite(lam):
@@ -118,7 +103,4 @@ def build_transform(values: FloatArray, profile: SeriesProfile) -> Transform:
     if abs(lam - 1.0) < POWER_LAMBDA_MARGIN or lam <= 0.0:
         return Transform(kind="none")
 
-    transformed = (np.power(np.maximum(finite + shift, 1e-9), lam) - 1.0) / lam
-    return Transform(
-        kind="power", shift=shift, residual_variance=_step_variance(transformed), lam=lam
-    )
+    return Transform(kind="power", shift=shift, lam=lam)

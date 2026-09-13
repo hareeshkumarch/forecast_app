@@ -267,3 +267,18 @@ def test_supabase_is_offered_as_an_importable_type() -> None:
     assert ConnectorType.SUPABASE in RAIL_ORDER
     keys = {field.key for field in adapter_cls.form_fields}
     assert {"project_ref", "password"} <= keys
+
+
+def test_a_saved_connector_cannot_be_pointed_somewhere_else_while_it_is_tested() -> None:
+    from app.services.connector_service import _redirected
+
+    stored = {"host": "db.internal", "port": 5432, "database": "prod"}
+
+    assert _redirected(stored, {}) == []
+    assert _redirected(stored, {"ssl": True}) == []
+    assert _redirected(stored, {"host": "db.internal"}) == []
+    assert _redirected(stored, {"host": "attacker.tld"}) == ["host"]
+    assert _redirected(stored, {"port": 6000}) == ["port"]
+    assert _redirected(
+        {"endpoint": "https://api.vendor.com"}, {"endpoint": "http://attacker.tld"}
+    ) == ["endpoint"]

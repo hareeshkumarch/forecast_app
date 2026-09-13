@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+import numpy.typing as npt
 
 from app.core.config import settings
 from app.forecasting.backtest import BacktestResult, FoldResult, interval_cost
-from app.forecasting.frequency import seasonal_period
 from app.forecasting.metrics import evaluate, mase
-from app.models.enums import ForecastFrequency, ModelKind
+from app.models.enums import ModelKind
+
+FloatArray = npt.NDArray[np.float64]
 
 MIN_MEMBERS = 2
 
@@ -76,13 +78,13 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
     return aligned
 
 
-def _member_errors(aligned: _Aligned, skip: int | None = None) -> list[float]:
+def _member_errors(aligned: _Aligned, before: int | None = None) -> list[float]:
     errors: list[float] = []
     for member in aligned.predictions:
         total = 0.0
         count = 0
         for index, predictions in enumerate(member):
-            if index == skip:
+            if before is not None and index >= before:
                 continue
             truth = aligned.truth[index]
             total += float(np.sum(np.abs(np.asarray(predictions) - np.asarray(truth))))
@@ -105,7 +107,8 @@ def inverse_error_weights(errors: list[float]) -> list[float]:
 def blend(
     results: list[BacktestResult],
     *,
-    frequency: ForecastFrequency,
+    insample: FloatArray,
+    seasonal_lag: int = 1,
     confidence_level: float = 0.8,
     max_members: int | None = None,
 ) -> Blend | None:
@@ -133,7 +136,12 @@ def blend(
         stacked = np.vstack(
             [np.asarray(member[index], dtype=float) for member in aligned.predictions]
         )
-        held_out = inverse_error_weights(_member_errors(aligned, skip=index))
+        member_count = len(aligned.predictions)
+        held_out = (
+            [1.0 / member_count] * member_count
+            if index == 0
+            else inverse_error_weights(_member_errors(aligned, before=index))
+        )
         combined = np.average(stacked, axis=0, weights=held_out)
         fold_weights = aligned.weights[index]
 
@@ -163,9 +171,7 @@ def blend(
     result.rmse = scores["rmse"]
     result.smape = scores["smape"]
     result.wmape = scores["wmape"]
-    result.mase = mase(
-        np.array(all_true), np.array(all_pred), np.array(all_true), seasonal_period(frequency)
-    )
+    result.mase = mase(np.array(all_true), np.array(all_pred), insample, seasonal_lag)
     result.winkler = interval_cost(result, confidence_level)
     result.fit_seconds = sum(member.fit_seconds for member in chosen)
 

@@ -46,9 +46,13 @@ services:
     # Time docker allows for a SIGTERM to be honoured before it sends SIGKILL.
     # The default is ten seconds, which is less than the shutdown drain — so
     # without this the API is killed part-way through waiting for the forecasts
-    # already running to finish, and the wait buys nothing at all. Kept under
-    # systemd's default TimeoutStopSec of 90s, which bounds the whole chain.
-    stop_grace_period: 60s
+    # already running to finish, and the wait buys nothing at all.
+    #
+    # It has to cover both halves of the shutdown, not just the drain: uvicorn
+    # spends up to --timeout-graceful-shutdown (10s, set in entrypoint.sh)
+    # closing connections BEFORE lifespan shutdown starts the 45s drain. 10 + 45
+    # leaves 20s here for the pools and the engine to close.
+    stop_grace_period: 75s
     build:
       context: ./backend
     ports:
@@ -108,8 +112,9 @@ services:
       # left of it lets a caller pick its own rate-limit bucket.
       RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
       # Addresses whose forwarding headers are believed at all. Empty believes
-      # them from anywhere, which is safe only where nothing reaches the API
-      # except through the proxy.
+      # none of them and counts every caller by the address the socket reports,
+      # which behind a proxy is the proxy — so all callers share one bucket.
+      # Name the proxy's network to count them apart.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
       # /api/health/metrics, in Prometheus' text format. In production an
       # unset token means every scrape is refused rather than served openly.
@@ -119,6 +124,19 @@ services:
       # revision — memory knobs, not correctness knobs.
       DASHBOARD_CACHE_ENABLED: ${DASHBOARD_CACHE_ENABLED:-true}
       DASHBOARD_CACHE_TTL_SECONDS: ${DASHBOARD_CACHE_TTL_SECONDS:-300}
+      # The insight rewriter. Off unless a key is set; insights then ship as
+      # written. The backend says which at startup.
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-400}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-10.0}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_CONCURRENT_REWRITES: ${LLM_MAX_CONCURRENT_REWRITES:-8}
+      LLM_BREAKER_FAILURE_THRESHOLD: ${LLM_BREAKER_FAILURE_THRESHOLD:-4}
+      LLM_BREAKER_RESET_SECONDS: ${LLM_BREAKER_RESET_SECONDS:-30.0}
       DASHBOARD_CACHE_MAX_ENTRIES: ${DASHBOARD_CACHE_MAX_ENTRIES:-600}
     volumes:
       # Bind-mounted so uploaded files and generated Parquet/exports are

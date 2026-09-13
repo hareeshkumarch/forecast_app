@@ -168,9 +168,16 @@ _BLAS_THREAD_VARS = (
 
 
 def _pin_blas_threads() -> None:
-    threads = max(1, settings.forecast_blas_threads)
+    # An operator who set OMP_NUM_THREADS by hand keeps it. Only an explicit
+    # FORECAST_BLAS_THREADS overrides, because the image already sets these to
+    # 1 and a setdefault against that can never take effect.
+    explicit = bool(os.environ.get("FORECAST_BLAS_THREADS", "").strip())
+    threads = str(max(1, settings.forecast_blas_threads))
     for name in _BLAS_THREAD_VARS:
-        os.environ.setdefault(name, str(threads))
+        if explicit:
+            os.environ[name] = threads
+        else:
+            os.environ.setdefault(name, threads)
 
 
 def _adopt_channel(channel: Any) -> None:

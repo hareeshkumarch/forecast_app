@@ -177,7 +177,6 @@ class Settings(BaseSettings):
     llm_max_concurrent_rewrites: int = Field(default=8, ge=1, le=64)
 
     anthropic_api_key: str | None = None
-    insight_llm_model: str = "claude-opus-5"
 
     insight_accuracy_warning: float = Field(default=80.0, ge=0.0, le=100.0)
     insight_accuracy_plannable: float = Field(default=75.0, ge=0.0, le=100.0)
@@ -221,6 +220,11 @@ class Settings(BaseSettings):
                     f"({secrets_load.error}). Refusing to start in production on partial "
                     "configuration — the defaults it would fall back to include sign-in "
                     "being switched off."
+                )
+            if not self.auth_enabled:
+                raise ValueError(
+                    "AUTH_ENABLED must be true in production. With it off every guarded route "
+                    "resolves to the anonymous user and the whole API is served unauthenticated."
                 )
         return self
 

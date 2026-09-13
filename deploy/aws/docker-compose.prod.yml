@@ -62,9 +62,13 @@ services:
     # Time docker allows for a SIGTERM to be honoured before it sends SIGKILL.
     # The default is ten seconds, which is less than the shutdown drain — so
     # without this the API is killed part-way through waiting for the forecasts
-    # already running to finish, and the wait buys nothing at all. Kept under
-    # systemd's default TimeoutStopSec of 90s, which bounds the whole chain.
-    stop_grace_period: 60s
+    # already running to finish, and the wait buys nothing at all.
+    #
+    # It has to cover both halves of the shutdown, not just the drain: uvicorn
+    # spends up to --timeout-graceful-shutdown (10s, set in entrypoint.sh)
+    # closing connections BEFORE lifespan shutdown starts the 45s drain. 10 + 45
+    # leaves 20s here for the pools and the engine to close.
+    stop_grace_period: 75s
     build:
       context: ../../backend
     image: ${BACKEND_IMAGE:-forecast-backend:local}
@@ -164,9 +168,10 @@ services:
       # of thousands of rows and that is slow rather than stuck.
       DB_STATEMENT_TIMEOUT_SECONDS: ${DB_STATEMENT_TIMEOUT_SECONDS:-30}
       DB_WRITE_TIMEOUT_SECONDS: ${DB_WRITE_TIMEOUT_SECONDS:-300}
-      # How long a redeploy waits for the forecasts already running. Must fit
-      # inside stop_grace_period above, which must fit inside the unit's
-      # TimeoutStopSec.
+      # How long a redeploy waits for the forecasts already running. This is
+      # the second half of the shutdown: uvicorn's --timeout-graceful-shutdown
+      # runs first. Both must fit inside stop_grace_period above, which must fit
+      # inside the unit's TimeoutStopSec.
       SHUTDOWN_DRAIN_SECONDS: ${SHUTDOWN_DRAIN_SECONDS:-45}
       # Off. Read GET /api/health/storage and GET /api/forecasts/retention
       # before turning it on — both answer while it is off, which is the point.
@@ -185,14 +190,31 @@ services:
       # window. One is right for CloudFront alone.
       RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
       # Addresses whose forwarding headers are believed at all. Empty believes
-      # them from anywhere, which is only safe once nothing can reach this
-      # origin except through CloudFront.
+      # none of them and counts every caller by the address the socket reports
+      # — behind CloudFront that is CloudFront, so all callers would share one
+      # bucket. Set it to the edge network that fronts this origin.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
       # Dashboard aggregates, cached under a key carrying the run's own
       # revision. Memory knobs, not correctness knobs — an entry cannot go
       # stale, only unused.
       DASHBOARD_CACHE_TTL_SECONDS: ${DASHBOARD_CACHE_TTL_SECONDS:-300}
       DASHBOARD_CACHE_MAX_ENTRIES: ${DASHBOARD_CACHE_MAX_ENTRIES:-600}
+      # The insight rewriter. Every variable this file does not name is one the
+      # container never sees, and none of these were named — so an operator
+      # could set LLM_API_KEY in /opt/forecast/.env, redeploy, and watch the
+      # feature stay off with nothing disagreeing out loud. Leave LLM_API_KEY
+      # empty and insights ship as written; the backend says which at startup.
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-400}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-10.0}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_CONCURRENT_REWRITES: ${LLM_MAX_CONCURRENT_REWRITES:-8}
+      LLM_BREAKER_FAILURE_THRESHOLD: ${LLM_BREAKER_FAILURE_THRESHOLD:-4}
+      LLM_BREAKER_RESET_SECONDS: ${LLM_BREAKER_RESET_SECONDS:-30.0}
       # Empty: without a broker the API fits in-process. Setting these would
       # require the redis and worker services this file deliberately omits.
       CELERY_BROKER_URL: ""

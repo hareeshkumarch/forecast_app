@@ -155,6 +155,24 @@ def load_credentials(connector: Connector) -> dict[str, str]:
     return decrypt_credentials(connector.credential.encrypted_payload)
 
 
+DESTINATION_KEYS = (
+    "host",
+    "port",
+    "endpoint",
+    "account",
+    "project_id",
+    "sheet_id",
+    "file_path",
+    "database",
+    "schema_name",
+    "warehouse",
+)
+
+
+def _redirected(stored: dict, supplied: dict) -> list[str]:
+    return [key for key in DESTINATION_KEYS if key in supplied and supplied[key] != stored.get(key)]
+
+
 async def test_connector(
     session: AsyncSession,
     *,
@@ -166,8 +184,20 @@ async def test_connector(
     if connector_id is not None:
         connector = await get_connector(session, connector_id)
         resolved_type = connector.type
-        resolved_config = {**(connector.config or {}), **config}
+        stored_config = connector.config or {}
 
+        # The stored credentials are about to be decrypted and handed to an
+        # adapter. Letting the caller also choose where that adapter connects
+        # would hand them the secret: point a saved connector at a host you
+        # control and it authenticates to you.
+        moved = _redirected(stored_config, config)
+        if moved:
+            raise ValidationError(
+                "Testing a saved connector cannot change where it connects to "
+                f"({', '.join(moved)}). Re-enter the credentials to test a different destination."
+            )
+
+        resolved_config = {**stored_config, **config}
         resolved_credentials = {**load_credentials(connector), **credentials}
     else:
         if connector_type is None:

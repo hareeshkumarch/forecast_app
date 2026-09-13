@@ -29,6 +29,7 @@ from app.core.middleware import (
     SecurityHeaders,
 )
 from app.database.session import active_target, engine
+from app.insights.llm import llm_enabled
 from app.schemas.common import ErrorResponse
 from app.services.forecast_service import recover_interrupted_runs
 from app.services.job_runner import executors
@@ -43,6 +44,7 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings.ensure_directories()
+    lifecycle.watch_signals()
 
     executors.start()
     relay.start()
@@ -62,6 +64,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         active_target.safe_url,
         "on Celery workers" if settings.distributed else "in this process",
     )
+    logger.info(
+        "Insight rewriting is %s.",
+        "on" if llm_enabled() else "off — insights ship as the rules wrote them",
+    )
     if settings.metrics_need_a_token:
         logger.warning(
             "METRICS_ENABLED is on but METRICS_TOKEN is empty, so every scrape of "
@@ -76,6 +82,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "FORECAST_CANDIDATE_WORKERS to 1 so the configuration says what is happening.",
             settings.forecast_candidate_workers,
             settings.forecast_model_concurrency,
+        )
+    if settings.rate_limit_enabled and not settings.rate_limit_trusted_proxies:
+        logger.warning(
+            "RATE_LIMIT_TRUSTED_PROXIES is empty, so X-Forwarded-For is ignored and every "
+            "caller is counted by the address the socket reports. Behind a proxy that is the "
+            "proxy, so all callers share one bucket; set it to the proxy's network to count "
+            "them apart."
         )
     if "*" in settings.cors_origins:
         logger.warning(
@@ -106,6 +119,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await mail_sender.stop()
     executors.shutdown()
     await engine.dispose()
+    lifecycle.release_signals()
     logger.info("Shutdown complete.")
 
 
