@@ -314,3 +314,83 @@ class TestScoringAnIntervalCannotReadTheFuture:
             fold_two_term = 2.0 * total - fold_one_term
             assert fold_two_term > 0.0, (last, total, fold_one_term)
             assert total == pytest.approx((fold_one_term + fold_two_term) / 2.0)
+
+
+class TestABandIsAsWideAsItClaims:
+    """An 80% band should be about 1.28 sigma, not 3.3.
+
+    Residuals were pooled across every horizon — so the pool already carried the
+    growth with horizon — and then scaled by sqrt(step) a second time. Measured
+    against a known truth that came to 2.49x, and on the benchmark the median
+    forward error sat at 0.20 of the published halfwidth where 0.53 is right for
+    an 80% normal band.
+    """
+
+    HORIZON = 12
+    STEP_SIGMA = 10.0
+
+    def _truth(self) -> np.ndarray:
+        return self.STEP_SIGMA * np.sqrt(np.arange(1, self.HORIZON + 1))
+
+    def _backtest(self, folds: int, rng: np.random.Generator):
+        from app.forecasting.backtest import BacktestResult, FoldResult
+        from app.models.enums import ModelKind
+
+        truth = self._truth()
+        return BacktestResult(
+            model=ModelKind.NAIVE,
+            folds=[
+                FoldResult(
+                    fold=index,
+                    train_size=80,
+                    test_size=self.HORIZON,
+                    y_true=[float(v) for v in rng.normal(0, 1, self.HORIZON) * truth],
+                    y_pred=[0.0] * self.HORIZON,
+                    y_step=list(range(1, self.HORIZON + 1)),
+                )
+                for index in range(folds)
+            ],
+        )
+
+    def _coverage(self, folds: int, seed: int = 11) -> float:
+        from app.forecasting.scenarios import build_intervals
+
+        rng = np.random.default_rng(seed)
+        truth = self._truth()
+        history = np.cumsum(rng.normal(0, self.STEP_SIGMA, 80))
+
+        inside = total = 0
+        for _ in range(400):
+            bands = build_intervals(
+                np.zeros(self.HORIZON), self._backtest(folds, rng), 0.8, history=history
+            )
+            fresh = rng.normal(0, 1, self.HORIZON) * truth
+            inside += int(((fresh >= bands.lower) & (fresh <= bands.upper)).sum())
+            total += self.HORIZON
+        return 100.0 * inside / total
+
+    @pytest.mark.parametrize("folds", [2, 3, 5, 8])
+    def test_coverage_lands_near_the_level_it_claims(self, folds: int) -> None:
+        observed = self._coverage(folds)
+        # Conformal is a one-sided guarantee, so a little high is correct. This
+        # used to sit at 99 for every one of these fold counts.
+        assert 74.0 <= observed <= 88.0, f"{folds} folds covered {observed:.1f}% of an 80% band"
+
+    def test_more_folds_do_not_make_it_worse(self) -> None:
+        # The running maximum this replaced took the largest of every noisy
+        # estimate up to each step, so eight folds covered 89% where five
+        # covered 80% — evidence made the answer worse.
+        assert abs(self._coverage(8, seed=3) - 80.0) <= abs(self._coverage(3, seed=3) - 80.0) + 4.0
+
+    @pytest.mark.parametrize("folds", [3, 8])
+    def test_the_band_never_narrows_as_the_horizon_grows(self, folds: int) -> None:
+        from app.forecasting.scenarios import build_intervals
+
+        rng = np.random.default_rng(5)
+        history = np.cumsum(rng.normal(0, self.STEP_SIGMA, 80))
+        for _ in range(50):
+            bands = build_intervals(
+                np.zeros(self.HORIZON), self._backtest(folds, rng), 0.8, history=history
+            )
+            width = bands.upper - bands.lower
+            assert np.all(np.diff(width) >= -1e-9), width
