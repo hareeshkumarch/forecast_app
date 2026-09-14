@@ -79,3 +79,13 @@ def compact(value: float | int | None, *, currency: bool = False, symbol: str = 
 
     places = SIGNIFICANT - 1 - math.floor(math.log10(magnitude))
     return f"{sign}{prefix}{_round(magnitude, places).rstrip('0').rstrip('.')}"
+
+
+def fit(value: str, limit: int) -> str:
+    """Cut a label to what its column can hold, and say so where it was cut.
+
+    Labels are joined from uploaded dimension values and have no natural length.
+    SQLite stores whatever it is given; Postgres raises StringDataRightTruncation
+    and takes the whole run down with it, after all the fitting is already paid for.
+    """
+    return value if len(value) <= limit else value[: limit - 1] + "\u2026"

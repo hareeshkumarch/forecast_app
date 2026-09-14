@@ -90,11 +90,19 @@ async def available(session: AsyncSession, run: ForecastRun) -> list[BreakdownRe
 async def _grain_cardinality(
     session: AsyncSession, run_id: uuid.UUID, grain: list[str]
 ) -> dict[str, int]:
-    leaves = await _leaves(session, run_id, len(grain))
+    # Counting distinct values needs the key and nothing else; `build` loads the
+    # full leaves separately, so hydrating them twice per request bought nothing.
+    keys = (
+        await session.execute(
+            select(ForecastSeries.key).where(
+                ForecastSeries.run_id == run_id, ForecastSeries.level == len(grain)
+            )
+        )
+    ).scalars()
     counts: dict[str, set[str]] = {column: set() for column in grain}
-    for leaf in leaves:
+    for key in keys:
         for column in grain:
-            value = (leaf.key or {}).get(column)
+            value = (key or {}).get(column)
             if value is not None:
                 counts[column].add(str(value))
     return {column: len(values) for column, values in counts.items()}

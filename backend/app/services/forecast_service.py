@@ -17,7 +17,7 @@ from app.core import budget, cache, metrics
 from app.core.config import settings
 from app.core.errors import ForecastError, NotFoundError, ValidationError
 from app.core.logging import get_logger, request_id
-from app.core.numbers import finite, storable
+from app.core.numbers import finite, fit, storable
 from app.core.security import (
     CredentialDecryptionError,
     decrypt_credentials,
@@ -1268,7 +1268,7 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
         session.add(
             RegionalForecast(
                 run_id=run.id,
-                region=segment.label,
+                region=fit(segment.label, 120),
                 forecast_value=finite(segment.forecast_value) or 0.0,
                 prior_year_value=finite(segment.prior_year_value),
                 change_vs_last_year=finite(segment.change_vs_last_year),
@@ -1283,12 +1283,12 @@ async def _persist_output(session: AsyncSession, run: ForecastRun, output: Forec
         session.add(
             CategoryForecast(
                 run_id=run.id,
-                category=segment.label,
+                category=fit(segment.label, 120),
                 forecast_value=finite(segment.forecast_value) or 0.0,
                 prior_year_value=finite(segment.prior_year_value),
                 share=finite(segment.share) or 0.0,
                 change_vs_last_year=finite(segment.change_vs_last_year),
-                accuracy=segment.accuracy,
+                accuracy=finite(segment.accuracy),
                 rank=rank,
             )
         )
