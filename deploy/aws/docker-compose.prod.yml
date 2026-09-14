@@ -232,7 +232,12 @@ services:
       # and not to this list produces the worst possible symptom: the feature
       # reads as switched off, the file says it is on, and nothing disagrees
       # out loud.
-      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      # Defaulted on. This file sets APP_ENV=production twenty lines above, and
+      # an operator who never sets AUTH_ENABLED used to serve every guarded
+      # route to the anonymous user with nothing failing — the startup warning
+      # was the only signal, and warnings scroll past. Switching sign-in *off*
+      # should be the deliberate act, not leaving it alone.
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
       AUTH_REQUIRE_APPROVAL: ${AUTH_REQUIRE_APPROVAL:-true}
       AUTH_ADMIN_EMAILS: ${AUTH_ADMIN_EMAILS:-}
       AUTH_ALLOWED_EMAIL_DOMAINS: ${AUTH_ALLOWED_EMAIL_DOMAINS:-}
