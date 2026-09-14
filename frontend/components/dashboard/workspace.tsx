@@ -1,5 +1,6 @@
 "use client";
 
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ChevronRight, Plus, Upload } from "lucide-react";
 
 import { ForecastVsActual } from "@/components/charts/forecast-vs-actual";
@@ -18,7 +19,14 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 export function Workspace() {
-  const { data: summary, isSuccess, isPending, isError, error, refetch } = useSummary();
+  const {
+    data: summary,
+    isSuccess,
+    isPending,
+    isError,
+    error,
+    refetch,
+  } = useSummary();
   const live = useDashboardRefresh();
   const openModal = useUiStore((state) => state.openModal);
 
@@ -26,7 +34,10 @@ export function Workspace() {
   const breakdowns = summary?.breakdowns ?? [];
 
   return (
-    <main id="main-content" className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas py-4 sm:py-5">
+    <main
+      id="main-content"
+      className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas py-4 sm:py-5"
+    >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <h2 className="text-heading font-semibold tracking-[-0.015em] text-text-primary">
@@ -38,7 +49,6 @@ export function Workspace() {
         </div>
 
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-
           {isSuccess && summary.has_data ? (
             <RefreshButton
               updatedAt={live.updatedAt}
@@ -58,8 +68,13 @@ export function Workspace() {
                 "transition-colors duration-fast hover:border-border-strong hover:text-text-primary",
               )}
             >
-              <span className="truncate">Model: {humanizeModel(summary.selected_model)}</span>
-              <ChevronRight className="h-3 w-3 shrink-0 text-text-muted" aria-hidden />
+              <span className="truncate">
+                Model: {humanizeModel(summary.selected_model)}
+              </span>
+              <ChevronRight
+                className="h-3 w-3 shrink-0 text-text-muted"
+                aria-hidden
+              />
             </button>
           ) : null}
 
@@ -105,33 +120,61 @@ export function Workspace() {
       ) : (
         <div data-workspace="data">
           <div className="mt-4">
-            <KpiCards />
+            <ErrorBoundary label="the headline figures">
+              <KpiCards />
+            </ErrorBoundary>
           </div>
 
-          <ModelHealthStrip />
+          <ErrorBoundary label="the model health strip">
+            <ModelHealthStrip />
+          </ErrorBoundary>
 
-          <DecisionPanel className="mt-3" />
+          <ErrorBoundary label="the decision panel">
+            <DecisionPanel className="mt-3" />
+          </ErrorBoundary>
 
           <div className="grid-charts stagger mt-3">
-            <ForecastVsActual />
+            <ErrorBoundary label="the forecast chart">
+              <ForecastVsActual />
+            </ErrorBoundary>
             {breakdowns[0] ? (
-              <BreakdownPanel key={breakdowns[0].column} breakdown={breakdowns[0]} />
+              <ErrorBoundary
+                key={breakdowns[0].column}
+                label={`the ${breakdowns[0].column} breakdown`}
+              >
+                <BreakdownPanel breakdown={breakdowns[0]} />
+              </ErrorBoundary>
             ) : (
-              <DriverTable />
+              <ErrorBoundary label="the driver table">
+                <DriverTable />
+              </ErrorBoundary>
             )}
           </div>
 
           {breakdowns.length > 0 ? (
             <div className="grid-panels stagger mt-3">
               {breakdowns.slice(1).map((breakdown) => (
-                <BreakdownPanel key={breakdown.column} breakdown={breakdown} />
+                <ErrorBoundary
+                  key={breakdown.column}
+                  label={`the ${breakdown.column} breakdown`}
+                >
+                  <BreakdownPanel breakdown={breakdown} />
+                </ErrorBoundary>
               ))}
 
-              <DriverTable className={breakdowns.length % 2 === 1 ? "panel-span" : undefined} />
+              <ErrorBoundary label="the driver table">
+                <DriverTable
+                  className={
+                    breakdowns.length % 2 === 1 ? "panel-span" : undefined
+                  }
+                />
+              </ErrorBoundary>
             </div>
           ) : null}
 
-          <AccuracyPanel className="mt-3" />
+          <ErrorBoundary label="the accuracy panel">
+            <AccuracyPanel className="mt-3" />
+          </ErrorBoundary>
         </div>
       )}
     </main>

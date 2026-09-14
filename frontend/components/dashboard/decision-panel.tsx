@@ -1,8 +1,19 @@
 "use client";
 
-import { CircleCheck, CircleAlert, CircleSlash, type LucideIcon } from "lucide-react";
+import {
+  CircleCheck,
+  CircleAlert,
+  CircleSlash,
+  type LucideIcon,
+} from "lucide-react";
 
-import { Badge, Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
+import {
+  Badge,
+  Card,
+  ErrorState,
+  PanelHeader,
+  Skeleton,
+} from "@/components/ui/primitives";
 import { useDecision } from "@/hooks/use-dashboard";
 import { cn } from "@/lib/utils";
 import type { DecisionGrade } from "@/types/api";
@@ -19,7 +30,8 @@ const GRADE: Record<
 export function DecisionPanel({ className }: { className?: string } = {}) {
   const { data, isLoading, isError, error, refetch } = useDecision();
 
-  if (isLoading) return <Skeleton className={cn("h-56 w-full rounded-card", className)} />;
+  if (isLoading)
+    return <Skeleton className={cn("h-56 w-full rounded-card", className)} />;
   if (isError) {
     return (
       <Card className={className}>
@@ -30,6 +42,8 @@ export function DecisionPanel({ className }: { className?: string } = {}) {
   if (!data?.has_decision || !data.grade) return null;
 
   const grade = GRADE[data.grade];
+  if (!grade) return null;
+
   const GradeIcon = grade.icon;
 
   return (
@@ -68,8 +82,12 @@ export function DecisionPanel({ className }: { className?: string } = {}) {
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <p className="text-meta font-semibold text-text-primary">{action.headline}</p>
-                  <p className="mt-0.5 text-caption text-text-secondary">{action.detail}</p>
+                  <p className="text-meta font-semibold text-text-primary">
+                    {action.headline}
+                  </p>
+                  <p className="mt-0.5 text-caption text-text-secondary">
+                    {action.detail}
+                  </p>
                 </div>
               </li>
             ))}
@@ -100,13 +118,26 @@ function PlanRange({
     <div>
       <dl className="grid grid-cols-3 gap-2">
         <Figure label="Commit to" value={commit} className="text-positive" />
-        <Figure label="Base case" value={base} className="text-text-primary" align="center" />
-        <Figure label="Be ready for" value={prepare} className="text-warning" align="right" />
+        <Figure
+          label="Base case"
+          value={base}
+          className="text-text-primary"
+          align="center"
+        />
+        <Figure
+          label="Be ready for"
+          value={prepare}
+          className="text-warning"
+          align="right"
+        />
       </dl>
 
       <div className="relative mt-2 h-2.5" aria-hidden>
         <div className="absolute inset-0 flex overflow-hidden rounded-chip">
-          <span className="bg-positive-soft" style={{ width: `${at * 100}%` }} />
+          <span
+            className="bg-positive-soft"
+            style={{ width: `${at * 100}%` }}
+          />
           <span className="flex-1 bg-warning-soft" />
         </div>
         <span
@@ -139,9 +170,16 @@ function Figure({
   align?: "left" | "center" | "right";
 }) {
   return (
-    <div className={cn(align === "center" && "text-center", align === "right" && "text-right")}>
+    <div
+      className={cn(
+        align === "center" && "text-center",
+        align === "right" && "text-right",
+      )}
+    >
       <dt className="text-caption text-text-muted">{label}</dt>
-      <dd className={cn("mt-0.5 text-kpi font-semibold num", className)}>{value ?? "—"}</dd>
+      <dd className={cn("mt-0.5 text-kpi font-semibold num", className)}>
+        {value ?? "—"}
+      </dd>
     </div>
   );
 }

@@ -1,10 +1,24 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Gauge, Target, TrendingDown } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Gauge,
+  Target,
+  TrendingDown,
+} from "lucide-react";
 
 import { Badge, Button, InlineError } from "@/components/ui/primitives";
-import { useForecastMetrics, useScoreForecast, useScorecard } from "@/hooks/use-dashboard";
-import { formatCompact, formatPercent, formatSignedPercent } from "@/lib/format";
+import {
+  useForecastMetrics,
+  useScoreForecast,
+  useScorecard,
+} from "@/hooks/use-dashboard";
+import {
+  formatCompact,
+  formatPercent,
+  formatSignedPercent,
+} from "@/lib/format";
 import type { ForecastRun, Scorecard as ScorecardData } from "@/types/api";
 
 export function Scorecard({ run }: { run: ForecastRun }) {
@@ -19,7 +33,12 @@ export function Scorecard({ run }: { run: ForecastRun }) {
     return (
       <section className="mt-4 border-t border-border pt-3">
         <InlineError error={error} />
-        <Button size="sm" variant="ghost" className="mt-2" onClick={() => void refetch()}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mt-2"
+          onClick={() => void refetch()}
+        >
           Try again
         </Button>
       </section>
@@ -32,7 +51,10 @@ export function Scorecard({ run }: { run: ForecastRun }) {
   const checkable = graded || Boolean(card?.source_dataset_id);
 
   return (
-    <section className="mt-4 border-t border-border pt-3" aria-label="Forecast versus actual">
+    <section
+      className="mt-4 border-t border-border pt-3"
+      aria-label="Forecast versus actual"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Target aria-hidden className="size-3.5 text-text-muted" />
@@ -70,7 +92,9 @@ export function Scorecard({ run }: { run: ForecastRun }) {
       </div>
 
       {isLoading ? (
-        <p className="mt-2 text-caption text-text-muted">Looking for real results…</p>
+        <p className="mt-2 text-caption text-text-muted">
+          Looking for real results…
+        </p>
       ) : !card || !graded ? (
         <p className="mt-2 text-caption text-text-muted">
           {card?.blocked_reason ??
@@ -112,7 +136,9 @@ export function ScoreLine({ runId }: { runId: string }) {
         <Target className="h-3 w-3 shrink-0 text-positive" aria-hidden />
         <span>
           Against what actually happened it was{" "}
-          <span className="font-medium text-text-secondary num">{formatPercent(card.accuracy)}</span>{" "}
+          <span className="font-medium text-text-secondary num">
+            {formatPercent(card.accuracy)}
+          </span>{" "}
           accurate over {periods}.
         </span>
       </p>
@@ -125,8 +151,10 @@ export function ScoreLine({ runId }: { runId: string }) {
     <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-text-muted">
       <Target className="h-3 w-3 shrink-0 text-accent" aria-hidden />
       <span>
-        <span className="font-medium text-text-secondary">{card.source_dataset_name}</span> now
-        covers the periods this forecast made.
+        <span className="font-medium text-text-secondary">
+          {card.source_dataset_name}
+        </span>{" "}
+        now covers the periods this forecast made.
       </span>
       <button
         type="button"
@@ -142,7 +170,9 @@ export function ScoreLine({ runId }: { runId: string }) {
 
 function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
   const { data: metrics } = useForecastMetrics(run.id);
-  const expected = metrics?.metrics.find((metric) => metric.name === "accuracy")?.value ?? null;
+  const expected =
+    metrics?.metrics.find((metric) => metric.name === "accuracy")?.value ??
+    null;
 
   return (
     <>
@@ -150,13 +180,23 @@ function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
         <Figure
           label="How accurate it was"
           value={formatPercent(card.accuracy)}
-          note={expected === null ? undefined : `${formatPercent(expected)} was expected`}
+          note={
+            expected === null
+              ? undefined
+              : `${formatPercent(expected)} was expected`
+          }
           tone={accuracyTone(card.accuracy, expected)}
         />
         <Figure
           label="Ran high or low"
           value={formatSignedPercent(card.bias)}
-          note={card.bias === null ? undefined : card.bias > 0 ? "over-forecast" : "under-forecast"}
+          note={
+            card.bias === null
+              ? undefined
+              : card.bias > 0
+                ? "over-forecast"
+                : "under-forecast"
+          }
         />
         <Figure
           label="Forecast"
@@ -175,15 +215,29 @@ function Graded({ card, run }: { card: ScorecardData; run: ForecastRun }) {
               ? undefined
               : `${Math.round(card.confidence_level * 100)}% was promised`
           }
-          tone={card.intervals_held === null ? undefined : card.intervals_held ? "good" : "bad"}
+          tone={
+            card.intervals_held == null
+              ? undefined
+              : card.intervals_held
+                ? "good"
+                : "bad"
+          }
         />
       </dl>
 
       <p className="mt-3 flex items-start gap-1.5 text-caption text-text-muted">
-        {card.drifted || card.intervals_held === false || card.pending_periods > 0 ? (
-          <AlertTriangle aria-hidden className="mt-px size-3 shrink-0 text-warning" />
+        {card.drifted ||
+        card.intervals_held === false ||
+        card.pending_periods > 0 ? (
+          <AlertTriangle
+            aria-hidden
+            className="mt-px size-3 shrink-0 text-warning"
+          />
         ) : (
-          <CheckCircle2 aria-hidden className="mt-px size-3 shrink-0 text-positive" />
+          <CheckCircle2
+            aria-hidden
+            className="mt-px size-3 shrink-0 text-positive"
+          />
         )}
         <span>{summary(card)}</span>
       </p>
@@ -207,7 +261,11 @@ function Figure({
       <dt className="text-caption text-text-muted">{label}</dt>
       <dd
         className={`mt-0.5 text-meta font-semibold num ${
-          tone === "good" ? "text-positive" : tone === "bad" ? "text-negative" : "text-text-primary"
+          tone === "good"
+            ? "text-positive"
+            : tone === "bad"
+              ? "text-negative"
+              : "text-text-primary"
         }`}
       >
         {value}

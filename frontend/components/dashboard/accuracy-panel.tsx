@@ -4,8 +4,19 @@ import { Gauge } from "lucide-react";
 import { useMemo } from "react";
 
 import { EChart, type ChartOption } from "@/components/charts/echart";
-import { Badge, Card, ErrorState, PanelHeader, Skeleton } from "@/components/ui/primitives";
-import { useAccuracyReport, useDecision, useForecastPoints, useSummary } from "@/hooks/use-dashboard";
+import {
+  Badge,
+  Card,
+  ErrorState,
+  PanelHeader,
+  Skeleton,
+} from "@/components/ui/primitives";
+import {
+  useAccuracyReport,
+  useDecision,
+  useForecastPoints,
+  useSummary,
+} from "@/hooks/use-dashboard";
 import {
   type ChartPalette,
   axisLabel,
@@ -31,11 +42,17 @@ function accuracyOf(row: HorizonAccuracy): number | null {
   return row.wape == null ? null : Math.max(0, 100 - row.wape);
 }
 
-function buildOption(rows: HorizonAccuracy[], colors: ChartPalette): ChartOption {
+function buildOption(
+  rows: HorizonAccuracy[],
+  colors: ChartPalette,
+): ChartOption {
   const labels = rows.map((row) => `+${row.horizon}`);
   const accuracy = rows.map(accuracyOf);
   const bias = rows.map((row) => row.bias_pct);
-  const floor = Math.min(...accuracy.filter((value): value is number => value != null), 100);
+  const floor = Math.min(
+    ...accuracy.filter((value): value is number => value != null),
+    100,
+  );
 
   return {
     grid: { left: 4, right: 4, top: 26, bottom: 4, containLabel: true },
@@ -48,7 +65,10 @@ function buildOption(rows: HorizonAccuracy[], colors: ChartPalette): ChartOption
         if (!row) return "";
         const measured = accuracyOf(row);
         return [
-          tooltipHeader(`${row.horizon} period${row.horizon === 1 ? "" : "s"} ahead`, colors),
+          tooltipHeader(
+            `${row.horizon} period${row.horizon === 1 ? "" : "s"} ahead`,
+            colors,
+          ),
           tooltipRow(
             colors.accent,
             "Accuracy",
@@ -58,10 +78,17 @@ function buildOption(rows: HorizonAccuracy[], colors: ChartPalette): ChartOption
           tooltipRow(
             colors.gold,
             "Bias",
-            row.bias_pct == null ? "—" : `${row.bias_pct > 0 ? "+" : ""}${row.bias_pct.toFixed(1)}%`,
+            row.bias_pct == null
+              ? "—"
+              : `${row.bias_pct > 0 ? "+" : ""}${row.bias_pct.toFixed(1)}%`,
             colors,
           ),
-          tooltipRow(colors.textMuted, "Scored on", `${row.observations}`, colors),
+          tooltipRow(
+            colors.textMuted,
+            "Scored on",
+            `${row.observations}`,
+            colors,
+          ),
         ].join("");
       },
     },
@@ -86,7 +113,10 @@ function buildOption(rows: HorizonAccuracy[], colors: ChartPalette): ChartOption
         type: "value",
         min: Math.max(0, Math.floor((floor - 8) / 10) * 10),
         max: 100,
-        axisLabel: { ...axisLabel(colors), formatter: (value: number) => `${value}%` },
+        axisLabel: {
+          ...axisLabel(colors),
+          formatter: (value: number) => `${value}%`,
+        },
         splitLine: splitLine(colors),
       },
       {
@@ -131,7 +161,8 @@ function buildSpreadOption(
     const width =
       point.lower_bound == null || point.upper_bound == null || !point.forecast
         ? null
-        : ((point.upper_bound - point.lower_bound) / Math.abs(point.forecast)) * 100;
+        : ((point.upper_bound - point.lower_bound) / Math.abs(point.forecast)) *
+          100;
     return { step: index + 1, width };
   });
 
@@ -145,11 +176,16 @@ function buildSpreadOption(
         const row = rows[points[0]?.dataIndex ?? 0];
         if (!row) return "";
         return [
-          tooltipHeader(`${row.step} period${row.step === 1 ? "" : "s"} ahead`, colors),
+          tooltipHeader(
+            `${row.step} period${row.step === 1 ? "" : "s"} ahead`,
+            colors,
+          ),
           tooltipRow(
             colors.accent,
             "Range width",
-            row.width == null ? "—" : `${row.width.toFixed(0)}% of the forecast`,
+            row.width == null
+              ? "—"
+              : `${row.width.toFixed(0)}% of the forecast`,
             colors,
           ),
         ].join("");
@@ -164,7 +200,10 @@ function buildSpreadOption(
     },
     yAxis: {
       type: "value",
-      axisLabel: { ...axisLabel(colors), formatter: (value: number) => `${value}%` },
+      axisLabel: {
+        ...axisLabel(colors),
+        formatter: (value: number) => `${value}%`,
+      },
       splitLine: splitLine(colors),
     },
     series: [
@@ -175,7 +214,10 @@ function buildSpreadOption(
         data: rows.map((row) => ({
           value: row.width,
           itemStyle: {
-            color: reliable != null && row.step > reliable ? colors.sand : colors.accent,
+            color:
+              reliable != null && row.step > reliable
+                ? colors.sand
+                : colors.accent,
             opacity: reliable != null && row.step > reliable ? 0.55 : 1,
           },
         })),
@@ -190,7 +232,11 @@ function buildSpreadOption(
                   position: "insideEndTop",
                   ...axisLabel(colors),
                 },
-                lineStyle: { color: colors.borderStrong, type: "dashed", width: 1 },
+                lineStyle: {
+                  color: colors.borderStrong,
+                  type: "dashed",
+                  width: 1,
+                },
                 data: [{ xAxis: reliable - 0.5 }],
               },
       },
@@ -221,7 +267,8 @@ export function AccuracyPanel({ className }: { className?: string } = {}) {
   );
 
   if (!runId) return null;
-  if (isLoading) return <Skeleton className={cn("h-72 w-full rounded-card", className)} />;
+  if (isLoading)
+    return <Skeleton className={cn("h-72 w-full rounded-card", className)} />;
   if (isError) {
     return (
       <Card className={className}>
@@ -270,9 +317,9 @@ export function AccuracyPanel({ className }: { className?: string } = {}) {
           <CoverageLine report={data} />
         </div>
 
-        {data.caveats.length > 0 ? (
+        {(data.caveats?.length ?? 0) > 0 ? (
           <ul className="mt-3 space-y-1 border-t border-border pt-3">
-            {data.caveats.map((caveat) => (
+            {(data.caveats ?? []).map((caveat) => (
               <li key={caveat} className="text-caption text-text-muted">
                 {caveat}
               </li>
@@ -291,9 +338,16 @@ function ValueAddLine({ report }: { report: AccuracyReport }) {
   const better = add.beats_baseline;
   return (
     <div>
-      <p className="text-caption text-text-muted">Against the simplest method</p>
+      <p className="text-caption text-text-muted">
+        Against the simplest method
+      </p>
       <p className="mt-0.5 text-meta text-text-primary">
-        <span className={cn("font-semibold num", better ? "text-positive" : "text-negative")}>
+        <span
+          className={cn(
+            "font-semibold num",
+            better ? "text-positive" : "text-negative",
+          )}
+        >
           {better ? "−" : "+"}
           {Math.abs(add.improvement_pct).toFixed(1)}% error
         </span>{" "}
@@ -305,11 +359,14 @@ function ValueAddLine({ report }: { report: AccuracyReport }) {
 }
 
 function CoverageLine({ report }: { report: AccuracyReport }) {
-  const [first, ...rest] = report.coverage.filter((point) => point.measurable);
+  const [first, ...rest] = (report.coverage ?? []).filter(
+    (point) => point.measurable,
+  );
   if (!first) return null;
 
   const worst = rest.reduce<CoveragePoint>(
-    (found, point) => (Math.abs(point.gap_pp) > Math.abs(found.gap_pp) ? point : found),
+    (found, point) =>
+      Math.abs(point.gap_pp) > Math.abs(found.gap_pp) ? point : found,
     first,
   );
   const measurable = [first, ...rest];
@@ -320,11 +377,18 @@ function CoverageLine({ report }: { report: AccuracyReport }) {
     <div>
       <p className="text-caption text-text-muted">Did the range hold</p>
       <p className="mt-0.5 text-meta text-text-primary">
-        <span className={cn("font-semibold num", held ? "text-positive" : "text-warning")}>
+        <span
+          className={cn(
+            "font-semibold num",
+            held ? "text-positive" : "text-warning",
+          )}
+        >
           {worst.observed.toFixed(0)}%
         </span>{" "}
         landed inside the {nominal}% range
-        {held ? " — as promised" : `, ${Math.abs(worst.gap_pp).toFixed(0)}pp short at its worst`}
+        {held
+          ? " — as promised"
+          : `, ${Math.abs(worst.gap_pp).toFixed(0)}pp short at its worst`}
       </p>
     </div>
   );

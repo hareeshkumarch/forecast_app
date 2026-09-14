@@ -18,7 +18,10 @@ const RECONNECT_CEILING_MS = 30_000;
  * second half of its own window costs nobody anything they can notice.
  */
 function backoff(attempt: number): number {
-  const window = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_CEILING_MS);
+  const window = Math.min(
+    RECONNECT_BASE_MS * 2 ** attempt,
+    RECONNECT_CEILING_MS,
+  );
   return window / 2 + Math.random() * (window / 2);
 }
 
@@ -79,7 +82,8 @@ export function useAccessStream(enabled: boolean) {
       // every attempt made anyway pushes the backoff further out — so the tab
       // that comes back from a tunnel would then sit silent for half a minute
       // having done nothing wrong. The online listener below is the way back.
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false)
+        return;
 
       void accessToken().then((token) => {
         if (stopped || !token) {
@@ -87,6 +91,10 @@ export function useAccessStream(enabled: boolean) {
           return;
         }
 
+        // The token is fetched asynchronously, so two opens can be in flight at
+        // once — an online/offline flap is enough. Assigning over a live handle
+        // orphans it, and EventSource reconnects on its own forever.
+        close();
         source = new EventSource(accessEventsUrl(token));
 
         source.onopen = () => {

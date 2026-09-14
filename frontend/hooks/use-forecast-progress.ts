@@ -112,7 +112,10 @@ export function useForecastProgress(
       onCompleteRef.current?.(event);
     }
 
-    function apply(event: ForecastProgressEvent, transport: Transport): boolean {
+    function apply(
+      event: ForecastProgressEvent,
+      transport: Transport,
+    ): boolean {
       if (done) return false;
       const signature =
         event.updated_at ??
@@ -125,7 +128,9 @@ export function useForecastProgress(
           event.queue_ahead,
         ].join(":");
       if (signature === newestSignature) return false;
-      const parsed = event.updated_at ? Date.parse(event.updated_at) : Number.NaN;
+      const parsed = event.updated_at
+        ? Date.parse(event.updated_at)
+        : Number.NaN;
       const frameTime = Number.isNaN(parsed) ? Date.now() : parsed;
 
       if (frameTime < newestFrame && !isTerminal(event.status)) return false;
@@ -141,7 +146,7 @@ export function useForecastProgress(
         stage: event.stage,
         message: event.message,
         error: event.error,
-        queueAhead: waiting ? event.queue_ahead ?? 0 : null,
+        queueAhead: waiting ? (event.queue_ahead ?? 0) : null,
         hasQueued: queued,
         isStreaming: !isTerminal(event.status) && transport === "streaming",
         isReconnecting: !isTerminal(event.status) && transport === "retrying",
@@ -210,6 +215,7 @@ export function useForecastProgress(
     }
 
     function openStream(url: string) {
+      source?.close();
       source = new EventSource(url);
       const openedSource = source;
 
@@ -217,16 +223,20 @@ export function useForecastProgress(
         if (done || source !== openedSource) return;
         attempts = 0;
         currentTransport = "streaming";
-        setState((previous) => ({ ...previous, isStreaming: true, isReconnecting: false }));
+        setState((previous) => ({
+          ...previous,
+          isStreaming: true,
+          isReconnecting: false,
+        }));
       };
 
       // The server ends a connection it has held long enough. A planned
       // goodbye, so it does not spend one of the three attempts that decide
       // whether this run falls back to polling.
       openedSource.addEventListener?.("expired", () => {
+        openedSource.close();
         if (done || source !== openedSource) return;
         attempts = 0;
-        openedSource.close();
         source = null;
         connect();
       });
@@ -239,13 +249,14 @@ export function useForecastProgress(
             attempts = 0;
             currentTransport = "streaming";
           }
-        } catch {
-        }
+        } catch {}
       };
 
       source.onerror = () => {
-        if (source !== openedSource) return;
+        // Close first, then decide. A stale handle is the one that most needs
+        // closing: EventSource reconnects by itself, so an orphan never stops.
         openedSource.close();
+        if (source !== openedSource) return;
         source = null;
         if (done || reconnectTimer) return;
 
@@ -256,11 +267,21 @@ export function useForecastProgress(
         }
 
         currentTransport = "retrying";
-        setState((previous) => ({ ...previous, isStreaming: false, isReconnecting: true }));
-        const window = Math.min(RECONNECT_BASE_MS * 2 ** (attempts - 1), RECONNECT_CEILING_MS);
+        setState((previous) => ({
+          ...previous,
+          isStreaming: false,
+          isReconnecting: true,
+        }));
+        const window = Math.min(
+          RECONNECT_BASE_MS * 2 ** (attempts - 1),
+          RECONNECT_CEILING_MS,
+        );
         // Jittered, so every tab that lost its stream to the same restart does
         // not come back in the same millisecond.
-        reconnectTimer = setTimeout(connect, window / 2 + Math.random() * (window / 2));
+        reconnectTimer = setTimeout(
+          connect,
+          window / 2 + Math.random() * (window / 2),
+        );
       };
     }
 
@@ -322,7 +343,9 @@ export const GRAIN_STAGES = ["fitting_series", "storing_series"];
  * does not reshuffle under the reader the moment its turn comes.
  */
 export function stagesFor(grouped: boolean, queued = false): string[] {
-  const core = queued ? ["aggregating", "waiting", ...RUN_STAGES.slice(1)] : RUN_STAGES;
+  const core = queued
+    ? ["aggregating", "waiting", ...RUN_STAGES.slice(1)]
+    : RUN_STAGES;
   return grouped ? [...core, ...GRAIN_STAGES] : core;
 }
 
@@ -332,7 +355,10 @@ export function stagesFor(grouped: boolean, queued = false): string[] {
  * the part of a run whose duration is hardest to guess from the data alone.
  * The clock stops when the run does, leaving the total on screen.
  */
-export function useElapsed(startedAt: number | null, running: boolean): string | null {
+export function useElapsed(
+  startedAt: number | null,
+  running: boolean,
+): string | null {
   const [seconds, setSeconds] = useState<number | null>(null);
 
   useEffect(() => {
@@ -340,7 +366,8 @@ export function useElapsed(startedAt: number | null, running: boolean): string |
       setSeconds(null);
       return;
     }
-    const read = () => setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    const read = () =>
+      setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     read();
     if (!running) return;
     const tick = setInterval(read, 1000);
