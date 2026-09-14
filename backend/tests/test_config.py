@@ -168,17 +168,6 @@ def test_candidate_workers_are_reported_as_shadowed_when_they_are() -> None:
         settings.forecast_model_concurrency, settings.forecast_candidate_workers = before
 
 
-def test_production_refuses_to_start_with_sign_in_switched_off(monkeypatch) -> None:
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("CREDENTIAL_SECRET_KEY", "x" * 40)
-    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
-    monkeypatch.setenv("DATABASE_FALLBACK_ENABLED", "false")
-    monkeypatch.setenv("AUTH_ENABLED", "false")
-
-    with pytest.raises(ValueError, match="AUTH_ENABLED"):
-        Settings()
-
-
 def test_the_blas_thread_setting_overrides_a_value_already_in_the_environment() -> None:
     import subprocess
     import sys

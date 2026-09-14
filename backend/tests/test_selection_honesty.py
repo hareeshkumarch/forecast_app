@@ -270,3 +270,66 @@ def test_a_close_win_for_the_simpler_model_still_says_so() -> None:
 
     assert selection.winner.result.model is ModelKind.NAIVE
     assert "simpler of the two was preferred" in selection.rationale
+
+
+def test_the_ensemble_is_scaled_by_the_same_baseline_as_every_member(monkeypatch) -> None:
+    """The ensemble's MASE denominator must be byte-identical to its members'.
+
+    `run_forecast` keeps both a raw `observed` and a prepared `values`; handing the
+    prepared one to blend applies the preparation twice, and over the whole series
+    rather than the training window, which reads past the first cut point.
+    """
+    from datetime import date, timedelta
+
+    import numpy as np
+
+    from app.forecasting import combination
+    from app.forecasting.backtest import mase_baseline, plan_backtest
+    from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
+    from app.forecasting.preparation import GapFill, Preparation
+    from app.models.enums import ForecastFrequency
+
+    rng = np.random.default_rng(7)
+    n = 120
+    prepare = Preparation(fill=GapFill.INTERPOLATE)
+    cut = plan_backtest(n, 8, ForecastFrequency.WEEKLY).cut_points[0]
+
+    observed = 100.0 + np.arange(n) * 0.5 + rng.normal(0, 3, n)
+    # The gap runs up to the first cut. Filled within the training window it has
+    # nothing on its right; filled over the whole series it is closed with values
+    # from after the cut — which is the leak this test exists to catch.
+    observed[cut - 4 : cut] = np.nan
+    observed[cut:] += 400.0
+
+    seen: dict[str, object] = {}
+    original = combination.blend
+
+    def capture(results, **kwargs):
+        seen["insample"] = np.asarray(kwargs["insample"], dtype=float)
+        return original(results, **kwargs)
+
+    monkeypatch.setattr(combination, "blend", capture)
+
+    start = date(2021, 1, 4)
+    run_forecast(
+        ForecastInput(
+            series=SeriesInput(
+                periods=[start + timedelta(weeks=i) for i in range(n)],
+                values=list(observed),
+            ),
+            frequency=ForecastFrequency.WEEKLY,
+            horizon=8,
+            preparation=prepare,
+        )
+    )
+
+    assert "insample" in seen, "blend was never reached; the test proves nothing"
+
+    plan = plan_backtest(n, 8, ForecastFrequency.WEEKLY)
+    expected = mase_baseline(observed, plan, prepare)
+    doubled = mase_baseline(prepare.apply(observed), plan, prepare)
+
+    assert not np.allclose(
+        expected, doubled, equal_nan=True
+    ), "this preparation must actually change the data, or the test cannot fail"
+    assert np.allclose(np.asarray(seen["insample"]), expected, equal_nan=True)
