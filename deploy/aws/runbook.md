@@ -419,6 +419,99 @@ aws ssm send-command \
 prompt with. Drop it and the script refuses instead of guessing, which is the
 right default when nobody is watching — but it does mean nothing happens.
 
+### Automatic deploys
+
+`.github/workflows/deploy.yml` runs exactly that `send-command` for you when
+`main` goes green. It waits on the CI workflow rather than on the push, and it
+pins `REPO_REF` to the commit CI passed on — deploying `main` instead would
+mean two merges a minute apart deploy the second commit twice and never report
+on the first.
+
+Until it is configured it skips with a note in the run summary rather than
+failing, so merging it does not turn `main` red before the role exists.
+
+Three things to set, under **Settings → Secrets and variables → Actions**:
+
+| | Name | Value |
+|---|---|---|
+| Secret | `AWS_DEPLOY_ROLE_ARN` | the role below |
+| Secret | `EC2_INSTANCE_ID` | `i-0abc...` |
+| Variable | `AWS_REGION` | `ap-south-1` |
+
+The role is assumed over OIDC, so there is no access key to rotate or leak.
+Once, in the account:
+
+```bash
+# 1. Let GitHub's OIDC provider issue identities into this account.
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com \
+  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REPO=YOUR-ORG/forecast_app
+
+# 2. A role only this repository's main branch can assume.
+cat > trust.json <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"Federated": "arn:aws:iam::${ACCOUNT}:oidc-provider/token.actions.githubusercontent.com"},
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"},
+      "StringLike": {"token.actions.githubusercontent.com:sub": "repo:${REPO}:ref:refs/heads/main"}
+    }
+  }]
+}
+JSON
+
+aws iam create-role --role-name forecast-deploy \
+  --assume-role-policy-document file://trust.json
+
+# 3. It may run one command on one instance, and read the result. Nothing else.
+cat > deploy-policy.json <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:*::document/AWS-RunShellScript",
+        "arn:aws:ec2:*:${ACCOUNT}:instance/${INSTANCE_ID}"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"],
+      "Resource": "*"
+    }
+  ]
+}
+JSON
+
+aws iam put-role-policy --role-name forecast-deploy \
+  --policy-name forecast-deploy --policy-document file://deploy-policy.json
+
+aws iam get-role --role-name forecast-deploy --query Role.Arn --output text
+```
+
+The `sub` condition is what stops another repository — or a branch in this one
+— assuming the role. Widen it to `repo:${REPO}:*` only if you also want
+deploys from tags or pull requests, and understand that a pull request from a
+fork would then be able to deploy.
+
+The instance needs `AmazonSSMManagedInstanceCore` on its own instance profile
+for any of this to arrive, which it already has if `aws ssm start-session`
+works.
+
+To deploy something other than the tip of `main`, use **Actions → Deploy → Run
+workflow** and give it a commit. The ref is checked against what a git ref may
+contain before it reaches the box, since it lands in a command that runs as
+root there.
+
 The manual equivalent, if you would rather do it by hand:
 
 ```bash
