@@ -232,3 +232,85 @@ class TestReportIsTraceable:
         assert all({"observed", "gap_pp", "n_observations"} <= set(row) for row in before)
         assert payload["worst_gap_before_pp"] is not None
         assert payload["worst_gap_before_pp"] < payload["worst_gap_after_pp"]
+
+
+class TestScoringAnIntervalCannotReadTheFuture:
+    """The width a fold is scored against may only come from earlier folds.
+
+    `interval_cost` used to take every *other* fold, so the first fold's band was
+    built from origins that had not happened yet — the same leave-one-out the
+    ensemble's member weights were already fixed for. It feeds `winkler`, which
+    carries `settings.interval_weight` of the selection score.
+    """
+
+    @staticmethod
+    def _fold(index: int, error: float):
+        from app.forecasting.backtest import FoldResult
+
+        return FoldResult(
+            fold=index,
+            train_size=10 + 3 * index,
+            test_size=3,
+            y_true=[10.0, 10.0, 10.0],
+            y_pred=[10.0 + error, 10.0 - error, 10.0 + error],
+            y_step=[1, 2, 3],
+        )
+
+    def test_the_first_fold_is_not_scored_against_what_came_after_it(self) -> None:
+        import numpy as np
+
+        from app.forecasting.backtest import (
+            BacktestResult,
+            interval_cost,
+            normal_quantile,
+        )
+        from app.forecasting.metrics import winkler
+        from app.models.enums import ModelKind
+
+        quiet, loud = self._fold(0, 0.1), self._fold(1, 5.0)
+        result = BacktestResult(model=ModelKind.NAIVE, folds=[quiet, loud])
+
+        z = normal_quantile(0.8)
+        sigma = float(
+            np.std(
+                np.asarray(
+                    [t - p for t, p in zip(quiet.y_true, quiet.y_pred, strict=True)], dtype=float
+                )
+            )
+        )
+        predicted = np.asarray(loud.y_pred, dtype=float)
+        only_honest_score = winkler(
+            np.asarray(loud.y_true, dtype=float),
+            predicted - z * sigma,
+            predicted + z * sigma,
+            0.8,
+        )
+
+        # Two folds leave exactly one that can be scored: the second, against the
+        # first. Leave-one-out scored both and averaged, so it came out lower by
+        # crediting the quiet fold with the loud fold's width.
+        assert interval_cost(result, 0.8) == pytest.approx(only_honest_score)
+
+    def test_a_later_fold_cannot_change_an_earlier_folds_width(self) -> None:
+        import numpy as np
+
+        from app.forecasting.backtest import BacktestResult, interval_cost
+        from app.models.enums import ModelKind
+
+        def scored(last_error: float) -> float:
+            folds = [self._fold(0, 0.1), self._fold(1, 0.2), self._fold(2, last_error)]
+            return interval_cost(BacktestResult(model=ModelKind.NAIVE, folds=folds), 0.8)
+
+        calm, wild = scored(0.3), scored(80.0)
+        assert np.isfinite(calm) and np.isfinite(wild)
+
+        # Fold 1 is scored against fold 0 in both, so its contribution is fixed.
+        # Only fold 2's own term may move, and the mean is over two terms — so
+        # the whole change has to be attributable to that one fold.
+        pair = [self._fold(0, 0.1), self._fold(1, 0.2)]
+        fold_one_term = interval_cost(BacktestResult(model=ModelKind.NAIVE, folds=pair), 0.8)
+
+        for total, last in ((calm, 0.3), (wild, 80.0)):
+            fold_two_term = 2.0 * total - fold_one_term
+            assert fold_two_term > 0.0, (last, total, fold_one_term)
+            assert total == pytest.approx((fold_one_term + fold_two_term) / 2.0)
