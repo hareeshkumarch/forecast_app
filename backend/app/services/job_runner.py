@@ -213,9 +213,36 @@ def publish_progress(event: ProgressEvent) -> None:
             logger.debug("Could not update Celery progress metadata", exc_info=True)
 
     if settings.progress_channel_url:
-        from app.services.progress_relay import publish_from_worker
+        _publish_over_the_channel(event)
 
+
+_channel_publishes: set[asyncio.Task[None]] = set()
+
+
+def _publish_over_the_channel(event: ProgressEvent) -> None:
+    """Redis here is a blocking client, and create_run/cancel_run are async.
+
+    A failover costs a connect timeout plus a socket timeout, and on the API that
+    is the only thread there is: no request served, no keepalive written, for as
+    long as it takes. In a worker there is no loop and blocking is free.
+    """
+    from app.services.progress_relay import publish_from_worker
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
         publish_from_worker(event)
+        return
+
+    task = loop.create_task(asyncio.to_thread(publish_from_worker, event))
+    _channel_publishes.add(task)
+    task.add_done_callback(_channel_publishes.discard)
+
+
+def still_running() -> list[asyncio.Task[Any]]:
+    from app.services import forecast_service
+
+    return [task for task in forecast_service.in_flight() if not task.done()]
 
 
 MODEL_SEARCH = "model"
@@ -451,19 +478,30 @@ class ExecutorRegistry:
         logger.info("Relaying worker progress into this process.")
 
     async def drain(self, seconds: float) -> int:
-        if seconds <= 0 or self.inline:
-            return scheduler.running
+        # The scheduler slot covers the model fit alone. Persisting the output,
+        # the insights and the grouped fan-out all happen after release, so
+        # waiting on `scheduler.running` can report nothing in flight while a
+        # task is mid-INSERT — and the engine is disposed underneath it.
+        if seconds <= 0:
+            return scheduler.running + len(still_running())
 
         scheduler.close()
         deadline = time.monotonic() + seconds
-        while scheduler.running > 0 and time.monotonic() < deadline:
+        while time.monotonic() < deadline:
+            outstanding = scheduler.running + len(still_running())
+            if outstanding == 0:
+                return 0
             logger.info(
                 "Waiting for %d forecast(s) to finish before shutting down (%.0fs left).",
-                scheduler.running,
+                outstanding,
                 deadline - time.monotonic(),
             )
-            await asyncio.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
-        return scheduler.running
+            pending = still_running()
+            if pending:
+                await asyncio.wait(pending, timeout=min(2.0, deadline - time.monotonic()))
+            else:
+                await asyncio.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
+        return scheduler.running + len(still_running())
 
     def shutdown(self) -> None:
         channel, self._channel = self._channel, None

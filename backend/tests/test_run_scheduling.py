@@ -382,3 +382,29 @@ class TestWhatAWaitingRunIsTold:
 
         two_slots.release(holders[0])
         await search
+
+
+class TestTheDrainWaitsForTheWholeRun:
+    """The scheduler slot covers the model fit. Persisting the output, the
+    insights and the fan-out all happen after it is released."""
+
+    async def test_a_task_past_the_fit_still_counts_as_running(self, monkeypatch) -> None:
+        import asyncio
+
+        from app.services import job_runner
+
+        gate = asyncio.Event()
+        task = asyncio.ensure_future(gate.wait())
+        monkeypatch.setattr(job_runner, "still_running", lambda: [task])
+        try:
+            assert await job_runner.executors.drain(0.5) == 1
+        finally:
+            gate.set()
+            await task
+
+    async def test_nothing_outstanding_drains_at_once(self, monkeypatch) -> None:
+        from app.services import job_runner
+
+        monkeypatch.setattr(job_runner, "still_running", list)
+
+        assert await job_runner.executors.drain(5.0) == 0

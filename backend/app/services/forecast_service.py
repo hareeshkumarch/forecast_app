@@ -658,6 +658,10 @@ def _validated_grain(
 _background_tasks: dict[uuid.UUID, asyncio.Task[RunStatus]] = {}
 
 
+def in_flight() -> list[asyncio.Task[Any]]:
+    return list(_background_tasks.values())
+
+
 async def recover_interrupted_runs() -> int:
     if settings.distributed:
         return 0
