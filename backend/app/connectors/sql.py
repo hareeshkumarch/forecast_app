@@ -7,6 +7,7 @@ from typing import Any
 import polars as pl
 
 from app.connectors.base import ConnectorAdapter, FormField, TableInfo, TestOutcome
+from app.connectors.network import assert_reachable
 from app.core.errors import ConnectorError
 from app.core.logging import get_logger
 from app.models.enums import ConnectorStatus, ConnectorType
@@ -177,6 +178,7 @@ class PostgresAdapter(SqlAdapter):
     default_port = 5432
 
     def _connect(self) -> Any:
+        assert_reachable(str(self.config.get("host") or ""))
         import psycopg2
 
         return psycopg2.connect(
@@ -198,6 +200,7 @@ class MySqlAdapter(SqlAdapter):
     version_query = "SELECT VERSION()"
 
     def _connect(self) -> Any:
+        assert_reachable(str(self.config.get("host") or ""))
         import pymysql
 
         return pymysql.connect(
@@ -219,6 +222,7 @@ class SqlServerAdapter(SqlAdapter):
     version_query = "SELECT @@VERSION"
 
     def _connect(self) -> Any:
+        assert_reachable(str(self.config.get("host") or ""))
         import pymssql
 
         return pymssql.connect(

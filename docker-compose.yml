@@ -75,6 +75,11 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-dev-only-insecure-key-change-me}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      # Connectors resolve their destination before connecting. Link-local
+      # (cloud instance metadata) and loopback are refused whatever this says;
+      # this decides whether a warehouse on your own private network is allowed,
+      # and it usually is — that is what the product connects to.
+      CONNECTOR_ALLOW_PRIVATE_HOSTS: ${CONNECTOR_ALLOW_PRIVATE_HOSTS:-true}
       # Model fits that happen at once. Also the answer to "why has the fourth
       # run not started" — everything past this many waits, and says so.
       FORECAST_WORKERS: ${FORECAST_WORKERS:-2}

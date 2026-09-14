@@ -38,6 +38,7 @@ def _token(secret: str = SECRET, algorithm: str = "HS256", **overrides) -> str:
     claims = {
         "sub": "google-oauth2|1234",
         "email": "person@example.com",
+        "email_verified": True,
         "aud": "authenticated",
         "exp": int(time.time()) + 600,
         "user_metadata": {"name": "A Person", "avatar_url": "https://example.com/a.png"},
@@ -234,3 +235,45 @@ def test_a_token_may_only_ride_in_the_url_on_a_stream() -> None:
     assert not query_token_allowed("GET", "/api/datasets")
     assert not query_token_allowed("DELETE", "/api/datasets/abc")
     assert not query_token_allowed("POST", "/api/forecasts/abc/events")
+
+
+def test_an_unconfirmed_address_identifies_but_grants_nothing() -> None:
+    from app.core.auth import AuthenticatedUser
+
+    unconfirmed = AuthenticatedUser(id="sub-1", email="admin@company.com")
+    confirmed = AuthenticatedUser(id="sub-2", email="admin@company.com", email_verified=True)
+
+    assert unconfirmed.email == "admin@company.com", "they are still signed in"
+    assert unconfirmed.claimed_email == "", "but the address proves nothing"
+    assert confirmed.claimed_email == "admin@company.com"
+
+
+async def test_naming_yourself_an_administrator_is_not_enough() -> None:
+    from app.core.auth import verify_token
+
+    settings.auth_admin_emails_raw = "boss@example.com"
+    try:
+        user = await verify_token(_token(email="boss@example.com", email_verified=False))
+
+        assert user.email == "boss@example.com"
+        assert user.claimed_email == "", "an unconfirmed address cannot reach the admin list"
+    finally:
+        settings.auth_admin_emails_raw = ""
+
+
+async def test_a_confirmed_address_still_reaches_the_admin_list() -> None:
+    from app.core.auth import verify_token
+
+    user = await verify_token(_token(email="boss@example.com", email_verified=True))
+
+    assert user.claimed_email == "boss@example.com"
+
+
+async def test_supabase_puts_the_flag_under_user_metadata() -> None:
+    from app.core.auth import verify_token
+
+    user = await verify_token(
+        _token(email="person@example.com", user_metadata={"email_verified": True})
+    )
+
+    assert user.claimed_email == "person@example.com"

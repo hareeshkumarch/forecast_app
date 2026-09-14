@@ -113,6 +113,11 @@ services:
       # wanted all along.
       CREDENTIAL_SECRET_KEY: ${CREDENTIAL_SECRET_KEY:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+      # Connectors resolve their destination before connecting. Link-local
+      # (cloud instance metadata) and loopback are refused whatever this says;
+      # this decides whether a warehouse on your own private network is allowed,
+      # and it usually is — that is what the product connects to.
+      CONNECTOR_ALLOW_PRIVATE_HOSTS: ${CONNECTOR_ALLOW_PRIVATE_HOSTS:-true}
       # These multiply, so on a two-core box their product should be two. One
       # run at a time using both cores beats two runs each on one core: the
       # person waiting sees their own run finish sooner, and a second run is

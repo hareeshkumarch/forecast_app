@@ -182,6 +182,29 @@ async def _leaf_series(session: AsyncSession, run: ForecastRun) -> list[Forecast
     return list(result.scalars().all())
 
 
+FORMULA_LEAD = r"^[=+\-@\t\r]"
+
+
+def _disarmed(frame: pl.DataFrame) -> pl.DataFrame:
+    """Series labels come from uploaded files, and a spreadsheet runs what starts with =.
+
+    Quoting keeps the CSV well-formed but does not stop Excel evaluating the cell,
+    and these files are served as an attachment for exactly that round trip.
+    """
+    text = [
+        name for name, dtype in zip(frame.columns, frame.dtypes, strict=True) if dtype == pl.Utf8
+    ]
+    if not text:
+        return frame
+    return frame.with_columns(
+        pl.when(pl.col(name).str.contains(FORMULA_LEAD))
+        .then(pl.lit("'") + pl.col(name))
+        .otherwise(pl.col(name))
+        .alias(name)
+        for name in text
+    )
+
+
 def _write(
     rows: list[dict],
     path: Path,
@@ -190,7 +213,7 @@ def _write(
     sheets: dict[str, list[dict]],
 ) -> None:
     if export_format is ExportFormat.CSV:
-        pl.DataFrame(rows, infer_schema_length=None).write_csv(path)
+        _disarmed(pl.DataFrame(rows, infer_schema_length=None)).write_csv(path)
         return
 
     from app.reporting import pdf
