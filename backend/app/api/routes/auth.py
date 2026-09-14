@@ -415,6 +415,7 @@ async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> Strea
             yield streams.preamble()
             yield streams.frame(event="sync")
             draining = asyncio.ensure_future(lifecycle.drain_event().wait())
+            getter: asyncio.Future[str] | None = None
             try:
                 while not deadline.passed:
                     getter = asyncio.ensure_future(queue.get())
@@ -429,10 +430,15 @@ async def _access_stream(user: AuthenticatedUser, lease: streams.Lease) -> Strea
                     getter.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await getter
+                    getter = None
                     if draining not in ready:
                         yield streams.KEEPALIVE
             finally:
                 draining.cancel()
+                if getter is not None and not getter.done():
+                    getter.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await getter
             yield streams.closing_frame()
 
     return StreamingResponse(

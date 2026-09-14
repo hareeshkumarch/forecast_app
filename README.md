@@ -608,10 +608,16 @@ endpoint meant a redeploy looked healthy while it was already tearing down.
 On SIGTERM the scheduler stops admitting new model work and the process waits
 `SHUTDOWN_DRAIN_SECONDS` for the runs already going. Most runs are about a
 minute, so most of them land instead of coming back as "the service restarted
-before this run finished". The wait only works because three numbers agree:
-the drain (45s) fits inside the container's `stop_grace_period` (60s), which
-fits inside the unit's `TimeoutStopSec` (120s). Raise one and raise all three,
-or docker sends SIGKILL part-way through and the wait buys nothing.
+before this run finished". Live streams are closed first, because uvicorn waits
+for every open connection before it runs lifespan shutdown at all — an open
+dashboard used to defer the drain past the SIGKILL, so it never ran.
+
+The wait only works because four numbers agree: uvicorn's
+`--timeout-graceful-shutdown` (10s, in `entrypoint.sh`) bounds closing those
+connections, the drain (45s) runs after it, and both fit inside the container's
+`stop_grace_period` (75s), which fits inside the unit's `TimeoutStopSec` (120s).
+Raise one and raise all four, or docker sends SIGKILL part-way through and the
+wait buys nothing.
 
 ### Retention — "what may this deployment forget?"
 

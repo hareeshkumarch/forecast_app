@@ -55,7 +55,7 @@ else
 fi
 
 # The API now waits for the forecasts already running before it exits, and the
-# container is given 60s to honour that, so most runs land. What does not
+# container is given 75s to honour that, so most runs land. What does not
 # finish in the drain still comes back as retryable — recover_interrupted_runs
 # fails it with "The service restarted before this run finished" — so this is
 # worth saying rather than doing silently.

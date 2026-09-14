@@ -504,7 +504,7 @@ def run_forecast(
 
     combined = combination.blend(
         results,
-        insample=mase_baseline(values, plan, payload.preparation),
+        insample=mase_baseline(observed, plan, payload.preparation),
         seasonal_lag=plan.mase_lag,
         confidence_level=payload.confidence_level,
     )

@@ -83,6 +83,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             settings.forecast_candidate_workers,
             settings.forecast_model_concurrency,
         )
+    if settings.environment == "production" and not settings.auth_enabled:
+        logger.warning(
+            "AUTH_ENABLED is false in production, so every guarded route resolves to the "
+            "anonymous user and this API is served to anyone who can reach it. That is a "
+            "deliberate setting in deploy/aws/env.production.example until Google sign-in is "
+            "proven in a browser — turn it on once it is."
+        )
     if settings.rate_limit_enabled and not settings.rate_limit_trusted_proxies:
         logger.warning(
             "RATE_LIMIT_TRUSTED_PROXIES is empty, so X-Forwarded-For is ignored and every "

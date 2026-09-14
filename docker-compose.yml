@@ -182,6 +182,25 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/2}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-text}
+      # The worker is where insights are actually rewritten — execute_run reaches
+      # _persist_insights here, not in the API. Naming these on the API alone
+      # makes the API log "rewriting is on" while the worker that does the work
+      # has no key and ships every insight unrewritten.
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-400}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-10.0}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_CONCURRENT_REWRITES: ${LLM_MAX_CONCURRENT_REWRITES:-8}
+      LLM_BREAKER_FAILURE_THRESHOLD: ${LLM_BREAKER_FAILURE_THRESHOLD:-4}
+      LLM_BREAKER_RESET_SECONDS: ${LLM_BREAKER_RESET_SECONDS:-30.0}
+      # Forecast fitting happens here too, so the knobs that size it belong here.
+      FORECAST_MODEL_CONCURRENCY: ${FORECAST_MODEL_CONCURRENCY:-1}
+      FORECAST_CANDIDATE_WORKERS: ${FORECAST_CANDIDATE_WORKERS:-2}
+      FORECAST_BLAS_THREADS: ${FORECAST_BLAS_THREADS:-1}
       # Migrations and seeding belong to the API container, not to workers.
       RUN_SEED_ON_STARTUP: "false"
     volumes:
