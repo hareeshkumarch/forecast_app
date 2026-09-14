@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta
@@ -260,3 +261,55 @@ async def test_a_real_run_reports_while_the_model_search_is_running(
     percentages = [event.progress for event in seen]
     assert percentages == sorted(percentages), "progress never goes backwards"
     assert seen[-1].status is RunStatus.COMPLETED
+
+
+def test_the_last_frame_of_a_run_survives_the_loop_that_published_it(monkeypatch) -> None:
+    from app.core.config import settings
+    from app.services import job_runner, progress_relay
+    from app.workers.tasks import _run
+
+    monkeypatch.setattr(type(settings), "progress_channel_url", "redis://unused")
+
+    delivered: list[tuple[float, str]] = []
+
+    def record(event: ProgressEvent) -> None:
+        time.sleep(0.05)
+        delivered.append((event.progress, event.stage))
+
+    monkeypatch.setattr(progress_relay, "publish_from_worker", record)
+
+    identifier = uuid.uuid4()
+
+    async def body() -> str:
+        for index, stage in enumerate(("backtesting", "storing_series", "generating_insights")):
+            publish_progress(
+                ProgressEvent(
+                    run_id=identifier,
+                    status=RunStatus.RUNNING,
+                    progress=0.2 * (index + 1),
+                    stage=stage,
+                    message=stage,
+                )
+            )
+            await asyncio.sleep(0)
+        publish_progress(
+            ProgressEvent(
+                run_id=identifier,
+                status=RunStatus.COMPLETED,
+                progress=1.0,
+                stage="complete",
+                message="done",
+            )
+        )
+        return "completed"
+
+    try:
+        assert _run(body()) == "completed"
+    finally:
+        job_runner.executors.shutdown()
+
+    assert delivered, "no frame reached the channel at all"
+    assert delivered[-1] == (1.0, "complete"), delivered
+    assert [progress for progress, _ in delivered] == sorted(
+        progress for progress, _ in delivered
+    ), delivered

@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -216,16 +216,15 @@ def publish_progress(event: ProgressEvent) -> None:
         _publish_over_the_channel(event)
 
 
-_channel_publishes: set[asyncio.Task[None]] = set()
+_channel_publishes: set[asyncio.Future[None]] = set()
+_channel_sender: ThreadPoolExecutor | None = None
 
 
 def _publish_over_the_channel(event: ProgressEvent) -> None:
-    """Redis here is a blocking client, and create_run/cancel_run are async.
-
-    A failover costs a connect timeout plus a socket timeout, and on the API that
-    is the only thread there is: no request served, no keepalive written, for as
-    long as it takes. In a worker there is no loop and blocking is free.
-    """
+    # Redis here is a blocking client, and a failover costs a connect timeout plus
+    # a socket timeout with no request served for as long as it takes. One sender
+    # thread keeps that off the loop while holding the order the relay's dedupe
+    # script needs: a frame that arrives behind a newer one is dropped, not queued.
     from app.services.progress_relay import publish_from_worker
 
     try:
@@ -234,9 +233,26 @@ def _publish_over_the_channel(event: ProgressEvent) -> None:
         publish_from_worker(event)
         return
 
-    task = loop.create_task(asyncio.to_thread(publish_from_worker, event))
-    _channel_publishes.add(task)
-    task.add_done_callback(_channel_publishes.discard)
+    global _channel_sender
+    if _channel_sender is None:
+        _channel_sender = ThreadPoolExecutor(max_workers=1, thread_name_prefix="progress")
+
+    future = loop.run_in_executor(_channel_sender, publish_from_worker, event)
+    _channel_publishes.add(future)
+    future.add_done_callback(_channel_publishes.discard)
+
+
+async def flush_channel_publishes() -> None:
+    loop = asyncio.get_running_loop()
+    while True:
+        pending = [
+            future
+            for future in tuple(_channel_publishes)
+            if not future.done() and future.get_loop() is loop
+        ]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 def still_running() -> list[asyncio.Task[Any]]:
@@ -483,6 +499,7 @@ class ExecutorRegistry:
         # waiting on `scheduler.running` can report nothing in flight while a
         # task is mid-INSERT — and the engine is disposed underneath it.
         if seconds <= 0:
+            await flush_channel_publishes()
             return scheduler.running + len(still_running())
 
         scheduler.close()
@@ -490,6 +507,7 @@ class ExecutorRegistry:
         while time.monotonic() < deadline:
             outstanding = scheduler.running + len(still_running())
             if outstanding == 0:
+                await flush_channel_publishes()
                 return 0
             logger.info(
                 "Waiting for %d forecast(s) to finish before shutting down (%.0fs left).",
@@ -501,9 +519,14 @@ class ExecutorRegistry:
                 await asyncio.wait(pending, timeout=min(2.0, deadline - time.monotonic()))
             else:
                 await asyncio.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
+        await flush_channel_publishes()
         return scheduler.running + len(still_running())
 
     def shutdown(self) -> None:
+        global _channel_sender
+        sender, _channel_sender = _channel_sender, None
+        if sender is not None:
+            sender.shutdown(wait=False)
         channel, self._channel = self._channel, None
         if channel is not None:
             try:

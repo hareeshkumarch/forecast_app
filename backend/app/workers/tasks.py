@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
@@ -14,6 +15,22 @@ from app.workers.celery_app import celery_app
 logger = get_logger(__name__)
 
 RETRY_BACKOFF_SECONDS = 30
+
+T = TypeVar("T")
+
+
+def _run(work: Coroutine[Any, Any, T]) -> T:
+    # Progress reaches Redis from a sender thread, so the last frame of a run is
+    # still in flight when the body returns; asyncio.run would cancel it.
+    from app.services.job_runner import flush_channel_publishes
+
+    async def until_delivered() -> T:
+        try:
+            return await work
+        finally:
+            await flush_channel_publishes()
+
+    return asyncio.run(until_delivered())
 
 
 @celery_app.task(
@@ -32,11 +49,11 @@ def run_forecast_task(self: Task, run_id: str, correlation_id: str | None = None
 
     try:
         logger.info("Forecast run %s picked up (attempt %d)", identifier, self.request.retries + 1)
-        status = asyncio.run(forecast_service.execute_run(identifier))
+        status = _run(forecast_service.execute_run(identifier))
         return {"run_id": run_id, "status": status.value}
     except SoftTimeLimitExceeded:
         logger.error("Forecast run %s exceeded its time limit", identifier)
-        asyncio.run(
+        _run(
             forecast_service.mark_failed(
                 identifier,
                 TimeoutError(
@@ -85,11 +102,11 @@ def finalise_series_task(
     try:
         fits = [LeafFit.from_dict(row) for chunk in chunks for row in chunk]
         logger.info("Run %s collecting %d fitted series", identifier, len(fits))
-        status = asyncio.run(series_service.finalise(identifier, fits))
+        status = _run(series_service.finalise(identifier, fits))
         return {"run_id": run_id, "status": status.value, "series": len(fits)}
     except Exception as exc:
         logger.exception("Could not finalise grouped run %s", identifier)
-        asyncio.run(forecast_service.mark_failed(identifier, exc))
+        _run(forecast_service.mark_failed(identifier, exc))
         return {"run_id": run_id, "status": "failed"}
     finally:
         request_id.reset(token)
