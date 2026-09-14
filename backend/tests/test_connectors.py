@@ -282,3 +282,78 @@ def test_a_saved_connector_cannot_be_pointed_somewhere_else_while_it_is_tested()
     assert _redirected(
         {"endpoint": "https://api.vendor.com"}, {"endpoint": "http://attacker.tld"}
     ) == ["endpoint"]
+
+
+class TestAConnectorCannotBeAimedAtTheMetadataService:
+    """Reading instance metadata hands out the box's own credentials, and the
+    response comes back as a dataset anyone on the deployment can open."""
+
+    def test_link_local_is_refused_however_it_is_spelled(self) -> None:
+        from app.connectors.network import assert_public_url
+        from app.core.errors import ConnectorError
+
+        for url in (
+            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            "http://[fe80::1]/v1/",
+        ):
+            with pytest.raises(ConnectorError, match="link-local"):
+                assert_public_url(url)
+
+    def test_loopback_is_refused(self) -> None:
+        from app.connectors.network import assert_public_url
+        from app.core.errors import ConnectorError
+
+        with pytest.raises(ConnectorError, match="loopback"):
+            assert_public_url("http://127.0.0.1:8000/api/health")
+
+    def test_a_private_warehouse_is_reachable_by_default(self) -> None:
+        from app.connectors.network import assert_public_url
+
+        assert settings.connector_allow_private_hosts is True
+        assert_public_url("http://10.0.0.5:9200/_search")
+
+    def test_a_deployment_may_narrow_it_to_the_public_internet(self, monkeypatch) -> None:
+        from app.connectors.network import assert_public_url
+        from app.core.errors import ConnectorError
+
+        monkeypatch.setattr(settings, "connector_allow_private_hosts", False)
+
+        with pytest.raises(ConnectorError, match="private"):
+            assert_public_url("http://10.0.0.5:9200/_search")
+
+    def test_a_non_http_scheme_is_refused(self) -> None:
+        from app.connectors.network import assert_public_url
+        from app.core.errors import ConnectorError
+
+        with pytest.raises(ConnectorError, match="http"):
+            assert_public_url("file:///etc/passwd")
+
+    def test_redirects_are_not_followed_blindly(self) -> None:
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parents[1] / "app/connectors/rest.py").read_text()
+
+        assert (
+            "follow_redirects=True" not in source
+        ), "one 302 from a host the caller owns reaches whatever the first URL could not"
+        assert "assert_public_url" in source
+
+
+def test_an_export_cell_cannot_run_in_a_spreadsheet() -> None:
+    import polars as pl
+
+    from app.reporting.exporter import _disarmed
+
+    frame = pl.DataFrame(
+        {
+            "series": ['=HYPERLINK("http://evil.tld")', "North", "+1", "-3", "@x", "plain"],
+            "forecast": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        }
+    )
+
+    out = _disarmed(frame)["series"].to_list()
+
+    assert out[0].startswith("'="), "a formula must not be handed to Excel as a formula"
+    assert out[1] == "North", "ordinary labels are left alone"
+    assert [value[0] for value in out[2:5]] == ["'", "'", "'"]
+    assert out[5] == "plain"

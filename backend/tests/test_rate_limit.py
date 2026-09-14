@@ -93,7 +93,7 @@ def test_retry_after_is_never_zero() -> None:
         ("GET", "/api/health/features", None),
         ("GET", "/api/forecasts/abc/events", None),
         ("GET", "/api/auth/events", None),
-        ("GET", "/api/auth/decide", ratelimit.DECIDE),
+        ("POST", "/api/auth/users/decisions", ratelimit.DECIDE),
         ("POST", "/api/auth/invite", ratelimit.ADMIN),
         ("GET", "/api/auth/users", ratelimit.DEFAULT),
         ("POST", "/api/forecasts", ratelimit.RUN),
@@ -168,7 +168,7 @@ def test_a_header_from_somewhere_other_than_the_proxy_is_not_believed() -> None:
 
 
 async def test_the_headers_are_served_on_an_ordinary_answer(client) -> None:
-    response = await client.get("/api/auth/decide", params={"token": "nope"})
+    response = await client.post("/api/auth/users/decisions", json={"user_ids": []})
 
     assert response.headers["RateLimit-Limit"] == str(ratelimit.DECIDE.limit)
     assert int(response.headers["RateLimit-Remaining"]) == ratelimit.DECIDE.limit - 1
@@ -177,9 +177,9 @@ async def test_the_headers_are_served_on_an_ordinary_answer(client) -> None:
 
 async def test_going_over_is_answered_as_429_in_the_platform_error_shape(client) -> None:
     for _ in range(ratelimit.DECIDE.limit):
-        await client.get("/api/auth/decide", params={"token": "nope"})
+        await client.post("/api/auth/users/decisions", json={"user_ids": []})
 
-    response = await client.get("/api/auth/decide", params={"token": "nope"})
+    response = await client.post("/api/auth/users/decisions", json={"user_ids": []})
 
     assert response.status_code == 429
     assert response.headers["Retry-After"]
@@ -229,3 +229,22 @@ def test_rotating_the_header_cannot_buy_extra_requests(monkeypatch) -> None:
     ]
 
     assert allowed == [True, True, False, False]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/auth/users/3f1c/decision",
+        "/api/auth/users/decisions",
+        "/api/auth/users/3f1c/role",
+        "/api/auth/users/removals",
+    ],
+)
+def test_every_approval_route_lands_on_the_tightest_rule(path: str) -> None:
+    """The old prefix named /api/auth/decide, which no route serves — so the
+    strictest rule in the file had never applied to anything."""
+    assert ratelimit.rule_for("POST", path) is ratelimit.DECIDE
+
+
+def test_reading_the_people_list_is_not_a_decision() -> None:
+    assert ratelimit.rule_for("GET", "/api/auth/users") is not ratelimit.DECIDE

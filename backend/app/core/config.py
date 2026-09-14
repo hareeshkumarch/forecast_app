@@ -126,6 +126,8 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 20 * 1024 * 1024
 
+    connector_allow_private_hosts: bool = Field(default=True, alias="CONNECTOR_ALLOW_PRIVATE_HOSTS")
+
     currency_symbol: str = "$"
 
     forecast_workers: int = 2

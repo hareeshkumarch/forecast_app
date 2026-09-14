@@ -8,8 +8,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # github.ref is constant for pushes to main, so two merges minutes apart used
+  # to leave the first commit's run marked cancelled — an inconclusive result for
+  # a commit that is permanently on main. Superseding a push is only ever right
+  # on a pull request, where the later commit replaces the earlier one.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHON_VERSION: "3.12"

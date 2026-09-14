@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import broadcast, email_templates, mailer
-from app.core.auth import AuthenticatedUser
+from app.core.auth import AuthenticatedUser, ForbiddenError
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
@@ -39,10 +39,17 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
 
     invited = False
     if row is None and user.email:
-        row = await session.scalar(
+        waiting = await session.scalar(
             select(AppUser).where(AppUser.email == user.email, AppUser.subject.is_(None))
         )
-        if row is not None:
+        if waiting is not None:
+            if not user.email_verified:
+                raise ForbiddenError(
+                    "An invitation is waiting for this address, but this sign-in has not "
+                    "confirmed it. Confirm the address with your identity provider and sign "
+                    "in again."
+                )
+            row = waiting
             row.subject = user.id
             invited = True
 
@@ -52,8 +59,8 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
         row = AppUser(
             subject=user.id,
             email=user.email,
-            status=_initial_status(user.email),
-            role=AccessRole.ADMIN if is_configured_admin(user.email) else AccessRole.MEMBER,
+            status=_initial_status(user.claimed_email),
+            role=AccessRole.ADMIN if is_configured_admin(user.claimed_email) else AccessRole.MEMBER,
         )
         session.add(row)
 
@@ -62,7 +69,7 @@ async def resolve(session: AsyncSession, user: AuthenticatedUser) -> AppUser | N
     row.picture_url = user.picture or row.picture_url
     row.last_seen_at = utcnow()
 
-    if is_configured_admin(row.email):
+    if is_configured_admin(user.claimed_email):
         row.role = AccessRole.ADMIN
         if row.status is not AccessStatus.APPROVED:
             row.status = AccessStatus.APPROVED

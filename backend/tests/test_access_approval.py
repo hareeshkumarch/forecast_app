@@ -52,7 +52,7 @@ async def test_an_unregistered_account_is_not_treated_as_approved(monkeypatch) -
 
     settings.auth_enabled = True
     settings.auth_require_approval = True
-    caller = AuthenticatedUser(id="new-person", email="new@example.com")
+    caller = AuthenticatedUser(id="new-person", email="new@example.com", email_verified=True)
 
     monkeypatch.setattr(deps, "current_user", _returning(caller))
 
@@ -86,7 +86,7 @@ async def test_a_rejected_account_is_refused(monkeypatch) -> None:
 
     settings.auth_enabled = True
     settings.auth_require_approval = True
-    caller = AuthenticatedUser(id="blocked", email="blocked@example.com")
+    caller = AuthenticatedUser(id="blocked", email="blocked@example.com", email_verified=True)
     monkeypatch.setattr(deps, "current_user", _returning(caller))
 
     async def rejected(_session, _user):

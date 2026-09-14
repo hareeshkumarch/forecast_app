@@ -48,10 +48,22 @@ class AuthenticatedUser:
     email: str
     name: str | None = None
     picture: str | None = None
+    email_verified: bool = False
 
     @property
     def is_anonymous(self) -> bool:
         return self.id == ANONYMOUS.id
+
+    @property
+    def claimed_email(self) -> str:
+        """The address, but only where the provider says it was confirmed.
+
+        `sub` is who the token is for; the email is a label on it. Anything that
+        grants something — the administrator list, an invitation waiting on an
+        address, the domain allowlist — has to read this instead, or naming
+        yourself admin@ is enough to become one.
+        """
+        return self.email if self.email_verified else ""
 
 
 ANONYMOUS = AuthenticatedUser(id="anonymous", email="", name="Anonymous")
@@ -163,6 +175,17 @@ def reset_caches() -> None:
     _jwks_misses.clear()
 
 
+def _email_confirmed(claims: dict[str, object]) -> bool:
+    verified = claims.get("email_verified")
+    if verified is None:
+        for holder in ("user_metadata", "app_metadata"):
+            nested = claims.get(holder)
+            if isinstance(nested, dict) and "email_verified" in nested:
+                verified = nested["email_verified"]
+                break
+    return verified is True or str(verified).strip().lower() == "true"
+
+
 async def verify_token(token: str) -> AuthenticatedUser:
     if len(token) > MAX_TOKEN_BYTES:
         raise AuthError("This session token is too large to be one this deployment issued.")
@@ -224,9 +247,10 @@ async def verify_token(token: str) -> AuthenticatedUser:
 
     user = AuthenticatedUser(
         id=subject,
-        email=str(claims.get("email") or "").lower(),
+        email=str(claims.get("email") or "").strip().lower(),
         name=_claim(claims, "name") or _claim(claims, "full_name"),
         picture=_claim(claims, "picture") or _claim(claims, "avatar_url"),
+        email_verified=_email_confirmed(claims),
     )
 
     _remember(cache_key, user, float(claims["exp"]))
@@ -246,14 +270,14 @@ def _claim(claims: dict[str, Any], name: str) -> str | None:
 
 def _assert_admitted(user: AuthenticatedUser) -> None:
     allowlist = settings.auth_allowlist
-    if allowlist and user.email in allowlist:
+    if allowlist and user.claimed_email in allowlist:
         return
 
     domains = settings.auth_allowed_email_domains
     if not domains:
         return
 
-    domain = user.email.rpartition("@")[2]
+    domain = user.claimed_email.rpartition("@")[2]
     if domain not in domains:
         raise ForbiddenError(
             "This deployment is limited to approved accounts, and "

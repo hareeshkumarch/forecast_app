@@ -35,7 +35,9 @@ async def test_signing_in_claims_the_invitation(session: AsyncSession) -> None:
 
     resolved = await user_service.resolve(
         session,
-        AuthenticatedUser(id="google-sub-1", email="arrives@example.com", name="Arrives"),
+        AuthenticatedUser(
+            id="google-sub-1", email="arrives@example.com", name="Arrives", email_verified=True
+        ),
     )
 
     assert resolved is not None
@@ -53,7 +55,8 @@ async def test_somebody_uninvited_still_has_to_wait(session: AsyncSession) -> No
     settings.auth_admin_emails_raw = ""
 
     resolved = await user_service.resolve(
-        session, AuthenticatedUser(id="google-sub-2", email="stranger@example.com")
+        session,
+        AuthenticatedUser(id="google-sub-2", email="stranger@example.com", email_verified=True),
     )
 
     assert resolved is not None
@@ -65,7 +68,7 @@ async def test_re_inviting_a_refused_account_lets_them_back_in(session: AsyncSes
     settings.auth_admin_emails_raw = ""
 
     person = await user_service.resolve(
-        session, AuthenticatedUser(id="google-sub-3", email="oops@example.com")
+        session, AuthenticatedUser(id="google-sub-3", email="oops@example.com", email_verified=True)
     )
     assert person is not None
     await user_service.set_status(
@@ -84,7 +87,10 @@ async def test_an_invitation_is_matched_on_the_address_alone(session: AsyncSessi
     await user_service.invite(session, "shared@example.com", invited_by="boss@example.com")
 
     claimed = await user_service.resolve(
-        session, AuthenticatedUser(id="whoever-signs-in-first", email="shared@example.com")
+        session,
+        AuthenticatedUser(
+            id="whoever-signs-in-first", email="shared@example.com", email_verified=True
+        ),
     )
 
     assert claimed is not None
@@ -101,7 +107,9 @@ async def test_signing_in_again_sends_nothing(session: AsyncSession, monkeypatch
     monkeypatch.setattr(user_service.mailer, "queue", record)
     settings.auth_admin_emails_raw = "boss@example.com"
 
-    caller = AuthenticatedUser(id="sub-welcome", email="boss@example.com", name="Boss")
+    caller = AuthenticatedUser(
+        id="sub-welcome", email="boss@example.com", name="Boss", email_verified=True
+    )
     await user_service.resolve(session, caller)
     await user_service.resolve(session, caller)
     await user_service.resolve(session, caller)
@@ -122,7 +130,8 @@ async def test_asking_for_access_tells_the_asker_and_nobody_else(
     settings.auth_require_approval = True
 
     row = await user_service.resolve(
-        session, AuthenticatedUser(id="sub-waiting", email="waiting@example.com")
+        session,
+        AuthenticatedUser(id="sub-waiting", email="waiting@example.com", email_verified=True),
     )
 
     assert row is not None
@@ -147,7 +156,10 @@ async def test_an_invited_person_arriving_gets_no_second_message(
     subjects.clear()
 
     row = await user_service.resolve(
-        session, AuthenticatedUser(id="sub-guest", email="guest@example.com", name="Guest")
+        session,
+        AuthenticatedUser(
+            id="sub-guest", email="guest@example.com", name="Guest", email_verified=True
+        ),
     )
 
     assert row is not None
@@ -162,13 +174,15 @@ async def test_a_bulk_change_still_honours_every_guard(session: AsyncSession, mo
     monkeypatch.setattr(user_service.mailer, "queue", lambda *a, **k: None)
     settings.auth_admin_emails_raw = "boss@example.com"
 
-    boss = await user_service.resolve(session, Caller(id="sub-boss", email="boss@example.com"))
+    boss = await user_service.resolve(
+        session, Caller(id="sub-boss", email="boss@example.com", email_verified=True)
+    )
     ordinary = await user_service.invite(session, "ordinary@example.com", invited_by="boss@x.com")
     assert boss is not None
 
     result = await auth_routes._each(
         session,
-        Caller(id="sub-boss", email="boss@example.com"),
+        Caller(id="sub-boss", email="boss@example.com", email_verified=True),
         [boss.id, ordinary.id],
         lambda target: user_service.set_status(
             session, target, AccessStatus.REJECTED, decided_by="boss@example.com"
@@ -197,7 +211,7 @@ async def test_a_missing_row_in_a_bulk_change_is_reported_not_fatal(
 
     result = await auth_routes._each(
         session,
-        Caller(id="sub-admin", email="admin@example.com"),
+        Caller(id="sub-admin", email="admin@example.com", email_verified=True),
         [real.id, ghost],
         lambda target: user_service.set_status(
             session, target, AccessStatus.REJECTED, decided_by="admin@example.com"
@@ -242,7 +256,8 @@ async def test_two_messages_exist_and_no_more(session: AsyncSession, monkeypatch
     settings.auth_require_approval = True
 
     row = await user_service.resolve(
-        session, AuthenticatedUser(id="sub-contract", email="asker@example.com")
+        session,
+        AuthenticatedUser(id="sub-contract", email="asker@example.com", email_verified=True),
     )
     assert row is not None
     assert subjects == ["Your access request is with an administrator"]
@@ -286,7 +301,7 @@ async def test_no_administrator_is_emailed_about_anybody_else(
     settings.auth_require_approval = True
 
     row = await user_service.resolve(
-        session, AuthenticatedUser(id="sub-sweep", email="asker@example.com")
+        session, AuthenticatedUser(id="sub-sweep", email="asker@example.com", email_verified=True)
     )
     assert row is not None
     await user_service.set_status(

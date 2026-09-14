@@ -197,6 +197,10 @@ async def health(session: SessionDep) -> HealthResponse:
         )
         run_counts = {status: int(count) for status, count in run_counts_result}
     except Exception as exc:
+        # The session is left in an aborted transaction, and get_session commits
+        # on the way out — which raises PendingRollbackError and turns the
+        # endpoint that reports the outage into a 500 that restarts the container.
+        await session.rollback()
         database = f"error: {type(exc).__name__}"
 
     storage_writable = await asyncio.to_thread(_probe_storage)

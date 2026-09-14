@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.numbers import finite
+from app.core.numbers import finite, fit
 from app.database.session import session_scope
 from app.datasets import queries
 from app.datasets.queries import DEFAULT_MAX_SERIES
@@ -417,7 +417,7 @@ async def persist(
                 parent_id=parent.id if parent else None,
                 level=result.level,
                 key=result.key,
-                label=result.label,
+                label=fit(result.label, 400),
                 status=result.status,
                 blocked_reason=result.blocked_reason,
                 model=result.model,

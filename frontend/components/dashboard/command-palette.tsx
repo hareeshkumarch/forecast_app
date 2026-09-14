@@ -44,7 +44,8 @@ interface Command {
 
 function matches(command: Command, query: string): boolean {
   if (!query) return true;
-  const haystack = `${command.label} ${command.group} ${command.keywords ?? ""}`.toLowerCase();
+  const haystack =
+    `${command.label} ${command.group} ${command.keywords ?? ""}`.toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)
@@ -169,7 +170,10 @@ export function CommandPalette() {
         : []),
       {
         id: "theme",
-        label: resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        label:
+          resolvedTheme === "dark"
+            ? "Switch to light theme"
+            : "Switch to dark theme",
         hint: "T",
         group: "Preferences",
         icon: resolvedTheme === "dark" ? Sun : Moon,
@@ -178,15 +182,21 @@ export function CommandPalette() {
       },
       {
         id: "density",
-        label: density === "compact" ? "Use comfortable density" : "Use compact density",
+        label:
+          density === "compact"
+            ? "Use comfortable density"
+            : "Use compact density",
         group: "Preferences",
         icon: Rows3,
         keywords: "spacing rows thickness",
-        run: () => setDensity(density === "compact" ? "comfortable" : "compact"),
+        run: () =>
+          setDensity(density === "compact" ? "comfortable" : "compact"),
       },
       {
         id: "sidebar",
-        label: sidebarCollapsed ? "Expand the navigation rail" : "Collapse the navigation rail",
+        label: sidebarCollapsed
+          ? "Expand the navigation rail"
+          : "Collapse the navigation rail",
         hint: "[",
         group: "Preferences",
         icon: sidebarCollapsed ? PanelLeftOpen : PanelLeftClose,
@@ -294,10 +304,13 @@ export function CommandPalette() {
     command.run();
   }
 
-  const grouped = visible.reduce<Record<string, Command[]>>((accumulator, command) => {
-    (accumulator[command.group] ??= []).push(command);
-    return accumulator;
-  }, {});
+  const grouped = visible.reduce<Record<string, Command[]>>(
+    (accumulator, command) => {
+      (accumulator[command.group] ??= []).push(command);
+      return accumulator;
+    },
+    {},
+  );
 
   let flatIndex = -1;
 
@@ -320,7 +333,9 @@ export function CommandPalette() {
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault();
-              setCursor((previous) => Math.min(previous + 1, visible.length - 1));
+              setCursor((previous) =>
+                Math.min(previous + 1, visible.length - 1),
+              );
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
               setCursor((previous) => Math.max(previous - 1, 0));
@@ -345,7 +360,9 @@ export function CommandPalette() {
               role="combobox"
               aria-expanded
               aria-controls="command-list"
-              aria-activedescendant={visible.length > 0 ? `command-${cursor}` : undefined}
+              aria-activedescendant={
+                visible.length > 0 ? `command-${cursor}` : undefined
+              }
               className="w-full bg-transparent text-body text-text-primary placeholder:text-text-muted focus:outline-none"
             />
             <kbd className="hidden shrink-0 rounded-chip border border-border px-1.5 py-0.5 text-micro text-text-muted sm:block">
@@ -381,6 +398,11 @@ export function CommandPalette() {
                         id={`command-${index}`}
                         type="button"
                         role="option"
+                        // Selection lives in `cursor` and is announced through
+                        // aria-activedescendant on the input. Leaving these in the
+                        // tab order meant Tab could move focus somewhere Enter
+                        // would not act on, and it ran the cursor entry instead.
+                        tabIndex={-1}
                         aria-selected={index === cursor}
                         data-command-index={index}
                         onMouseEnter={() => setCursor(index)}
@@ -393,8 +415,13 @@ export function CommandPalette() {
                             : "text-text-secondary hover:bg-surface-muted",
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                        <Icon
+                          className="h-3.5 w-3.5 shrink-0 text-text-muted"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {command.label}
+                        </span>
                         {command.hint ? (
                           <kbd className="shrink-0 rounded-chip border border-border px-1.5 py-0.5 text-micro text-text-muted">
                             {command.hint}

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import NotFoundError, ValidationError
+from app.core.numbers import storable
 from app.forecasting.metrics import accuracy_from_wmape
 from app.models.entities import ForecastPoint, ForecastRun, ForecastScenario
 from app.models.enums import PointKind, RunStatus
@@ -56,7 +57,9 @@ async def save_scenario(
         volume_multiplier=payload.volume_multiplier,
         target_shift_pct=payload.target_shift_pct,
         driver_multipliers=dict(payload.driver_multipliers),
-        result=WhatIfSimulationResponse.model_validate(simulation).model_dump(mode="json"),
+        result=storable(
+            WhatIfSimulationResponse.model_validate(simulation).model_dump(mode="json")
+        ),
     )
     session.add(scenario)
     await session.flush()

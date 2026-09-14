@@ -104,7 +104,7 @@ async def permitted(
     if allows(
         permission,
         row.role if row else None,
-        configured_admin=user_service.is_configured_admin(user.email),
+        configured_admin=user_service.is_configured_admin(user.claimed_email),
     ):
         return user
 
@@ -128,7 +128,7 @@ def require(permission: Permission) -> Callable[..., Awaitable[AuthenticatedUser
         if allows(
             permission,
             row.role if row else None,
-            configured_admin=user_service.is_configured_admin(user.email),
+            configured_admin=user_service.is_configured_admin(user.claimed_email),
         ):
             return user
 

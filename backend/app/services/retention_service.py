@@ -111,7 +111,12 @@ async def _latest_completed(session: AsyncSession) -> uuid.UUID | None:
 
 async def _most_recent(session: AsyncSession, count: int) -> set[uuid.UUID]:
     rows = await session.scalars(
-        select(ForecastRun.id).order_by(ForecastRun.created_at.desc()).limit(count)
+        # Unfinished runs can never be candidates, so letting them hold a
+        # keep-slot spends the protection on something that did not need it.
+        select(ForecastRun.id)
+        .where(ForecastRun.status.in_(TERMINAL))
+        .order_by(ForecastRun.created_at.desc())
+        .limit(count)
     )
     return set(rows)
 

@@ -24,6 +24,7 @@ class Rule:
 
 
 DECIDE = Rule(limit=10, window_seconds=900, name="decide")
+DECISIVE = ("/decisions", "/removals", "/role")
 
 ADMIN = Rule(limit=60, window_seconds=60, name="admin")
 
@@ -40,7 +41,11 @@ EXEMPT_SUFFIXES = ("/events",)
 def rule_for(method: str, path: str) -> Rule | None:
     if path.startswith(EXEMPT_PREFIXES) or path.endswith(EXEMPT_SUFFIXES):
         return None
-    if path.startswith("/api/auth/decide"):
+    # The approval routes are /users/{id}/decision, /users/decisions,
+    # /users/{id}/role and /users/removals. The old prefix matched none of them,
+    # so the tightest rule in the file had never once applied and approvals fell
+    # through to ADMIN — six times looser, and per minute rather than per window.
+    if method != "GET" and (path.endswith(DECISIVE) or "/decision" in path):
         return DECIDE
     if method != "GET" and path.startswith("/api/auth/"):
         return ADMIN

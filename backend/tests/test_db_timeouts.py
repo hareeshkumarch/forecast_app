@@ -83,3 +83,49 @@ async def test_a_statement_over_the_limit_is_actually_cancelled() -> None:
         await db._limit(session, 0.05)
         with pytest.raises(DBAPIError):
             await session.execute(text("SELECT pg_sleep(2)"))
+
+
+async def test_the_budget_is_re_armed_on_every_transaction(monkeypatch) -> None:
+    """A request that commits starts a fresh transaction, and SET LOCAL is
+    scoped to the one it was issued in."""
+    monkeypatch.setattr(db, "_TIMEOUTS_APPLY", True)
+
+    class _Connection:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def exec_driver_sql(self, statement: str) -> None:
+            self.statements.append(statement)
+
+    class _Session:
+        def __init__(self) -> None:
+            self.info: dict[str, object] = {}
+
+    session = _Session()
+    session.info[db._BUDGET] = 30.0
+    connection = _Connection()
+
+    db._rearm_statement_timeout(session, None, connection)
+
+    assert connection.statements == ["SET LOCAL statement_timeout = 30000"]
+
+
+async def test_a_session_with_no_budget_is_left_alone(monkeypatch) -> None:
+    monkeypatch.setattr(db, "_TIMEOUTS_APPLY", True)
+
+    class _Connection:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def exec_driver_sql(self, statement: str) -> None:
+            self.statements.append(statement)
+
+    class _Session:
+        def __init__(self) -> None:
+            self.info: dict[str, object] = {}
+
+    connection = _Connection()
+
+    db._rearm_statement_timeout(_Session(), None, connection)
+
+    assert connection.statements == []

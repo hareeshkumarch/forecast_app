@@ -7,12 +7,14 @@ import httpx
 import polars as pl
 
 from app.connectors.base import ConnectorAdapter, FormField, TableInfo, TestOutcome
+from app.connectors.network import assert_public_url
 from app.core.errors import ConnectorError
 from app.models.enums import ConnectorStatus, ConnectorType
 
 ARRAY_KEYS = ("data", "results", "items", "records", "rows", "value", "payload")
 
 REQUEST_TIMEOUT = httpx.Timeout(15.0, connect=8.0)
+MAX_REDIRECTS = 3
 
 
 class RestApiAdapter(ConnectorAdapter):
@@ -38,12 +40,21 @@ class RestApiAdapter(ConnectorAdapter):
     )
 
     def _url(self) -> str:
-        url = str(self.config.get("endpoint") or "").strip()
-        if not url:
-            raise ConnectorError("No endpoint URL is configured.")
-        if not url.lower().startswith(("http://", "https://")):
-            raise ConnectorError("The endpoint must be an http:// or https:// URL.")
-        return url
+        return assert_public_url(str(self.config.get("endpoint") or ""))
+
+    def _get(self, client: httpx.Client, url: str) -> httpx.Response:
+        # Redirects are followed by hand so each hop is checked. Letting httpx
+        # follow them would make the check on the first URL meaningless: one 302
+        # from a host the caller controls reaches anything the first URL could not.
+        for _ in range(MAX_REDIRECTS + 1):
+            response = client.get(url, headers=self._headers())
+            if not response.is_redirect:
+                return response
+            target = response.headers.get("location", "")
+            if not target:
+                raise ConnectorError("The endpoint redirected without saying where to.")
+            url = assert_public_url(str(response.url.join(target)))
+        raise ConnectorError(f"The endpoint redirected more than {MAX_REDIRECTS} times.")
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -59,8 +70,8 @@ class RestApiAdapter(ConnectorAdapter):
         started = time.perf_counter()
         try:
             url = self._url()
-            with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-                response = client.get(url, headers=self._headers())
+            with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
+                response = self._get(client, url)
         except ConnectorError as exc:
             return TestOutcome(
                 ok=False,
@@ -183,8 +194,8 @@ class RestApiAdapter(ConnectorAdapter):
     ) -> pl.DataFrame:
         url = self._url()
         try:
-            with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-                response = client.get(url, headers=self._headers())
+            with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=False) as client:
+                response = self._get(client, url)
                 response.raise_for_status()
                 records = self._extract(response.json())
         except httpx.HTTPStatusError as exc:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Protocol
 from uuid import UUID
 
 import numpy as np
@@ -123,13 +125,27 @@ def _round(value: float | None) -> float | None:
     return round(float(value), 4)
 
 
-def horizon_accuracy(points: list[ForecastPoint]) -> list[HorizonAccuracy]:
+class ScoredPoint(Protocol):
+    """What the accuracy readers need of a forecast point, and nothing more.
+
+    Selecting these five columns instead of the entity is what keeps a grouped
+    run's quarter-million points out of the identity map.
+    """
+
+    period: date
+    actual: float | None
+    forecast: float | None
+    lower_bound: float | None
+    upper_bound: float | None
+
+
+def horizon_accuracy(points: Sequence[ScoredPoint]) -> list[HorizonAccuracy]:
     scored = [p for p in points if p.actual is not None and p.forecast is not None]
     if not scored:
         return []
 
     step_of = {period: step for step, period in enumerate(sorted({p.period for p in scored}), 1)}
-    by_step: dict[int, list[ForecastPoint]] = {}
+    by_step: dict[int, list[ScoredPoint]] = {}
     for point in scored:
         by_step.setdefault(step_of[point.period], []).append(point)
 
@@ -206,7 +222,7 @@ def coverage_rows(report: CoverageReport) -> list[dict[str, object]]:
     return report.as_dict()
 
 
-def interval_coverage(points: list[ForecastPoint], nominal: float | None) -> CoverageReport:
+def interval_coverage(points: Sequence[ScoredPoint], nominal: float | None) -> CoverageReport:
     if nominal is None:
         return CoverageReport()
 
@@ -262,17 +278,21 @@ class Headline:
 
 
 async def headline(session: AsyncSession) -> Headline:
+    # Four scalars per run, not the whole row — ForecastRun carries the
+    # diagnostics blob, and this reads every scored run there has ever been.
     runs = list(
         (
             await session.execute(
-                select(ForecastRun).where(
+                select(
+                    ForecastRun.scored_periods,
+                    ForecastRun.realized_wmape,
+                    ForecastRun.scored_through,
+                ).where(
                     ForecastRun.scored_at.is_not(None),
                     ForecastRun.realized_wmape.is_not(None),
                 )
             )
-        )
-        .scalars()
-        .all()
+        ).all()
     )
     if not runs:
         return Headline(None, 0, 0, None)
@@ -299,17 +319,24 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
     if run is None:
         return None
 
+    # Only the band is read, and a grouped run has one row per period per series
+    # per kind — hydrating those as entities is hundreds of megabytes to compute
+    # one coverage figure.
     points = list(
         (
             await session.execute(
-                select(ForecastPoint).where(
+                select(
+                    ForecastPoint.period,
+                    ForecastPoint.actual,
+                    ForecastPoint.forecast,
+                    ForecastPoint.lower_bound,
+                    ForecastPoint.upper_bound,
+                ).where(
                     ForecastPoint.run_id == run_id,
                     ForecastPoint.kind == PointKind.FORECAST,
                 )
             )
-        )
-        .scalars()
-        .all()
+        ).all()
     )
     series = list(
         (await session.execute(select(ForecastSeries).where(ForecastSeries.run_id == run_id)))

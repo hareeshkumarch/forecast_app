@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -63,6 +64,11 @@ from app.forecasting.scenarios import IntervalBands, build_intervals
 from app.forecasting.selection import ScoredCandidate, metric_weights_for, select_model
 from app.forecasting.transforms import TransformedForecaster, build_transform
 from app.models.enums import ForecastFrequency, ModelKind, SeriesStatus
+
+# Forking would duplicate the asyncpg and Redis sockets this process holds into
+# every lane, and finalising them in a child writes on a connection the parent
+# is still using. job_runner's own pool already spawns; this one did not.
+_SPAWN = multiprocessing.get_context("spawn")
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -476,7 +482,7 @@ def run_forecast(
     elif lanes > 1:
         results = [None] * candidate_total  # type: ignore[list-item]
         announce(0, f"Backtesting {candidate_total} candidate models...")
-        with ProcessPoolExecutor(max_workers=lanes) as process_pool:
+        with ProcessPoolExecutor(max_workers=lanes, mp_context=_SPAWN) as process_pool:
             queued = {
                 process_pool.submit(_backtest_candidate, item): i for i, item in enumerate(work)
             }
