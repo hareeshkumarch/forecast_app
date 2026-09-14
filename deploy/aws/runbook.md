@@ -450,6 +450,7 @@ aws iam create-open-id-connect-provider \
 
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 REPO=YOUR-ORG/forecast_app
+INSTANCE_ID=i-0abc...            # the same id you put in EC2_INSTANCE_ID
 
 # 2. A role only this repository's main branch can assume.
 cat > trust.json <<JSON
