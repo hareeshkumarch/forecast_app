@@ -21,6 +21,10 @@ MIN_RELATIVE_SIGMA = 1e-9
 
 MIN_SIDE_SHARE = 0.1
 
+GROWTH_PRIOR = 0.5
+
+GROWTH_PRIOR_WEIGHT = 2.0
+
 
 @dataclass(slots=True)
 class IntervalBands:
@@ -48,10 +52,46 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
     return buckets
 
 
-def _one_step_equivalent(buckets: list[list[float]]) -> FloatArray:
+def _growth_by_step(buckets: list[list[float]]) -> FloatArray:
+    logs: list[float] = []
+    scales: list[float] = []
+    weights: list[float] = []
+    for step, bucket in enumerate(buckets):
+        values = np.asarray(bucket, dtype=float)
+        values = values[np.isfinite(values)]
+        if values.size < 2:
+            continue
+        rms = float(np.sqrt(np.mean(values**2)))
+        if rms <= 0.0:
+            continue
+        logs.append(float(np.log(step + 1)))
+        scales.append(rms)
+        weights.append(float(values.size))
+
+    exponent = GROWTH_PRIOR
+    if len(scales) >= 2:
+        x = np.asarray(logs, dtype=float)
+        y = np.log(np.asarray(scales, dtype=float))
+        w = np.asarray(weights, dtype=float)
+        x_mean = float(np.average(x, weights=w))
+        y_mean = float(np.average(y, weights=w))
+        spread = float(np.sum(w * (x - x_mean) ** 2))
+        if spread > 0.0:
+            slope = float(np.sum(w * (x - x_mean) * (y - y_mean)) / spread)
+            if np.isfinite(slope):
+                observed = float(np.sum(w))
+                exponent = (observed * slope + GROWTH_PRIOR_WEIGHT * GROWTH_PRIOR) / (
+                    observed + GROWTH_PRIOR_WEIGHT
+                )
+
+    exponent = float(np.clip(exponent, 0.0, 1.0))
+    return np.arange(1, len(buckets) + 1, dtype=float) ** exponent
+
+
+def _one_step_equivalent(buckets: list[list[float]], growth: FloatArray) -> FloatArray:
     return np.asarray(
         [
-            value / np.sqrt(step + 1)
+            value / growth[step]
             for step, bucket in enumerate(buckets)
             for value in bucket
             if np.isfinite(value)
@@ -114,7 +154,8 @@ def _sigma_by_step(
     if not pooled:
         return _volatility_sigma(history, horizon), "series_volatility"
 
-    unit = _one_step_equivalent(buckets)
+    growth = _growth_by_step(buckets)
+    unit = _one_step_equivalent(buckets, growth)
     pooled_sigma = float(np.std(unit, ddof=1)) if unit.size > 1 else abs(float(pooled[0]))
     if pooled_sigma == 0.0:
         pooled_sigma = float(np.mean(np.abs(unit))) or 1e-9
@@ -127,7 +168,7 @@ def _sigma_by_step(
             sigmas[step] = float(np.std(bucket, ddof=1))
             used_empirical += 1
         else:
-            sigmas[step] = pooled_sigma * np.sqrt(step + 1)
+            sigmas[step] = pooled_sigma * growth[step]
 
     sigmas = _rising(sigmas)
 
@@ -170,7 +211,8 @@ def _quantile_offsets(
     lower = np.zeros(horizon)
     upper = np.zeros(horizon)
 
-    unit = _one_step_equivalent(buckets)
+    growth = _growth_by_step(buckets)
+    unit = _one_step_equivalent(buckets, growth)
     if unit.size == 0:
         return None
     pooled_low, pooled_high = _conformal_bounds(unit, coverage)
@@ -183,7 +225,7 @@ def _quantile_offsets(
         if bucket.size >= MIN_EMPIRICAL_RESIDUALS:
             step_low, step_high = _conformal_bounds(bucket, coverage)
         else:
-            spread = np.sqrt(step + 1)
+            spread = growth[step]
             step_low, step_high = pooled_low * spread, pooled_high * spread
 
         side = (step_high - step_low) * MIN_SIDE_SHARE
