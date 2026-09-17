@@ -160,12 +160,6 @@ function parseRate(value: string): number | null {
 }
 
 export function SettingsPanel({ className }: { className?: string }) {
-  // The provider key and token rates are one setting for the whole
-  // deployment. A member changing them changes them for everybody, which is
-  // not a thing a member should be able to do by wandering into Settings.
-  // Not signed in is not the same as not permitted. A deployment with no
-  // sign-in configured answers `authenticated: false` for everybody, and
-  // hiding the provider settings there would leave nowhere to set them at all.
   const { data: me } = useCurrentUser();
   const isAdmin = me === undefined || !me.authenticated || me.is_admin;
   const theme = usePrefsStore((state) => state.theme);
@@ -276,11 +270,6 @@ export function SettingsPanel({ className }: { className?: string }) {
               />
             </Field>
 
-            {/* Typed, with the known names offered rather than imposed. A
-                dropdown here meant a provider retiring a model left everybody
-                holding a name that no longer resolves and no way to enter the
-                replacement — which is exactly how both Groq entries went
-                stale. */}
             <Field
               label="Model"
               hint={

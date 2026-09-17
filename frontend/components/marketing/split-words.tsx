@@ -6,32 +6,14 @@ import type { ComponentPropsWithoutRef, CSSProperties, ElementType } from "react
 import { Reveal } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils";
 
-/**
- * A heading that arrives a word at a time.
- *
- * The words are real text nodes with real spaces between them, so the line
- * breaks, the accessible name and `text-wrap: balance` are all exactly what
- * they would be without this — only the paint is staggered. The container
- * itself does not fade (`variant="words"`), because a fading parent and
- * fading children multiply into a heading that never quite reaches full
- * opacity.
- *
- * Like everything else on this page the motion is scoped to `.motion-ready`,
- * so a visitor who asked for reduced motion, or arrives with no JavaScript,
- * gets the finished heading.
- */
 export type SplitWordsProps = {
   text: string;
   as?: ElementType;
-  /** Milliseconds before the first word moves. */
   delay?: number;
-  /** Milliseconds between one word and the next. */
   stagger?: number;
-  /** `cinematic` swings each word up out of the page rather than sliding it. */
   motion?: "rise" | "cinematic";
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
 
-//: Long headings would otherwise finish well after the reader has read them.
 const MAX_STAGGER_TOTAL = 620;
 
 export function SplitWords({

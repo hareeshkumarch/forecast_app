@@ -11,13 +11,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Index the relationships and list paths used by the API.
-
-    PostgreSQL does not automatically index foreign-key columns. These keep
-    connector/dataset cleanup and the default newest/latest reads from turning
-    into full-table scans as forecast history grows.
-    """
-
     op.create_index("ix_datasets_created", "datasets", ["created_at"])
     op.create_index("ix_datasets_connector", "datasets", ["connector_id"])
     op.create_index(

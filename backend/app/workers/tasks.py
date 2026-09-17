@@ -20,8 +20,6 @@ T = TypeVar("T")
 
 
 def _run(work: Coroutine[Any, Any, T]) -> T:
-    # Progress reaches Redis from a sender thread, so the last frame of a run is
-    # still in flight when the body returns; asyncio.run would cancel it.
     from app.services.job_runner import flush_channel_publishes
 
     async def until_delivered() -> T:

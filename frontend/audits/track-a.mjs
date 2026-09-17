@@ -5,29 +5,10 @@ const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
 const browser = await chromium.launch({ executablePath: CHROME });
 
-/*
- * The headline arrives a word at a time, so it has to be stilled before it is
- * measured: each word is an inline-block part way through its own rise, and a
- * heading caught mid-flight has a different top for every word in it.
- */
 const FLAT =
   ".reveal{opacity:1 !important}" +
   ".split-word{animation:none !important;transform:none !important;opacity:1 !important}";
 
-/*
- * How many lines a run of text occupies.
- *
- * Distinct rounded tops over-counts as soon as a block holds more than one
- * kind of inline box. The headline is set a word at a time, and every word
- * yields two rects — the inline-block's own border box, and the taller line
- * box it sits in — ten pixels apart. A two-line heading measured that way is
- * four.
- *
- * So tops are grouped, at half of the tallest rect: less than half a line box
- * apart is the same line, and a real line break is a whole one. Written
- * against the rects rather than a fixed pixel count, because this heading is
- * on a fluid scale and its line box is a different size at every width.
- */
 const COUNT_LINES = `(rects) => {
   const real = rects.filter((rect) => rect.height > 2);
   const gap = Math.max(...real.map((rect) => rect.height), 2) / 2;
@@ -45,7 +26,6 @@ const fail = [];
 const partial = [];
 const line = (s) => console.log(s);
 
-/* ---------------------------------------------------------------- A2 */
 line("\nA2 — anchor targets clear the nav");
 for (const width of [1366, 1920]) {
   for (const mode of ["click", "cold-hash"]) {
@@ -72,7 +52,6 @@ for (const width of [1366, 1920]) {
   }
 }
 
-/* ---------------------------------------------------------------- A3 */
 line("\nA3 — card measure");
 for (const width of [1366, 1512, 1920]) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -92,8 +71,6 @@ for (const width of [1366, 1512, 1920]) {
           lines,
           wpl: +(words / lines).toFixed(1),
           cpl: Math.round(text.length / lines),
-          // The most words a line of this sentence could hold at this line
-          // count: a 14-word sentence over two lines cannot beat seven.
           ceiling: +(words / Math.max(1, lines - (lines > 1 ? 1 : 0))).toFixed(1),
         };
       });
@@ -109,23 +86,15 @@ for (const width of [1366, 1512, 1920]) {
   const all = [...r.steps.map((s) => ({ ...s, where: "step" })), ...r.features.map((s) => ({ ...s, where: "feature" }))];
   line(`  ${width}  narrowest card=${minCard}px`);
   for (const m of all) {
-    // A sentence that would fit on one fewer line is genuinely under-measured.
-    // One that cannot reach 8 words/line at any width — because it is only 14
-    // words long — is reported, not failed.
     const shortCopy = m.words < 16;
     const flag = m.wpl >= 8 ? "ok" : shortCopy ? `short copy (${m.words} words)` : "UNDER";
     line(`      ${m.where.padEnd(7)} ${m.words}w over ${m.lines} lines = ${m.wpl} w/line, ${m.cpl} chars/line  ${flag}`);
-    // Recorded, not failed: the step cards sit inside a .75fr/1.55fr section
-    // split with 32px of card padding, so 18px copy cannot reach a 45-char
-    // measure in two columns below about 1760px. Widening it needs a change to
-    // the section layout, the padding, or the body size — all design changes.
     if (m.wpl < 8 && !shortCopy) partial.push(`A3 ${m.where} card: ${m.wpl} w/line (${m.cpl} chars) at ${width}`);
   }
   if (minCard < 300) fail.push(`A3 card ${minCard}px < 300 at ${width}`);
   await page.close();
 }
 
-/* ---------------------------------------------------------------- A4 */
 line("\nA4 — hero fold and headline");
 for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080]]) {
   const page = await browser.newPage({ viewport: { width, height } });
@@ -148,7 +117,6 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080]]) {
   await page.close();
 }
 
-// headline never exceeds two lines from 768px up
 line("\nA4 — headline line count, 768px and up");
 for (const width of [768, 900, 1024, 1280, 1512, 1920, 2560]) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });

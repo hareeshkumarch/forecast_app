@@ -3,7 +3,6 @@ import plugin from "tailwindcss/plugin";
 
 const config: Config = {
   future: {
-    // Prevent hover treatments from sticking after a tap on touch devices.
     hoverOnlyWhenSupported: true,
   },
   content: [
@@ -16,9 +15,6 @@ const config: Config = {
     extend: {
       colors: {
         canvas: "var(--canvas)",
-        // rgb(channels / <alpha-value>) for the five tokens used at a
-        // fraction: Tailwind cannot inject an alpha into a bare var(), and
-        // emits nothing at all when asked to. See globals.css.
         surface: "rgb(var(--surface-rgb) / <alpha-value>)",
         "surface-muted": "rgb(var(--surface-muted-rgb) / <alpha-value>)",
         border: "var(--border)",
@@ -33,7 +29,6 @@ const config: Config = {
         "accent-hover": "var(--accent-hover)",
         "accent-border": "var(--accent-border)",
         "accent-disabled": "var(--accent-disabled)",
-        // Use text-on-accent, never text-white, on an accent fill.
         "on-accent": "var(--on-accent)",
 
         navy: "var(--navy)",
@@ -52,9 +47,6 @@ const config: Config = {
         "warning-border": "var(--warning-border)",
         overlay: "var(--overlay)",
 
-        /* Landing-page tokens. Everything the marketing page shares with the
-         * product — surfaces, borders, body text, the accent — is above; these
-         * are the ones only it has. See the `--land-*` block in globals.css. */
         "land-dim": "var(--land-dim)",
         "land-rule": "var(--land-rule)",
         "land-rule-soft": "var(--land-rule-soft)",
@@ -83,16 +75,11 @@ const config: Config = {
         chip: "0px",
       },
       spacing: {
-        // Driven by the CSS variables in globals.css so these track the
-        // viewport instead of being frozen at their desktop size — `h-header`
-        // is 56px on a phone and 74px from `lg` up.
         rail: "var(--rail-width)",
         insights: "var(--insights-width)",
         header: "var(--header-height)",
       },
       fontFamily: {
-        // Landing-page faces. The app keeps the `body` default (Inter) set in
-        // globals.css; these are opted into, never inherited.
         display: ["var(--font-display)", "Georgia", "ui-serif", "serif"],
         plex: ["var(--font-plex-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-plex-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
@@ -119,14 +106,10 @@ const config: Config = {
           { lineHeight: "1.12", letterSpacing: "-0.025em" },
         ],
         "site-h3": ["clamp(1.125rem, calc(1rem + 0.4vw), 1.3125rem)", { lineHeight: "1.3", letterSpacing: "-0.02em" }],
-        // A step title, set in the display face rather than the UI one — the
-        // steps carry the section now that the cards around them are gone.
         "site-h3-display": [
           "clamp(1.5rem, calc(1.25rem + 1vw), 2.125rem)",
           { lineHeight: "1.15", letterSpacing: "-0.025em" },
         ],
-        // The proof figures and the accuracy figure. Large enough to be the
-        // thing on the screen, which is the whole reason the tiles went.
         proof: [
           "clamp(2.75rem, calc(2rem + 3vw), 4rem)",
           { lineHeight: "0.9", letterSpacing: "-0.03em" },
@@ -140,15 +123,6 @@ const config: Config = {
           { lineHeight: "1.55" },
         ],
         "site-body": ["clamp(0.9375rem, calc(0.9rem + 0.2vw), 1.0625rem)", { lineHeight: "1.6" }],
-        /*
-         * 1.65, not 1.45. This size is used almost exclusively for uppercase
-         * mono labels, and uppercase has no x-height to open space between
-         * lines — every glyph runs full cap height, so the leading is the
-         * only thing keeping one line's ink off the next. At 1.45 a wrapped
-         * label left 2px of clear space at 320px and `audits/a1.mjs` read the
-         * two lines as one band. It is also the right number on its own
-         * terms: tracked-out caps want more leading than body text, not less.
-         */
         "site-caption": ["0.75rem", { lineHeight: "1.65", letterSpacing: "0.07em" }],
         "display-xs": ["27px", { lineHeight: "1.16", letterSpacing: "-0.015em" }],
         "display-sm": ["33px", { lineHeight: "1.14", letterSpacing: "-0.015em" }],
@@ -164,8 +138,6 @@ const config: Config = {
         fast: "120ms",
       },
       backgroundImage: {
-        // A bar that is going nowhere on purpose. Solid at 22% reads as
-        // progress that has stopped; stripes moving read as a queue.
         "queue-stripe":
           "repeating-linear-gradient(45deg, var(--accent) 0 6px, var(--accent-soft) 6px 12px)",
       },
@@ -177,10 +149,6 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(8px) scale(0.98)" },
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
-        // The landing page's scroll choreography keeps its @keyframes in
-        // globals.css next to the rules that reference them — Tailwind only
-        // emits a keyframes block when a matching `animate-*` utility is
-        // actually used in the markup, and those are driven from CSS.
         "pulse-dot": {
           "0%, 100%": { opacity: "1", transform: "scale(1)" },
           "50%": { opacity: "0.45", transform: "scale(0.82)" },
@@ -208,15 +176,6 @@ const config: Config = {
     },
   },
   plugins: [
-    /*
-     * `fine:` — there is a mouse.
-     *
-     * Control heights used to shrink at `sm:`, which asks the wrong question.
-     * Width is a proxy for input device and a bad one: a tablet held in two
-     * hands is 768px wide and got a sixteen-pixel sort control, while a
-     * desktop window dragged narrow got targets sized for a thumb nobody was
-     * using. Asking about the pointer gets both right, at any width.
-     */
     plugin(({ addVariant }) => {
       addVariant("fine", "@media (pointer: fine)");
     }),

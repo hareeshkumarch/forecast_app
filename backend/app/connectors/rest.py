@@ -43,9 +43,6 @@ class RestApiAdapter(ConnectorAdapter):
         return assert_public_url(str(self.config.get("endpoint") or ""))
 
     def _get(self, client: httpx.Client, url: str) -> httpx.Response:
-        # Redirects are followed by hand so each hop is checked. Letting httpx
-        # follow them would make the check on the first URL meaningless: one 302
-        # from a host the caller controls reaches anything the first URL could not.
         for _ in range(MAX_REDIRECTS + 1):
             response = client.get(url, headers=self._headers())
             if not response.is_redirect:

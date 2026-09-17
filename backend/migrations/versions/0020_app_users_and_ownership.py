@@ -29,9 +29,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_app_users_email", "app_users", ["email"])
 
-    # Nullable throughout. Every row that predates sign-in has no owner, and
-    # there is no honest value to backfill one with — a column that admits the
-    # gap is a better record than one that invents an answer.
     for table in OWNED_TABLES:
         op.add_column(table, sa.Column("created_by_user_id", sa.Uuid(), nullable=True))
         op.create_foreign_key(

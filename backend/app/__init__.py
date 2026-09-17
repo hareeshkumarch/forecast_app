@@ -1,8 +1,5 @@
 import os
 
-# Read straight from the environment rather than through Settings: this runs
-# before numpy is imported, which is the only moment the BLAS pools can still
-# be sized, and importing Settings here would pull numpy in first.
 _requested = os.environ.get("FORECAST_BLAS_THREADS", "").strip()
 _threads = _requested if _requested.isdigit() and int(_requested) > 0 else ""
 

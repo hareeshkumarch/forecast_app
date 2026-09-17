@@ -177,8 +177,6 @@ export function TopHeader({ section }: { section: AppSection }) {
                   API documentation
                 </a>
               </DropdownMenu.Item>
-              {/* The account menu beside this one is desktop-only, so without
-                  these two there is no way to sign out on a phone at all. */}
               <MobileAccountItems />
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -206,12 +204,6 @@ export function TopHeader({ section }: { section: AppSection }) {
 }
 
 
-/**
- * Who is signed in, and the way out.
- *
- * Renders nothing when this deployment has no sign-in configured, so a local
- * or open install does not grow a menu that cannot do anything.
- */
 function MobileAccountItems() {
   const { user, configured } = useAuth();
   if (!configured || !user) return null;

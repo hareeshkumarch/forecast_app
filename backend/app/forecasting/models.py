@@ -65,12 +65,6 @@ MemberBuilder = Callable[[ModelKind, FloatArray, list[date]], Forecaster]
 
 RECENCY_HALF_LIVES = [0.0, 0.6]
 
-# How many boosting rounds the search may buy. Held here rather than derived
-# from the row count so the number of rounds a candidate was scored under is
-# the number it ships with: the estimator's own early stopping would have
-# settled it against a shuffled hold-out, which reads the future to decide
-# when to stop, and running every trial to a fixed ceiling instead spent most
-# of a run fitting trees that the shorter fits show are not needed.
 GBM_ITERATIONS = [60, 150]
 
 
@@ -677,7 +671,6 @@ class CrostonForecaster:
 
 
 def _explosive(fitted: Any) -> bool:
-    """An AR root on or inside the unit circle makes the forecast grow without bound."""
     for name in ("arroots", "seasonalarroots"):
         roots = np.asarray(getattr(fitted, name, ()), dtype=complex)
         if roots.size and float(np.min(np.abs(roots))) <= 1.0:
@@ -1122,8 +1115,6 @@ class EnsembleForecaster:
         if not self._fitted:
             raise RuntimeError("fit() must be called before predict().")
 
-        # A member can score well across the backtest and still diverge once refitted
-        # on the whole history; averaging that in carries it into every published step.
         from app.forecasting.backtest import _diverged
 
         stacked: list[FloatArray] = []

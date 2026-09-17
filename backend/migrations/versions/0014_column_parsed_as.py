@@ -10,9 +10,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # How a column's raw text was read — "currency", "european", "MM/DD/YYYY",
-    # "Excel serial". Kept beside the column so the reading a forecast was
-    # built on is still answerable once the upload screen is gone.
     op.add_column("dataset_columns", sa.Column("parsed_as", sa.String(length=40), nullable=True))
 
 

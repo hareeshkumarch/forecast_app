@@ -186,11 +186,6 @@ FORMULA_LEAD = r"^[=+\-@\t\r]"
 
 
 def _disarmed(frame: pl.DataFrame) -> pl.DataFrame:
-    """Series labels come from uploaded files, and a spreadsheet runs what starts with =.
-
-    Quoting keeps the CSV well-formed but does not stop Excel evaluating the cell,
-    and these files are served as an attachment for exactly that round trip.
-    """
     text = [
         name for name, dtype in zip(frame.columns, frame.dtypes, strict=True) if dtype == pl.Utf8
     ]

@@ -55,15 +55,11 @@ const LABEL_FADE = {
 function labelFade(collapsed: boolean): string {
   return cn(
     "transition-opacity ease-out motion-reduce:transition-none motion-reduce:delay-0",
-    // Faded out is not gone: without this the labels stay clickable and
-    // selectable inside a rail that reads as icon-only.
     collapsed ? cn(LABEL_FADE.hidden, "pointer-events-none select-none") : LABEL_FADE.shown,
   );
 }
 
 function isActive(pathname: string, href: string): boolean {
-  // `/dashboard` is the app root and has no children, so it matches exactly.
-  // Everything else owns its subtree.
   return href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
 }
 

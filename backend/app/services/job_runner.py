@@ -168,9 +168,6 @@ _BLAS_THREAD_VARS = (
 
 
 def _pin_blas_threads() -> None:
-    # An operator who set OMP_NUM_THREADS by hand keeps it. Only an explicit
-    # FORECAST_BLAS_THREADS overrides, because the image already sets these to
-    # 1 and a setdefault against that can never take effect.
     explicit = bool(os.environ.get("FORECAST_BLAS_THREADS", "").strip())
     threads = str(max(1, settings.forecast_blas_threads))
     for name in _BLAS_THREAD_VARS:
@@ -221,10 +218,6 @@ _channel_sender: ThreadPoolExecutor | None = None
 
 
 def _publish_over_the_channel(event: ProgressEvent) -> None:
-    # Redis here is a blocking client, and a failover costs a connect timeout plus
-    # a socket timeout with no request served for as long as it takes. One sender
-    # thread keeps that off the loop while holding the order the relay's dedupe
-    # script needs: a frame that arrives behind a newer one is dropped, not queued.
     from app.services.progress_relay import publish_from_worker
 
     try:
@@ -363,8 +356,6 @@ class Scheduler:
                 try:
                     await on_wait(self._ahead_of(waiter))
                 except Exception:
-                    # Announcing a queue position is cosmetic; failing it must not
-                    # strand the waiter and with it the slot it is owed.
                     logger.warning(
                         "Could not announce the queue position for run %s.",
                         run_id,
@@ -502,10 +493,6 @@ class ExecutorRegistry:
         logger.info("Relaying worker progress into this process.")
 
     async def drain(self, seconds: float) -> int:
-        # The scheduler slot covers the model fit alone. Persisting the output,
-        # the insights and the grouped fan-out all happen after release, so
-        # waiting on `scheduler.running` can report nothing in flight while a
-        # task is mid-INSERT — and the engine is disposed underneath it.
         if seconds <= 0:
             await flush_channel_publishes()
             return scheduler.running + len(still_running())

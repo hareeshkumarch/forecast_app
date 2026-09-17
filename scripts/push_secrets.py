@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""Push a local env file into Infisical, so the values never leave your machine.
-
-    python3 scripts/push_secrets.py secrets.env
-    python3 scripts/push_secrets.py secrets.env --environment prod --dry-run
-
-On an instance that is already running, the live file is the best source —
-the values are known-good and nothing has to be retyped or copied out of a
-terminal:
-
-    sudo -E python3 scripts/push_secrets.py /opt/forecast/.env
-
-Reads KEY=VALUE lines, creates what is missing and updates what has changed.
-Nothing is printed but key names — the point of this script is that the values
-go from your machine to Infisical and nowhere else, least of all a terminal
-someone is screen-sharing.
-
-Runs on a bare python3 — it uses the Infisical SDK if it is installed and\nits HTTP API if it is not, so there is nothing to install first.\n\nNeeds the same four bootstrap variables the backend uses:
-
-    INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID
-    INFISICAL_HOST (optional, defaults to Infisical Cloud)
-"""
 
 from __future__ import annotations
 
@@ -33,12 +12,6 @@ DEFAULT_ENVIRONMENT = "prod"
 DEFAULT_PATH = "/"
 
 
-#: Never pushed, however they got into the file. These four are the credential
-#: that opens Infisical, so putting them inside it is both circular and a way
-#: to end up with a stale client secret overriding the live one on the box.
-#: Skipped rather than rejected, so the live /opt/forecast/.env can be handed
-#: to this script as-is — which beats copying thirty lines out of a terminal
-#: that treats Ctrl-C as an interrupt.
 BOOTSTRAP_PREFIX = "INFISICAL_"
 
 
@@ -53,8 +26,6 @@ def read_env_file(path: Path) -> dict[str, str]:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        # Quotes are how a value with spaces survives a shell, and are not
-        # part of the value itself.
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         if key.startswith(BOOTSTRAP_PREFIX):
@@ -64,15 +35,6 @@ def read_env_file(path: Path) -> dict[str, str]:
 
 
 class _Rest:
-    """Infisical over its HTTP API, using nothing but the standard library.
-
-    The SDK is one pip install away, but this script exists to be run once, on
-    a laptop, by somebody who wants their secrets in and their evening back.
-    Requiring a virtualenv first is how a two-minute job becomes a twenty
-    minute one, so the SDK is used when it happens to be there and this is
-    used when it is not. Same three calls either way.
-    """
-
     def __init__(self, host: str, client_id: str, client_secret: str) -> None:
         self.host = host.rstrip("/")
         self.token = self._post(
@@ -119,7 +81,6 @@ class _Rest:
         try:
             self._request("PATCH", f"/api/v3/secrets/raw/{quoted}", body)
         except RuntimeError:
-            # Not there yet, which on a first run is every one of them.
             self._request("POST", f"/api/v3/secrets/raw/{quoted}", body)
 
 
@@ -160,19 +121,10 @@ def _key_of(secret) -> str:
     return str(getattr(secret, "secretKey", None) or getattr(secret, "secret_key", "") or "")
 
 
-#: Anything still carrying one of these is a line nobody filled in. Pushing it
-#: turns a blank into a value that looks deliberate, and the failure surfaces
-#: days later as mail that never arrives or a bucket that was never written.
 PLACEHOLDERS = ("YOUR-PROJECT-REF", "YOUR-SITE", "YOUR_", "CHANGE-ME", "changeme", "<")
 
 
 def audit(values: dict[str, str]) -> list[str]:
-    """What is missing, said before anything is sent.
-
-    Conditional on purpose: SMTP only matters if mail is wanted, storage keys
-    only if a bucket is named, the JWT secret only if sign-in is on. A checker
-    that demands everything gets ignored, which is worse than not having one.
-    """
     problems = []
 
     def on(key: str) -> bool:
@@ -214,7 +166,6 @@ def _client():
     if missing:
         hint = ""
         if "INFISICAL_PROJECT_ID" in missing:
-            # The one nobody has to hand, and the one with a findable answer.
             hint = (
                 "\n\nINFISICAL_PROJECT_ID is the id in the address bar when the project is "
                 "open:\n  https://app.infisical.com/project/<THIS>/secrets/prod\n"
@@ -231,14 +182,6 @@ def _client():
 
 
 def check() -> int:
-    """Prove the machine identity works before anything depends on it.
-
-    The failure everybody hits is an identity created at the organisation and
-    never added to the project: the credentials are valid, the login succeeds,
-    and every read comes back empty or forbidden. Doing it here means finding
-    that out now rather than from a backend that quietly fell back to
-    environment variables.
-    """
     environment = os.environ.get("INFISICAL_ENVIRONMENT") or DEFAULT_ENVIRONMENT
     path = os.environ.get("INFISICAL_SECRET_PATH") or DEFAULT_PATH
 

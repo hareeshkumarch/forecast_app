@@ -56,13 +56,6 @@ class AuthenticatedUser:
 
     @property
     def claimed_email(self) -> str:
-        """The address, but only where the provider says it was confirmed.
-
-        `sub` is who the token is for; the email is a label on it. Anything that
-        grants something — the administrator list, an invitation waiting on an
-        address, the domain allowlist — has to read this instead, or naming
-        yourself admin@ is enough to become one.
-        """
         return self.email if self.email_verified else ""
 
 

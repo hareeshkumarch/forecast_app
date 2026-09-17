@@ -68,14 +68,6 @@ export class ApiError extends Error {
   readonly code: string;
   readonly detail: Record<string, unknown>;
   readonly requestId: string | null;
-  /**
-   * What the server said to wait, in milliseconds, or null if it said nothing.
-   *
-   * A 429 or a 503 names its own delay, and guessing instead is how a client
-   * that has been asked to wait sixty seconds comes back after one and is
-   * refused again — the retry then reads as part of the flood it was told to
-   * stop being.
-   */
   readonly retryAfterMs: number | null;
 
   constructor(
@@ -99,7 +91,6 @@ export class ApiError extends Error {
     return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500;
   }
 
-  /** Nothing to retry against: the browser knows it has no connection. */
   get isOffline(): boolean {
     return this.code === "offline";
   }
@@ -114,7 +105,6 @@ function retryAfterFrom(response: Response, body: ApiErrorBody | null): number |
     if (Number.isFinite(seconds) && seconds >= 0) {
       return Math.min(seconds * 1_000, RETRY_AFTER_CEILING_MS);
     }
-    // The other legal form is an HTTP date.
     const at = Date.parse(header);
     if (!Number.isNaN(at)) {
       return Math.min(Math.max(0, at - Date.now()), RETRY_AFTER_CEILING_MS);
@@ -170,12 +160,6 @@ async function request<T>(
   const answer = await send<T>(path, init, timeoutMs, false);
   if (!(answer instanceof Unauthorised)) return answer;
 
-  // One retry, with a token minted rather than read from the cache. The window
-  // this covers is narrow and real: a token the client still believed in
-  // expired between being attached and being checked. Retrying blind would be
-  // the same dead token again, so the refresh is the retry — and if that fails
-  // the original 401 is what the caller sees, because "sign in again" is the
-  // honest answer at that point.
   const refreshed = await refreshedAccessToken().catch(() => null);
   if (!refreshed) throw answer.error;
 
@@ -184,7 +168,6 @@ async function request<T>(
   return retried;
 }
 
-/** A 401 the caller may be able to do something about, rather than a thrown one. */
 class Unauthorised {
   constructor(readonly error: ApiError) {}
 }
@@ -212,9 +195,6 @@ async function send<T>(
   const headers = new Headers(init?.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
 
-  // Every call to the API goes through here, so the session travels with all
-  // of them or with none of them. Attaching it per call site is how one gets
-  // forgotten and answers 401 in production only.
   const token = refreshed ? await refreshedAccessToken() : await accessToken();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -224,16 +204,6 @@ async function send<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  // "no-cache" is not "no-store" and the difference is the whole point: it
-  // means *always ask the server*, but keep the copy so the question can be
-  // asked with an `If-None-Match`. The dashboard reads answer that with a
-  // bodiless 304 and, more importantly, without running their aggregate
-  // queries — a repeat view of the same run costs a round trip rather than a
-  // fan of database work. A GET with no ETag behind it is unaffected: it just
-  // gets its 200 as before.
-  //
-  // Writes stay "no-store". There is nothing to revalidate on a POST, and a
-  // stored copy of one is only a thing to get wrong.
   const method = (init?.method ?? "GET").toUpperCase();
   const reading = method === "GET" || method === "HEAD";
 
@@ -255,11 +225,6 @@ async function send<T>(
       );
     }
     if (isOffline()) {
-      // Told apart from a server that is down, because the two need different
-      // things from the reader: one is "check your connection", the other is
-      // "it is not you". Retrying while the browser knows it is offline is
-      // also pure waste — the reconnect listener refetches everything the
-      // moment the connection is back.
       throw new ApiError(
         0,
         "offline",
@@ -444,23 +409,7 @@ export const invitePerson = (email: string) =>
 export const getDatasetProfile = (id: string, signal?: AbortSignal) =>
   request<DatasetProfile>(`/api/datasets/${id}/profile`, { signal });
 
-/**
- * What the backend actually serves, read from its own OpenAPI document.
- *
- * The frontend deploys from a push and the backend from a command on the box,
- * so for a window after every release one is newer than the other. Most of
- * that mismatch is harmless — a missing endpoint 404s and says so. The one
- * that is not is a query parameter the older backend has never heard of:
- * FastAPI ignores undeclared parameters rather than rejecting them, so a
- * filter the user set is dropped in transit and the answer comes back looking
- * like a filtered one. Asking first is the only way not to lie about it.
- *
- * The spec is ~128KB, so it is reduced to booleans here and only those reach
- * the query cache.
- */
 export const getApiFeatures = async (signal?: AbortSignal): Promise<ApiFeatures> => {
-  // The cheap answer first: a few bytes against 158 KB, which on a phone is
-  // over a second of the session's first paint spent learning two booleans.
   try {
     const features = await request<{
       series_status_filter: boolean;
@@ -472,9 +421,6 @@ export const getApiFeatures = async (signal?: AbortSignal): Promise<ApiFeatures>
       datasetCoverage: features.dataset_coverage,
     };
   } catch {
-    // A backend older than this frontend has no such endpoint. Reading its
-    // OpenAPI document is slow but it is the only source that is true of
-    // whatever version is actually running, which is the whole point.
     const spec = await request<OpenApiDocument>("/openapi.json", { signal });
     const paths = spec.paths ?? {};
     const seriesParams = paths["/api/forecasts/{run_id}/series"]?.get?.parameters ?? [];
@@ -502,9 +448,6 @@ export async function uploadDataset(
   const form = new FormData();
   form.append("file", file);
   if (name) form.append("name", name);
-  // 01/02/2024 is the first of February in most of the world and the second of
-  // January in the United States, and a file where no day passes the 12th
-  // cannot settle it. "auto" lets the column decide and say when it could not.
   form.append("date_order", dateOrder);
 
   return request<DatasetUploadResponse>("/api/datasets/upload", {
@@ -679,16 +622,6 @@ export const compareForecastRuns = (
 export const getForecastMonitoring = (signal?: AbortSignal) =>
   request<ForecastMonitoring>("/api/forecasts/monitoring", { signal });
 
-/**
- * The progress stream's URL, with the session on it.
- *
- * The token rides in the query string because `EventSource` cannot set
- * headers — it is the one place in this client that does so, and the backend
- * accepts it there for this endpoint alone. The cost is real: a query string
- * reaches access logs, where an Authorization header does not. It is bounded
- * by Supabase tokens being short-lived, and by this stream carrying only a
- * percentage and a stage name.
- */
 export function forecastEventsUrl(id: string, token?: string | null): string {
   const base = `${API_BASE_URL}/api/forecasts/${id}/events`;
   return token ? `${base}?access_token=${encodeURIComponent(token)}` : base;

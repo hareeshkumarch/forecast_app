@@ -145,8 +145,6 @@ function People() {
 
   const rows = data ?? [];
   const waiting = rows.filter((row) => row.status === "pending").length;
-  // Your own account is never selectable — every bulk action would refuse it
-  // anyway, and offering a tick box that cannot do anything is a small lie.
   const selectable = rows.filter((row) => !row.is_self);
   const allPicked = selectable.length > 0 && picked.size === selectable.length;
 
@@ -160,8 +158,6 @@ function People() {
   }
 
   function afterBulk(result: { skipped: Record<string, string> }) {
-    // Keep anything that was refused selected, so the reason on screen still
-    // has the rows it refers to.
     setPicked(new Set(Object.keys(result.skipped).filter((key) => key.includes("@")) ));
   }
 
@@ -334,13 +330,6 @@ function InviteForm() {
   );
 }
 
-/**
- * One person, and everything you can do to them.
- *
- * The decision that matters sits on the row as a button; everything else is
- * behind a menu. A row of five buttons makes "approve" and "delete for ever"
- * look like equally ordinary choices, which on this screen they are not.
- */
 function Person({
   row,
   busy,
@@ -520,7 +509,6 @@ function Avatar({ src }: { src: string | null }) {
   );
 }
 
-/** The one line of history worth showing on a row. */
 function describe(row: ManagedUser): string {
   if (row.subject_pending) {
     return `invited by ${row.invited_by ?? "an administrator"} · not signed in yet`;

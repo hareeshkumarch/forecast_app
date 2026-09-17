@@ -133,26 +133,10 @@ const RUN_MODE_COPY: Record<Exclude<RunMode, "custom">, { label: string; hint: s
   thorough: { label: "Thorough", hint: "All models · 8 checks", folds: 8 },
 };
 
-/**
- * Warnings about what a model costs to fit, as opposed to whether it can be.
- * Availability is the server's to report; this is a property of the algorithm
- * and belongs with the picker that offers it.
- *
- * Prophet fits a Stan model per prior combination per backtest fold. Measured
- * on the sample dataset it turns a 5-second run into a 35-second one — and
- * earns it, winning that backtest by a wide margin — but a user who ticks it
- * without knowing should not be left wondering why the run got slow.
- */
 const MODEL_NOTES: Partial<Record<ModelKind, string>> = {
   prophet: "slower",
 };
 
-/**
- * What to draw before `/api/health/capabilities` answers, and nothing more.
- * Every model is marked available here on purpose: the picker starts complete
- * and greys entries out as the server corrects it, rather than starting empty
- * and popping ten checkboxes in. The server's labels win once they arrive.
- */
 const FALLBACK_MODELS: ModelCapability[] = [
   { model: "naive", label: "Naive", available: true, reason: null },
   { model: "seasonal_naive", label: "Seasonal Naive", available: true, reason: null },
@@ -213,11 +197,6 @@ export function ForecastModal() {
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
   const [runMode, setRunMode] = useState<RunMode>("fast");
-  // The roster comes from the server, because whether a model can be fitted
-  // is a property of the deployment and not of the bundle. This list is only
-  // the shape to draw before that answer arrives, and the labels the server
-  // does not improve on; every entry is optimistically available, so the
-  // picker never flickers models out on a slow connection — it greys them.
   const { data: capabilities } = useCapabilities();
 
   const models = useMemo<ModelCapability[]>(
@@ -229,9 +208,6 @@ export function ForecastModal() {
 
   const [selectedModels, setSelectedModels] = useState<ModelKind[]>(RUN_MODELS.fast);
 
-  // Seed from what this server can actually run, once, when that is known.
-  // Ticking a model the deployment does not have is how a run ends up with a
-  // dead candidate in its comparison table.
   const seededModels = useRef(false);
   useEffect(() => {
     if (!capabilities || seededModels.current) return;
@@ -239,9 +215,6 @@ export function ForecastModal() {
     setSelectedModels(capabilities.models.filter((m) => m.available).map((m) => m.model));
   }, [capabilities]);
 
-  // What actually gets sent. Kept separate from `selectedModels` so an
-  // unavailable model can never reach the request, whatever the checkbox
-  // state says — including the pre-capabilities default above.
   const runnableSelection = useMemo(
     () => selectedModels.filter((m) => availableModels.some((a) => a.model === m)),
     [selectedModels, availableModels],
@@ -268,9 +241,6 @@ export function ForecastModal() {
     gap_fill: gapFill,
   });
 
-  // One subscription per session, owned by ForecastRunProvider — see the note
-  // there. Opening a second one here would double the event stream and fire
-  // every completion toast twice while this dialog happens to be open.
   const progress = useActiveForecastProgress();
 
   const seeded = useRef(false);
@@ -344,10 +314,7 @@ export function ForecastModal() {
       setError(
         selectedModels.length === 0
           ? "Tick at least one candidate algorithm — there is nothing to backtest."
-          : // They ticked something, and every one of them is missing from this
-            // server. Saying "tick one" here would be telling them to do what
-            // they just did.
-            `${selectedModels.map(humanizeModel).join(", ")} ${
+          : `${selectedModels.map(humanizeModel).join(", ")} ${
               selectedModels.length === 1 ? "is" : "are"
             } not available on this server. Tick one of the others to run a backtest.`,
       );
@@ -382,8 +349,6 @@ export function ForecastModal() {
         max_series: grain.length > 0 ? seriesLimit : undefined,
         metric_weights: metricWeights,
         gbm_max_depth: gbmDepth,
-        // Omitted when everything this server can fit is ticked, which lets
-        // the engine use its full roster and route by demand class itself.
         candidate_models:
           runnableSelection.length < availableModels.length ? runnableSelection : undefined,
         driver_columns: selectedDrivers.length > 0 ? selectedDrivers : undefined,
@@ -421,7 +386,6 @@ export function ForecastModal() {
     setError(null);
   }
 
-  /** Close, clear the finished run, and land the user on the dashboard. */
   function handleViewForecast() {
     setActiveRun(null);
     closeModal();
@@ -456,16 +420,10 @@ export function ForecastModal() {
       title="Run Forecast"
       description="Fits every eligible candidate model, backtests them, and selects a winner."
       size="md"
-      // Only while the request to start one is in the air. Once a run has an
-      // id this dialog is closable on purpose — the watcher outlives it and
-      // "run in background" is the whole point of that button.
       busy={startMutation.isPending}
       busyHint="The run is being started. This closes as soon as it has an id."
       footer={
         activeRunId && progress.status === "completed" ? (
-          // The point of finishing a forecast is to look at it. Sending the
-          // user back to this form as the primary action leaves the result
-          // one unmarked click away, behind a dialog that is covering it.
           <>
             <Button variant="ghost" onClick={handleClearPreviousRun}>
               Run another
@@ -758,9 +716,6 @@ export function ForecastModal() {
               ))}
             </div>
             {blockedModels.length > 0 ? (
-              // Said once, plainly, rather than leaving the user to hover a
-              // greyed checkbox to find out why it will not tick. The run is
-              // not degraded by this and the copy should not imply it is.
               <p className="mt-2 flex items-start gap-1.5 text-caption text-text-muted">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                 <span>
@@ -849,10 +804,6 @@ export function ForecastModal() {
                   />
                 </Field>
 
-                {/* Only while Prophet is both installed here and ticked.
-                    These two inputs are the only settings in this panel that
-                    can silently do nothing, and a number you can still type
-                    into reads as a number that will be used. */}
                 {prophetSelected ? (
                   <>
                     <Field
@@ -982,11 +933,8 @@ function CheckRow({
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
-  /** Renders the row inert — used for models this deployment cannot fit. */
   disabled?: boolean;
-  /** Why, on a disabled row. Surfaced to pointer and to assistive tech alike. */
   hint?: string;
-  /** A short aside on a row that is selectable, e.g. that it is slow to fit. */
   note?: string;
 }) {
   return (
@@ -1120,10 +1068,6 @@ function ProgressPanel({
       </div>
 
       {waiting ? (
-        // The bar cannot move while a run is queued, and a bar that does not
-        // move is the whole reason a waiting run read as a stuck one. Say what
-        // is actually happening instead, in the terms that make it act-on-able:
-        // it has not started, here is where it is, and it is not lost.
         <div
           className="flex items-start gap-2 rounded-card border border-border bg-surface-muted px-3 py-2"
           role="status"
@@ -1167,8 +1111,6 @@ function ProgressPanel({
           className={cn(
             "h-full rounded-full transition-[width] duration-300",
             failed ? "bg-negative" : done ? "bg-positive" : "bg-accent",
-            // A striped bar that is going nowhere reads as waiting; a solid
-            // one at 22% reads as progress that has stopped.
             waiting && "animate-queue-stripe bg-queue-stripe bg-stripe",
           )}
           style={{ width: `${Math.max(percent, 3)}%` }}

@@ -186,10 +186,6 @@ async def test_connector(
         resolved_type = connector.type
         stored_config = connector.config or {}
 
-        # The stored credentials are about to be decrypted and handed to an
-        # adapter. Letting the caller also choose where that adapter connects
-        # would hand them the secret: point a saved connector at a host you
-        # control and it authenticates to you.
         moved = _redirected(stored_config, config)
         if moved:
             raise ValidationError(

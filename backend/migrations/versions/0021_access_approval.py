@@ -12,10 +12,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Existing rows are approved, not pending. Anyone already in the table
-    # signed in during the window before approval existed and was let through
-    # then; turning that into a queue of retrospective requests would lock out
-    # people who already had access.
     op.add_column(
         "app_users",
         sa.Column("status", sa.String(length=32), nullable=False, server_default="approved"),
@@ -27,8 +23,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_app_users_status", "app_users", ["status"])
 
-    # New rows decide their own status in the application, where the admin list
-    # and the approval switch are both readable.
     op.alter_column("app_users", "status", server_default=None)
 
 

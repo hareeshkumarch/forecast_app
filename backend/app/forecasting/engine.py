@@ -66,9 +66,6 @@ from app.forecasting.selection import ScoredCandidate, metric_weights_for, selec
 from app.forecasting.transforms import TransformedForecaster, build_transform
 from app.models.enums import ForecastFrequency, ModelKind, SeriesStatus
 
-# Forking would duplicate the asyncpg and Redis sockets this process holds into
-# every lane, and finalising them in a child writes on a connection the parent
-# is still using. job_runner's own pool already spawns; this one did not.
 _SPAWN = multiprocessing.get_context("spawn")
 
 FloatArray = npt.NDArray[np.float64]

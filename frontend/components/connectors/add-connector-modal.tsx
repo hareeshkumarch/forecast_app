@@ -165,10 +165,6 @@ export function AddConnectorModal() {
   const testResult = testMutation.data;
   const saving = createMutation.isPending || updateMutation.isPending;
 
-  // Anything typed into a field. The name and the port are prefilled by
-  // choosing a type, so they say nothing about whether somebody has invested
-  // anything; a filled-in field does — and a host and password entered by hand
-  // are exactly what an accidental Escape used to throw away.
   const entered = Object.entries(values).some(([key, value]) => {
     if (key === "port") return false;
     return typeof value === "boolean" ? value : String(value ?? "").trim() !== "";

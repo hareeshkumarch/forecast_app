@@ -47,8 +47,6 @@ export function UploadDatasetModal() {
   const [frequency, setFrequency] = useState<ForecastFrequency>("monthly");
   const [horizon, setHorizon] = useState(6);
   const [localError, setLocalError] = useState<string | null>(null);
-  // Kept so the file can be re-read in the other order without asking for it
-  // again, which is the whole point of offering the choice.
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [dateOrder, setDateOrder] = useState<DateOrder>("auto");
   const [activeTab, setActiveTab] = useState<"mapping" | "profiling" | "preview">("mapping");
@@ -66,7 +64,7 @@ export function UploadDatasetModal() {
   function handleFile(file: File | undefined) {
     if (!file) return;
 
-    
+
     if (file.size > MAX_MB * 1024 * 1024) {
       setLocalError(
         `${file.name} is ${formatBytes(file.size)}, over the ${MAX_MB} MB limit. Filter or aggregate the data first.`,
@@ -129,8 +127,6 @@ export function UploadDatasetModal() {
   }
 
   const profile = result?.profile;
-  // The backend warns when every value in a date column fits both readings, so
-  // the control below explains itself rather than sitting there unexplained.
   const ambiguousDates = Boolean(
     profile?.warnings.some((warning) => warning.includes("day/month")),
   );
@@ -389,9 +385,6 @@ export function UploadDatasetModal() {
                             <span className="capitalize text-text-secondary font-mono text-micro bg-surface-muted border border-border px-1.5 py-0.5 rounded">
                               {col.kind} · {col.role}
                             </span>
-                            {/* How the raw text was read. A date read in the
-                                wrong order is the one mistake nothing
-                                downstream can catch, so it is stated here. */}
                             {col.parsed_as ? (
                               <span
                                 className="ml-1.5 font-mono text-micro text-accent bg-accent-soft border border-accent-border px-1.5 py-0.5 rounded"
@@ -532,8 +525,8 @@ function ColumnSelect({
   options: string[];
   fallback: string[];
 }) {
-  
-  
+
+
   const choices = options.length > 0 ? options : fallback;
 
   return (

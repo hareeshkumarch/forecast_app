@@ -8,11 +8,6 @@ import {
 } from "@/lib/compare-motion";
 import { area, buildPanel, path } from "@/lib/range-vs-line";
 
-/*
- * The four tokens for this diagram were defined in both themes and the panels
- * kept their literals, so the one section arguing that a range is more honest
- * than a line stayed on white paper while the page around it went dark.
- */
 const INK = "var(--compare-ink)";
 const FOREST = "var(--compare-forecast)";
 const RULE = "var(--compare-rule)";
@@ -31,19 +26,9 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
   const stroke = tone === "forest" ? FOREST : INK;
   const timing = panelTiming(index);
 
-  // Two wipes, not one per mark: the history is one beat and the forecast with
-  // its range is the next. Ids have to survive both panels being on the page.
   const pastClip = `compare-past-${index}`;
   const aheadClip = `compare-ahead-${index}`;
 
-  /*
-   * The lighter of the two brief rules, not the heavier one the decision card
-   * uses. These panels are a pair of small drawings side by side, and a firm
-   * outline around each turns them into two boxes competing with the chart
-   * inside them. `audits/a1.mjs` reports the same thing from the other end: at
-   * #bdc5bd the figure's own right border is ink inside every line box of the
-   * verdict below it, so three wrapped lines measure as one band.
-   */
   return (
     <figure className="m-0 border border-land-brief-rule bg-land-brief">
       <figcaption className="border-b border-land-brief-rule px-5 py-3 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
@@ -63,8 +48,6 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
         >
           <defs>
             <clipPath id={pastClip} clipPathUnits="userSpaceOnUse">
-              {/* Two units past the handoff, so the join to the forecast is
-                  inside the wipe rather than sliced down the middle of it. */}
               <rect
                 className="draw-wipe"
                 x={0}
@@ -109,9 +92,6 @@ function Panel({ index, withBand, label, verdict, tone }: PanelProps) {
             <path d={path(panel.history)} fill="none" stroke={INK} strokeWidth="2" />
           </g>
 
-          {/* The range opens with the line it belongs to, under the same wipe.
-              A range that arrives after its forecast reads as a caveat added
-              later, which is the opposite of the point being made. */}
           <g clipPath={`url(#${aheadClip})`}>
             {panel.band ? <path d={area(panel.band)} fill={FOREST} fillOpacity="0.14" /> : null}
             <path

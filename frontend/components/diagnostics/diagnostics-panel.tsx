@@ -11,7 +11,6 @@ import { formatCompact, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { DiagnosticReport } from "@/types/api";
 
-/** A metric is only a reading once it is in the shape its units expect. */
 function render(name: string, value: number | null | undefined, currency: boolean): string {
   if (value === null || value === undefined) return "—";
   const { unit } = metricLabel(name);
@@ -57,15 +56,6 @@ function MetricTile({
   );
 }
 
-/**
- * How a forecast is wrong, rather than how much.
- *
- * The scorecard answers the second question with one number. Two models can
- * share it and be broken in different ways: one loose in both directions, one
- * drifting steadily late. The residuals are where those separate, and the
- * metric set is chosen from the data rather than fixed — a series with zeros
- * in it is not shown a MAPE, and it is told why not.
- */
 export function DiagnosticsPanel({
   runId,
   seriesId,
@@ -137,9 +127,6 @@ function Report({ report, currency }: { report: DiagnosticReport; currency: bool
           </div>
         )}
 
-        {/* The withheld list is the point. "We did not show you MAPE" and
-            "MAPE is undefined on a third of your weeks" are different
-            messages, and only one of them is useful. */}
         {plan.withheld.length > 0 ? (
           <div className="border-t border-border px-4 py-3">
             <p className="flex items-center gap-1.5 font-mono text-micro uppercase tracking-[0.08em] text-text-muted">

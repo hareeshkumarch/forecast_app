@@ -14,9 +14,6 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column("app_users", sa.Column("welcomed_at", sa.DateTime(timezone=True), nullable=True))
 
-    # Anybody already signed in has been using this for a while and does not
-    # need welcoming to it. Stamping them now is what stops the next deploy
-    # mailing every existing account at once.
     op.execute(
         "UPDATE app_users SET welcomed_at = COALESCE(last_seen_at, created_at) "
         "WHERE status = 'approved'"

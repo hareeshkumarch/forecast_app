@@ -126,12 +126,6 @@ def _round(value: float | None) -> float | None:
 
 
 class ScoredPoint(Protocol):
-    """What the accuracy readers need of a forecast point, and nothing more.
-
-    Selecting these five columns instead of the entity is what keeps a grouped
-    run's quarter-million points out of the identity map.
-    """
-
     period: date
     actual: float | None
     forecast: float | None
@@ -278,8 +272,6 @@ class Headline:
 
 
 async def headline(session: AsyncSession) -> Headline:
-    # Four scalars per run, not the whole row — ForecastRun carries the
-    # diagnostics blob, and this reads every scored run there has ever been.
     runs = list(
         (
             await session.execute(
@@ -319,9 +311,6 @@ async def build(session: AsyncSession, run_id: UUID) -> AccuracyReport | None:
     if run is None:
         return None
 
-    # Only the band is read, and a grouped run has one row per period per series
-    # per kind — hydrating those as entities is hundreds of megabytes to compute
-    # one coverage figure.
     points = list(
         (
             await session.execute(

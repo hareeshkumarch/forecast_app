@@ -41,7 +41,6 @@ export function isRetryable(error: unknown): boolean {
   return error instanceof ApiError ? error.isRetryable : true;
 }
 
-/** What the server asked us to wait, where it asked. */
 export function retryAfterMs(error: unknown): number | null {
   return error instanceof ApiError ? error.retryAfterMs : null;
 }

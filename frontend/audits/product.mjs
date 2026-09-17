@@ -54,7 +54,6 @@ console.log("\nthe rails collapse independently");
   note((await railWidth()) > 200, "and it reopens");
   note((await navWidth()) === navBefore, "the navigation rail was untouched throughout");
 
-  // Persistence across a reload.
   await page.click('button[aria-label="Collapse forecast insights"]');
   await page.waitForTimeout(300);
   await page.reload({ waitUntil: "networkidle" });

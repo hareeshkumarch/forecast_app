@@ -235,14 +235,6 @@ class TestReportIsTraceable:
 
 
 class TestScoringAnIntervalCannotReadTheFuture:
-    """The width a fold is scored against may only come from earlier folds.
-
-    `interval_cost` used to take every *other* fold, so the first fold's band was
-    built from origins that had not happened yet — the same leave-one-out the
-    ensemble's member weights were already fixed for. It feeds `winkler`, which
-    carries `settings.interval_weight` of the selection score.
-    """
-
     @staticmethod
     def _fold(index: int, error: float):
         from app.forecasting.backtest import FoldResult
@@ -286,9 +278,6 @@ class TestScoringAnIntervalCannotReadTheFuture:
             0.8,
         )
 
-        # Two folds leave exactly one that can be scored: the second, against the
-        # first. Leave-one-out scored both and averaged, so it came out lower by
-        # crediting the quiet fold with the loud fold's width.
         assert interval_cost(result, 0.8) == pytest.approx(only_honest_score)
 
     def test_a_later_fold_cannot_change_an_earlier_folds_width(self) -> None:
@@ -304,9 +293,6 @@ class TestScoringAnIntervalCannotReadTheFuture:
         calm, wild = scored(0.3), scored(80.0)
         assert np.isfinite(calm) and np.isfinite(wild)
 
-        # Fold 1 is scored against fold 0 in both, so its contribution is fixed.
-        # Only fold 2's own term may move, and the mean is over two terms — so
-        # the whole change has to be attributable to that one fold.
         pair = [self._fold(0, 0.1), self._fold(1, 0.2)]
         fold_one_term = interval_cost(BacktestResult(model=ModelKind.NAIVE, folds=pair), 0.8)
 
@@ -317,15 +303,6 @@ class TestScoringAnIntervalCannotReadTheFuture:
 
 
 class TestABandIsAsWideAsItClaims:
-    """An 80% band should be about 1.28 sigma, not 3.3.
-
-    Residuals were pooled across every horizon — so the pool already carried the
-    growth with horizon — and then scaled by sqrt(step) a second time. Measured
-    against a known truth that came to 2.49x, and on the benchmark the median
-    forward error sat at 0.20 of the published halfwidth where 0.53 is right for
-    an 80% normal band.
-    """
-
     HORIZON = 12
     STEP_SIGMA = 10.0
 
@@ -372,14 +349,9 @@ class TestABandIsAsWideAsItClaims:
     @pytest.mark.parametrize("folds", [2, 3, 5, 8])
     def test_coverage_lands_near_the_level_it_claims(self, folds: int) -> None:
         observed = self._coverage(folds)
-        # Conformal is a one-sided guarantee, so a little high is correct. This
-        # used to sit at 99 for every one of these fold counts.
         assert 74.0 <= observed <= 88.0, f"{folds} folds covered {observed:.1f}% of an 80% band"
 
     def test_more_folds_do_not_make_it_worse(self) -> None:
-        # The running maximum this replaced took the largest of every noisy
-        # estimate up to each step, so eight folds covered 89% where five
-        # covered 80% — evidence made the answer worse.
         assert abs(self._coverage(8, seed=3) - 80.0) <= abs(self._coverage(3, seed=3) - 80.0) + 4.0
 
     @pytest.mark.parametrize("folds", [3, 8])
@@ -397,8 +369,6 @@ class TestABandIsAsWideAsItClaims:
 
 
 def test_a_non_negative_metric_never_publishes_an_inverted_band() -> None:
-    """A declining series can forecast below zero. Clamping the floor to zero without
-    clamping the ceiling with it used to leave lower above upper."""
     from app.forecasting.backtest import BacktestResult, FoldResult
     from app.forecasting.scenarios import build_intervals
     from app.models.enums import ModelKind

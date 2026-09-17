@@ -5,35 +5,12 @@ const BASE = process.env.BASE ?? "http://localhost:3000";
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const WIDTHS = [320, 375, 414, 640, 768, 1024, 1280, 1366, 1440, 1512, 1680, 1920, 2240, 2560];
 
-/*
- * Two lines "touch" when the ink of one runs into the ink of the next. Line
- * boxes are the wrong thing to measure — at a leading below 1 they overlap by
- * design while the glyphs still clear each other. So this counts bands of
- * rows that actually carry ink: N wrapped lines must produce N separated
- * bands. Fewer bands than lines means ink from adjacent lines has merged.
- */
 const browser = await chromium.launch({ executablePath: CHROME });
 const failures = [];
 
 for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
-  // Opacity alone is not enough to undo the scroll choreography. A reveal
-  // that has not fired is also translated and, crucially, `filter: blur(6px)`
-  // — and blurred text smears the ink of one line into the gap below it, so
-  // every wrapped block below the fold reported as merged. That is what made
-  // this audit return a different set of failures on identical input: which
-  // blocks were still blurred depended on which observers had happened to
-  // fire. Flatten all three properties, so what is measured is the type.
-  //
-  // The pinned section needs two more of the same kind, and for the same
-  // reason: a box measured from the DOM has to be a box with that block's ink
-  // painted in it. A `position: sticky` panel in a full-page screenshot paints
-  // where it is stuck against the expanded viewport rather than where it sits
-  // in the flow; and a step whose body is collapsed to a zero-height grid row
-  // still reports its line boxes through a `Range`, at coordinates where
-  // nothing is drawn. Either one hands this scan clear paper and it counts the
-  // lines as merged.
   await page.addStyleTag({
     content:
       ".reveal{opacity:1 !important;transform:none !important;filter:none !important}" +
@@ -45,8 +22,6 @@ for (const width of WIDTHS) {
   const blocks = await page.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll("h1,h2,h3,p,span,a,li,div")) {
-      // Pure text leaves only: an icon or a colour swatch beside the text
-      // produces rects at a different offset that are not a wrapped line.
       if (!el.childNodes.length) continue;
       if (![...el.childNodes].every((n) => n.nodeType === 3)) continue;
       if (!el.textContent.trim()) continue;
@@ -78,15 +53,11 @@ for (const width of WIDTHS) {
   for (const b of blocks) {
     const x0 = Math.max(0, Math.floor(b.box.left * dpr));
     const x1 = Math.min(png.width, Math.ceil(b.box.right * dpr));
-    // Pad by a line so ascenders/descenders at the block edge are included.
     const pad = Math.ceil(((b.box.bottom - b.box.top) / b.lines) * dpr);
     const y0 = Math.max(0, Math.floor(b.box.top * dpr) - pad);
     const y1 = Math.min(png.height, Math.ceil(b.box.bottom * dpr) + pad);
     if (x1 - x0 < 4 || y1 - y0 < 4) continue;
 
-    // Background = the modal colour over the whole scanned region. Sampling a
-    // single pixel picks up a card border or one of the page's 48px grid
-    // lines, and then every row counts as inked.
     const histogram = new Map();
     for (let y = y0; y < y1; y += 2) {
       for (let x = x0; x < x1; x += 2) {

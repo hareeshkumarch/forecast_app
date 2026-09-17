@@ -409,8 +409,6 @@ def test_a_shifted_power_transform_floors_at_its_own_shift() -> None:
 
 
 def test_an_ensemble_member_that_diverges_is_left_out_of_the_blend() -> None:
-    """A member can score well across the backtest and still explode once refitted on
-    the whole history. Averaging it in carried 1e+52 into every published step."""
     from dataclasses import dataclass, field
 
     from app.forecasting.models import EnsembleForecaster

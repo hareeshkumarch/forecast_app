@@ -24,12 +24,6 @@ import { cn } from "@/lib/utils";
 
 const SHELL = "page-shell";
 
-/*
- * The steps are shorter than they were, because the stage beside them now
- * shows what the sentences used to have to describe. "We work out which column
- * holds the date" is a hundred and one characters of a thing the drawing does
- * in front of the reader.
- */
 const STEPS = [
   {
     title: "Drop in a spreadsheet",
@@ -48,13 +42,6 @@ const STEPS = [
   },
 ];
 
-/*
- * Four numbers the product can actually be held to, not four numbers that
- * sounded good. In order: the accuracy the section below reports, the size of
- * the candidate set in `ModelKind`, the run budget in `core/budget.py`, and
- * the one file step 1 asks for. `count` is off for the one that has nowhere
- * to count from — a number ticking from zero to one reads as a fault.
- */
 const PROOF = [
   {
     value: 94,
@@ -82,12 +69,6 @@ const PROOF = [
   },
 ];
 
-/*
- * Each of these is a sentence, not a tile. They used to be three bordered
- * boxes with a number and a small icon in the corner — the arrangement every
- * product page uses, which is why it reads as furniture rather than as
- * something worth stopping on. Set large, on their own line, they are read.
- */
 const FEATURES = [
   {
     lede: "A forecast you can read.",
@@ -103,16 +84,6 @@ const FEATURES = [
   },
 ];
 
-/*
- * The decision brief, as the copy beside it describes it: ranked, in decision
- * order. It was three equal columns, which said the opposite — three columns
- * are peers, and a reader has no reason to start at the left one. It also
- * never had the room: at 640px each column was about 190px, and at 1440 the
- * card sits in the narrower half of a two-column section and gets the same
- * squeeze, so "West demand is / softening" wrapped at almost every width the
- * page is ever seen at. `audits/a1.mjs` had been reporting the ink of those
- * wrapped lines merging since before this section was written.
- */
 const SIGNALS = [
   {
     label: "What changed",
@@ -172,18 +143,12 @@ function Eyebrow({
   light = false,
   rule = true,
 }: {
-  /** A heading where the eyebrow is the only thing naming its section — see
-   *  `Features`, which had no h2 and so was not in the document outline at
-   *  all, however plainly it was labelled on the screen. */
   as?: ElementType;
   children: ReactNode;
   light?: boolean;
-  /** Off in the hero, where a pulsing status dot already sits to the left. */
   rule?: boolean;
 }) {
   return (
-    // inline-flex, not flex: the closing section centres its content with
-    // `text-align`, which only moves an inline-level box.
     <Tag
       className={cn(
         "inline-flex items-center gap-3 font-mono text-site-caption font-normal uppercase tracking-[0.22em]",
@@ -309,13 +274,6 @@ function Hero() {
   );
 }
 
-/*
- * The band sits below the chart rather than above it. Everything in the hero
- * above this point is a claim; the chart is the demonstration, and these are
- * what the demonstration is worth. Putting it any higher would also push the
- * call to action off the fold, which `audits/track-a.mjs` checks at three
- * viewport heights.
- */
 function Proof() {
   return (
     <div className="page-shell mt-14 sm:mt-16">
@@ -359,8 +317,6 @@ function HowItWorks() {
           </Reveal>
         </div>
 
-        {/* Pinned, and scrubbed by the scroll rather than played at it — see
-            `scroll-stage.tsx` and the `.scroll-track` block in globals.css. */}
         <ScrollStage className="mt-12 sm:mt-16" stage="build">
           <div className="pipeline-grid">
             <ol className="pipeline-steps">
@@ -404,13 +360,6 @@ function HowItWorks() {
 function Features() {
   return (
     <section id="features" className="section-edge section-pad">
-      {/* Pinned, and the scroll runs the three of them past the reader
-          sideways — see `.filmstrip` in globals.css. The heading is pinned
-          with them rather than left behind at the top: a strip travelling
-          under a title nobody can still see is three claims with nothing
-          holding them together. Off the track they are a column of three at
-          ordinary height, which is what a short window, no JavaScript or a
-          reduced-motion preference gets. */}
       <ScrollStage screens={2.6} stage="filmstrip">
         <div className={cn(SHELL, "filmstrip")}>
           <Reveal variant="from-left" duration={640} className="filmstrip-head">
@@ -607,45 +556,13 @@ function Compare() {
   );
 }
 
-/*
- * The case for the figure, held one line at a time.
- *
- * It was two columns of prose under a heading, all on screen at once, which is
- * a paragraph asking to be skimmed. Pinned, the figure and the heading hold
- * the middle of the screen and the scroll brings each line of the argument
- * under them in turn and takes it away again — the reader is moved through it
- * at the pace it was written in rather than handed all of it and left to it.
- *
- * The heading is not one of these. It was, and a section whose name in the
- * document outline is invisible for most of the scrub is a section a reader
- * can be sent to by the nav and not find.
- */
 const ACCURACY_BEATS = [
   "Measured against your own history, never a benchmark: we hide part of your past and check whether the forecast would have got it right.",
   "And every run adds another real result to it — any product, any region, any week.",
 ];
 
-/*
- * How fast a beat fades, as a multiple of the scrub. Kept in step with the
- * ramp in `.accuracy-beat` by hand, because the stylesheet is where the fade
- * has to happen and this is where the windows are worked out.
- */
 const BEAT_RAMP = 11;
 
-/*
- * When a beat owns the hold, as a pair of points on the scrub.
- *
- * The windows overlap by exactly half a fade, which is the only overlap that
- * makes the swap a dissolve: the outgoing line is at whatever the incoming
- * one is not, so there is always one line's worth of ink on screen and never
- * two. Butted exactly against each other they both reach zero for a frame and
- * the hold blinks; overlapped any wider — it was a flat twelfth once — both
- * lines sit at full strength on top of each other and the reader gets two
- * sentences printed through one another.
- *
- * The first and last reach past the ends so they are already lit when the
- * section arrives and still lit when it leaves.
- */
 const BEAT_OVERLAP = 1 / (2 * BEAT_RAMP);
 
 function beatWindow(index: number): CSSProperties {
@@ -672,18 +589,10 @@ function Accuracy() {
             <CountUp value={94} />%
           </p>
 
-          {/* The subject and its name hold; only the argument cycles. The
-              heading was a beat once, which meant the thing naming this
-              section in the document outline was invisible for most of the
-              scrub — and a heading a reader can land on from the nav and not
-              see is a heading that is not there. */}
           <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
             of the sales it had never seen.
           </h2>
 
-          {/* Stacked, so the box never changes height as they cross over.
-              Off a live track they are a column of ordinary paragraphs, which
-              is what a short window, no JavaScript or reduced motion gets. */}
           <div className="accuracy-beats mt-8">
             {ACCURACY_BEATS.map((text, index) => (
               <p
@@ -696,8 +605,6 @@ function Accuracy() {
             ))}
           </div>
 
-          {/* The same windows again, so the row reads the hold rather than
-              keeping a count of its own. */}
           <ol className="accuracy-ticks" aria-hidden>
             {ACCURACY_BEATS.map((text, index) => (
               <li key={text} className="accuracy-tick" style={beatWindow(index)} />
@@ -709,16 +616,6 @@ function Accuracy() {
   );
 }
 
-/*
- * The last thing on the page, and it was the thinnest: an eyebrow, a line and
- * one button on bare canvas. It also quietly dropped both of the things the
- * hero offers — the reassurance that there is nothing to set up, and the way
- * in for somebody not ready to sign in. A visitor who has read this far and
- * still wants to look before committing had nowhere to go but back up.
- *
- * So it closes the loop it opened: the same two assurances, and the same
- * second door.
- */
 function Closing() {
   return (
     <section className="section-pad">

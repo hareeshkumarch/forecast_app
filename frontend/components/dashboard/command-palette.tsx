@@ -240,8 +240,6 @@ export function CommandPalette() {
 
   useEffect(() => setCursor(0), [query]);
 
-  // Arrowing past the fold used to move a highlight nobody could see, so the
-  // list read as unresponsive and Enter ran something off screen.
   useEffect(() => {
     listRef.current
       ?.querySelector(`[data-command-index="${cursor}"]`)
@@ -263,10 +261,6 @@ export function CommandPalette() {
         return;
       }
 
-      // Single keys, so anything else already holding the screen has to be
-      // able to say no. Without this, "n" pressed over an open upload dialog
-      // stacked the forecast dialog on top of it, and "t" repainted the theme
-      // under a confirmation somebody was reading.
       const ui = useUiStore.getState();
       const busyElsewhere =
         ui.modal !== "none" ||
@@ -398,10 +392,6 @@ export function CommandPalette() {
                         id={`command-${index}`}
                         type="button"
                         role="option"
-                        // Selection lives in `cursor` and is announced through
-                        // aria-activedescendant on the input. Leaving these in the
-                        // tab order meant Tab could move focus somewhere Enter
-                        // would not act on, and it ran the cursor entry instead.
                         tabIndex={-1}
                         aria-selected={index === cursor}
                         data-command-index={index}

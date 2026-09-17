@@ -36,29 +36,10 @@ export function Modal({
   footer?: ReactNode;
   children: ReactNode;
   size?: ModalSize;
-  /**
-   * A request this dialog started has not come back yet.
-   *
-   * Escape, the backdrop and the close button all dismiss a dialog, and none
-   * of them cancelled the upload, import or save underneath — the request
-   * carried on, its result landed nowhere, and the form that was half filled
-   * in was gone. A dialog that cannot answer for what it started should not
-   * be dismissable by three separate accidents.
-   */
   busy?: boolean;
   busyHint?: string;
-  /**
-   * There is typed input in here that closing would throw away.
-   *
-   * Escape and a click on the backdrop are one keystroke and one stray click,
-   * and both used to discard a filled-in connector form without a word. This
-   * asks first. It is deliberately not `busy`: nothing is in flight, so
-   * leaving is allowed — it just should not happen by accident.
-   */
   dirty?: boolean;
 }) {
-  // While the confirmation is up, every pointer event lands outside this
-  // dialog, so without this each click on it would ask the same question again.
   const asking = useRef(false);
 
   async function requestClose() {

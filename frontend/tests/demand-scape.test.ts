@@ -10,7 +10,6 @@ function required<T>(value: T | undefined, what: string): T {
 const series = (count: number, seed: number) =>
   Array.from({ length: count }, (_, index) => 40 + ((index * seed) % 80));
 
-/** Two rows of made-up demand, the shape the chart is always handed. */
 const layers = (historyCount: number, futureCount: number): Layer[] => [
   {
     id: "front",
@@ -173,8 +172,6 @@ describe("demand scape geometry", () => {
       );
     }
 
-    // Each name sits on its own row's baseline, so the two are as far apart
-    // vertically as the rows they belong to.
     const [front, behind] = scape.rowLabels;
     const baselines = scape.prisms.filter((prism) => prism.step === 0);
     const rowGap =
@@ -201,8 +198,6 @@ describe("demand scape geometry", () => {
 
     for (const label of scape.rowLabels) {
       expect(past.y).toBeLessThan(label.y);
-      // A mono line at font-size 15: anything closer would have the two sets
-      // of glyphs touching.
       expect(label.y - past.y).toBeGreaterThan(15);
     }
   });

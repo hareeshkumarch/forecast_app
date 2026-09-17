@@ -43,10 +43,6 @@ class Transform:
         if self.kind == "log":
             return np.exp(np.clip(array, -700.0, 700.0)) - self.shift
 
-        # Below `lam * z + 1 == 0` the transform has no inverse: the model is
-        # predicting past the bottom of the scale it was fitted on. The floor
-        # of that scale is the answer, and it is returned exactly rather than
-        # as whatever a clamped power happens to evaluate to.
         raised = self.lam * array + 1.0
         inside = raised > 0.0
         base = np.where(inside, raised, 1.0)

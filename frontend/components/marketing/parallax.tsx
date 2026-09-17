@@ -4,29 +4,10 @@ import { useEffect } from "react";
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
-/*
- * A stand-in for the viewport height, and the whole reason this is not a
- * `view()` timeline.
- *
- * A scroll-driven CSS animation measures an element against the scrollport,
- * and a full-page screenshot resizes the scrollport to the height of the
- * document — so the DOM reports one position and the capture paints another,
- * which is exactly the mismatch `audits/a1.mjs` reads as merged lines of
- * text. Progress here is a function of `scrollY` alone. Two readings at the
- * same scroll position agree, whatever the window is doing.
- */
 const LEAD = 640;
 
 type Tracked = { node: HTMLElement; top: number; span: number };
 
-/**
- * Publishes each marked element's own scroll progress as `--sd`, 0 to 1.
- *
- * Written to the marked elements rather than to their sections: a custom
- * property invalidates style for everything below it, and a section is a
- * great deal of everything. How far each one travels is `--drift`, decided in
- * the markup, so adding a layer is an attribute rather than a subscription.
- */
 export function ParallaxField({ selector }: { selector: string }) {
   useEffect(() => {
     if (window.matchMedia(REDUCED_MOTION).matches) return;

@@ -191,8 +191,6 @@ function SeriesTable({
   const [search, setSearch] = useState(DEFAULTS.search);
 
   const features = useApiFeatures();
-  // An older backend does not declare `status` and FastAPI drops parameters it
-  // does not know, so sending it would filter nothing and look like it had.
   const state = features.seriesStatusFilter ? requestedState : DEFAULTS.state;
 
   const settled = useDebounced(search, 250);
@@ -214,9 +212,6 @@ function SeriesTable({
   const { data, isLoading, isError, error, refetch, isPlaceholderData } =
     useForecastSeries(runId, query);
 
-  // The chart plots the run, not the page. It shares the filters so the two
-  // never disagree, but takes the leaves in one go — a scatter of 25 rows at a
-  // time would move under you every time the table paged.
   const { data: population } = useForecastSeries(runId, {
     sort: "value_at_risk",
     limit: CHART_LIMIT,

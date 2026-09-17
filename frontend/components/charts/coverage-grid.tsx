@@ -25,17 +25,9 @@ const NO_ROW = 0;
 const REPORTED_ZERO = 1;
 const FIRST_RAMP_BAND = 2;
 
-/** [x, y, band, raw value] — the band is what gets coloured, the value is what gets said. */
 type Cell = [number, number, number, number | null];
 type CellItem = { value: Cell; itemStyle?: { borderColor: string; borderWidth: number } };
 
-/**
- * Quartiles of the values that are actually there.
- *
- * Equal-width bands put almost every cell of a skewed demand panel in the
- * bottom step, which is the same picture as no ramp at all. Quantiles spend
- * the four steps where the series actually differ.
- */
 function thresholds(values: number[]): number[] {
   if (values.length === 0) return [0, 0, 0];
   const sorted = [...values].sort((a, b) => a - b);
@@ -57,8 +49,6 @@ export function CoverageGrid({
   coverage: CoverageResponse;
   currency?: boolean;
 }) {
-  // The palette lives in CSS variables, so it has to be re-read when the theme
-  // changes: nothing about a canvas repaints itself.
   const revision = useThemeRevision();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const colors = useMemo(() => chartColors(), [revision]);
@@ -73,10 +63,6 @@ export function CoverageGrid({
     );
     const cuts = thresholds(present);
 
-    // A reported zero is given the cell outline that a magnitude cell gets from
-    // its fill: without it, the palest state sits at 1.15:1 against the surface
-    // and a month somebody reported as nil is indistinguishable from a month
-    // they never sent — which is the one distinction this grid exists to make.
     const cells: CellItem[] = [];
     coverage.rows.forEach((row, y) => {
       row.values.forEach((value, x) => {
@@ -140,8 +126,6 @@ export function CoverageGrid({
         ),
         axisLabel: {
           ...axisLabel(colors),
-          // Every row is named. A grid whose rows are anonymous shows that
-          // something is patchy without saying which line to go and fix.
           interval: 0,
           fontSize: coverage.rows.length > 60 ? 8 : 10,
         },

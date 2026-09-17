@@ -9,8 +9,6 @@ import app.models  # noqa: F401
 from app.database.base import Base
 from app.database.target import resolve_target
 
-# Alembic migrates whichever store the API will actually use — Supabase when it
-# is configured and reachable, the local PostgreSQL otherwise.
 target = resolve_target()
 
 config = context.config

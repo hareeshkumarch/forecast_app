@@ -209,13 +209,6 @@ def _llm_settings() -> set[str]:
 
 
 class TestTheComposeFilesCarryTheLlmSettings:
-    """A variable a compose file does not name is one the container never sees.
-
-    The whole rewriter was configurable in .env.example and unreachable in every
-    deployment, which reads as the feature being switched off with nothing
-    disagreeing out loud.
-    """
-
     def test_there_are_settings_to_check(self) -> None:
         assert len(_llm_settings()) >= 10
 

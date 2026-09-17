@@ -28,13 +28,6 @@ type Point = {
   label?: { position: "left" | "right" };
 };
 
-/**
- * Fitted on its own history, or shared out from the level above it.
- *
- * The distinction the chart is for: error concentrated in fitted lines is a
- * modelling problem, and error concentrated in apportioned ones is a history
- * problem. They have different fixes, so they get different marks.
- */
 function routeOf(row: SeriesRow): keyof typeof ROUTE_MARKS {
   return row.status === "forecast" && row.accuracy_measured ? "model" : "fallback";
 }
@@ -59,8 +52,6 @@ export function AccuracyScatter({
     const risk = plotted.map((row) => Math.abs(row.value_at_risk ?? 0));
     const peak = Math.max(...risk, 1);
 
-    // Area, not radius, carries the value at risk: doubling a radius quadruples
-    // the ink and reads as four times the number.
     const size = (value: number) =>
       MIN_SYMBOL + (MAX_SYMBOL - MIN_SYMBOL) * Math.sqrt(Math.max(0, value) / peak);
 
@@ -69,9 +60,6 @@ export function AccuracyScatter({
       .slice(0, LABELLED)
       .map((row) => row.id);
 
-    // The five labelled points are the five biggest, so they all sit at the
-    // right-hand end and their labels ran off the plot on top of each other.
-    // Anything past this line points its label back inwards.
     const inwards = Math.max(...plotted.map((row) => row.forecast_total)) / 12;
 
     const points = (route: keyof typeof ROUTE_MARKS): Point[] =>
@@ -94,8 +82,6 @@ export function AccuracyScatter({
         itemStyle: {
           color: mark.hollow ? colors.surface : colors.accent,
           borderColor: colors.accent,
-          // A ring in the surface colour keeps overlapping dots readable as
-          // separate marks rather than as one darker blob.
           borderWidth: mark.hollow ? 1.5 : 1,
           opacity: mark.hollow ? 1 : 0.85,
         },

@@ -83,8 +83,6 @@ describe("the rows sharing one scale", () => {
 
     const [chilled, ambient] = SERIES.layers;
     if (!chilled || !ambient) throw new Error("the chart is drawn two lines deep");
-    // Same units per pixel in both rows: the ratio of the heights is the ratio
-    // of the demand, which is what makes the depth comparable by eye.
     expect(front.height / behind.height).toBeCloseTo(
       valueAt(chilled, 0) / valueAt(ambient, 0),
       6,
@@ -100,8 +98,6 @@ describe("the range the demand earns", () => {
   });
 
   it("stays a claim about weekly grocery demand rather than a shrug", () => {
-    // Doubling by the end of the horizon would be describing a business this
-    // chart is not drawing.
     expect(rangeLift(FUTURE_WEEKS, SERIES.growth)).toBeLessThan(1.5);
     expect(rangeLift(1, SERIES.growth)).toBeGreaterThan(1);
   });

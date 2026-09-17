@@ -31,8 +31,6 @@ for (let i = 0; i <= SAMPLES; i += 1) {
       const scrub =
         parseFloat(getComputedStyle(wrap.closest(".scroll-track")).getPropertyValue("--t")) || 0;
 
-      // The line's box is the whole window, so the type is what has to be
-      // measured — a box that is present says nothing about ink on screen.
       const typeOf = (el) => {
         const range = document.createRange();
         range.selectNodeContents(el);

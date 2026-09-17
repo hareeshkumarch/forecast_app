@@ -273,12 +273,6 @@ def test_a_close_win_for_the_simpler_model_still_says_so() -> None:
 
 
 def test_the_ensemble_is_scaled_by_the_same_baseline_as_every_member(monkeypatch) -> None:
-    """The ensemble's MASE denominator must be byte-identical to its members'.
-
-    `run_forecast` keeps both a raw `observed` and a prepared `values`; handing the
-    prepared one to blend applies the preparation twice, and over the whole series
-    rather than the training window, which reads past the first cut point.
-    """
     from datetime import date, timedelta
 
     import numpy as np
@@ -295,9 +289,6 @@ def test_the_ensemble_is_scaled_by_the_same_baseline_as_every_member(monkeypatch
     cut = plan_backtest(n, 8, ForecastFrequency.WEEKLY).cut_points[0]
 
     observed = 100.0 + np.arange(n) * 0.5 + rng.normal(0, 3, n)
-    # The gap runs up to the first cut. Filled within the training window it has
-    # nothing on its right; filled over the whole series it is closed with values
-    # from after the cut — which is the leak this test exists to catch.
     observed[cut - 4 : cut] = np.nan
     observed[cut:] += 400.0
 
@@ -336,8 +327,6 @@ def test_the_ensemble_is_scaled_by_the_same_baseline_as_every_member(monkeypatch
 
 
 def test_a_winner_that_diverges_on_the_full_history_says_so(monkeypatch) -> None:
-    """The backtest guarded every fold against divergence; the published forecast was
-    only checked for finiteness, so a 1e+52 point forecast shipped as a normal run."""
     from datetime import date
 
     from app.forecasting import engine as engine_module

@@ -141,7 +141,6 @@ export interface DatasetColumn {
   sample_values: unknown[];
   is_date_candidate: boolean;
   is_target_candidate: boolean;
-  /** How the raw text was read when it was not already the right type. */
   parsed_as?: string | null;
   reason?: string;
 }
@@ -416,7 +415,6 @@ export interface MetricWithheld {
   reason: string;
 }
 
-/** Which metrics this series' own data can carry, and which one leads. */
 export interface MetricPlan {
   demand_class: string;
   headline: string;
@@ -446,7 +444,6 @@ export interface DiagnosticReport {
   series_id: string | null;
   frequency: ForecastFrequency;
   plan: MetricPlan;
-  /** Keyed by metric name; a withheld metric is absent, never null. */
   scored: Record<string, number | null>;
   residuals: Residual[];
   histogram: ResidualBucket[];
@@ -544,9 +541,7 @@ export interface Scorecard {
 
   intervals_held: boolean | null;
 
-  /** Cumulative error in mean absolute deviations: near zero the misses cancel out. */
   tracking_signal: number | null;
-  /** True when the run missed the same way every period, or simply missed badly. */
   drifted: boolean;
 }
 
@@ -558,10 +553,6 @@ export interface ForecastProgressEvent {
   message: string | null;
   selected_model: ModelKind | null;
   error: string | null;
-  /**
-   * Pieces of work ahead of this run in the model-fitting queue, or null when
-   * it is not waiting for a worker. Zero means it is next.
-   */
   queue_ahead?: number | null;
   updated_at?: string;
 }
@@ -836,9 +827,7 @@ export interface HealthResponse {
   queued_forecast_runs: number;
   running_forecast_runs: number;
   failed_forecast_runs: number;
-  /** Model kinds this deployment cannot fit. Empty on a complete install. */
   unavailable_models: ModelKind[];
-  /** Live event-stream connections this process is holding, against its ceiling. */
   open_streams: number;
   max_streams: number;
   timestamp: string;
@@ -848,7 +837,6 @@ export interface ModelCapability {
   model: ModelKind;
   label: string;
   available: boolean;
-  /** Set only when `available` is false, and written to be shown to a user. */
   reason: string | null;
 }
 
@@ -958,7 +946,6 @@ export interface QueuedRun {
   waiting_seconds: number | null;
 }
 
-/** What the model-fitting pool is doing: why the fourth run has not started. */
 export interface ForecastQueue {
   workers: number;
   running: number;
@@ -974,7 +961,6 @@ export interface ForecastMonitoring {
   active: number;
   drift_wmape_limit: number;
   rows: ForecastMonitorItem[];
-  /** Absent from a backend older than the frontend — see QueuePanel. */
   queue?: ForecastQueue;
 }
 
@@ -1059,7 +1045,6 @@ export interface CoverageRow {
   zeros: number;
   status: "ok" | "warn" | "reject";
   route: "model" | "fallback" | "none";
-  /** One entry per period, null where the series has no row for that period. */
   values: (number | null)[];
 }
 
@@ -1080,7 +1065,6 @@ export interface OpenApiDocument {
   paths?: Record<string, { get?: { parameters?: { name: string }[] } }>;
 }
 
-/** Endpoints and parameters the running backend declares. */
 export interface ApiFeatures {
   seriesStatusFilter: boolean;
   datasetCoverage: boolean;
@@ -1113,7 +1097,6 @@ export interface ManagedUser {
   decided_by: string | null;
   last_seen_at: string | null;
   invited_by: string | null;
-  /** True for an invitation nobody has signed in to yet. */
   subject_pending: boolean;
   is_self: boolean;
 }

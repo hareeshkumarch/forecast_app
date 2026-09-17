@@ -285,9 +285,6 @@ def test_a_saved_connector_cannot_be_pointed_somewhere_else_while_it_is_tested()
 
 
 class TestAConnectorCannotBeAimedAtTheMetadataService:
-    """Reading instance metadata hands out the box's own credentials, and the
-    response comes back as a dataset anyone on the deployment can open."""
-
     def test_link_local_is_refused_however_it_is_spelled(self) -> None:
         from app.connectors.network import assert_public_url
         from app.core.errors import ConnectorError

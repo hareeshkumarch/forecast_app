@@ -41,10 +41,6 @@ EXEMPT_SUFFIXES = ("/events",)
 def rule_for(method: str, path: str) -> Rule | None:
     if path.startswith(EXEMPT_PREFIXES) or path.endswith(EXEMPT_SUFFIXES):
         return None
-    # The approval routes are /users/{id}/decision, /users/decisions,
-    # /users/{id}/role and /users/removals. The old prefix matched none of them,
-    # so the tightest rule in the file had never once applied and approvals fell
-    # through to ADMIN — six times looser, and per minute rather than per window.
     if method != "GET" and (path.endswith(DECISIVE) or "/decision" in path):
         return DECIDE
     if method != "GET" and path.startswith("/api/auth/"):
@@ -105,9 +101,6 @@ limiter = SlidingWindow()
 def _trusted_peer(client_host: str | None) -> bool:
     networks = settings.rate_limit_trusted_proxies
     if not networks:
-        # No proxy declared means believe the socket, not the header. Trusting
-        # it here instead would let any caller pick their own bucket, and every
-        # limit below becomes a header they choose.
         return False
     if not client_host:
         return False

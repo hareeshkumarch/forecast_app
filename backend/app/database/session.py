@@ -47,13 +47,6 @@ _BUDGET = "statement_timeout_seconds"
 
 @event.listens_for(Session, "after_begin")
 def _rearm_statement_timeout(session: Any, _transaction: Any, connection: Any) -> None:
-    """SET LOCAL lasts one transaction, and a request that commits starts another.
-
-    Arming it once at the top of the request left every statement after the first
-    commit — the run dispatcher commits mid-request — running under the server
-    default of no limit at all, which is where a runaway query holds a pooled
-    connection for as long as it likes.
-    """
     seconds = session.info.get(_BUDGET)
     if _TIMEOUTS_APPLY and seconds:
         connection.exec_driver_sql(f"SET LOCAL statement_timeout = {int(seconds * 1000)}")

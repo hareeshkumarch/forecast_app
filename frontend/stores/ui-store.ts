@@ -70,19 +70,6 @@ function writeWorkspace(workspace: StoredWorkspace): void {
   }
 }
 
-/**
- * The in-flight run, kept apart from the workspace above.
- *
- * A forecast runs on the server for the better part of a minute, and a reload
- * in the middle of one used to lose every trace of it — no progress, no
- * completion toast, no way back. Persisting the id lets the watcher pick the
- * run back up where it left off.
- *
- * Only ever holds a run that has not finished; `finishActiveRun` clears it the
- * moment one does. Otherwise a reload long after the fact would re-attach to a
- * terminal run and announce a completion the user was told about already.
- * Session storage, so it is per tab and does not outlive it.
- */
 const ACTIVE_RUN_STORAGE_KEY = "forecast_hub_active_run";
 
 interface StoredActiveRun {
@@ -131,8 +118,6 @@ interface UiState {
 
   activeRunId: string | null;
 
-  /** When `activeRunId` was set, so a reopened modal reports the run's own
-   *  elapsed time rather than restarting the clock at zero. */
   activeRunStartedAt: number | null;
 
   setView: (view: ForecastView) => void;
@@ -149,7 +134,6 @@ interface UiState {
   closeRail: () => void;
 
   setActiveRun: (runId: string | null) => void;
-  /** Stop a reload from resuming this run, without clearing it from the UI. */
   finishActiveRun: () => void;
   hydrateWorkspace: () => void;
   resetDashboardFilters: () => void;
@@ -234,8 +218,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   finishActiveRun: () => {
-    // The run stays on screen — the pill reports it and offers a way back in.
-    // It just stops being something a reload should resume.
     writeActiveRun(null);
   },
 

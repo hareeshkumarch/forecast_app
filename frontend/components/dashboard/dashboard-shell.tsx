@@ -145,20 +145,8 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
   const { user, ready, configured } = useAuth();
   const { data: me, error: meError } = useCurrentUser();
 
-  // Above every early return, because a hook cannot be called conditionally
-  // and because the screen that needs this most is the waiting one below.
   useAccessStream(Boolean(configured && ready && user));
 
-  // One gate for all eight sections, because every page in the app is this
-  // shell with a different workspace in it. Put it on the pages instead and
-  // the ninth page is the one that ships unguarded.
-  //
-  // It sits above the shell rather than inside it, and that matters. Wrapping
-  // only the workspace left somebody waiting for approval looking at a full
-  // sidebar, a header and an insights panel — none of which they can use, all
-  // of which fire requests that come back 403, and one of which rendered the
-  // refusal as an error where a stranger could read it. Somebody who is not in
-  // yet should see one card and nothing else.
   if (configured && ready && !user) {
     return (
       <div className="min-h-[100dvh] bg-canvas">
@@ -183,12 +171,6 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
     );
   }
 
-  // A refusal that never became a status. The two gates are separate — a token
-  // can be genuine and its holder still not belong on this deployment — so an
-  // account outside AUTH_ALLOWED_EMAIL_DOMAINS is turned away by /auth/me
-  // itself rather than answering "rejected". Without this the shell rendered
-  // in full for somebody who could read none of it: eight panels of 403 and a
-  // stack of error toasts, none of which said the one thing that was true.
   if (meError instanceof ApiError && meError.status === 403) {
     return (
       <div className="min-h-[100dvh] bg-canvas">
@@ -198,9 +180,6 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
   }
 
   return (
-    // The run watcher wraps the shell rather than sitting inside the overlay
-    // host: it has to outlive the forecast dialog, which is unmounted the
-    // moment that dialog closes.
     <ForecastRunProvider>
       <div className="app-shell-grid flex h-[100dvh] flex-col overflow-hidden bg-canvas">
         <a
@@ -214,11 +193,6 @@ export function DashboardShell({ section = "dashboard" }: { section?: AppSection
         <TopHeader section={section} />
         <div className="flex min-h-0 flex-1">
           <AppSidebar />
-          {/* One boundary per region, not one around the shell. A chart that
-              throws should cost its own panel, not the navigation that is the
-              way out of it — and `resetKey` clears the failure on the way to
-              another section, so a broken page is not still broken after
-              leaving it. */}
           <ErrorBoundary label="workspace" variant="page" resetKey={section}>
             <SectionWorkspace />
           </ErrorBoundary>

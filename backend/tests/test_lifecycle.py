@@ -127,10 +127,6 @@ class TestDraining:
 
 
 class TestStreamsLetGoOfADrainingProcess:
-    """Uvicorn waits for open connections before lifespan shutdown runs, so a
-    stream that only watches its own lifetime holds the drain off until SIGKILL.
-    """
-
     def test_a_live_deadline_is_not_passed(self) -> None:
         from app.core import streams
 

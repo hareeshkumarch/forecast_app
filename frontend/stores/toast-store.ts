@@ -12,13 +12,6 @@ export interface Toast {
 
   action?: { label: string; onClick: () => void };
 
-  /**
-   * How many times the same thing has been said.
-   *
-   * A retry that fails three times used to be three identical toasts stacked
-   * on top of each other, which pushes anything else off the screen and reads
-   * as three different problems. One card counting up says more in less room.
-   */
   repeats: number;
 }
 
@@ -35,7 +28,6 @@ interface ToastState {
   push: (toast: Omit<Toast, "id" | "repeats">) => string;
   dismiss: (id: string) => void;
   clear: () => void;
-  /** Stops every countdown — the pointer is over the stack, or the tab is hidden. */
   hold: () => void;
   release: () => void;
 }
@@ -80,9 +72,6 @@ export const useToastStore = create<ToastState>((set, get) => ({
   push: (toast) => {
     const current = get().toasts;
 
-    // Only the newest is compared. A repeat of something further up the stack
-    // is a different moment, and moving an old card down to say so would
-    // reorder the list under whatever the reader was looking at.
     const newest = current.at(-1);
     if (newest && sameThing(toast, newest)) {
       forget(newest.id);

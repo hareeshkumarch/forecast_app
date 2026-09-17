@@ -35,8 +35,6 @@ function textX(column: number): number {
     : columnX(column) + 14;
 }
 
-/** The band the forecast could move inside, as one closed shape: the upper
- *  edge out and the lower edge back. */
 function bandPath(): string {
   const start = SOLD.length;
   const top = AHEAD.map((value, step) => {
@@ -54,13 +52,6 @@ function bandPath(): string {
   return `${top} ${bottom} Z`;
 }
 
-/**
- * Seven rows of a spreadsheet, and the forecast they turn into.
- *
- * Every mark here is drawn once and then moved by CSS off the progress the
- * scroll writes — there is no state, no clock and no re-render, which is what
- * makes a scrub of the whole build cost the same as scrolling past a picture.
- */
 export function BuildStage() {
   const valueColumn = COLUMNS.findIndex((column) => column.role === "value");
   const dateColumn = COLUMNS.findIndex((column) => column.role === "date");
@@ -126,9 +117,6 @@ export function BuildStage() {
           </g>
         ))}
 
-        {/* The two columns the second beat finds. Outlines rather than fills,
-            so the values inside them stay the values and do not become a
-            highlight to be read past. */}
         {[dateColumn, valueColumn].map((index) => (
           <rect
             key={index}
@@ -167,8 +155,6 @@ export function BuildStage() {
         </g>
       </g>
 
-      {/* What the third beat draws on. Held back until the bars have somewhere
-          to land, or the chart is furniture waiting for its data. */}
       <g className="build-axis">
         <line
           x1={0}
@@ -209,10 +195,6 @@ export function BuildStage() {
         </text>
       </g>
 
-      {/* The quantity column, on its way to being the history. Two rects under
-          one transform: the cell it is now fading out from under the bar it is
-          becoming, so the change of material happens over the same travel and
-          not as a swap at the end of it. */}
       {SOLD.map((value, row) => {
         const shape = morph(row);
         const column = COLUMNS[valueColumn];
@@ -226,13 +208,6 @@ export function BuildStage() {
             className="cell-morph"
             style={{ ...travel, "--i": row } as CSSProperties}
           >
-            {/*
-              The value is a sibling of the cell rather than a child of it.
-              `transform-box: fill-box` resolves against the group's own
-              bounding box, and a text node travelling inside that group moves
-              the box it is being measured against — so the cell's origin
-              drifted with it and the bars were thrown clean out of the frame.
-            */}
             <g
               className="sheet-cell"
               style={{ "--sx": shape.sx.toFixed(4), "--sy": shape.sy.toFixed(4) } as CSSProperties}

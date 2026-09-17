@@ -312,11 +312,6 @@ function summary(card: ScorecardData): string {
   return parts.join(" ");
 }
 
-/**
- * The badge says a run has drifted; this says what that means for the reader.
- * A one-sided miss is worth refitting over, because it will keep happening —
- * unlike an equally large error that lands on both sides of the truth.
- */
 function drift(card: ScorecardData): string {
   const signal = card.tracking_signal;
 

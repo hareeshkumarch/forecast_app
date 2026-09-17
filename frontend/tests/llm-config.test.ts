@@ -110,10 +110,6 @@ describe("defaultModelFor", () => {
 
 describe("provider catalogue", () => {
   it("offers no model a provider has retired", () => {
-    // Both of these were listed here until a provider turned them off:
-    // deepseek-r1-distill-llama-70b in September 2025, llama-3.3-70b-versatile
-    // in June 2026. Named rather than described, so the test fails loudly if
-    // either is ever pasted back in.
     const retired = [
       "llama-3.3-70b-versatile",
       "deepseek-r1-distill-llama-70b",
@@ -128,8 +124,6 @@ describe("provider catalogue", () => {
   });
 
   it("gives every provider a default model except the ones that cannot have one", () => {
-    // custom is anything with an OpenAI-shaped API, so there is no name to
-    // guess; everything else should land on something usable when picked.
     for (const { value } of PROVIDERS) {
       if (value === "custom") continue;
       expect(defaultModelFor(value), `${value} has no default model`).not.toBe("");

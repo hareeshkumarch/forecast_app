@@ -96,11 +96,6 @@ export function useHealth() {
   });
 }
 
-/**
- * Which models this deployment can fit. Effectively static — it only changes
- * when the image is rebuilt — so it is cached hard and never refetched on a
- * window focus, unlike health.
- */
 export function useCapabilities() {
   return useQuery({
     queryKey: queryKeys.capabilities,
@@ -121,9 +116,6 @@ export function useSummary() {
         setCurrencySymbol(summary.currency_symbol);
         return summary;
       } catch (error) {
-        // A run pinned in session state may have been deleted in another tab
-        // or by a teammate. Fall back to the latest run instead of leaving the
-        // whole dashboard stuck on a recoverable 404.
         if (error instanceof ApiError && error.status === 404 && filters.runId) {
           useUiStore.getState().setRunId(null);
         }
@@ -278,14 +270,6 @@ export function useForecastPoints(runId: string | null | undefined, seriesId?: s
   });
 }
 
-/**
- * How a run is wrong, and which metrics its data can carry.
- *
- * Kept apart from the scorecard on purpose: the headline number is wanted on
- * every dashboard read, and the residuals behind it are wanted only when
- * somebody is asking why. Fetching them together would put a per-period
- * payload on the path of every page load that never opens this.
- */
 export function useForecastDiagnostics(
   runId: string | null | undefined,
   seriesId?: string | null,
@@ -317,29 +301,12 @@ export function useForecastSeries(runId: string | null | undefined, query: Serie
   });
 }
 
-/**
- * Which of this frontend's features the deployed backend can actually serve.
- *
- * Optimistic when it cannot tell: a probe that fails is not a reason to take
- * away controls that probably work. Matched versions are the normal case, and
- * this only earns its place in the window where they are not.
- */
-/**
- * What the backend says about this session, including whether it has been
- * approved. Asked of the server rather than read off the token, because the
- * token proves identity and says nothing about admission.
- */
 export function useCurrentUser() {
   return useQuery({
     queryKey: queryKeys.currentUser,
     queryFn: ({ signal }) => api.getCurrentUser(signal),
     staleTime: 60_000,
     retry: false,
-    // useAccessStream pushes a decision here the moment it is made; this is
-    // the floor under it for a stream that never opened. Unconditional on
-    // purpose — it used to poll only while pending, which meant somebody
-    // already approved never checked again and kept clicking around a page
-    // that had stopped working after their access was removed.
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -350,9 +317,6 @@ export function useManagedUsers(enabled: boolean) {
     queryKey: queryKeys.managedUsers,
     queryFn: ({ signal }) => api.getManagedUsers(signal),
     enabled,
-    // A request arriving now reaches this list over the stream. The poll is
-    // the fallback, and at a minute it costs an administrator with the page
-    // open one small query a minute rather than three.
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });

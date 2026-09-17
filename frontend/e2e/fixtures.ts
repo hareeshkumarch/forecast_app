@@ -1,23 +1,6 @@
 import type { Page } from "@playwright/test";
 
-/*
- * A dashboard with data in it, served to the browser instead of the API.
- *
- * These are layout tests: they assert how the shell reflows, not what the
- * backend returned. Three of them still needed a *populated* dashboard —
- * `.grid-charts`, the scenario control and the insights toggle only exist once
- * `has_data` is true — so without a seeded backend running they could never
- * pass, whatever the layout did.
- *
- * Stubbing the responses makes the suite say what it means: same layout, same
- * assertions, at four viewports, on any machine. The payloads are deliberately
- * the smallest shape each panel renders from rather than a copy of a real
- * response, so there is less here to drift out of date.
- */
-
 const CORS = {
-  // The app calls a different origin, so a fulfilled response needs the
-  // headers the real API would have sent or the browser discards it.
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "*",
   "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -129,11 +112,6 @@ const INSIGHTS = {
   ],
 };
 
-// `/api/forecasts/{id}/accuracy`. Not optional: AccuracyPanel reads
-// `caveats.length` and filters `coverage` unconditionally, because a real
-// response always carries both. Served by the catch-all instead, the panel
-// throws on the first render and takes the whole dashboard down with it —
-// which is what "Overview is not visible" turns out to mean.
 const ACCURACY = {
   run_id: RUN_ID,
   dataset_id: "e2e-dataset",
@@ -266,12 +244,6 @@ const HEALTH = {
   unavailable_models: [],
 };
 
-/**
- * A complete deployment. Prophet is available here so the picker under test
- * matches the shipped image; the unavailable path has its own coverage in the
- * backend suite, and greying a model out here would only make these specs
- * assert on a deployment nobody runs.
- */
 const CAPABILITIES = {
   models: [
     { model: "naive", label: "Naive", available: true, reason: null },
@@ -288,7 +260,6 @@ const CAPABILITIES = {
   unavailable_models: [],
 };
 
-/** Route every API call to a fixture. Call it before the first navigation. */
 export async function stubApi(page: Page): Promise<void> {
   await page.route("**/api/**", async (route) => {
     if (route.request().method() === "OPTIONS") {
@@ -315,9 +286,6 @@ export async function stubApi(page: Page): Promise<void> {
     if (pathname.endsWith("/metrics")) return json(METRICS);
     if (pathname.endsWith("/points")) return json(POINTS);
     if (pathname.endsWith("/series")) return json(SERIES);
-    // Both of these are bare arrays, not envelopes. Getting it wrong throws
-    // inside a modal that is mounted on every page, which takes the whole
-    // shell down with it.
     if (pathname.endsWith("/api/connectors/types")) return json([]);
     if (pathname.endsWith("/api/connectors")) return json([]);
     if (pathname.endsWith("/api/datasets")) {
@@ -333,13 +301,10 @@ export async function stubApi(page: Page): Promise<void> {
       });
     }
 
-    // Anything a panel asks for that is not listed above still gets a
-    // well-formed empty answer rather than a network error.
     return json({ run_id: RUN_ID, items: [], rows: [], points: [] });
   });
 }
 
-/** The dashboard, loaded and populated. */
 export async function loadDashboard(page: Page): Promise<void> {
   await stubApi(page);
   await page.goto("/dashboard");

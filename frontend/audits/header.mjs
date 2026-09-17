@@ -47,7 +47,6 @@ console.log("\nmobile");
   const state = await visible(page);
   note(state.shown, "the button is there, because the rail is not", JSON.stringify(state));
 
-  // The mobile rail is a Radix dialog in a portal, not the inline #app-navigation.
   await page.click('header button[aria-label="Open navigation"]');
   await page.waitForTimeout(500);
   const opened = await page.evaluate(() => {

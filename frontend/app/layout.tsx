@@ -11,12 +11,6 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-/*
- * The marketing page has its own voice: a serif for display headings, Plex
- * Sans for its prose and Plex Mono for keys and terminal output. They are
- * exposed as variables and scoped by the landing page — the app itself stays
- * on Inter, where a UI face beats a text face.
- */
 const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
   weight: "400",

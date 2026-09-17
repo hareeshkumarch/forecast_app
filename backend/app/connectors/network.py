@@ -18,12 +18,6 @@ PRIVATE = (
 
 
 def _refusal(ip: IpAddress) -> str | None:
-    """Link-local and loopback are never a data source; private networks usually are.
-
-    An internal warehouse on 10.0.0.0/8 is the ordinary case for this product, so
-    that stays reachable unless an operator narrows it. 169.254.0.0/16 is not a
-    warehouse — it is the metadata service, and reading it is the SSRF that matters.
-    """
     if ip.is_link_local:
         return METADATA
     if ip.is_loopback or ip.is_unspecified:

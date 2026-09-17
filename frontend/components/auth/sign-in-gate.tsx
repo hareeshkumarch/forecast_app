@@ -10,14 +10,6 @@ import { signInWithGoogle, signOut } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/stores/auth-store";
 
-/**
- * Stands in front of anything that reads real data.
- *
- * It is a courtesy, not the control: the API refuses an unauthenticated
- * request whether or not this component rendered. What it prevents is the app
- * showing empty panels and error toasts to somebody whose only problem is
- * that they have not signed in yet.
- */
 export function SignInGate({ children }: { children: ReactNode }) {
   const { user, ready, configured } = useAuth();
 
@@ -35,14 +27,6 @@ export function SignInGate({ children }: { children: ReactNode }) {
   return <SignInPrompt />;
 }
 
-/**
- * The Google mark, drawn rather than fetched.
- *
- * Google's brand guidelines ask for their own glyph on a sign-in button, and
- * people look for it — a generic arrow makes the button read as "next" rather
- * than "this signs you in with Google". Inline, because a remote asset here
- * would be a blocking request on the one screen that must always render.
- */
 function GoogleMark({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden className="shrink-0">
@@ -129,18 +113,9 @@ export function SignInPrompt() {
   );
 }
 
-/**
- * The frame every one of these screens sits in.
- *
- * One column, held above centre rather than in it: a card pinned to the exact
- * middle of a tall window reads as floating, and the eye expects the first
- * thing on a page to sit a little high.
- */
 function AuthScreen({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex min-h-[100dvh] w-full items-start justify-center overflow-hidden bg-canvas px-5 pt-[14vh]">
-      {/* A single soft wash behind the card. Enough that the screen is not a
-          blank sheet, faint enough that nothing competes with the button. */}
       <div
         aria-hidden
         className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[820px] -translate-x-1/2 -translate-y-1/3 rounded-full opacity-[0.55] blur-3xl"
@@ -158,13 +133,6 @@ function AuthScreen({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Signed in, and waiting on somebody.
- *
- * Kept apart from the sign-in prompt because showing "sign in" to a person who
- * has just signed in reads as a failure they can retry, which it is not. The
- * request has been made; what is left is to wait.
- */
 export function AwaitingApproval({ email }: { email: string | null }) {
   return (
     <AuthScreen>
@@ -191,15 +159,6 @@ export function AwaitingApproval({ email }: { email: string | null }) {
   );
 }
 
-/**
- * Turned away, for either of the two reasons that exist.
- *
- * An administrator's decision is one. The other is a deployment limited to
- * certain addresses, which is refused a step earlier — before an account even
- * exists to be decided about — and says so in its own words. Passing that
- * through matters: "not approved" is wrong and unactionable for somebody whose
- * real problem is that they signed in with the wrong account.
- */
 export function AccessRefused({ reason }: { reason?: string }) {
   return (
     <AuthScreen>
@@ -246,13 +205,6 @@ function GateSkeleton() {
 }
 
 
-/**
- * Says out loud that this build cannot sign anybody in.
- *
- * The keys are compiled into the bundle, so their absence is decided at build
- * time and nothing at runtime can recover from it. Naming the two variables is
- * the whole message: whoever sees this needs to set them and rebuild.
- */
 export function NotConfiguredBanner() {
   return (
     <div
@@ -270,14 +222,6 @@ export function NotConfiguredBanner() {
 }
 
 
-/**
- * The sign-in page at its own address.
- *
- * /dashboard rendering a sign-in form works, but it is the wrong thing to
- * link somebody to and the wrong thing to land on after signing out — the
- * name of the page should say what is on it. Somebody already signed in is
- * sent along rather than shown a button they do not need.
- */
 export function SignInScreen() {
   const { user, ready, configured } = useAuth();
 

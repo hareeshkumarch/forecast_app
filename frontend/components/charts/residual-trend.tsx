@@ -16,20 +16,6 @@ import { formatCompact } from "@/lib/format";
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { Residual } from "@/types/api";
 
-/**
- * What the forecast got wrong, period by period, against a zero line.
- *
- * The sign is carried by which side of the baseline a bar sits on, and not by
- * its colour. That is not a stylistic preference: the brand's warm and cool
- * steps separate by ΔE 3.3 under protanopia and 8.8 for normal vision against
- * a floor of 15, so a reader who cannot tell gold from teal would have had no
- * way to read over-forecast from under. Position is free of all of that.
- *
- * The band is one standard deviation of these residuals. It is the reference
- * that turns a wall of bars into a reading: inside it is the ordinary scatter
- * of a working model, and the bars that clear it are the periods worth
- * opening.
- */
 export function ResidualTrend({
   residuals,
   sigma,
@@ -98,10 +84,6 @@ export function ResidualTrend({
             ? {
                 markArea: {
                   silent: true,
-                  // Opaque: `surfaceMuted` is already the quietest fill the
-                  // system has, and putting it at half strength on top of
-                  // `surface` left a band nobody could see — which is a
-                  // reference line that is not there.
                   itemStyle: { color: colors.surfaceMuted },
                   data: [[{ yAxis: -band }, { yAxis: band }]],
                 },

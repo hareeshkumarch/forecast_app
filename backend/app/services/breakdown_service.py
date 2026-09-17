@@ -90,8 +90,6 @@ async def available(session: AsyncSession, run: ForecastRun) -> list[BreakdownRe
 async def _grain_cardinality(
     session: AsyncSession, run_id: uuid.UUID, grain: list[str]
 ) -> dict[str, int]:
-    # Counting distinct values needs the key and nothing else; `build` loads the
-    # full leaves separately, so hydrating them twice per request bought nothing.
     keys = (
         await session.execute(
             select(ForecastSeries.key).where(

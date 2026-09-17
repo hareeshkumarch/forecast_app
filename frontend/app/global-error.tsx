@@ -1,13 +1,5 @@
 "use client";
 
-/**
- * The last resort: the root layout itself threw.
- *
- * It replaces the whole document, so it carries its own html and body and
- * cannot use anything from the app — the providers, the theme bootstrap and
- * the stylesheet are all part of what failed. Plain inline styles, therefore,
- * and no imports.
- */
 export default function GlobalError({
   error,
   reset,

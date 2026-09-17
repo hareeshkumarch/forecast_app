@@ -259,13 +259,6 @@ _WRITE_STATEMENT = re.compile(
 
 
 def _strip_block_comments(lowered: str) -> str:
-    """Remove `/* ... */`, refusing the forms the dialects disagree about.
-
-    MySQL runs what it finds in `/*! ... */` and does not nest comments;
-    PostgreSQL nests them and runs neither. A query whose meaning depends on
-    which of those is true is not one to guess at, so both are refused rather
-    than stripped into something that reads as inert here and executes there.
-    """
     out: list[str] = []
     depth = 0
     i = 0
@@ -313,8 +306,6 @@ def _reject_non_select(query: str) -> None:
     if ";" in bare:
         raise ConnectorError("Multiple statements are not allowed in an import query.")
 
-    # `for update` takes a row lock on rows this read returns, so it is a read
-    # and not the `update` the next check is looking for.
     bare = _ROW_LOCK.sub(" ", bare)
 
     found = _WRITE_STATEMENT.search(bare)

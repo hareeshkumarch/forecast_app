@@ -1,22 +1,5 @@
 import { chromium } from "@playwright/test";
 
-/*
- * Whether the landing page is actually themed, or only mostly themed.
- *
- * The failure this exists for is not a page that stayed light — that is
- * obvious in a screenshot. It is one element out of eighty keeping a literal
- * colour while everything around it moves: a card still on drafting paper in
- * the dark theme, a caption still at 40% grey on a near-black ground. Both
- * read as a rendering fault rather than a design decision, and neither shows
- * up in a diff.
- *
- * So this walks every element the landing page draws, in both themes, and
- * asks two things of each: is the ink you paint actually visible against the
- * ground behind you, and — in the dark theme — is that ground dark at all.
- * The contrast is computed the way WCAG defines it, against the first opaque
- * ancestor, because a colour is only legible with respect to what is under it.
- */
-
 const BASE = process.env.BASE ?? "http://localhost:3000";
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
@@ -24,22 +7,8 @@ const browser = await chromium.launch({ executablePath: CHROME });
 const fail = [];
 const line = (s) => console.log(s);
 
-/** Text this size and weight is "large" to WCAG, and passes at 3:1. */
 const LARGE_PX = 24;
 
-/*
- * How big an opaque fill has to be before "it is still light in the dark
- * theme" means anything.
- *
- * Plenty of small fills are meant to stay light in both themes and are not
- * bugs: every swatch in a chart key, the accent behind a rule, and the call to
- * action, which is the darkest thing on a light page precisely so it can be
- * the lightest thing on a dark one. What cannot stay light is a *ground* — a
- * card, a panel, a section — because that is the element that was supposed to
- * move and did not. The largest of those exceptions is a button at roughly
- * 260x52; the smallest card on the page is about 390x190. Anything at or over
- * this is a ground.
- */
 const GROUND_AREA = 40_000;
 
 const survey = async (theme) => {
@@ -49,8 +18,6 @@ const survey = async (theme) => {
   });
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);
-  // Every section revealed and every animation landed: an element measured
-  // mid-reveal is at opacity 0 and reports contrast it does not have.
   await page.evaluate(async () => {
     for (const section of document.querySelectorAll("section, footer")) {
       section.scrollIntoView();
@@ -88,9 +55,6 @@ const survey = async (theme) => {
         return (hi + 0.05) / (lo + 0.05);
       };
 
-      /* What is actually behind an element: its own background composited
-         over its ancestors', down to the first opaque one. A caption with no
-         background of its own is sitting on whatever its card is sitting on. */
       const groundOf = (node) => {
         let ground = { r: 255, g: 255, b: 255, a: 1 };
         const stack = [];
@@ -121,7 +85,6 @@ const survey = async (theme) => {
           grounds.set(style.backgroundColor, (grounds.get(style.backgroundColor) ?? 0) + 1);
         }
 
-        // Only elements that actually hold text of their own.
         const text = [...el.childNodes]
           .filter((child) => child.nodeType === 3)
           .map((child) => child.textContent.trim())
@@ -180,8 +143,6 @@ for (const theme of ["light", "dark"]) {
   line(`  under the floor: ${thin.length === 0 ? "none  ok" : `${thin.length}  FAIL`}`);
 
   if (theme === "dark") {
-    // A ground still lighter than mid-grey in the dark theme is an element
-    // that kept its literal colour while the page around it moved.
     const light = seen.grounds.filter((fill) => {
       const [r, g, b] = fill.match(/\d+/g).map(Number);
       return (r + g + b) / 3 > 128;

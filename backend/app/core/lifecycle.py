@@ -19,11 +19,6 @@ _drain_loop: asyncio.AbstractEventLoop | None = None
 
 
 def drain_event() -> asyncio.Event:
-    """An event that fires the moment a shutdown begins.
-
-    A stream already blocked on a long keepalive wait cannot see a flag; it needs
-    something to wake it, or it holds the shutdown open until the wait elapses.
-    """
     global _drain_event, _drain_loop
     loop = asyncio.get_running_loop()
     if _drain_event is None or _drain_loop is not loop:
@@ -69,11 +64,6 @@ def _ahead_of(
 
 
 def watch_signals() -> None:
-    """Mark the process draining at the signal rather than at lifespan shutdown.
-
-    Uvicorn waits for every open connection before it runs lifespan shutdown, so
-    a flag set there is set too late to close the streams that are holding it up.
-    """
     if threading.current_thread() is not threading.main_thread():
         return
 

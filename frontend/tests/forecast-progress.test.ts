@@ -286,7 +286,6 @@ describe("following a forecast", () => {
     opened[0]!.emit({ status: "running", progress: 0.3, stage: "backtesting" });
 
     expect(result.current.queueAhead).toBeNull();
-    // The step it went through stays on the checklist rather than vanishing.
     expect(result.current.hasQueued).toBe(true);
   });
 
@@ -332,7 +331,6 @@ describe("the steps a run is shown as having", () => {
   });
 
   it("names every step it lists", () => {
-    // A step with no label renders as a raw backend identifier.
     for (const stage of stagesFor(true)) {
       expect(STAGE_LABELS[stage], stage).toBeTruthy();
     }
@@ -357,8 +355,6 @@ describe("the steps a run is shown as having", () => {
   });
 
   it("matches the order the backend reports them in", () => {
-    // The checklist ticks by index, so a step out of order marks the wrong
-    // rows done.
     expect(stagesFor(true)).toEqual([
       "aggregating",
       "backtesting",
@@ -413,8 +409,6 @@ describe("how long a run has been going", () => {
   });
 
   it("reports the run's own age, not the age of the panel watching it", async () => {
-    // Reopening the modal mid-run remounts the panel; a clock anchored to
-    // mount would restart at zero and understate a long run.
     const startedTwoMinutesAgo = Date.now() - 125_000;
     const { result } = renderHook(() => useElapsed(startedTwoMinutesAgo, true));
 

@@ -3,11 +3,6 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = 3100;
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 
-/**
- * Layout tests only — they assert how the dashboard reflows, not what the API
- * returned, so they pass with the backend up or down (panels fall back to
- * their error states either way).
- */
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -21,8 +16,6 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "on-first-retry",
     launchOptions: {
-      // Sandboxes and CI images that ship their own Chromium can point at it
-      // instead of a downloaded browser.
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined,
     },
   },
@@ -35,10 +28,6 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        // A production build rather than `next dev`. Fast Refresh recompiles a
-        // route on first navigation and the rebuild lands mid-click, so the
-        // navigation is dropped — a property of the dev server, not of the
-        // page, and it failed the phone project every run.
         command: `npx next build && npx next start -p ${PORT}`,
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,

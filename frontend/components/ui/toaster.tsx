@@ -12,17 +12,6 @@ const TONES: Record<ToastTone, { icon: typeof Info; ring: string; text: string }
   info: { icon: Info, ring: "border-border", text: "text-text-secondary" },
 };
 
-/**
- * The text of what is on screen, for a reader that cannot see it.
- *
- * A live region has to already exist in the document to announce what is put
- * into it — a region added *with* its content is usually announced by nothing.
- * So two of them sit here empty from first paint. The cards stay reachable —
- * their dismiss and action buttons have to be — but they are not themselves
- * inside a live region, so nothing is announced twice. Errors go to the
- * assertive region: an upload that failed is worth interrupting for, and a
- * confirmation is not.
- */
 function Announcements({ toasts }: { toasts: Toast[] }) {
   const say = (item: Toast) =>
     [item.title, item.description].filter(Boolean).join(". ");
@@ -53,9 +42,6 @@ export function Toaster() {
   const hold = useToastStore((state) => state.hold);
   const release = useToastStore((state) => state.release);
 
-  // A toast fired at a tab nobody is looking at is a toast nobody sees. A run
-  // that finished while the user was in their mail client should still have
-  // something to say when they come back.
   useEffect(() => {
     const onVisibility = () => (document.hidden ? hold() : release());
     document.addEventListener("visibilitychange", onVisibility);

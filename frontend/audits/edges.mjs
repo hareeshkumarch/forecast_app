@@ -46,8 +46,6 @@ console.log("\nnav indicator");
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(BASE, { waitUntil: "networkidle" });
   const frames = [];
-  // A later item, so a correct first placement is nowhere near x=0. The first
-  // nav item legitimately sits at offsetLeft 0 and would pass trivially.
   await page.click('nav a[href="#accuracy"]');
   for (let i = 0; i < 12; i++) {
     frames.push(
@@ -71,8 +69,6 @@ console.log("\nnav indicator");
   );
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.waitForTimeout(400);
-  // Which item is active may legitimately change during a resize, so the
-  // indicator is checked against whichever one is current, not a fixed one.
   const after = await page.evaluate(() => {
     const el = document.querySelector(".nav-indicator");
     const link = document.querySelector('nav [aria-current="page"]');
@@ -120,9 +116,6 @@ console.log("\ntouch and keyboard");
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(150);
   const spoken = await page.locator("p.sr-only").innerText();
-  // One band per product line, not one rectangle across both: the rows are
-  // offset along the depth axis, so a single upright marker wide enough to
-  // cover the far row stands on the floor beside the near one.
   const marked = await page.evaluate(() => ({
     bands: document.querySelectorAll(".scape-marker").length,
     rows: new Set(

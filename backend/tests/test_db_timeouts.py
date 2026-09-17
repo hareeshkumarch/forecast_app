@@ -86,8 +86,6 @@ async def test_a_statement_over_the_limit_is_actually_cancelled() -> None:
 
 
 async def test_the_budget_is_re_armed_on_every_transaction(monkeypatch) -> None:
-    """A request that commits starts a fresh transaction, and SET LOCAL is
-    scoped to the one it was issued in."""
     monkeypatch.setattr(db, "_TIMEOUTS_APPLY", True)
 
     class _Connection:

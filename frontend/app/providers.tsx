@@ -36,15 +36,6 @@ function PreferencesBridge() {
 const RETRY_BASE_MS = 1_000;
 const RETRY_CEILING_MS = 30_000;
 
-/**
- * How long to wait before asking again.
- *
- * A 429 or a 503 names its own delay, and it is the only party that knows:
- * doubling from a second means a client told to wait a minute comes back
- * eleven times before that minute is up, each one refused, each one counted
- * against the limit it is waiting out. Where the server said nothing, the
- * usual backoff.
- */
 function retryDelay(attempt: number, error: unknown): number {
   if (error instanceof ApiError && error.retryAfterMs !== null) {
     return Math.max(error.retryAfterMs, RETRY_BASE_MS);
@@ -52,15 +43,6 @@ function retryDelay(attempt: number, error: unknown): number {
   return Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_CEILING_MS);
 }
 
-/**
- * Access that changed underneath the tab, noticed without being told.
- *
- * The stream normally carries this, and the stream is the thing least likely
- * to be up when it matters — it is the first casualty of a proxy, a sleep, or
- * a restart. A 403 naming an access status is the same news arriving by the
- * other door, so the gate is asked to re-read itself rather than leaving
- * somebody clicking around a page that has quietly stopped working.
- */
 function accessMayHaveChanged(error: unknown, client: QueryClient): void {
   if (!(error instanceof ApiError)) return;
   if (error.status !== 403 || !("status" in error.detail)) return;

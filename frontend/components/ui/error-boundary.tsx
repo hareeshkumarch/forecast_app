@@ -5,19 +5,6 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
-/**
- * A build that moved under an open tab.
- *
- * Every workspace, dialog and drawer in this app arrives through `dynamic()`,
- * so its code is a hashed chunk fetched the first time it is needed. A deploy
- * replaces those hashes. Anybody who had the app open and then opens a dialog
- * for the first time asks for a file that is no longer there, and React throws
- * during render — which, without this, is a blank page.
- *
- * It is worth telling apart from every other error because the fix is
- * different and certain: reload, and it is gone. "Try again" cannot help,
- * because the chunk it would re-request still does not exist.
- */
 function isStaleBuild(error: unknown): boolean {
   const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
   return /ChunkLoadError|Loading chunk|Importing a module script failed|dynamically imported module/i.test(
@@ -27,9 +14,7 @@ function isStaleBuild(error: unknown): boolean {
 
 interface Props {
   children: ReactNode;
-  /** Named in the fallback, so "the insights panel" beats "this part of the page". */
   label?: string;
-  /** Changing this clears a caught error — a new run id, a different section. */
   resetKey?: unknown;
   variant?: "page" | "panel";
 }
@@ -38,15 +23,6 @@ interface State {
   error: unknown;
 }
 
-/**
- * Stops one broken piece taking the whole page with it.
- *
- * React unmounts the entire tree when a render throws and nothing catches it:
- * an undefined field inside one chart used to leave a white page with no
- * sidebar, no navigation and no way back except the reload the person had no
- * reason to think would help. A boundary around each region turns that into
- * one panel saying so, with the rest of the app still working.
- */
 export class ErrorBoundary extends Component<Props, State> {
   override state: State = { error: null };
 
@@ -61,8 +37,6 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    // The console is the only reporter this deployment has. Losing the
-    // component stack would leave a bug report saying "a panel broke".
     console.error(`Render failed${this.props.label ? ` in ${this.props.label}` : ""}`, error, info);
   }
 

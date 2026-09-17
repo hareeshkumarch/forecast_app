@@ -127,8 +127,6 @@ describe("the scrub", () => {
   });
 
   it("finishes one beat before the next has anything to show", () => {
-    // The read cannot start on a sheet that is still landing, and the build
-    // cannot start on columns that have not been picked out.
     for (let tick = 0; tick <= 100; tick += 1) {
       const { fill, read, build } = beats(tick / 100);
       if (read > 0) expect(fill).toBe(1);
@@ -140,7 +138,6 @@ describe("the scrub", () => {
     expect(activeStep(0)).toBe(0);
     expect(activeStep(0.4)).toBe(1);
     expect(activeStep(1)).toBe(2);
-    // Every step is reached, or one of the three is never readable.
     const seen = new Set(Array.from({ length: 101 }, (_, tick) => activeStep(tick / 100)));
     expect([...seen].sort()).toEqual([0, 1, 2]);
   });

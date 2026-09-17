@@ -2,12 +2,6 @@ import { chromium } from "@playwright/test";
 
 const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
-/*
- * The geometry unit tests prove the numbers at n = 8, 35 and 120. This proves
- * the render: a label's anchor can sit inside the frame while the glyphs it
- * anchors run outside it, and only the browser knows how wide a word is once
- * the mono face has loaded.
- */
 const browser = await chromium.launch({ executablePath: CHROME });
 const page = await browser.newPage({ viewport: { width: 1512, height: 950 } });
 await page.goto("http://localhost:3000", { waitUntil: "networkidle" });
@@ -44,7 +38,6 @@ const measured = await page.evaluate(() => {
         collisions.push(`${texts[i].textContent} / ${texts[j].textContent}`);
     }
 
-  // A label is legible only if the bars are not drawn over it.
   const bars = [...svg.querySelectorAll("polygon")].map((p) => p.getBBox());
   const overBars = [];
   for (let i = 0; i < texts.length; i++) {

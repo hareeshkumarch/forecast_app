@@ -18,30 +18,12 @@ import { useMotionReady } from "@/components/marketing/reveal";
 const HINT = "Hover any week, or focus the chart and use the arrow keys";
 const TOUCH_HINT = "Tap any week to inspect its forecast";
 
-/* One series, drawn one way: nothing here depends on state, so it is measured
-   once for the module rather than on every render. */
 const SCAPE = buildScape(SERIES.layers, SERIES.growth);
 const TIMING = scapeTiming(HISTORY_WEEKS, FUTURE_WEEKS, SCAPE.rows);
 const WALK = demoWalk(HISTORY_WEEKS, FUTURE_WEEKS, TIMING);
 
 type Face = { front: string; side: string; top: string; stroke: string };
 
-/*
- * One colour per tone, at one weight per row.
- *
- * The rows overlap by design — that is what makes the drawing read as depth —
- * and two rows painted identically collapse into a single silhouette the
- * moment they touch. The near line is at full strength and the line behind it
- * steps back, which is the depth cue the eye already knows and the only thing
- * that lets a visitor see there are two product lines here at all.
- *
- * The values live in the stylesheet. An SVG presentation attribute is a CSS
- * declaration and takes a custom property like any other, so the chart follows
- * the theme without this file knowing there is one — which matters most for
- * the near row of sold weeks: it is the heaviest ink on a light page and has
- * to become the brightest on a dark one, and that is not a colour a component
- * can work out for itself.
- */
 const PALETTE: Record<Tone, Face[]> = {
   history: [
     {
@@ -94,15 +76,11 @@ const FALLBACK: Face = {
   stroke: "none",
 };
 
-/** The nearest row's weight is the one a row beyond the palette falls back to,
- *  so a third product line would still draw rather than disappear. */
 function faceFor(tone: Tone, row: number): Face {
   const weights = PALETTE[tone];
   return weights[Math.min(row, weights.length - 1)] ?? FALLBACK;
 }
 
-/* One entry in the key. The swatch carries a stripe per row, so a colour the
-   chart shows in two weights is named once rather than twice. */
 function Key({ weights, children }: { weights: string[]; children: ReactNode }) {
   return (
     <span className="flex items-center gap-2.5">
@@ -124,7 +102,6 @@ function Bar({
 }: {
   prism: Prism;
   timing: ScapeTiming;
-  /** The week under the pointer, which this bar is part of. */
   active: boolean;
   onEnter: () => void;
 }) {
@@ -138,12 +115,7 @@ function Bar({
   return (
     <g
       className={shell ? "scape-bar scape-shell cursor-default" : "scape-bar cursor-default"}
-      /* The readout names the week; this shows which one it is talking about
-         on the drawing itself, in both rows at once. */
       data-active={active ? "true" : undefined}
-      /* Named rather than left to be recognised by its fill: the browser
-         audits pick bars out of the page, and a colour is a thing that
-         changes. */
       data-tone={prism.tone}
       data-row={prism.row}
       data-step={prism.step}
@@ -171,8 +143,6 @@ export function DemandScape() {
   const [running, setRunning] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const motionReady = useMotionReady();
-  // Set the moment the visitor does anything to the chart themselves. From
-  // then on it is theirs, and the demonstration never touches it again.
   const taken = useRef(false);
 
   useEffect(() => {
@@ -192,19 +162,6 @@ export function DemandScape() {
     return () => observer.disconnect();
   }, []);
 
-  /*
-   * The scene leans very slightly towards the pointer.
-   *
-   * An isometric drawing is a still picture of a solid; what convinces
-   * somebody it is solid is seeing it respond to where they are. A degree and
-   * a half is enough — past about three the prisms start to look like they are
-   * on a hinge, and the illusion goes the other way.
-   *
-   * Written to a custom property rather than to React state: this fires on
-   * every pointer move, and re-rendering four hundred polygons at 120Hz to
-   * turn the scene by one degree would be the most expensive thing on the
-   * page.
-   */
   useEffect(() => {
     const node = ref.current;
     if (!node || !motionReady) return;
@@ -236,8 +193,6 @@ export function DemandScape() {
     };
   }, [motionReady]);
 
-  // Once built, the chart walks its own forecast and shows what the readout
-  // gives, rather than only asking to be hovered. See `lib/scape-motion.ts`.
   useEffect(() => {
     if (!running || !motionReady || taken.current) return;
 
@@ -247,7 +202,6 @@ export function DemandScape() {
       }, WALK.start + index * WALK.interval),
     );
 
-    // Let go at the end, so the hint the visitor is being taught comes back.
     timers.push(
       window.setTimeout(() => {
         if (!taken.current) setHovered(null);
@@ -314,9 +268,6 @@ export function DemandScape() {
           }}
           onMouseLeave={() => setHovered(null)}
           onTouchStart={take}
-          /* Drives the dimming in CSS, so pointing at a week costs one
-             attribute write rather than a style on each of eighty-eight
-             marks. */
           data-reading={hovered === null ? undefined : "true"}
         >
           <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
@@ -325,9 +276,6 @@ export function DemandScape() {
             ))}
           </g>
 
-          {/* The marker spans both rows: a week is a week in every product
-              line, and reading one of them alone is not what the chart is
-              for. */}
           {marked
             ? marked.bands.map((band) => (
                 <rect
@@ -382,9 +330,6 @@ export function DemandScape() {
                 </text>
               ))}
             </g>
-            {/* Darker than the week captions: these name what the depth of the
-                chart is, which is the part a visitor is least likely to guess
-                and most likely to be told once. */}
             <g fill="var(--scape-row-name)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
               {SCAPE.rowLabels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
@@ -396,9 +341,6 @@ export function DemandScape() {
         </svg>
       </div>
 
-      {/* Fixed height, so the readout appearing cannot move the page. Full
-          width for the same reason horizontally: the lines are centred inside
-          a box that does not resize with what it is holding. */}
       <div className="mt-1 flex min-h-[58px] items-center justify-center sm:h-[46px] sm:min-h-0">
         <p className="scape-readout w-full text-center font-mono text-site-caption" aria-hidden>
           <span className="block">
@@ -424,17 +366,12 @@ export function DemandScape() {
               </>
             )}
           </span>
-          {/* The same week one level down. Held on its own line rather than
-              run on to the first: the split is what the two rows are for, and
-              a line that long wraps differently on every phone. */}
           <span className="block min-h-[1.45em] whitespace-pre text-land-dim">
             {readout ? readout.split : ""}
           </span>
         </p>
       </div>
 
-      {/* Announced from the unpadded readout: the columns are a drawing
-          concern, and a screen reader should not hear them. */}
       <p className="sr-only" aria-live="polite">
         {keyed && spoken
           ? `${spoken.label}, ${spoken.point}${spoken.range === "actual" ? "" : `, range ${spoken.range}`}, ${spoken.split}`

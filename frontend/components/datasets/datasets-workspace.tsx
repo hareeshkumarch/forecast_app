@@ -298,9 +298,6 @@ export function DatasetsWorkspace() {
 
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
-                        {/* The title sits on the wrapper, not the button: a
-                            disabled button takes no pointer events, so a
-                            tooltip on it is one nobody can read. */}
                         <span
                           title={
                             features.datasetCoverage

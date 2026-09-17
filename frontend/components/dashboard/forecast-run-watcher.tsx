@@ -27,25 +27,10 @@ const IDLE: ForecastProgress = {
 
 const ForecastProgressContext = createContext<ForecastProgress>(IDLE);
 
-/** The live state of the active run, from the one subscription that owns it. */
 export function useActiveForecastProgress(): ForecastProgress {
   return useContext(ForecastProgressContext);
 }
 
-/**
- * Watches the active forecast for the whole session.
- *
- * This used to live inside the forecast dialog, which is mounted only while
- * the dialog is open (see `LazyOverlayHost`). Closing it — including by the
- * dialog's own "Run in background" button — unmounted the subscription and
- * tore down the event stream, so a backgrounded run finished in silence: no
- * toast, no dashboard refresh, and no way to tell it had happened short of
- * reloading the page. "Run in background" promised the one thing the dialog
- * was structurally unable to do.
- *
- * So the subscription is hoisted here, above the overlay host, and the dialog
- * reads it through context instead of opening a second one.
- */
 export function ForecastRunProvider({ children }: { children: ReactNode }) {
   const activeRunId = useUiStore((state) => state.activeRunId);
   const setRunId = useUiStore((state) => state.setRunId);
@@ -54,13 +39,10 @@ export function ForecastRunProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Read at fire time rather than captured, so the toast's action always uses
-  // the route the user is on when the run lands, not when it started.
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
   const progress = useForecastProgress(activeRunId, (event) => {
-    // Terminal either way: a reload from here on should not re-announce it.
     useUiStore.getState().finishActiveRun();
 
     if (event.status === "completed") {
@@ -71,8 +53,6 @@ export function ForecastRunProvider({ children }: { children: ReactNode }) {
         ? `${humanizeModel(event.selected_model)} won the backtest.`
         : "The dashboard now reflects this run.";
 
-      // An action, not just an announcement. The run is worth looking at and
-      // the user may well be three screens away by the time it lands.
       toast.action(
         "success",
         "Forecast complete",
@@ -111,13 +91,6 @@ export function ForecastRunProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Puts the run in the tab title while the tab is in the background.
- *
- * A fit can take the better part of a minute, which is long enough that
- * nobody watches it. A toast fired at a tab you are not looking at is a toast
- * nobody sees, and this needs no notification permission to be useful.
- */
 function useTabTitleProgress(progress: ForecastProgress): void {
   const original = useRef<string | null>(null);
 
@@ -132,7 +105,6 @@ function useTabTitleProgress(progress: ForecastProgress): void {
         return;
       }
       if (!document.hidden) {
-        // Visible tab: the in-page UI is already saying all of this.
         document.title = base;
         return;
       }
@@ -151,11 +123,6 @@ function useTabTitleProgress(progress: ForecastProgress): void {
   }, [progress.status, progress.progress, progress.queueAhead]);
 }
 
-/**
- * The way back to a run the user left. Shown whenever a run is active and the
- * dialog that would otherwise report it is closed — without this, backgrounding
- * a forecast hides every trace of it until the toast fires once and expires.
- */
 export function ForecastRunPill() {
   const activeRunId = useUiStore((state) => state.activeRunId);
   const modal = useUiStore((state) => state.modal);
@@ -168,8 +135,6 @@ export function ForecastRunPill() {
   const done = progress.status === "completed";
   const failed = progress.status === "failed";
   const percent = Math.round(progress.progress * 100);
-  // "Forecasting… 22%" on a run that has not started is the same lie the
-  // progress bar was telling. A queued run says so, and says where it is.
   const queued = progress.queueAhead !== null;
 
   return (
@@ -209,9 +174,6 @@ export function ForecastRunPill() {
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
       </button>
 
-      {/* The percentage above ticks every second or two, and a live region
-          wrapped around it would read every one of them out. Announce the
-          transitions a listener actually needs instead. */}
       <span aria-live="polite" className="sr-only">
         {done ? "Forecast complete." : failed ? "Forecast failed." : ""}
       </span>

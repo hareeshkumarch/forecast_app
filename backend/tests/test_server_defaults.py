@@ -14,11 +14,6 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def emitted_ddl() -> str:
-    """The whole schema as Postgres would receive it, without needing a server.
-
-    `alembic check` compares types but not server defaults, so a column whose
-    model promises `now()` and whose migration omits it survives a green CI.
-    """
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "base:head", "--sql"],
         cwd=str(BACKEND),
@@ -52,7 +47,6 @@ def _emitted_defaults(ddl: str) -> dict[tuple[str, str], bool]:
                 continue
             found[(table, match.group(1))] = "DEFAULT" in match.group(2)
 
-    # A later migration can add or remove one, and several do.
     for table, column, verb in re.findall(
         r"ALTER TABLE (\w+) ALTER COLUMN (\w+) (SET DEFAULT|DROP DEFAULT)", ddl
     ):
@@ -61,9 +55,6 @@ def _emitted_defaults(ddl: str) -> dict[tuple[str, str], bool]:
 
 
 def test_every_promised_server_default_is_actually_created(emitted_ddl: str) -> None:
-    """A model that declares one and a migration that omits it is the harmful
-    direction: a write outside the ORM hits a not-null violation on a column the
-    model says the database fills in."""
     emitted = _emitted_defaults(emitted_ddl)
     assert emitted, "no CREATE TABLE statements were parsed"
 

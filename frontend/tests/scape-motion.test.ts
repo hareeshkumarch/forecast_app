@@ -69,7 +69,6 @@ describe("building the depth away-to-near", () => {
   });
 
   it("still settles inside the budget once the lead is paid for", () => {
-    // The nearest row is the last to arrive, so the budget has to cover it.
     const lastBar = barDelay(HISTORY + FUTURE - 1, HISTORY, timing, 0, ROWS);
     expect(lastBar + timing.shellFollow + timing.expand).toBeLessThanOrEqual(timing.settled);
     expect(timing.settled).toBeLessThan(SEQUENCE_BUDGET);
@@ -110,7 +109,6 @@ describe("the chart demonstrating its own readout", () => {
   });
 
   it("stays a demonstration rather than an animation the visitor waits out", () => {
-    // From the chart settling to the hint coming back.
     expect(walk.release - timing.settled).toBeLessThan(4000);
   });
 

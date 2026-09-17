@@ -90,20 +90,6 @@ async def _reset_schema() -> None:
 
 
 async def _stop_background_work() -> None:
-    """Let nothing this test started outlive it.
-
-    A forecast run does not stop being a forecast run because the test that
-    started it has returned, and the aiosqlite connection it is holding belongs
-    to this test's event loop. Once that loop closes, the connection can neither
-    commit nor roll back and its worker thread stays alive on the database file
-    — so the next reset unlinks a file somebody still has open, and the CREATE
-    TABLE after it comes back as "disk I/O error" at the setup of whatever
-    unrelated test runs next.
-
-    Everything still pending is cancelled rather than only the runs, because the
-    progress relay and the queue drain hold connections of their own, and any of
-    them outliving the loop reproduces the same failure.
-    """
     current = asyncio.current_task()
     pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]
     for task in pending:

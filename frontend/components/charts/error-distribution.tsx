@@ -16,19 +16,6 @@ import { formatCompact } from "@/lib/format";
 import { useThemeRevision } from "@/stores/prefs-store";
 import type { ResidualBucket } from "@/types/api";
 
-/**
- * The shape of the error, bucketed symmetrically about zero.
- *
- * Centred on zero rather than on the data's own range, because the question
- * is whether the misses are balanced — and a range that starts at the
- * smallest residual puts the middle wherever the data happens to sit, which
- * hides exactly the lean the reader came for.
- *
- * A tall middle and short tails is a model that is working. Weight piled on
- * one side is a forecast that leans, which a planner can correct. The same
- * spread with nothing in the middle is neither, and is the one worth opening
- * the periods for.
- */
 export function ErrorDistribution({
   buckets,
   currency = true,
@@ -86,8 +73,6 @@ export function ErrorDistribution({
           name: "Periods",
           data: buckets.map((bucket) => bucket.count),
           itemStyle: { color: colors.accent, borderRadius: 2 },
-          // A surface gap between neighbours, so two full buckets read as two
-          // rather than as one wide block.
           barCategoryGap: "12%",
           markLine: {
             silent: true,

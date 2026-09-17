@@ -1,16 +1,7 @@
-/**
- * What each metric is, in the words a planner would use.
- *
- * The name alone is not a reading. "RMSSE 0.84" says nothing until you know it
- * is scaled against the series' own history and that under one beats the naive
- * forecast — so the label carries the sentence and the panel carries the name.
- */
 export type MetricLabel = {
   short: string;
   meaning: string;
-  /** How to render it: a percentage, a ratio around 1, or the data's own units. */
   unit: "percent" | "ratio" | "value";
-  /** True where a bigger number is the better one. */
   higherIsBetter?: boolean;
 };
 

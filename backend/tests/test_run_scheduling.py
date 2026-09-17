@@ -385,9 +385,6 @@ class TestWhatAWaitingRunIsTold:
 
 
 class TestTheDrainWaitsForTheWholeRun:
-    """The scheduler slot covers the model fit. Persisting the output, the
-    insights and the fan-out all happen after it is released."""
-
     async def test_a_task_past_the_fit_still_counts_as_running(self, monkeypatch) -> None:
         import asyncio
 

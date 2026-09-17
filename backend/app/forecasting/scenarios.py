@@ -41,9 +41,6 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
                 continue
             if not (np.isfinite(actual) and np.isfinite(predicted)):
                 continue
-            # Both sides finite is not enough: the difference between them can
-            # still overflow, and one inf residual makes every sigma built
-            # from it inf too.
             with np.errstate(over="ignore", invalid="ignore"):
                 residual = actual - predicted
             if np.isfinite(residual):
@@ -52,12 +49,6 @@ def _residuals_by_step(result: BacktestResult, horizon: int) -> list[list[float]
 
 
 def _one_step_equivalent(buckets: list[list[float]]) -> FloatArray:
-    # A residual measured at step 5 is already about sqrt(5) times a one-step
-    # residual, so pooling every step and then scaling the pooled spread by
-    # sqrt(step) counts that growth twice — measured at 2.49x the truth, which
-    # is a nominal 80% band containing 99%. Dividing each residual by the sqrt
-    # of its own step first makes the pool one-step-equivalent, and scaling it
-    # back up is then the only place the horizon is applied.
     return np.asarray(
         [
             value / np.sqrt(step + 1)
@@ -70,12 +61,6 @@ def _one_step_equivalent(buckets: list[list[float]]) -> FloatArray:
 
 
 def _rising(values: FloatArray) -> FloatArray:
-    # A running maximum is the cheap way to keep a width from narrowing, but it
-    # takes the largest of every noisy estimate up to each step, so the bias
-    # compounds with horizon: eight folds covered 89% where five covered 80%,
-    # meaning more evidence made the answer worse. Isotonic regression returns
-    # the nearest non-decreasing sequence instead, moving an estimate only as
-    # far as the ordering actually requires.
     if values.size == 0:
         return values
     return np.asarray(isotonic_regression(values, increasing=True).x, dtype=float)
@@ -85,9 +70,6 @@ def _step_scale(history: FloatArray) -> float:
     finite = history[np.isfinite(history)]
     if finite.size < 2:
         return 0.0
-    # Two finite values can still overflow the difference between them, and an
-    # infinite scale here becomes an infinite band, which is not a number the
-    # API can serialise.
     with np.errstate(over="ignore", invalid="ignore"):
         steps = np.abs(np.diff(finite))
     steps = steps[np.isfinite(steps)]
@@ -266,18 +248,11 @@ def build_intervals(
             best = np.maximum(best, upper)
 
     if non_negative:
-        # Raising the floor to zero without raising the ceiling with it inverts the
-        # band whenever the point forecast is itself negative.
         lower = np.maximum(lower, 0.0)
         upper = np.maximum(upper, lower)
         worst = np.clip(worst, 0.0, lower)
         best = np.maximum(best, upper)
 
-    # A residual or a history value large enough to overflow leaves inf or nan
-    # in the offsets, and a band that is not a number cannot be rendered: JSON
-    # has no way to write one, and the request for the points fails as a 500
-    # rather than as the forecast it is. A step whose width could not be
-    # measured is published at the point forecast, with no width claimed.
     lower = _finite_band(lower, point_forecast)
     upper = _finite_band(upper, point_forecast)
     worst = _finite_band(worst, lower)

@@ -70,9 +70,6 @@ test("the header keeps its controls reachable at every width", async ({ page }) 
 
   const width = page.viewportSize()?.width ?? 0;
 
-  // The run / scenario / range trio only fits from `xl`; below it they fold
-  // into one Filters popover. 768 was never the boundary — the assertion just
-  // never ran, because the dashboard it needed had no data to render.
   if (width < 1280) {
     await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();

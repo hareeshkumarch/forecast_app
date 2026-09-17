@@ -14,20 +14,11 @@ export interface SessionUser {
 }
 
 export interface AuthState {
-  /** Null until the first check completes — "unknown" and "signed out" differ. */
   user: SessionUser | null;
   ready: boolean;
-  /** False when this deployment has no sign-in wired up at all. */
   configured: boolean;
 }
 
-/**
- * The signed-in account, or the absence of one.
- *
- * `ready` exists so a page can tell "nobody is signed in" from "we have not
- * looked yet". Without it every guarded route flashes its sign-in prompt on
- * first paint and then replaces it, which reads as being signed out.
- */
 export function useAuth(): AuthState {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(!authConfigured);

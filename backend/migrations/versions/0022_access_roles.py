@@ -17,9 +17,6 @@ def upgrade() -> None:
         sa.Column("role", sa.String(length=32), nullable=False, server_default="member"),
     )
     op.create_index("ix_app_users_role", "app_users", ["role"])
-    # Everyone already in the table keeps the access they have; who is an
-    # administrator is decided on their next sign-in from the configured list,
-    # so nobody is promoted here by guesswork.
     op.alter_column("app_users", "role", server_default=None)
 
 

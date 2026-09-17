@@ -7,7 +7,6 @@ const browser = await chromium.launch({ executablePath: CHROME });
 const fail = [];
 const line = (s) => console.log(s);
 
-/* ------------------------------------------------- B1: sequence duration */
 line("\nB1 — signature sequence");
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -18,7 +17,6 @@ line("\nB1 — signature sequence");
   const seq = await page.evaluate(async () => {
     const svg = document.querySelector('svg[role="img"]');
     const bars = [...svg.querySelectorAll(".scape-bar")];
-    // Longest (delay + duration) across every animated mark in the sequence.
     let settled = 0;
     for (const bar of bars) {
       for (const anim of bar.getAnimations()) {
@@ -41,7 +39,6 @@ line("\nB1 — signature sequence");
   await page.close();
 }
 
-/* ------------------------------------------------- B2: no overshoot */
 line("\nB2 — data-encoding marks never pass their value");
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -83,7 +80,6 @@ line("\nB2 — data-encoding marks never pass their value");
   await page.close();
 }
 
-/* ------------------------------------------------- B5: reduced motion */
 line("\nB5 — reduced motion renders the finished chart");
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
@@ -106,7 +102,6 @@ line("\nB5 — reduced motion renders the finished chart");
     };
   });
 
-  // Hover still reads out under reduced motion.
   await page.evaluate(() => document.querySelector('svg[role="img"]').scrollIntoView());
   await page.waitForTimeout(80);
   const spot = await page.evaluate(() => {
@@ -131,15 +126,8 @@ line("\nB5 — reduced motion renders the finished chart");
   await page.close();
 }
 
-/* ------------------------------------------------- B5: CLS and frame cost */
 line("\nB5 — layout stability and frame cost");
 {
-  // Bringing the chart into view is itself a scroll, and the page repaints a
-  // grid background and a backdrop-blurred nav while it happens. Measuring
-  // that and calling it the animation's cost overstates it by an order of
-  // magnitude, so the same window is measured twice — once with the sequence
-  // running and once with it disabled — and the difference is what motion
-  // actually costs.
   const sample = async (disable) => {
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     await page.goto(BASE, { waitUntil: "networkidle" });
@@ -181,10 +169,6 @@ line("\nB5 — layout stability and frame cost");
     return r;
   };
 
-  // Paired, and repeated. A single pair puts the run-to-run noise of a
-  // shared container straight into the verdict: across five pairs this
-  // difference ranged from -0.4ms to +6.7ms for the same code, so one sample
-  // decides nothing. Three pairs, compared at the median, is stable.
   const ROUNDS = 3;
   const runs = [];
   for (let round = 0; round < ROUNDS; round++) {
@@ -210,22 +194,12 @@ line("\nB5 — layout stability and frame cost");
   line(`  sequence disabled: median ${without.median}ms  p95 ${without.p95}ms  worst ${without.worst}ms  CLS ${without.cls}`);
   const deltas = runs.map((r) => +(r.withMotion.p95 - r.without.p95).toFixed(1));
   line(`  per-pair deltas: ${deltas.join(", ")}ms`);
-  // The median of the paired differences, not the difference of the medians:
-  // the two samples in a pair ran under the same machine conditions, and
-  // pairing them is what removes the noise.
   const delta = median(deltas);
   line(`  cost attributable to motion: ${delta >= 0 ? "+" : ""}${delta}ms at p95`);
   line(`  (this container is software-rendered with no GPU; the same scroll`);
   line(`   costs ${without.p95}ms at p95 with nothing animating at all)`);
 
   const clsOk = withMotion.cls === 0;
-  // 8ms, chosen from the measurement's own spread rather than from what
-  // passes. Nineteen paired samples of the current code ranged from -0.4ms to
-  // +6.7ms with a median near +4ms: the effect is about four milliseconds and
-  // the noise is about two and a half either side. A threshold inside that
-  // band is a coin toss, not a gate. On a GPU-composited browser a
-  // transform-only animation is handed to the compositor and this cost should
-  // fall further; it cannot be confirmed from a software-rendered container.
   const frameOk = delta < 8;
   if (!clsOk) fail.push(`B5 CLS ${withMotion.cls}`);
   if (!frameOk) fail.push(`B5 motion adds ${delta}ms at p95`);
@@ -233,7 +207,6 @@ line("\nB5 — layout stability and frame cost");
   line(`  frame cost  ${frameOk ? "ok" : "FAIL"}`);
 }
 
-/* ------------------------------------------------- B3: micro-interactions */
 line("\nB3 — micro-interactions");
 {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -241,8 +214,6 @@ line("\nB3 — micro-interactions");
   await page.evaluate(() => document.querySelector('svg[role="img"]').scrollIntoView());
   await page.waitForTimeout(1700);
 
-  // The uncertainty shells are almost transparent, so Playwright treats them
-  // as invisible. Drive the pointer to a forecast bar's own centre instead.
   const target = await page.evaluate(() => {
     const future = [
       ...document.querySelectorAll('svg[role=img] .scape-bar[data-tone="future"]'),
@@ -272,7 +243,6 @@ line("\nB3 — micro-interactions");
   if (!moved) fail.push(`B3 nav indicator did not move (${before} -> ${indicatorAfter.transform})`);
   line(`  nav indicator slides: ${moved}`);
 
-  // No layout shift attributable to the CTA hover.
   const cta = page.locator("#top a.cta-nudge");
   const box1 = await cta.boundingBox();
   await cta.hover();

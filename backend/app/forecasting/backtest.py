@@ -369,11 +369,6 @@ def interval_cost(result: BacktestResult, confidence_level: float) -> float:
     z = normal_quantile(confidence_level)
     costs: list[float] = []
 
-    # Folds are appended in cut order, so everything before `index` is history
-    # the held-out fold could actually have been scored against. Taking every
-    # other fold instead — the leave-one-out this used to do — widths the first
-    # fold's interval with residuals from origins that had not happened yet, and
-    # winkler carries settings.interval_weight of the selection score.
     for index, held_out in enumerate(result.folds):
         residuals = [
             true - pred

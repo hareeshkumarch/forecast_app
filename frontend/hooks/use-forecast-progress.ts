@@ -13,18 +13,8 @@ export interface ForecastProgress {
   message: string | null;
   error: string | null;
 
-  /**
-   * Pieces of work ahead of this run in the model-fitting queue, or null when
-   * it is not waiting for one.
-   *
-   * There are only `FORECAST_WORKERS` model workers, so starting four runs at
-   * once starts two of them. The other two used to report "backtesting" at 30%
-   * while doing nothing, which is why the last of several looked slow rather
-   * than queued.
-   */
   queueAhead: number | null;
 
-  /** True once this run has waited, so the step stays on the checklist. */
   hasQueued: boolean;
 
   isStreaming: boolean;
@@ -187,27 +177,16 @@ export function useForecastProgress(
       reconnectTimer = null;
       if (done) return;
 
-      // Nothing to open while the browser knows it has no connection, and an
-      // attempt made anyway spends one of the three that stand between this
-      // run and the polling fallback — which is no better off offline. The
-      // online listener below is what brings it back.
       if (offline()) {
         startPolling();
         return;
       }
 
-      // Without sign-in configured there is no token to wait for, so the
-      // stream opens in the same tick it always did. Deferring that path too
-      // would put a microtask between the run starting and the stream
-      // attaching, for no reason, on every deployment that has no auth.
       if (!authConfigured) {
         openStream(forecastEventsUrl(id));
         return;
       }
 
-      // Otherwise the session is fetched first, because it may need
-      // refreshing. The fallback to polling still covers a stream that never
-      // opens, so a slow or failed token lookup degrades rather than hangs.
       void accessToken().then((token) => {
         if (done) return;
         openStream(forecastEventsUrl(id, token));
@@ -230,9 +209,6 @@ export function useForecastProgress(
         }));
       };
 
-      // The server ends a connection it has held long enough. A planned
-      // goodbye, so it does not spend one of the three attempts that decide
-      // whether this run falls back to polling.
       openedSource.addEventListener?.("expired", () => {
         openedSource.close();
         if (done || source !== openedSource) return;
@@ -253,8 +229,6 @@ export function useForecastProgress(
       };
 
       source.onerror = () => {
-        // Close first, then decide. A stale handle is the one that most needs
-        // closing: EventSource reconnects by itself, so an orphan never stops.
         openedSource.close();
         if (source !== openedSource) return;
         source = null;
@@ -276,8 +250,6 @@ export function useForecastProgress(
           RECONNECT_BASE_MS * 2 ** (attempts - 1),
           RECONNECT_CEILING_MS,
         );
-        // Jittered, so every tab that lost its stream to the same restart does
-        // not come back in the same millisecond.
         reconnectTimer = setTimeout(
           connect,
           window / 2 + Math.random() * (window / 2),
@@ -285,9 +257,6 @@ export function useForecastProgress(
       };
     }
 
-    // Back from a tunnel, a sleep or a dropped wifi. The stream is the better
-    // transport, so the poller stands down and the attempts that were spent
-    // failing to reach a network are given back.
     function onOnline() {
       if (done) return;
       attempts = 0;
@@ -321,7 +290,6 @@ export function useForecastProgress(
   return state;
 }
 
-/** The steps every run passes through, in the order the backend reports them. */
 export const RUN_STAGES = [
   "aggregating",
   "backtesting",
@@ -331,17 +299,8 @@ export const RUN_STAGES = [
   "generating_insights",
 ];
 
-/** Only a run with a grain fits per-series models, after the total is stored. */
 export const GRAIN_STAGES = ["fitting_series", "storing_series"];
 
-/** The checklist for one run.
- *
- * Showing the grain steps to a run that has no grain leaves two rows that can
- * never light up, which reads as a run that stopped short of finishing. The
- * wait for a model worker is the same in reverse: most runs never queue, so
- * the row appears only for a run that did — and stays once it has, so the list
- * does not reshuffle under the reader the moment its turn comes.
- */
 export function stagesFor(grouped: boolean, queued = false): string[] {
   const core = queued
     ? ["aggregating", "waiting", ...RUN_STAGES.slice(1)]
@@ -349,12 +308,6 @@ export function stagesFor(grouped: boolean, queued = false): string[] {
   return grouped ? [...core, ...GRAIN_STAGES] : core;
 }
 
-/** Time on the clock since `startedAt`, as `0:42` or `3:07`.
- *
- * A percentage answers "how far", never "how long" — and the model search is
- * the part of a run whose duration is hardest to guess from the data alone.
- * The clock stops when the run does, leaving the total on screen.
- */
 export function useElapsed(
   startedAt: number | null,
   running: boolean,

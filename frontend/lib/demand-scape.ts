@@ -1,15 +1,5 @@
 export type Tone = "history" | "future" | "range";
 
-/**
- * One row of the drawing: a product line with its own sales and its own
- * forecast, given front to back.
- *
- * The depth in this chart is the plan's second level, not an effect. Every row
- * is plotted on one shared vertical scale, so a bar in the back row and a bar
- * in the front row can be compared by eye and the two together add up to the
- * week the readout quotes. A row scaled to look good would make the third
- * dimension a decoration, and there is nothing to read in a decoration.
- */
 export type Layer = {
   id: string;
   label: string;
@@ -44,7 +34,6 @@ export type Label = {
 
 export type Boundary = { x1: number; y1: number; x2: number; y2: number };
 
-/** One row's slice of a week: the vertical band standing over that row's bar. */
 export type Band = { key: string; x: number; y1: number; y2: number; width: number };
 
 export type Column = {
@@ -53,18 +42,6 @@ export type Column = {
   y1: number;
   y2: number;
   width: number;
-  /*
-   * A band per row, rather than one rectangle spanning both.
-   *
-   * The rows are offset along the depth axis, so a single upright rectangle
-   * wide enough to cover the far row also covers the floor beside the near
-   * one — a pale slab standing next to the week instead of behind it.
-   *
-   * Each band runs from its own row's baseline to just over the top of what
-   * that row draws in that week, rather than to the top of the frame. A band
-   * of fixed height is mostly empty sky above a short week, which reads as a
-   * marker floating near the bar instead of one standing behind it.
-   */
   bands: Band[];
 };
 
@@ -75,7 +52,6 @@ export type Scape = {
   prisms: Prism[];
   guides: Guide[];
   labels: Label[];
-  /** One name per row, written where that row begins. */
   rowLabels: Label[];
   boundary: Boundary;
   columns: Column[];
@@ -87,15 +63,8 @@ export type Scape = {
 
 const DEPTH_X = 940;
 const DEPTH_Y = 190;
-/* Taller than it was. At 208 the prisms were shorter than they were wide and
-   the drawing read as a strip of texture; the height is what lets a bar look
-   like an object standing on a floor rather than a tick on an axis. */
 const PLOT_HEIGHT = 268;
 
-/* A deeper step between rows. The two product lines used to sit close enough
-   that the near row's top face touched the far row's front, which is exactly
-   where an isometric drawing stops reading as depth and starts reading as one
-   flat silhouette. */
 const ROW_DX = 46;
 const ROW_DY = 42;
 
@@ -107,13 +76,6 @@ const EXTRUDE_Y_RATIO = 0.24;
 const RANGE_BASE = 1.05;
 export const RANGE_GROWTH = 0.055;
 
-/**
- * How far the range has opened by `horizon` weeks out.
- *
- * `growth` is a property of the series, not of the drawing: demand that jumps
- * about earns a wider interval than demand that settles, and a chart offering
- * to show more than one shape has to be able to say so.
- */
 export function rangeLift(horizon: number, growth: number = RANGE_GROWTH): number {
   return RANGE_BASE + growth * horizon;
 }
@@ -122,9 +84,6 @@ const LABEL_ADVANCE = 10.2;
 const LABEL_PAD = 10;
 const LONGEST_LEFT = "120 weeks ago".length;
 const LONGEST_RIGHT = "+111 weeks".length;
-/** The left gutter holds the row names as well as the oldest week, so it is
- *  sized for whichever of the two runs longer. A row named past this is not
- *  wrong, it is simply wider than the space reserved for it. */
 export const LONGEST_ROW_NAME = 12;
 
 const GUTTER = {
@@ -134,18 +93,11 @@ const GUTTER = {
   bottom: 62,
 };
 
-/* Three, not seven. The floor lines are there so the bars have something to
-   stand on; at seven they were a hatch pattern behind the subject, and the
-   pale ones nearest the top were the first thing the eye found. */
 const GUIDE_COUNT = 3;
 
-/** Text sits a touch under the line it names, so it reads as sitting on it. */
 const LABEL_DROP = 5;
-/** How far the oldest-week caption clears the name of the back row. */
 const PAST_LIFT = 26;
 
-/** Air over the tallest mark in a week, so its band reads as standing behind
- *  the bar rather than being clipped to it. */
 const BAND_HEADROOM = 12;
 
 function extent(values: number[]): number {
@@ -169,9 +121,6 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   const dx = (DEPTH_X - ROW_DX - width - extrudeX) / span;
   const dy = (DEPTH_Y - ROW_DY) / span;
 
-  // One scale for every row, taken from the tallest thing any row has to
-  // draw — which is a range shell, not a bar, wherever the forecast reaches
-  // further than the history did.
   const scale =
     (PLOT_HEIGHT - extrudeY) /
     extent(
@@ -232,8 +181,6 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  // The highest point each row reaches in each week, shells included — what a
-  // band has to clear to stand behind everything drawn there.
   const ceilings = new Map<string, number>();
   for (const prism of prisms) {
     const top = prism.baseY - prism.height - prism.extrudeY;
@@ -279,17 +226,6 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
     });
   }
 
-  /*
-   * Time runs down the diagonal, so the oldest week is at the top left and the
-   * horizon at the bottom right — the two captions sit at the ends of that
-   * diagonal rather than along the bottom of the frame, where they would point
-   * at empty floor. "today" is the exception: it belongs under the line that
-   * divides the two, which is the one place in the frame that is horizontal.
-   *
-   * The oldest-week caption clears the rows by sitting above the back one. The
-   * left gutter below it belongs to the row names, and the two competing for
-   * the same baseline is what the lift is buying.
-   */
   const labels: Label[] = [
     {
       key: "past",
@@ -314,9 +250,6 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
     },
   ];
 
-  // Written against the left edge of the plot rather than each row's own first
-  // bar: staggering them along the depth axis puts the back row's name over the
-  // front row's opening weeks, which is exactly where its bars are.
   const rowLabels: Label[] = layers.map((layer, row) => ({
     key: `row-${layer.id}`,
     x: -LABEL_PAD,

@@ -110,7 +110,6 @@ function SliderField({
 function ScenarioChart({ result }: { result: ScenarioSimulation }) {
   const resolvedTheme = usePrefsStore((state) => state.resolvedTheme);
   const option = useMemo<ChartOption>(() => {
-    // Re-read CSS variables whenever the resolved theme changes.
     void resolvedTheme;
     const colors = chartColors();
     return {
@@ -541,21 +540,7 @@ function MonitorRow({ row }: { row: ForecastMonitorItem }) {
   );
 }
 
-/**
- * What the model-fitting pool is doing, and what is waiting on it.
- *
- * The answer to "the fourth run just takes ages". It has not started: fitting
- * needs a whole core, so only so many happen at once and the rest queue. Shown
- * only while something is actually waiting — a pool with room to spare is not
- * news, and a permanent row saying "0 waiting" is the kind of thing people
- * stop reading before the day it matters.
- */
 function QueuePanel({ queue }: { queue: ForecastQueue | undefined }) {
-  // Undefined, not just empty: the frontend deploys to Vercel and the backend
-  // to EC2, so for the minutes between the two the browser is running new code
-  // against an API that has never heard of this field. Reading through it
-  // would throw, and a panel that throws over a field it could have done
-  // without is a bad trade for a deploy window.
   if (!queue || queue.waiting === 0) return null;
 
   const waiting = queue.rows.filter((row) => row.waiting > 0);

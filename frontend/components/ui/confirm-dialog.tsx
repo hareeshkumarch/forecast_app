@@ -21,12 +21,6 @@ export function ConfirmDialog() {
       size="sm"
       footer={
         <>
-          {/* Focus lands on the way out, not on the destructive button.
-              Radix focuses the first focusable element on open, and a dialog
-              that opens with "Delete" under the cursor's keyboard equivalent
-              deletes for anybody who was already pressing Enter or Space when
-              it appeared. The confirming button is reachable by one Tab, which
-              is the amount of deliberateness a destructive action is worth. */}
           <Button variant="ghost" onClick={() => resolve(false)} autoFocus={danger}>
             {request?.cancelLabel ?? "Keep it"}
           </Button>

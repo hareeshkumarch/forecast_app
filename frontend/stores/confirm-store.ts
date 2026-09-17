@@ -25,8 +25,6 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
   request: null,
 
   ask: (request) => {
-    // A second ask while one is open answers the first with "no", so the
-    // caller waiting on it always gets a decision back.
     get().resolve(false);
     counter += 1;
     const decision = new Promise<boolean>((settle) => {

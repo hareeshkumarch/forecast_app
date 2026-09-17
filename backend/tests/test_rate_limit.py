@@ -241,8 +241,6 @@ def test_rotating_the_header_cannot_buy_extra_requests(monkeypatch) -> None:
     ],
 )
 def test_every_approval_route_lands_on_the_tightest_rule(path: str) -> None:
-    """The old prefix named /api/auth/decide, which no route serves — so the
-    strictest rule in the file had never applied to anything."""
     assert ratelimit.rule_for("POST", path) is ratelimit.DECIDE
 
 

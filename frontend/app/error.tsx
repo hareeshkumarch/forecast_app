@@ -5,13 +5,6 @@ import { useEffect } from "react";
 import { Mark } from "@/components/marketing/mark";
 import { Button } from "@/components/ui/primitives";
 
-/**
- * What a route shows when its render threw and no boundary inside it caught it.
- *
- * Without this file Next renders its own bare screen in production — a
- * centred "Application error: a client-side exception has occurred" on white,
- * no navigation, no way back. This is the same failure with a way out of it.
- */
 export default function RouteError({
   error,
   reset,

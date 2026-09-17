@@ -281,14 +281,6 @@ async def run_for_idempotency_key(
 async def create_or_join_run(
     session: AsyncSession, *, idempotency_key: str | None, **fields: Any
 ) -> tuple[ForecastRun, bool]:
-    """The run for this key, creating it only if nobody else already has.
-
-    Looking first and inserting second leaves a window: two requests carrying
-    the same key both find nothing and both insert, and the unique constraint
-    turns the loser into a 500. The key exists so that a retried submission
-    returns the first run rather than a second one, so the loser of that race
-    is answered with the winner's run, which is what it asked for.
-    """
     existing = await run_for_idempotency_key(session, idempotency_key)
     if existing is not None:
         return existing, False
