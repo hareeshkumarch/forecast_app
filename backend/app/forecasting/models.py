@@ -676,6 +676,15 @@ class CrostonForecaster:
         return 8
 
 
+def _explosive(fitted: Any) -> bool:
+    """An AR root on or inside the unit circle makes the forecast grow without bound."""
+    for name in ("arroots", "seasonalarroots"):
+        roots = np.asarray(getattr(fitted, name, ()), dtype=complex)
+        if roots.size and float(np.min(np.abs(roots))) <= 1.0:
+            return True
+    return False
+
+
 @dataclass
 class SarimaxForecaster:
     frequency: ForecastFrequency
@@ -782,6 +791,10 @@ class SarimaxForecaster:
                     if not np.isfinite(score):
                         score = _aicc(float(fitted.llf), int(fitted.params.size), int(y.size))
                     if not np.isfinite(score):
+                        continue
+
+                    if _explosive(fitted):
+                        errors.append(f"{order}: explosive AR root")
                         continue
 
                     if score < best_score:
@@ -1063,6 +1076,7 @@ class EnsembleForecaster:
     kind: ModelKind = field(default=ModelKind.ENSEMBLE, init=False)
     _fitted: list[Forecaster] = field(default_factory=list, init=False)
     _config: dict[str, object] = field(default_factory=dict, init=False)
+    _train: FloatArray = field(default_factory=lambda: np.empty(0), init=False)
 
     def _build(self, member: ModelKind, y: FloatArray, periods: list[date]) -> Forecaster:
         if self.member_builder is not None:
@@ -1070,6 +1084,7 @@ class EnsembleForecaster:
         return build_candidate(member, self.frequency, None, self.profile)
 
     def fit(self, y: FloatArray, periods: list[date]) -> None:
+        self._train = np.asarray(y, dtype=np.float64)
         fitted: list[Forecaster] = []
         joined: list[str] = []
         skipped: list[str] = []
@@ -1107,16 +1122,35 @@ class EnsembleForecaster:
         if not self._fitted:
             raise RuntimeError("fit() must be called before predict().")
 
+        # A member can score well across the backtest and still diverge once refitted
+        # on the whole history; averaging that in carries it into every published step.
+        from app.forecasting.backtest import _diverged
+
         stacked: list[FloatArray] = []
         share: list[float] = []
+        sane: list[FloatArray] = []
+        sane_share: list[float] = []
+        diverged: list[str] = []
 
         for model in self._fitted:
             prediction = np.asarray(
                 model.predict(horizon, future_periods), dtype=np.float64
             ).ravel()
-            if prediction.size == horizon and np.all(np.isfinite(prediction)):
-                stacked.append(prediction)
-                share.append((self.weights or {}).get(model.kind, 0.0))
+            if prediction.size != horizon or not np.all(np.isfinite(prediction)):
+                continue
+            weight = (self.weights or {}).get(model.kind, 0.0)
+            stacked.append(prediction)
+            share.append(weight)
+            if self._train.size and _diverged(prediction, self._train) is not None:
+                diverged.append(model.kind.value)
+                continue
+            sane.append(prediction)
+            sane_share.append(weight)
+
+        if sane:
+            stacked, share = sane, sane_share
+            if diverged:
+                self._config["diverged"] = diverged
 
         if not stacked:
             raise RuntimeError("No ensemble member produced a usable forecast.")

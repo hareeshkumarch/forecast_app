@@ -408,3 +408,31 @@ class TestTheDrainWaitsForTheWholeRun:
         monkeypatch.setattr(job_runner, "still_running", list)
 
         assert await job_runner.executors.drain(5.0) == 0
+
+
+async def test_a_failed_queue_announcement_does_not_strand_the_slot(two_slots) -> None:
+    held = [uuid.uuid4(), uuid.uuid4()]
+    for run_id in held:
+        await two_slots.acquire(run_id, MODEL_SEARCH)
+
+    async def announce_that_fails(ahead: int) -> None:
+        raise TimeoutError("the progress write timed out")
+
+    third = uuid.uuid4()
+    waiting = asyncio.create_task(two_slots.acquire(third, MODEL_SEARCH, announce_that_fails))
+    await asyncio.sleep(0)
+
+    assert two_slots.queued == 1
+
+    two_slots.release(held[0])
+    await waiting
+
+    assert two_slots.running == 2
+    assert two_slots.queued == 0
+
+    two_slots.release(held[1])
+    two_slots.release(third)
+
+    fresh = uuid.uuid4()
+    await asyncio.wait_for(two_slots.acquire(fresh, MODEL_SEARCH), timeout=1.0)
+    assert two_slots.running == 1

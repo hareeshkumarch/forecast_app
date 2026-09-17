@@ -394,3 +394,39 @@ class TestABandIsAsWideAsItClaims:
             )
             width = bands.upper - bands.lower
             assert np.all(np.diff(width) >= -1e-9), width
+
+
+def test_a_non_negative_metric_never_publishes_an_inverted_band() -> None:
+    """A declining series can forecast below zero. Clamping the floor to zero without
+    clamping the ceiling with it used to leave lower above upper."""
+    from app.forecasting.backtest import BacktestResult, FoldResult
+    from app.forecasting.scenarios import build_intervals
+    from app.models.enums import ModelKind
+
+    horizon = 6
+    rng = np.random.default_rng(3)
+    backtest = BacktestResult(
+        model=ModelKind.NAIVE,
+        folds=[
+            FoldResult(
+                fold=index,
+                train_size=36,
+                test_size=horizon,
+                y_true=[float(v) for v in rng.normal(0, 12.0, horizon)],
+                y_pred=[0.0] * horizon,
+                y_step=list(range(1, horizon + 1)),
+            )
+            for index in range(5)
+        ],
+    )
+    history = np.linspace(200.0, 10.0, 36)
+
+    for level in (-5.0, -80.0, -400.0):
+        point = np.full(horizon, level)
+        bands = build_intervals(point, backtest, 0.8, history=history, non_negative=True)
+
+        assert np.all(bands.lower >= 0.0), bands.lower
+        assert np.all(bands.worst_case >= 0.0), bands.worst_case
+        assert np.all(bands.upper >= bands.lower), (bands.lower, bands.upper)
+        assert np.all(bands.best_case >= bands.upper), (bands.upper, bands.best_case)
+        assert np.all(bands.worst_case <= bands.lower), (bands.worst_case, bands.lower)

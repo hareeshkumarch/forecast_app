@@ -266,9 +266,12 @@ def build_intervals(
             best = np.maximum(best, upper)
 
     if non_negative:
+        # Raising the floor to zero without raising the ceiling with it inverts the
+        # band whenever the point forecast is itself negative.
         lower = np.maximum(lower, 0.0)
-        worst = np.maximum(worst, 0.0)
-        worst = np.minimum(worst, lower)
+        upper = np.maximum(upper, lower)
+        worst = np.clip(worst, 0.0, lower)
+        best = np.maximum(best, upper)
 
     # A residual or a history value large enough to overflow leaves inf or nan
     # in the offsets, and a band that is not a number cannot be rendered: JSON

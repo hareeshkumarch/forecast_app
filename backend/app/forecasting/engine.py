@@ -20,6 +20,7 @@ from app.forecasting.backtest import (
     BacktestPlan,
     BacktestResult,
     ModelFactory,
+    _diverged,
     mase_baseline,
     plan_backtest,
     run_backtest,
@@ -599,6 +600,27 @@ def run_forecast(
         point_forecast = np.asarray(
             final_model.predict(horizon, forecast_index), dtype=float
         ).ravel()[:horizon]
+
+    divergence = _diverged(point_forecast, values)
+    if divergence is not None and winner_kind is not ModelKind.NAIVE:
+        logger.warning(
+            "Winner %s diverged on the full history (%s); using naive.", winner_kind, divergence
+        )
+        used_fallback = True
+        fallback_reason = (
+            f"{winner_kind.value} won the backtest but its forecast over the full history "
+            f"was not plausible. {divergence} Fell back to a naive baseline."
+        )
+        winner_kind = ModelKind.NAIVE
+        final_model = build_candidate(winner_kind, frequency, model_options, profile)
+        final_model.fit(values, periods)
+        naive_params = dict(final_model.params)
+        if naive_params:
+            selection.winner.result.params = naive_params
+        with timings.measure(Stage.PREDICT):
+            point_forecast = np.asarray(
+                final_model.predict(horizon, forecast_index), dtype=float
+            ).ravel()[:horizon]
 
     if not np.all(np.isfinite(point_forecast)):
         last_finite = values[np.isfinite(values)]

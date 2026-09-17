@@ -357,13 +357,21 @@ class Scheduler:
             admitted=asyncio.get_running_loop().create_future(),
         )
         self._waiting.append(waiter)
-        _announce_wait(self)
-        if on_wait is not None:
-            await on_wait(self._ahead_of(waiter))
-
         try:
+            _announce_wait(self)
+            if on_wait is not None:
+                try:
+                    await on_wait(self._ahead_of(waiter))
+                except Exception:
+                    # Announcing a queue position is cosmetic; failing it must not
+                    # strand the waiter and with it the slot it is owed.
+                    logger.warning(
+                        "Could not announce the queue position for run %s.",
+                        run_id,
+                        exc_info=True,
+                    )
             await waiter.admitted
-        except asyncio.CancelledError:
+        except BaseException:
             if waiter in self._waiting:
                 self._waiting.remove(waiter)
             elif waiter.admitted.done() and not waiter.admitted.cancelled():

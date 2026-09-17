@@ -406,3 +406,51 @@ def test_a_shifted_power_transform_floors_at_its_own_shift() -> None:
     transform = Transform(kind="power", shift=5.0, lam=0.5)
 
     assert transform.inverse(np.array([-100.0]))[0] == -5.0
+
+
+def test_an_ensemble_member_that_diverges_is_left_out_of_the_blend() -> None:
+    """A member can score well across the backtest and still explode once refitted on
+    the whole history. Averaging it in carried 1e+52 into every published step."""
+    from dataclasses import dataclass, field
+
+    from app.forecasting.models import EnsembleForecaster
+
+    values = seasonal_series(72, 12)
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(values.size)]
+    future = [add_periods(periods[-1], i, MONTHLY) for i in range(1, 7)]
+    steady = float(np.mean(values))
+
+    @dataclass
+    class Stub:
+        kind: ModelKind
+        level: float
+        min_observations: int = field(default=2, init=False)
+
+        def fit(self, y, periods) -> None:
+            return None
+
+        def predict(self, horizon, future_periods):
+            return np.full(horizon, self.level, dtype=float)
+
+        @property
+        def params(self):
+            return {}
+
+    built = {
+        ModelKind.THETA: Stub(ModelKind.THETA, steady),
+        ModelKind.ETS: Stub(ModelKind.ETS, steady),
+        ModelKind.SARIMAX: Stub(ModelKind.SARIMAX, 1e30),
+    }
+
+    model = EnsembleForecaster(
+        MONTHLY,
+        profile_series(values, MONTHLY),
+        weights={ModelKind.THETA: 0.4, ModelKind.ETS: 0.3, ModelKind.SARIMAX: 0.3},
+        member_builder=lambda member, y, periods: built[member],
+    )
+    model.fit(values, periods)
+    forecast = model.predict(6, future)
+
+    assert np.all(np.isfinite(forecast))
+    assert np.max(np.abs(forecast)) < 10.0 * float(np.max(np.abs(values)))
+    assert model.params["diverged"] == [ModelKind.SARIMAX.value]

@@ -333,3 +333,42 @@ def test_the_ensemble_is_scaled_by_the_same_baseline_as_every_member(monkeypatch
         expected, doubled, equal_nan=True
     ), "this preparation must actually change the data, or the test cannot fail"
     assert np.allclose(np.asarray(seen["insample"]), expected, equal_nan=True)
+
+
+def test_a_winner_that_diverges_on_the_full_history_says_so(monkeypatch) -> None:
+    """The backtest guarded every fold against divergence; the published forecast was
+    only checked for finiteness, so a 1e+52 point forecast shipped as a normal run."""
+    from datetime import date
+
+    from app.forecasting import engine as engine_module
+    from app.forecasting.engine import ForecastInput, SeriesInput, run_forecast
+    from app.forecasting.frequency import add_periods
+
+    count = 60
+    rng = np.random.default_rng(19)
+    index = np.arange(count)
+    values = list(
+        300.0 + 2.0 * index + 30.0 * np.sin(index * 2.0 * np.pi / 12.0) + rng.normal(0, 8, count)
+    )
+    periods = [add_periods(date(2020, 1, 1), i, MONTHLY) for i in range(count)]
+
+    clean = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=values), frequency=MONTHLY, horizon=6
+        )
+    )
+    assert not clean.used_fallback
+
+    monkeypatch.setattr(
+        engine_module, "_diverged", lambda predictions, y_train: "The model diverged: pretend."
+    )
+    guarded = run_forecast(
+        ForecastInput(
+            series=SeriesInput(periods=periods, values=values), frequency=MONTHLY, horizon=6
+        )
+    )
+
+    assert guarded.used_fallback
+    assert guarded.selected_model is ModelKind.NAIVE
+    assert "diverged" in (guarded.fallback_reason or "")
+    assert np.all(np.isfinite(guarded.point_forecast))
