@@ -53,7 +53,8 @@ function matches(command: Command, query: string): boolean {
 }
 
 export function CommandPalette() {
-  const [open, setOpen] = useState(false);
+  const open = useUiStore((state) => state.commandOpen);
+  const setOpen = useUiStore((state) => state.setCommandOpen);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const router = useRouter();
@@ -257,7 +258,7 @@ export function CommandPalette() {
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((previous) => !previous);
+        setOpen(!useUiStore.getState().commandOpen);
         return;
       }
 
@@ -288,7 +289,7 @@ export function CommandPalette() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, openModal, toggleTheme]);
+  }, [open, openModal, toggleTheme, setOpen]);
 
   function runAt(index: number) {
     const command = visible[index];

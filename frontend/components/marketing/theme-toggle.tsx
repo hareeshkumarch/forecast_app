@@ -13,7 +13,7 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       title="Switch between light and dark"
       aria-label="Switch between light and dark"
-      className="nav-control inline-flex size-10 shrink-0 items-center justify-center border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted"
+      className="nav-control inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted"
     >
       <Sun className="theme-icon-light size-[18px]" strokeWidth={1.8} aria-hidden />
       <Moon className="theme-icon-dark size-[18px]" strokeWidth={1.8} aria-hidden />

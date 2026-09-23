@@ -36,19 +36,20 @@ export function Workspace() {
   return (
     <main
       id="main-content"
-      className="workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas py-4 sm:py-5"
+      className="workspace dashboard-workspace scroll-thin min-w-0 flex-1 overflow-y-auto bg-canvas py-5 sm:py-7"
     >
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+      <div className="workspace-heading flex flex-wrap items-start justify-between gap-x-4 gap-y-4">
         <div className="min-w-0">
-          <h2 className="text-heading font-semibold tracking-[-0.015em] text-text-primary">
+          <p className="eyebrow mb-2 text-accent">Your planning workspace</p>
+          <h1 className="text-[clamp(1.6rem,2.5vw,2rem)] font-semibold leading-tight tracking-[-0.04em] text-text-primary">
             Overview
-          </h2>
-          <p className="mt-0.5 text-meta text-text-secondary">
-            Comprehensive view of your forecast performance
+          </h1>
+          <p className="mt-2 max-w-[45ch] text-body text-text-secondary">
+            A clear view of demand. A confident next move.
           </p>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <div className="workspace-actions flex w-full flex-wrap items-center gap-2 sm:w-auto">
           {isSuccess && summary.has_data ? (
             <RefreshButton
               updatedAt={live.updatedAt}
@@ -82,7 +83,7 @@ export function Workspace() {
             variant="secondary"
             icon={Upload}
             onClick={() => openModal("upload-dataset")}
-            className="flex-1 sm:flex-none"
+            className="min-h-10 flex-1 sm:flex-none"
           >
             Upload Data
           </Button>
@@ -90,7 +91,7 @@ export function Workspace() {
             variant="primary"
             icon={Plus}
             onClick={() => openModal("configure-forecast")}
-            className="flex-1 sm:flex-none"
+            className="min-h-10 flex-1 sm:flex-none"
           >
             New Forecast
           </Button>
@@ -119,7 +120,7 @@ export function Workspace() {
         </div>
       ) : (
         <div data-workspace="data">
-          <div className="mt-4">
+          <div className="mt-6">
             <ErrorBoundary label="the headline figures">
               <KpiCards />
             </ErrorBoundary>

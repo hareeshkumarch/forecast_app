@@ -211,12 +211,16 @@ export function NotConfiguredBanner() {
       role="status"
       className="border-b border-warning-border bg-warning-soft px-4 py-2 text-caption text-text-primary"
     >
-      <strong className="font-medium">Sign-in is not configured in this build.</strong>{" "}
-      <span className="text-text-secondary">
-        NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY were missing when it was
-        compiled. Set them and redeploy without the build cache — they are baked in at build
-        time, so setting them alone changes nothing.
-      </span>
+      <details className="mx-auto max-w-[1800px]">
+        <summary className="cursor-pointer font-medium">
+          Sign-in is not configured. <span className="font-normal text-text-secondary">View setup details</span>
+        </summary>
+        <p className="mt-2 max-w-[90ch] text-text-secondary">
+          NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY were missing when it was
+          compiled. Set them and redeploy without the build cache — they are baked in at build
+          time, so setting them alone changes nothing.
+        </p>
+      </details>
     </div>
   );
 }

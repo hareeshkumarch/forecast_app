@@ -187,87 +187,97 @@ function Hero() {
         <span className="hero-vignette" />
       </div>
 
-      <div className="page-shell flex flex-col items-center text-center">
-        <div className="depth-layer depth-title flex flex-col items-center">
+      <div className="page-shell hero-layout">
+        <div className="hero-copy flex flex-col items-center text-center">
+          <div className="depth-layer depth-title flex flex-col items-center">
+            <Reveal
+              variant="fade"
+              duration={420}
+              className="hero-eyebrow flex items-center justify-center gap-3"
+            >
+              <span className="status-dot size-2 bg-accent" aria-hidden />
+              <Eyebrow rule={false}>
+                Demand forecasting for planning teams
+              </Eyebrow>
+            </Reveal>
+  
+            <SplitWords
+              as="h1"
+              text="See your demand before it arrives."
+              delay={70}
+              stagger={78}
+              motion="cinematic"
+              className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
+            />
+  
+            <Reveal
+              as="p"
+              delay={150}
+              duration={620}
+              className="mt-5 max-w-[58ch] text-site-lead text-text-secondary"
+            >
+              Connect your sales history and see how much you will sell, week by
+              week, with an honest range around every number.
+            </Reveal>
+          </div>
+  
           <Reveal
-            variant="fade"
-            duration={420}
-            className="flex items-center justify-center gap-3"
-          >
-            <span className="status-dot size-2 bg-accent" aria-hidden />
-            <Eyebrow rule={false}>
-              Demand forecasting for planning teams
-            </Eyebrow>
-          </Reveal>
-
-          <SplitWords
-            as="h1"
-            text="See your demand before it arrives."
-            delay={70}
-            stagger={78}
-            motion="cinematic"
-            className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
-          />
-
-          <Reveal
-            as="p"
-            delay={150}
+            delay={240}
             duration={620}
-            className="mt-5 max-w-[58ch] text-site-lead text-text-secondary"
+            className="hero-actions mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center"
           >
-            Connect your sales history and see how much you will sell, week by
-            week, with an honest range around every number.
+            <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
+            <SecondaryCta href="/dashboard" label="Open the dashboard">
+              Explore workspace
+            </SecondaryCta>
+          </Reveal>
+          <Reveal
+            delay={300}
+            duration={520}
+            className="hero-reassurance mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-site-caption text-land-dim"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No
+              setup project
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures
+              stay traceable
+            </span>
+            <Link
+              href="#how-it-works"
+              className="link-draw text-accent hover:text-accent-hover"
+            >
+              See how it works ↓
+            </Link>
           </Reveal>
         </div>
-
+  
         <Reveal
-          delay={240}
-          duration={620}
-          className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center"
+          delay={330}
+          variant="scale"
+          duration={760}
+          className="depth-layer depth-stage hero-preview min-w-0"
         >
-          <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
-          <SecondaryCta href="/dashboard" label="Open the dashboard">
-            Explore the live workspace
-          </SecondaryCta>
-        </Reveal>
-        <Reveal
-          delay={300}
-          duration={520}
-          className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No
-            setup project
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures
-            stay traceable
-          </span>
-          <Link
-            href="#how-it-works"
-            className="link-draw text-accent hover:text-accent-hover"
-          >
-            See how it works ↓
-          </Link>
+          <div className="hero-stage">
+            <span aria-hidden className="stage-sweep" />
+            <div className="preview-heading">
+              <div>
+                <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">
+                  Your next chapter, in numbers
+                </p>
+                <h2 className="mt-1 text-site-h3 font-medium">Demand outlook</h2>
+              </div>
+              <span className="preview-badge"><span className="size-1.5 rounded-full bg-accent" aria-hidden />Interactive demo</span>
+            </div>
+            <DemandScape />
+            <div className="preview-footer">
+              <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-accent" aria-hidden />Uncertainty included. Always.</span>
+              <span className="font-mono text-site-caption">Illustrative data</span>
+            </div>
+          </div>
         </Reveal>
       </div>
-
-      <Reveal
-        delay={330}
-        variant="scale"
-        duration={760}
-        className="depth-layer depth-stage page-shell mt-10 sm:mt-12"
-      >
-        <div className="hero-stage">
-          <span aria-hidden className="stage-sweep" />
-          <div className="mb-5 border-b border-land-rule-soft pb-4">
-            <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">
-              Interactive forecast preview
-            </p>
-          </div>
-          <DemandScape />
-        </div>
-      </Reveal>
 
       <Proof />
     </section>

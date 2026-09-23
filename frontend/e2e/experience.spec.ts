@@ -105,7 +105,20 @@ test("compact density tightens the panel grid", async ({ page }) => {
   expect(await gap()).toBe("8px");
 
   await useDensity("comfortable");
-  expect(await gap()).toBe("12px");
+  expect(await gap()).toBe("16px");
+});
+
+test("visible command search works from the sidebar and mobile drawer", async ({ page }) => {
+  await load(page);
+  if ((page.viewportSize()?.width ?? 0) < 1024) {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  }
+  await page.getByRole("button", { name: "Search commands", exact: true }).click();
+  await expect(page.getByPlaceholder("Search actions…")).toBeFocused();
+  await page.getByPlaceholder("Search actions…").fill("upload dataset");
+  await page.getByRole("option", { name: /Upload dataset/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("Upload");
+  await expect(page.getByPlaceholder("Search actions…")).toBeHidden();
 });
 
 test("first run offers a guided path rather than empty panels", async ({ page }) => {

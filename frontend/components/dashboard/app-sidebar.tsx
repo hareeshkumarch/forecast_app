@@ -10,6 +10,7 @@ import {
   FlaskConical,
   LayoutDashboard,
   Layers,
+  Search,
   Settings,
   UserRound,
   type LucideIcon,
@@ -123,10 +124,10 @@ function NavLink({
       aria-current={active ? "page" : undefined}
       aria-label={item.label}
       className={cn(
-        "group relative flex h-9 items-center rounded-input px-2.5",
+        "group relative flex h-11 items-center rounded-input px-2.5",
         "transition-colors duration-fast",
         active
-          ? "bg-accent-soft text-text-primary"
+          ? "bg-accent-soft text-text-primary ring-1 ring-inset ring-accent-border"
           : "text-text-secondary hover:bg-surface-muted hover:text-text-primary",
       )}
     >
@@ -141,7 +142,7 @@ function NavLink({
       <span
         aria-hidden={collapsed || undefined}
         className={cn(
-          "absolute left-[34px] right-2.5 truncate text-meta-tight font-medium",
+          "absolute left-[38px] right-2.5 truncate text-body font-medium",
           labelFade(collapsed),
         )}
       >
@@ -181,6 +182,7 @@ export function AppSidebarBody({
 }) {
   const pathname = usePathname();
   const closeRail = useUiStore((state) => state.closeRail);
+  const setCommandOpen = useUiStore((state) => state.setCommandOpen);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-3">
@@ -222,9 +224,35 @@ export function AppSidebarBody({
         ) : null}
       </div>
 
+      <div className="px-3 pb-4 pt-2">
+        <button
+          type="button"
+          aria-label="Search commands"
+          title="Search commands (Ctrl / ⌘ K)"
+          onClick={() => { closeRail(); setCommandOpen(true); }}
+          className={cn("flex h-10 w-full items-center gap-2 rounded-input border border-border bg-canvas text-text-muted transition-colors hover:border-accent-border hover:text-text-primary", collapsed ? "justify-center" : "px-2.5")}
+        >
+          <Search className="size-4 shrink-0" aria-hidden />
+          {!collapsed ? <><span className="text-meta">Quick search</span><span className="ml-auto text-caption" aria-hidden>⌘ / Ctrl K</span></> : null}
+        </button>
+      </div>
       <nav className="min-h-0 flex-1 overflow-y-auto px-3" aria-label="Application sections">
-        <ul className="space-y-0.5">
-          {APP_NAV.map((item) => (
+        <ul className="space-y-1">
+          {APP_NAV.slice(0, 6).map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isActive(pathname, item.href)}
+              collapsed={collapsed}
+              onNavigate={closeRail}
+            />
+          ))}
+        </ul>
+        <div className="mb-2 mt-6 border-t border-border pt-4">
+          {!collapsed ? <p className="eyebrow px-2.5">Manage workspace</p> : null}
+        </div>
+        <ul className="space-y-1">
+          {APP_NAV.slice(6).map((item) => (
             <NavLink
               key={item.href}
               item={item}

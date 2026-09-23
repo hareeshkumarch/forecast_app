@@ -55,7 +55,7 @@
   --warning-border: #d8c9aa;
 
   --overlay: rgba(17, 22, 18, 0.3);
-  --shadow-card: 0 1px 2px rgba(17, 22, 18, 0.055);
+  --shadow-card: 0 2px 4px rgba(17, 22, 18, 0.025), 0 6px 20px -12px rgba(17, 22, 18, 0.12);
   --shadow-popover: 0 12px 30px rgba(17, 22, 18, 0.13), 0 2px 5px rgba(17, 22, 18, 0.07);
   --grid-line: rgba(31, 48, 36, 0.055);
 
@@ -201,7 +201,7 @@
 
   /* Row heights and padding step down together in compact mode. */
   --density-cell-y: 9px;
-  --density-panel-gap: 12px;
+  --density-panel-gap: 16px;
 
   /* Layout rails. The single source of truth — tailwind.config.ts maps
    * `h-header` / `w-rail` / `w-insights` onto these, and `.workspace` reads
@@ -528,8 +528,59 @@ body {
  */
 .workspace {
   container: workspace / inline-size;
-  padding-left: var(--workspace-padding);
-  padding-right: var(--workspace-padding);
+  padding-left: max(var(--workspace-padding), env(safe-area-inset-left));
+  padding-right: max(var(--workspace-padding), env(safe-area-inset-right));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+.workspace-heading {
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-actions {
+  max-width: 100%;
+}
+
+.kpi-tile {
+  position: relative;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.kpi-tile:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--land-lift-shadow);
+}
+
+.kpi-tile--primary {
+  border-color: var(--accent-border);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface));
+}
+
+.kpi-tile--primary .kpi-value {
+  color: var(--accent);
+}
+
+.kpi-value {
+  overflow-wrap: anywhere;
+}
+
+.dashboard-workspace [data-workspace="data"] > .mt-3 {
+  margin-top: var(--density-panel-gap);
+}
+
+@container workspace (max-width: 580px) {
+  .workspace-actions > button[title="How this model was chosen"] {
+    max-width: 100%;
+  }
+}
+
+@container workspace (min-width: 1180px) {
+  .workspace-heading {
+    align-items: center;
+  }
 }
 
 .grid-kpi,
@@ -551,16 +602,16 @@ body {
   }
 }
 
-@container workspace (min-width: 1000px) {
+@container workspace (min-width: 960px) {
   .grid-kpi {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
 /* The line chart earns slightly more room than the donut when they pair up. */
-@container workspace (min-width: 1000px) {
+@container workspace (min-width: 740px) {
   .grid-charts {
-    grid-template-columns: 52fr 48fr;
+    grid-template-columns: 1.2fr 1fr;
   }
 }
 
@@ -705,6 +756,7 @@ body {
 
 .hero-stage {
   border: 1px solid var(--land-rule);
+  border-radius: 20px;
   /* A veil over a two-colour tint, rather than a flat fill: the tint is what
      keeps the frame from reading as another card, and the veil is what keeps
      the chart inside it readable. */
@@ -713,6 +765,126 @@ body {
     linear-gradient(90deg, var(--land-stage-tint-accent), var(--land-stage-tint-warm));
   padding: clamp(1rem, 2.5vw, 1.75rem);
   box-shadow: var(--land-stage-shadow);
+}
+
+.hero-layout {
+  display: grid;
+  align-items: center;
+  gap: 40px;
+}
+
+.hero-eyebrow {
+  border: 1px solid var(--accent-border);
+  border-radius: 100px;
+  background: var(--accent-soft);
+  padding: 8px 14px;
+}
+
+.hero-eyebrow > div {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.preview-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--land-rule-soft);
+  padding-bottom: 18px;
+}
+
+.preview-heading > div > p {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--accent-border);
+  border-radius: 100px;
+  padding: 5px 9px;
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.preview-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--land-rule-soft);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+@media (min-width: 1100px) {
+  .hero-layout {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(32px, 4vw, 64px);
+    padding-block: 24px;
+  }
+
+  .hero-copy,
+  .hero-copy .depth-title {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .hero-copy h1 {
+    max-width: 13ch;
+    font-size: clamp(3.5rem, 5vw, 4.75rem);
+  }
+
+  .hero-actions,
+  .hero-reassurance {
+    justify-content: flex-start;
+  }
+
+  .hero-actions {
+    flex-wrap: wrap;
+  }
+
+  .hero-preview .scape-legend {
+    gap: 12px 20px;
+    font-size: 12px;
+  }
+
+  .hero-preview .scape-note {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 639px) {
+  .hero-stage {
+    border-radius: 14px;
+  }
+
+  .hero-eyebrow {
+    padding: 7px 10px;
+    gap: 8px;
+  }
+
+  .hero-eyebrow > div {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .hero-preview .scape-legend {
+    gap: 10px 16px;
+    font-size: 12px;
+  }
+
+  .hero-preview .scape-note {
+    font-size: 13px;
+  }
 }
 
 .status-dot {

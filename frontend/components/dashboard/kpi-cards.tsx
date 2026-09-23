@@ -98,24 +98,25 @@ function KpiTile({ kpi }: { kpi: KpiCardModel }) {
   const Arrow = kpi.direction === "up" ? ArrowUpRight : ArrowDownRight;
 
   return (
-    <Card className="flex flex-col p-2.5">
-      <span
-        className={cn(
-          "flex h-6 w-6 items-center justify-center  border border-border",
-          TONE_BG[kpi.tone],
-        )}
-        aria-hidden
-      >
-        <Icon className={cn("h-3.5 w-3.5", TONE_TEXT[kpi.tone])} />
-      </span>
+    <Card className={cn("kpi-tile flex min-w-0 flex-col p-3 sm:p-4", kpi.key === "total_forecast" && "kpi-tile--primary")}>
+      <div className="flex min-h-9 items-start justify-between gap-2">
+        <p className="min-w-0 text-caption font-medium leading-relaxed text-text-secondary">{kpi.label}</p>
+        <span
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+            TONE_BG[kpi.tone],
+          )}
+          aria-hidden
+        >
+          <Icon className={cn("h-3.5 w-3.5", TONE_TEXT[kpi.tone])} />
+        </span>
+      </div>
 
-      <p className="mt-2 truncate text-caption font-medium text-text-secondary">{kpi.label}</p>
-
-      <p className="mt-1 text-kpi font-semibold tracking-[-0.02em] text-text-primary num">
+      <p className="kpi-value mt-4 text-kpi font-semibold tracking-[-0.04em] text-text-primary num">
         {kpi.display_value}
       </p>
 
-      <div className="mt-1.5 space-y-0.5">
+      <div className="mt-3 space-y-1">
         {kpi.delta_display && kpi.direction !== "flat" ? (
           <span
             className={cn(

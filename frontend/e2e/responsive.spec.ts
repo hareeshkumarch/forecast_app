@@ -47,21 +47,23 @@ test("rails are inline or drawers according to the viewport", async ({ page }, t
 test("panels reflow to the width the workspace actually has", async ({ page }) => {
   await load(page);
 
-  const width = page.viewportSize()?.width ?? 0;
   const columns = await page.evaluate(() => {
     const count = (selector: string) => {
       const element = document.querySelector(selector);
       if (!element) return 0;
       return getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length;
     };
-    return { kpi: count(".grid-kpi"), charts: count(".grid-charts"), panels: count(".grid-panels") };
+    const workspace = document.querySelector(".workspace")!;
+    const styles = getComputedStyle(workspace);
+    const width = workspace.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+    return { width, kpi: count(".grid-kpi"), charts: count(".grid-charts"), panels: count(".grid-panels") };
   });
 
-  expect(columns.charts).toBe(width < 1024 ? 1 : 2);
-  expect(columns.panels).toBe(width < 880 ? 1 : 2);
+  expect(columns.charts).toBe(columns.width < 740 ? 1 : 2);
+  expect(columns.panels).toBe(columns.width < 880 ? 1 : 2);
 
   if (columns.kpi > 0) {
-    expect(columns.kpi).toBeGreaterThanOrEqual(width < 660 ? 2 : 3);
+    expect(columns.kpi).toBe(columns.width < 660 ? 2 : columns.width < 960 ? 3 : 6);
   }
 });
 

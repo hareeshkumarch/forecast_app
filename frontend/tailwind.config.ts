@@ -69,10 +69,10 @@ const config: Config = {
         "scape-shell-key": "var(--scape-shell-key)",
       },
       borderRadius: {
-        card: "0px",
+        card: "14px",
         panel: "0px",
-        input: "0px",
-        chip: "0px",
+        input: "8px",
+        chip: "6px",
       },
       spacing: {
         rail: "var(--rail-width)",

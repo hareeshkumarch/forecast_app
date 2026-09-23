@@ -378,12 +378,12 @@ export function DemandScape() {
           : ""}
       </p>
 
-      <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-land-dim">
+      <div className="scape-legend mt-4 flex flex-wrap justify-center gap-x-8 gap-y-3 text-site-body text-land-dim">
         <Key weights={PALETTE.history.map((face) => face.front)}>What you sold</Key>
         <Key weights={PALETTE.future.map((face) => face.front)}>What is coming</Key>
         <Key weights={["var(--scape-shell-key)"]}>How far it could move</Key>
       </div>
-      <p className="mt-5 text-center text-site-body text-land-dim">{SERIES.caption}</p>
+      <p className="scape-note mt-5 text-center text-site-body text-land-dim">{SERIES.caption}</p>
     </div>
   );
 }

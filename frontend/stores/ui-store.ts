@@ -105,6 +105,8 @@ function writeActiveRun(run: StoredActiveRun | null): void {
 }
 
 interface UiState {
+  commandOpen: boolean;
+  setCommandOpen: (open: boolean) => void;
   view: ForecastView;
   rangeStart: string | null;
   rangeEnd: string | null;
@@ -140,6 +142,8 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
+  commandOpen: false,
+  setCommandOpen: (commandOpen) => set({ commandOpen }),
   ...DEFAULT_WORKSPACE,
 
   modal: "none",
