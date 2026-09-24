@@ -35,7 +35,7 @@ export function ScenarioPreview() {
                 type="button"
                 aria-pressed={selected === index}
                 onClick={() => setSelected(index)}
-                className="scenario-choice min-h-11 rounded-full border border-land-rule px-4 py-2 text-site-caption transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+                className="scenario-choice min-h-11 border border-land-rule px-4 py-2 text-site-caption transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
               >{item.label}</button>
             ))}
           </div>

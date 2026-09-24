@@ -175,7 +175,7 @@ function Hero() {
   return (
     <section
       id="top"
-      className="relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]"
+      className="hero-section relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]"
     >
       <div className="hero-atmos" aria-hidden>
         <span className="hero-wash depth-layer depth-wash absolute inset-x-0 top-[var(--nav-total)] mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" />
@@ -189,6 +189,10 @@ function Hero() {
         <span className="hero-vignette" />
       </div>
 
+      <div className="page-shell hero-masthead">
+        <span>Demand intelligence / built for what’s next</span>
+        <span className="hero-edition">History → foresight</span>
+      </div>
       <div className="page-shell hero-layout">
         <div className="hero-copy flex flex-col items-center text-center">
           <div className="depth-layer depth-title flex flex-col items-center">
@@ -208,14 +212,14 @@ function Hero() {
               delay={70}
               stagger={78}
               motion="cinematic"
-              className="mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
+              className="hero-title mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
             />
   
             <Reveal
               as="p"
               delay={150}
               duration={620}
-              className="mt-5 max-w-[58ch] text-site-lead text-text-secondary"
+              className="hero-description mt-5 max-w-[58ch] text-site-lead text-text-secondary"
             >
               Turn your sales history into a clear weekly forecast.
               See what’s ahead, understand the uncertainty, and plan with confidence.
@@ -261,6 +265,11 @@ function Hero() {
                 </p>
                 <h2 className="mt-1 text-site-h3 font-medium">Demand outlook</h2>
               </div>
+              <span className="stage-status"><span aria-hidden />Forecast in focus</span>
+            </div>
+            <div className="stage-caption" aria-hidden>
+              <span>01 / The shape of what’s next</span>
+              <span>16 weeks of history → 8 weeks ahead</span>
             </div>
             <DemandScape />
             <div className="preview-footer">
@@ -271,6 +280,10 @@ function Hero() {
         </Reveal>
       </div>
 
+      <div className="page-shell hero-chapter">
+        <span>Less guesswork. More perspective.</span>
+        <a href="#how-it-works" className="chapter-link"><span className="scroll-stroke" aria-hidden />Scroll to discover</a>
+      </div>
       <Proof />
     </section>
   );
