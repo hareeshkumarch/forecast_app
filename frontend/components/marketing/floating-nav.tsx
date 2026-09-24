@@ -118,11 +118,11 @@ export function FloatingNav() {
   }, [mobileOpen]);
 
   return (
-    <div className="fixed inset-x-0 top-[var(--nav-inset)] z-50">
+    <div className="landing-nav fixed inset-x-0 top-[var(--nav-inset)] z-50">
       <nav
         aria-label="Sections"
         className={cn(
-          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden rounded-2xl border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
+          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
           lifted
             ? "shadow-[0_18px_38px_-22px_var(--land-nav-shadow)]"
             : "shadow-[0_4px_14px_-10px_var(--land-nav-shadow)]",
@@ -137,7 +137,7 @@ export function FloatingNav() {
           <span
             aria-hidden
             data-placing={placed.current ? undefined : "true"}
-            className="nav-indicator pointer-events-none absolute inset-y-1 left-0 rounded-lg bg-surface-muted"
+            className="nav-indicator pointer-events-none absolute inset-y-1 left-0 bg-surface-muted"
             style={{
               width: indicator?.width ?? 0,
               transform: `translate3d(${indicator?.left ?? 0}px, 0, 0)`,
@@ -174,7 +174,7 @@ export function FloatingNav() {
             href={pastHero ? "/dashboard" : "/signin"}
             aria-label={pastHero ? "Open the dashboard" : "Start forecasting"}
             className={cn(
-              "cta-nudge group h-[40px] w-[40px] shrink-0 items-center justify-center gap-2 overflow-hidden rounded-lg border-2 border-land-cta bg-land-cta text-site-body font-medium text-land-cta-ink hover:border-accent sm:inline-flex sm:h-[42px] sm:w-auto sm:px-4",
+              "cta-nudge group h-[40px] w-[40px] shrink-0 items-center justify-center gap-2 overflow-hidden border-2 border-land-cta bg-land-cta text-site-body font-medium text-land-cta-ink hover:border-accent sm:inline-flex sm:h-[42px] sm:w-auto sm:px-4",
               pastHero
                 ? "inline-flex"
                 : "hidden",
@@ -191,7 +191,7 @@ export function FloatingNav() {
             aria-controls="mobile-section-navigation"
             aria-label={mobileOpen ? "Close section navigation" : "Open section navigation"}
             onClick={() => setMobileOpen((open) => !open)}
-            className="nav-control inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted lg:hidden"
+            className="nav-control inline-flex size-10 shrink-0 items-center justify-center border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted lg:hidden"
           >
             {mobileOpen ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
           </button>
@@ -202,7 +202,7 @@ export function FloatingNav() {
         id="mobile-section-navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "page-shell mt-2 max-h-[calc(100dvh-var(--nav-total)-24px)] overflow-y-auto rounded-2xl border border-border bg-surface/98 p-2 shadow-[0_20px_45px_-24px_var(--land-nav-shadow)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 lg:hidden",
+          "page-shell mt-2 max-h-[calc(100dvh-var(--nav-total)-24px)] overflow-y-auto border border-border bg-surface/98 p-2 shadow-[0_20px_45px_-24px_var(--land-nav-shadow)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 lg:hidden",
           mobileOpen
             ? "visible translate-y-0 opacity-100"
             : "pointer-events-none invisible -translate-y-2 opacity-0",
@@ -227,7 +227,7 @@ export function FloatingNav() {
         </ul>
         <div className="mt-2 grid grid-cols-2 gap-1 border-t border-border pt-2">
           <Link href="/signin" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-center border border-border-strong px-3 text-site-body font-medium text-text-primary">Sign in</Link>
-          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-center bg-land-cta px-3 text-site-body font-medium text-land-cta-ink">Live workspace</Link>
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center justify-center bg-land-cta px-3 text-site-body font-medium text-land-cta-ink">Workspace</Link>
         </div>
       </div>
     </div>

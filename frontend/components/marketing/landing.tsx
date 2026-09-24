@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { ShieldCheck, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties, ElementType, ReactNode } from "react";
 import { useRef } from "react";
@@ -17,6 +17,7 @@ import { ParallaxField } from "@/components/marketing/parallax";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
+import { ScenarioPreview } from "@/components/marketing/scenario-preview";
 import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
 import { useTilt } from "@/components/marketing/tilt";
@@ -47,25 +48,25 @@ const PROOF = [
     value: 94,
     unit: "%",
     count: true,
-    label: "Right on weeks it had never seen",
+    label: "Accuracy on held-out weeks",
   },
   {
     value: 10,
     unit: "",
     count: true,
-    label: "Models it picks between, every run",
+    label: "Models compared per run",
   },
   {
     value: 60,
     unit: "s",
     count: true,
-    label: "Budgeted for a run, start to finish",
+    label: "Forecast time budget",
   },
   {
     value: 1,
     unit: "",
     count: false,
-    label: "Spreadsheet to begin. Nothing else",
+    label: "Spreadsheet to get started",
   },
 ];
 
@@ -128,6 +129,7 @@ export function Landing() {
         <HowItWorks />
         <Features />
         <InsightsPreview />
+        <ScenarioPreview />
         <Compare />
         <Accuracy />
         <Closing />
@@ -195,9 +197,8 @@ function Hero() {
               duration={420}
               className="hero-eyebrow flex items-center justify-center gap-3"
             >
-              <span className="status-dot size-2 bg-accent" aria-hidden />
-              <Eyebrow rule={false}>
-                Demand forecasting for planning teams
+              <Eyebrow>
+                A clearer view of demand
               </Eyebrow>
             </Reveal>
   
@@ -216,8 +217,8 @@ function Hero() {
               duration={620}
               className="mt-5 max-w-[58ch] text-site-lead text-text-secondary"
             >
-              Connect your sales history and see how much you will sell, week by
-              week, with an honest range around every number.
+              Turn your sales history into a clear weekly forecast.
+              See what’s ahead, understand the uncertainty, and plan with confidence.
             </Reveal>
           </div>
   
@@ -236,14 +237,6 @@ function Hero() {
             duration={520}
             className="hero-reassurance mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-site-caption text-land-dim"
           >
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No
-              setup project
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures
-              stay traceable
-            </span>
             <Link
               href="#how-it-works"
               className="link-draw text-accent hover:text-accent-hover"
@@ -264,15 +257,14 @@ function Hero() {
             <div className="preview-heading">
               <div>
                 <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">
-                  Your next chapter, in numbers
+                  From history to possibility
                 </p>
                 <h2 className="mt-1 text-site-h3 font-medium">Demand outlook</h2>
               </div>
-              <span className="preview-badge"><span className="size-1.5 rounded-full bg-accent" aria-hidden />Interactive demo</span>
             </div>
             <DemandScape />
             <div className="preview-footer">
-              <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-accent" aria-hidden />Uncertainty included. Always.</span>
+              <span>8 weeks ahead. A range for every forecast.</span>
               <span className="font-mono text-site-caption">Illustrative data</span>
             </div>
           </div>
@@ -504,13 +496,6 @@ function InsightsPreview() {
                 ))}
               </ol>
 
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-land-brief-rule px-5 py-3 font-mono text-[0.68rem] text-land-dim sm:px-6">
-                <span>Computed from 5 backtest folds</span>
-                <span className="inline-flex items-center gap-1.5 text-accent">
-                  <span className="size-1.5 bg-accent" aria-hidden /> Figures
-                  verified
-                </span>
-              </div>
             </div>
           </Reveal>
         </div>
@@ -649,20 +634,10 @@ function Closing() {
         <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:mx-auto min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
           <SecondaryCta href="/dashboard">
-            Explore the live workspace
+            Explore workspace
           </SecondaryCta>
         </div>
 
-        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-site-caption text-land-dim">
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2 className="size-3.5 text-accent" aria-hidden /> No
-            setup project
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-accent" aria-hidden /> Figures
-            stay traceable
-          </span>
-        </p>
       </Reveal>
     </section>
   );
@@ -697,7 +672,7 @@ function Footer() {
             href="/dashboard"
             className="link-draw font-mono text-site-caption uppercase tracking-[0.11em] text-accent hover:text-accent-hover"
           >
-            Live workspace →
+            Workspace →
           </Link>
         </div>
       </Reveal>

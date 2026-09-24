@@ -196,6 +196,8 @@ export function ForecastModal() {
   const [seriesLimit, setSeriesLimit] = useState(500);
   const [metricFocus, setMetricFocus] = useState<MetricFocus>("balanced");
   const [gbmDepth, setGbmDepth] = useState(3);
+  const [autoTuneGbm, setAutoTuneGbm] = useState(true);
+  const [gbmLearningRate, setGbmLearningRate] = useState(0.06);
   const [runMode, setRunMode] = useState<RunMode>("fast");
   const { data: capabilities } = useCapabilities();
 
@@ -348,7 +350,8 @@ export function ForecastModal() {
         max_folds: maxFolds,
         max_series: grain.length > 0 ? seriesLimit : undefined,
         metric_weights: metricWeights,
-        gbm_max_depth: gbmDepth,
+        gbm_max_depth: autoTuneGbm ? undefined : gbmDepth,
+        gbm_learning_rate: autoTuneGbm ? undefined : gbmLearningRate,
         candidate_models:
           runnableSelection.length < availableModels.length ? runnableSelection : undefined,
         driver_columns: selectedDrivers.length > 0 ? selectedDrivers : undefined,
@@ -794,13 +797,34 @@ export function ForecastModal() {
                   <Select value={metricFocus} onChange={setMetricFocus} options={METRIC_FOCUS} />
                 </Field>
 
+                <div className="sm:col-span-2">
+                  <CheckRow
+                    label="Automatically tune gradient boosting"
+                    checked={autoTuneGbm}
+                    onChange={setAutoTuneGbm}
+                    hint="Compare depth and learning rate on earlier periods. Turn off to set them yourself."
+                  />
+                </div>
                 <Field label="Model complexity" hint="Gradient boosting only — deeper finds more, and overfits sooner">
                   <Input
                     type="number"
+                    disabled={autoTuneGbm}
                     min={1}
                     max={10}
                     value={gbmDepth}
                     onChange={(e) => setGbmDepth(Number(e.target.value) || 3)}
+                  />
+                </Field>
+
+                <Field label="Learning rate" hint="Smaller steps learn more gradually (0.001–1)">
+                  <Input
+                    type="number"
+                    min={0.001}
+                    max={1}
+                    step={0.001}
+                    disabled={autoTuneGbm}
+                    value={gbmLearningRate}
+                    onChange={(e) => setGbmLearningRate(Number(e.target.value) || 0.06)}
                   />
                 </Field>
 

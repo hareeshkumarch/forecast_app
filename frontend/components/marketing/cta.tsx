@@ -57,7 +57,7 @@ export function PrimaryCta({ href, children }: { href: string; children: ReactNo
     <Link
       ref={ref}
       href={href}
-      className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 rounded-xl border-2 border-land-cta bg-land-cta px-6 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px]"
+      className="cta-nudge group inline-flex h-[52px] items-center justify-center gap-3 border-2 border-land-cta bg-land-cta px-6 text-site-body font-medium text-land-cta-ink hover:border-accent hover:bg-land-cta-hover sm:h-[56px]"
     >
       {children}
       <Arrow />
@@ -82,7 +82,7 @@ export function SecondaryCta({
       ref={ref}
       href={href}
       aria-label={label}
-      className="hero-secondary-link inline-flex h-[52px] items-center justify-center rounded-xl border border-border-strong bg-surface/75 px-5 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
+      className="hero-secondary-link inline-flex h-[52px] items-center justify-center border border-border-strong bg-surface/75 px-5 text-site-body font-medium text-text-secondary backdrop-blur-sm hover:border-text-muted hover:bg-surface sm:h-[56px]"
     >
       {children}
     </Link>

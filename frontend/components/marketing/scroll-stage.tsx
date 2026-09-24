@@ -26,21 +26,27 @@ export function ScrollStage({ screens = 3, stage, className, children }: ScrollS
   const live = track > 0;
 
   useEffect(() => {
-    let measured = -1;
+    let measured = "";
+    const media = window.matchMedia(REDUCED_MOTION);
     const decide = () => {
-      if (window.matchMedia(REDUCED_MOTION).matches || window.innerHeight < MIN_HEIGHT) {
-        measured = -1;
+      if (media.matches || window.innerHeight < MIN_HEIGHT) {
+        measured = "";
         setTrack(0);
         return;
       }
-      if (window.innerWidth === measured) return;
-      measured = window.innerWidth;
+      const size = `${window.innerWidth}:${window.innerHeight}`;
+      if (size === measured) return;
+      measured = size;
       setTrack(Math.round(screens * window.innerHeight));
     };
 
     decide();
     window.addEventListener("resize", decide);
-    return () => window.removeEventListener("resize", decide);
+    media.addEventListener("change", decide);
+    return () => {
+      window.removeEventListener("resize", decide);
+      media.removeEventListener("change", decide);
+    };
   }, [screens]);
 
   const corrected = useRef(false);

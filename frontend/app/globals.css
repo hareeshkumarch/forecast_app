@@ -435,9 +435,9 @@ body {
 .app-shell-grid {
   background-color: var(--canvas);
   background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px);
+  background-size: 80px 80px;
 }
 
 :focus:not(:focus-visible) {
@@ -657,9 +657,9 @@ body {
   isolation: isolate;
   background-color: var(--canvas);
   background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px);
+  background-size: 80px 80px;
   font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -756,7 +756,7 @@ body {
 
 .hero-stage {
   border: 1px solid var(--land-rule);
-  border-radius: 20px;
+  border-top: 2px solid var(--accent);
   /* A veil over a two-colour tint, rather than a flat fill: the tint is what
      keeps the frame from reading as another card, and the veil is what keeps
      the chart inside it readable. */
@@ -764,7 +764,7 @@ body {
     linear-gradient(var(--land-stage-veil), var(--land-stage-veil)),
     linear-gradient(90deg, var(--land-stage-tint-accent), var(--land-stage-tint-warm));
   padding: clamp(1rem, 2.5vw, 1.75rem);
-  box-shadow: var(--land-stage-shadow);
+  box-shadow: 0 24px 64px -44px var(--land-nav-shadow);
 }
 
 .hero-layout {
@@ -773,11 +773,23 @@ body {
   gap: 40px;
 }
 
+@keyframes nav-arrive {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-nav {
+    animation: nav-arrive 600ms var(--ease-out) both;
+  }
+}
+
+.hero-copy h1 .split-word:nth-last-child(-n + 3) {
+  color: var(--accent);
+}
+
 .hero-eyebrow {
-  border: 1px solid var(--accent-border);
-  border-radius: 100px;
-  background: var(--accent-soft);
-  padding: 8px 14px;
+  padding-block: 4px;
 }
 
 .hero-eyebrow > div {
@@ -798,18 +810,6 @@ body {
 .preview-heading > div > p {
   font-size: 10px;
   letter-spacing: 0.1em;
-}
-
-.preview-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--accent-border);
-  border-radius: 100px;
-  padding: 5px 9px;
-  color: var(--accent);
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .preview-footer {
@@ -863,12 +863,8 @@ body {
 }
 
 @media (max-width: 639px) {
-  .hero-stage {
-    border-radius: 14px;
-  }
-
   .hero-eyebrow {
-    padding: 7px 10px;
+    padding-block: 4px;
     gap: 8px;
   }
 
@@ -884,26 +880,6 @@ body {
 
   .hero-preview .scape-note {
     font-size: 13px;
-  }
-}
-
-.status-dot {
-  animation: status-pulse 2.6s ease-in-out infinite;
-}
-
-@keyframes status-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 18%, transparent);
-  }
-  50% {
-    opacity: 0.72;
-    /* Plainly transparent, not the accent at zero alpha. A fully transparent
-       shadow has no colour left to theme, and writing it as a mix cost the
-       5px spread: the declaration resolved to `none` and the ring stopped
-       expanding, leaving a dot that only dimmed. */
-    box-shadow: 0 0 0 5px transparent;
   }
 }
 
@@ -924,14 +900,11 @@ body {
  * blank one waiting to be revealed.
  */
 .motion-ready .reveal {
-  /* Far enough to be seen arriving. At 18px the movement was real but below
-     the threshold anybody notices — the section simply appeared, and the work
-     of animating it was spent without being spent on anything. */
   --reveal-x: 0px;
-  --reveal-y: 96px;
+  --reveal-y: 32px;
   --reveal-scale: 1;
-  --reveal-rotate: 7deg;
-  --reveal-blur: 14px;
+  --reveal-rotate: 0deg;
+  --reveal-blur: 0px;
   opacity: 0;
   filter: blur(var(--reveal-blur));
   transform-origin: 50% 100%;
@@ -941,20 +914,20 @@ body {
 }
 
 .motion-ready .reveal[data-reveal="scale"] {
-  --reveal-y: 104px;
-  --reveal-scale: 0.8;
-  --reveal-rotate: 17deg;
-  --reveal-blur: 20px;
+  --reveal-y: 40px;
+  --reveal-scale: 0.97;
+  --reveal-rotate: 0deg;
+  --reveal-blur: 0px;
 }
 
 .motion-ready .reveal[data-reveal="from-left"] {
-  --reveal-x: -140px;
+  --reveal-x: -36px;
   --reveal-y: 0px;
   --reveal-rotate: 0deg;
 }
 
 .motion-ready .reveal[data-reveal="from-right"] {
-  --reveal-x: 140px;
+  --reveal-x: 36px;
   --reveal-y: 0px;
   --reveal-rotate: 0deg;
 }
@@ -962,7 +935,7 @@ body {
 .motion-ready .reveal[data-reveal="fade"] {
   --reveal-y: 0px;
   --reveal-rotate: 0deg;
-  --reveal-blur: 8px;
+  --reveal-blur: 0px;
 }
 
 /* The words do the moving, so the container must not: a parent fading from 0
@@ -1367,8 +1340,7 @@ svg[role="img"]:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-wash,
-  .status-dot {
+  .hero-wash {
     animation: none;
     will-change: auto;
   }
@@ -1935,6 +1907,24 @@ svg[role="img"]:focus-visible {
 
 .signal-row--warn .signal-label {
   color: var(--land-brief-warn);
+}
+
+.scenario-choice[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--canvas);
+}
+
+.scenario-bars { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: clamp(6px, 1.4vw, 16px); }
+.scenario-column { text-align: center; }
+.scenario-bar-track { position: relative; height: 180px; margin-bottom: 12px; }
+.scenario-base, .scenario-bar { position: absolute; bottom: 0; inset-inline: 0; border-radius: 4px 4px 0 0; }
+.scenario-base { border: 1px dashed var(--accent); opacity: 0.45; }
+.scenario-bar { background: var(--accent); opacity: 0.75; transform-origin: bottom; transition: height 600ms cubic-bezier(0.22, 1, 0.36, 1); }
+.motion-ready .scenario-preview[data-shown="true"] .scenario-bar { animation: scenario-rise 800ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes scenario-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .scenario-bar, .motion-ready .scenario-preview[data-shown="true"] .scenario-bar { animation: none; transition: none; }
 }
 
 .signal-row--act {
@@ -2571,7 +2561,7 @@ svg[role="img"]:focus-visible {
 .motion-ready .split-words[data-motion="cinematic"] .split-word {
   opacity: 0;
   transform-origin: 50% 100%;
-  transform: perspective(900px) translate3d(0, 0.7em, -320px) rotateX(-92deg);
+  transform: perspective(900px) translate3d(0, 0.65em, 0) rotateX(-12deg);
 }
 
 .motion-ready .split-words[data-motion="cinematic"][data-shown="true"] .split-word {
@@ -2582,8 +2572,8 @@ svg[role="img"]:focus-visible {
 @keyframes word-swing {
   0% {
     opacity: 0;
-    filter: blur(12px);
-    transform: perspective(900px) translate3d(0, 0.7em, -320px) rotateX(-92deg);
+    filter: blur(2px);
+    transform: perspective(900px) translate3d(0, 0.65em, 0) rotateX(-12deg);
   }
   45% {
     filter: blur(0);

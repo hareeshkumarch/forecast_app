@@ -25,6 +25,8 @@ export function useTilt(target: RefObject<HTMLElement>, strength = 9): void {
     };
 
     const onLeave = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
       node.style.setProperty("--tilt-x", "0deg");
       node.style.setProperty("--tilt-y", "0deg");
     };

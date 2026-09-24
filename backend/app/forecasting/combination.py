@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
+from scipy.optimize import minimize
 
 from app.core.config import settings
 from app.forecasting.backtest import BacktestResult, FoldResult, interval_cost
@@ -37,7 +38,7 @@ def _usable(results: list[BacktestResult]) -> list[BacktestResult]:
     return [
         result
         for result in results
-        if not result.failed and result.folds and np.isfinite(result.wmape)
+        if not result.failed and result.folds and np.isfinite(result.mae)
     ]
 
 
@@ -64,6 +65,26 @@ def _align(results: list[BacktestResult]) -> _Aligned | None:
     aligned.fold_ids = order
 
     reference = results[0]
+    order = [
+        fold_id
+        for fold_id in order
+        if all(
+            fold.y_true == reference_fold.y_true
+            and fold.steps() == reference_fold.steps()
+            and fold.y_weight == reference_fold.y_weight
+            and len(fold.y_pred) == len(fold.y_true)
+            and np.all(np.isfinite(fold.y_pred))
+            and np.all(np.isfinite(fold.y_true))
+            for reference_fold in reference.folds
+            if reference_fold.fold == fold_id
+            for result in results
+            for fold in result.folds
+            if fold.fold == fold_id
+        )
+    ]
+    if not order:
+        return None
+    aligned.fold_ids = order
     for fold_id in order:
         fold = next(f for f in reference.folds if f.fold == fold_id)
         aligned.truth.append(list(fold.y_true))
@@ -94,6 +115,8 @@ def _member_errors(aligned: _Aligned, before: int | None = None) -> list[float]:
 
 
 def inverse_error_weights(errors: list[float]) -> list[float]:
+    if not errors:
+        return []
     finite = [error for error in errors if np.isfinite(error) and error > 0.0]
     floor = min(finite) if finite else 1.0
 
@@ -102,6 +125,43 @@ def inverse_error_weights(errors: list[float]) -> list[float]:
     if total <= 0.0:
         return [1.0 / len(errors)] * len(errors)
     return [value / total for value in raw]
+
+
+def stacking_weights(aligned: _Aligned, before: int | None = None) -> list[float]:
+    count = len(aligned.models)
+    stop = len(aligned.truth) if before is None else before
+    if stop == 0:
+        return [1.0 / count] * count
+    baseline = inverse_error_weights(_member_errors(aligned, before=stop))
+    truth = np.concatenate(aligned.truth[:stop])
+    predictions = np.column_stack([np.concatenate(member[:stop]) for member in aligned.predictions])
+    if truth.size < 2 * count:
+        return baseline
+    residuals = predictions - truth[:, None]
+    scale = float(np.max(np.abs(residuals)))
+    if not np.isfinite(scale) or scale <= 0:
+        return baseline
+    residuals = residuals / scale
+    initial = np.asarray(baseline)
+
+    def objective(weights: FloatArray) -> float:
+        return float(np.mean((residuals @ weights) ** 2) + 0.01 * np.sum((weights - initial) ** 2))
+
+    fitted = minimize(
+        objective,
+        initial,
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * count,
+        constraints={"type": "eq", "fun": lambda weights: np.sum(weights) - 1.0},
+        options={"maxiter": 100, "ftol": 1e-9},
+    )
+    if not fitted.success or not np.all(np.isfinite(fitted.x)):
+        return baseline
+    weights = np.clip(fitted.x, 0.0, 1.0)
+    weights /= weights.sum()
+    if np.mean(np.abs(residuals @ weights)) > np.mean(np.abs(residuals @ initial)):
+        return baseline
+    return [float(weight) for weight in weights]
 
 
 def blend(
@@ -124,7 +184,7 @@ def blend(
     if aligned is None:
         return None
 
-    share = inverse_error_weights(_member_errors(aligned))
+    share = stacking_weights(aligned)
 
     folds: list[FoldResult] = []
     all_true: list[float] = []
@@ -136,12 +196,7 @@ def blend(
         stacked = np.vstack(
             [np.asarray(member[index], dtype=float) for member in aligned.predictions]
         )
-        member_count = len(aligned.predictions)
-        held_out = (
-            [1.0 / member_count] * member_count
-            if index == 0
-            else inverse_error_weights(_member_errors(aligned, before=index))
-        )
+        held_out = stacking_weights(aligned, before=index)
         combined = np.average(stacked, axis=0, weights=held_out)
         fold_weights = aligned.weights[index]
 
@@ -175,14 +230,15 @@ def blend(
     result.winkler = interval_cost(result, confidence_level)
     result.fit_seconds = sum(member.fit_seconds for member in chosen)
 
-    best = min(member.mae for member in chosen)
+    best = min(_member_errors(aligned))
     if not np.isfinite(result.mae) or result.mae > best * (1.0 - settings.ensemble_min_improvement):
         return None
 
     members = tuple(aligned.models)
     result.params = {
         "members": [member.value for member in members],
-        "combiner": "inverse_error_weighted_mean",
+        "combiner": "regularized_nonnegative_stacking",
+        "weight_validation": "earlier_folds_only",
         "weights": {
             member.value: round(weight, 4) for member, weight in zip(members, share, strict=True)
         },

@@ -11,9 +11,19 @@ export function useMotionReady(): boolean {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (window.matchMedia(REDUCED_MOTION).matches) return;
-    const frame = requestAnimationFrame(() => setReady(true));
-    return () => cancelAnimationFrame(frame);
+    const media = window.matchMedia(REDUCED_MOTION);
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      if (media.matches) setReady(false);
+      else frame = requestAnimationFrame(() => setReady(true));
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      media.removeEventListener("change", update);
+    };
   }, []);
 
   return ready;
