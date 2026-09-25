@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-const FINE_POINTER = "(hover: hover) and (pointer: fine)";
 
 export type CinematicFieldProps = {
   scene: string;
@@ -29,25 +28,6 @@ export function CinematicField({ scene, ambient }: CinematicFieldProps) {
       : null;
     if (stage && observer) observer.observe(stage);
 
-    const fine = window.matchMedia(FINE_POINTER).matches;
-    let frame = 0;
-    let x = 0;
-    let y = 0;
-
-    const write = () => {
-      frame = 0;
-      node.style.setProperty("--px", `${Math.round(x)}px`);
-      node.style.setProperty("--py", `${Math.round(y)}px`);
-    };
-
-    const onMove = (event: PointerEvent) => {
-      x = event.clientX;
-      y = event.clientY + window.scrollY;
-      if (node.dataset.pointer !== "on") node.dataset.pointer = "on";
-      if (frame) return;
-      frame = requestAnimationFrame(write);
-    };
-
     let velFrame = 0;
     let last = window.scrollY;
     let vel = 0;
@@ -71,28 +51,14 @@ export function CinematicField({ scene, ambient }: CinematicFieldProps) {
 
     window.addEventListener("scroll", onScroll, { passive: true });
 
-    const onOut = (event: PointerEvent) => {
-      if (event.relatedTarget) return;
-      node.dataset.pointer = "off";
-    };
-
-    if (fine) {
-      window.addEventListener("pointermove", onMove, { passive: true });
-      document.addEventListener("pointerout", onOut);
-    }
-
     return () => {
       observer?.disconnect();
-      if (frame) cancelAnimationFrame(frame);
       if (velFrame) cancelAnimationFrame(velFrame);
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerout", onOut);
-      for (const name of ["--px", "--py", "--vel", "--vel-abs"]) {
+      for (const name of ["--vel", "--vel-abs"]) {
         node.style.removeProperty(name);
       }
       delete node.dataset.ambient;
-      delete node.dataset.pointer;
     };
   }, [scene, ambient]);
 

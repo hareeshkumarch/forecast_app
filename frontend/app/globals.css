@@ -101,11 +101,6 @@
   --land-invert-accent: #7fbea1;
 
   /* The wash behind the headline and the tint across the chart's frame. */
-  --land-wash-accent: #dce9e1;
-  --land-wash-warm: #eee8db;
-  --land-stage-tint-accent: rgba(40, 123, 89, 0.1);
-  --land-stage-tint-warm: rgba(156, 135, 96, 0.08);
-  --land-stage-veil: rgba(250, 251, 249, 0.94);
   --land-stage-shadow: 0 28px 70px -48px rgba(17, 22, 18, 0.65), 0 1px 2px rgba(17, 22, 18, 0.06);
   --land-glow: rgba(40, 123, 89, 0.1);
   --land-lift-shadow: 0 10px 30px -18px rgba(17, 21, 18, 0.32);
@@ -117,14 +112,7 @@
      vignette over the whole page, and the halo behind the accuracy figure.
      Every one of them is decoration painted under or over the page — none
      carries meaning, so all of them can be turned off without losing a word. */
-  --land-aurora-a: rgba(40, 123, 89, 0.62);
-  --land-aurora-b: rgba(156, 135, 96, 0.5);
-  --land-aurora-c: rgba(90, 146, 120, 0.46);
-  --land-beam: rgba(255, 255, 255, 0.9);
-  --land-spot: rgba(40, 123, 89, 0.3);
-  --land-sweep: rgba(255, 255, 255, 0.85);
   --land-grain: 0.055;
-  --land-vignette: rgba(17, 22, 18, 0.34);
   /* Held down deliberately: this one crosses two columns of body copy, and
      `audits/a1.mjs` reads the ground under a paragraph by its commonest
      colour. Past about 0.14 the wash moves that ground further than the
@@ -319,24 +307,12 @@
   --land-invert-rule: rgba(255, 255, 255, 0.1);
   --land-invert-accent: #7fbea1;
 
-  --land-wash-accent: #1a2c22;
-  --land-wash-warm: #26211a;
-  --land-stage-tint-accent: rgba(127, 190, 161, 0.09);
-  --land-stage-tint-warm: rgba(192, 168, 120, 0.07);
-  --land-stage-veil: rgba(23, 28, 24, 0.9);
   --land-stage-shadow: 0 28px 70px -48px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.4);
   --land-glow: rgba(127, 190, 161, 0.1);
   --land-lift-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
   --land-nav-shadow: rgba(0, 0, 0, 0.75);
 
-  --land-aurora-a: rgba(127, 190, 161, 0.5);
-  --land-aurora-b: rgba(192, 168, 120, 0.34);
-  --land-aurora-c: rgba(90, 146, 120, 0.44);
-  --land-beam: rgba(255, 255, 255, 0.2);
-  --land-spot: rgba(127, 190, 161, 0.3);
-  --land-sweep: rgba(255, 255, 255, 0.22);
   --land-grain: 0.085;
-  --land-vignette: rgba(0, 0, 0, 0.62);
   --land-halo: rgba(127, 190, 161, 0.15);
   --land-figure-glow: rgba(127, 190, 161, 0.55);
 
@@ -722,38 +698,6 @@ body {
   }
 }
 
-/* A static warm wash behind the hero headline. Two radials rather than one, so
-   the accent and the gold meet instead of one fading to nothing. Both stay
-   well clear of the box edges — the hero clips its overflow, and a gradient
-   that is still tinted where it meets that clip shows up as a straight line
-   across the page. */
-.hero-wash {
-  /* Its own two tokens rather than --accent-soft/--warning-soft. The wash
-     needs a value that works behind the headline in each theme, and those
-     two are chosen to sit under text and chips elsewhere in the product; the
-     one time this read them, a visitor on a dark OS got two near-black
-     smudges behind a light headline, because the page around it was still
-     light. The page follows the theme now, and so does the wash — but they
-     remain separate decisions. */
-  background:
-    radial-gradient(34% 40% at 27% 52%, var(--land-wash-accent) 0%, transparent 72%),
-    radial-gradient(30% 36% at 68% 40%, var(--land-wash-warm) 0%, transparent 74%);
-  opacity: 0.8;
-  animation: hero-breathe 12s ease-in-out infinite alternate;
-  will-change: transform, opacity;
-}
-
-@keyframes hero-breathe {
-  from {
-    opacity: 0.68;
-    transform: translate3d(-1.5%, -1%, 0) scale(0.98);
-  }
-  to {
-    opacity: 0.94;
-    transform: translate3d(1.5%, 1%, 0) scale(1.035);
-  }
-}
-
 .hero-stage {
   --text-primary: #edf3ed;
   --text-secondary: #b0bfb5;
@@ -787,18 +731,28 @@ body {
   --scape-week: #93ab99;
   --scape-row-name: #c5d5c7;
   --scape-marker: rgba(192, 241, 199, 0.07);
-  --land-sweep: rgba(178, 235, 195, 0.16);
   color: var(--text-primary);
   border: 1px solid #405b4c;
   border-top: 2px solid #9bceaa;
-  background: radial-gradient(ellipse at 75% 25%, #213e2b, transparent 65%), #101e16;
+  background: radial-gradient(ellipse at 60% 15%, rgba(166, 233, 188, 0.06), transparent 60%), #101a14;
   padding: clamp(1rem, 2.5vw, 2rem);
-  box-shadow: 0 36px 64px -36px rgba(10, 27, 16, 0.55);
+  box-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.2);
+  position: relative;
+  isolation: isolate;
 }
 
 :root[data-theme="dark"] .hero-stage {
   --scape-sold-near: #eef3df;
-  background: radial-gradient(ellipse at 75% 25%, #294d33, transparent 65%), #132219;
+  background: radial-gradient(ellipse at 60% 15%, rgba(166, 233, 188, 0.06), transparent 60%), #132019;
+}
+
+.hero-section {
+  overflow: hidden;
+  background: #ffffff;
+}
+
+:root[data-theme="dark"] .hero-section {
+  background: #111512;
 }
 
 .hero-layout {
@@ -954,7 +908,7 @@ body {
   }
 }
 
-.hero-copy h1 .split-word:nth-last-child(-n + 3) {
+.hero-copy h1 .split-word:nth-last-child(-n + 2) {
   color: var(--accent);
 }
 
@@ -1513,10 +1467,6 @@ svg[role="img"]:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-wash {
-    animation: none;
-    will-change: auto;
-  }
 
   .rise-in,
   .fade-in,
@@ -1894,10 +1844,6 @@ svg[role="img"]:focus-visible {
  * a scroll and landed clean off it. Depth is for the layers you read, not the
  * ones you have to hit.
  */
-.depth-wash {
-  transform: translate3d(0, calc(var(--depth, 0) * 110px), 0);
-}
-
 .depth-title {
   transform: translate3d(0, calc(var(--depth, 0) * -116px), 0);
 }
@@ -2464,262 +2410,6 @@ svg[role="img"]:focus-visible {
   opacity: var(--land-grain);
 }
 
-/* -------------------------------------------------------- hero: the light */
-
-.hero-atmos {
-  position: absolute;
-  inset: 0;
-  z-index: -10;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/*
- * A scrim, in the lighting sense: the lights above stay at full strength and
- * this flattens the ground under the words so the copy is read rather than
- * decoded. It is the last light-layer in the box, so it sits over the aurora
- * and under every word. Without it `audits/a1.mjs` reads the whole hero
- * paragraph as one band of ink — which is the audit's way of saying the
- * background behind it varies more than the type on it does.
- */
-.hero-scrim {
-  position: absolute;
-  inset-inline: 0;
-  top: var(--nav-total);
-  margin-inline: auto;
-  width: min(100%, 1500px);
-  height: min(64rem, 132vw);
-  max-height: 760px;
-  background: radial-gradient(72% 60% at 50% 42%, var(--canvas) 0%, var(--canvas) 54%, transparent 84%);
-  opacity: 0.65;
-}
-
-/* A phone shows the copy over a much taller slice of the same lights, so the
-   scrim has to be flatter and stronger there — and the light show is worth
-   less on a screen that small than the battery it costs. */
-@media (max-width: 767px) {
-  .hero-scrim {
-    background: radial-gradient(96% 76% at 50% 46%, var(--canvas) 0%, var(--canvas) 62%, transparent 92%);
-    opacity: 0.95;
-  }
-
-  .aurora,
-  .hero-turn {
-    opacity: 0.55;
-  }
-}
-
-.hero-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(112% 88% at 50% 42%, transparent 52%, var(--land-vignette) 100%);
-}
-
-/*
- * Three slow lights behind the headline, on three different clocks so they
- * never come back to the same arrangement. Translate and opacity only: a
- * scale re-rasters the gradient every frame, which is the one thing the hero
- * cannot afford at this size.
- */
-.aurora {
-  position: absolute;
-  will-change: transform, opacity;
-}
-
-.aurora-a {
-  left: -10%;
-  top: -16%;
-  width: 56%;
-  height: 88%;
-  background: radial-gradient(closest-side, var(--land-aurora-a), transparent 70%);
-  animation: aurora-a 13s ease-in-out infinite alternate;
-}
-
-.aurora-b {
-  right: -12%;
-  top: -6%;
-  width: 54%;
-  height: 82%;
-  background: radial-gradient(closest-side, var(--land-aurora-b), transparent 72%);
-  animation: aurora-b 17s ease-in-out infinite alternate;
-}
-
-.aurora-c {
-  left: 20%;
-  bottom: -24%;
-  width: 58%;
-  height: 74%;
-  background: radial-gradient(closest-side, var(--land-aurora-c), transparent 74%);
-  animation: aurora-c 21s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-/*
- * Far enough to read as light moving, and translate-only: a scaled gradient
- * re-rasters every frame and these are the largest elements on the page.
- *
- * Their size is a motion cost and their brightness is not — a composite pays
- * by the pixel, whatever alpha those pixels carry. So the lights are held to
- * about half the hero each and the drama is bought with colour and travel,
- * which are free, rather than with area, which is the whole budget.
- */
-@keyframes aurora-a {
-  from { opacity: 0.42; transform: translate3d(-16%, -12%, 0); }
-  to { opacity: 1; transform: translate3d(22%, 16%, 0); }
-}
-
-@keyframes aurora-b {
-  from { opacity: 1; transform: translate3d(17%, 14%, 0); }
-  to { opacity: 0.36; transform: translate3d(-20%, -13%, 0); }
-}
-
-/* Travel only. Each light that fades re-blends its own full size every frame;
-   the far one gives that up and keeps the movement. */
-@keyframes aurora-c {
-  from { transform: translate3d(18%, 13%, 0); }
-  to { transform: translate3d(-22%, -16%, 0); }
-}
-
-/*
- * One key light behind the headline, and it does not turn.
- *
- * It did, and rotation is the one transform that cannot be handed to the
- * compositor as a cached layer being moved: the whole thing is resampled
- * every frame, through a mask, on precisely the frames a reader is scrolling.
- * Shrinking it to a fifth of its area was not enough — `audits/track-b.mjs`
- * still put the page at +13 to +19ms against a budget of 8, where the same
- * measurement puts the page without it at +0.3 to +7. So the shape stays and
- * the movement comes from the three lights around it, which travel rather
- * than turn, and travel is free.
- */
-.hero-turn {
-  position: absolute;
-  left: 50%;
-  top: 34%;
-  width: min(56%, 620px);
-  aspect-ratio: 1;
-  translate: -50% -50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    var(--land-aurora-a) 42deg,
-    transparent 120deg,
-    transparent 190deg,
-    var(--land-aurora-b) 250deg,
-    transparent 330deg
-  );
-  opacity: 0.85;
-  /* A conic gradient has a point, and the point is a hard pinwheel seam in
-     the middle of the headline. Masked hollow it reads as a light turning
-     somewhere behind the page instead of a fan drawn on it. */
-  -webkit-mask-image: radial-gradient(closest-side, transparent 4%, #000 46%, #000 62%, transparent 88%);
-  mask-image: radial-gradient(closest-side, transparent 4%, #000 46%, #000 62%, transparent 88%);
-}
-
-/* One pass of light across the hero, on a long cycle. Wide and weak enough
-   that it reads as a room's light moving rather than as a highlight. */
-.hero-beam {
-  position: absolute;
-  top: -40%;
-  bottom: -40%;
-  left: 0;
-  width: 26%;
-  background: linear-gradient(90deg, transparent, var(--land-beam), transparent);
-  opacity: 0;
-  transform: translate3d(-90%, 0, 0) rotate(14deg);
-  animation: beam-sweep 7s var(--ease-draw) 1.4s infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes beam-sweep {
-  0% { opacity: 0; transform: translate3d(-90%, 0, 0) rotate(14deg); }
-  12% { opacity: 1; }
-  46% { opacity: 0; }
-  100% { opacity: 0; transform: translate3d(420%, 0, 0) rotate(14deg); }
-}
-
-/*
- * A key light at the cursor. `--px` / `--py` are document pixels written once
- * per frame by `CinematicField`, and the light is a fixed-size layer moved by
- * a transform — placing it by animating the gradient's own position instead
- * would repaint a 700px circle on every pointer move.
- */
-.hero-spot {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 46rem;
-  height: 46rem;
-  margin: -23rem 0 0 -23rem;
-  background: radial-gradient(closest-side, var(--land-spot), transparent 72%);
-  opacity: 0;
-  transform: translate3d(var(--px, 50vw), var(--py, 30vh), 0);
-  transition: opacity 700ms var(--ease-out);
-}
-
-.forecast-landing[data-ambient="on"][data-pointer="on"] .hero-spot {
-  opacity: 1;
-  will-change: transform;
-}
-
-.forecast-landing[data-ambient="off"] .hero-wash,
-.forecast-landing[data-ambient="off"] .aurora,
-.forecast-landing[data-ambient="off"] .hero-beam {
-  animation-play-state: paused;
-}
-
-.forecast-landing[data-ambient="off"] .aurora,
-.forecast-landing[data-ambient="off"] .hero-beam,
-.forecast-landing[data-ambient="off"] .hero-wash,
-.forecast-landing[data-ambient="off"] .depth-title,
-.forecast-landing[data-ambient="off"] .depth-stage {
-  will-change: auto;
-}
-
-/* --------------------------------------------------- hero: the stage wipe */
-
-.hero-stage {
-  position: relative;
-}
-
-/*
- * One pass of light across the chart as it arrives, clipped by its own box
- * rather than by the frame — the frame cannot take `overflow: hidden`, which
- * would cut the chart's focus ring at its 4px offset.
- */
-.stage-sweep {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.stage-sweep::before {
-  content: "";
-  position: absolute;
-  top: -30%;
-  bottom: -30%;
-  width: 45%;
-  background: linear-gradient(100deg, transparent, var(--land-sweep), transparent);
-  opacity: 0;
-  transform: translate3d(-170%, 0, 0) rotate(9deg);
-}
-
-.motion-ready [data-shown="true"] .stage-sweep::before {
-  animation: stage-sweep 7s var(--ease-draw) 320ms infinite;
-}
-
-.forecast-landing[data-ambient="off"] .stage-sweep::before {
-  animation-play-state: paused;
-}
-
-@keyframes stage-sweep {
-  0% { opacity: 0; transform: translate3d(-170%, 0, 0) rotate(9deg); }
-  8% { opacity: 1; }
-  36%, 100% { opacity: 0; transform: translate3d(330%, 0, 0) rotate(9deg); }
-}
-
 /* ------------------------------------------------- headings: the title swing
 
    The words swing up out of the page instead of sliding, which is the one
@@ -3097,17 +2787,6 @@ svg[role="img"]:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora,
-  .hero-beam {
-    animation: none;
-    will-change: auto;
-  }
-
-  .hero-beam,
-  .hero-spot {
-    opacity: 0;
-  }
-
   .motion-ready .tilt-plate {
     transform: none;
     transition: none;
@@ -3116,8 +2795,7 @@ svg[role="img"]:focus-visible {
 
 @media (prefers-contrast: more) {
   .atmosphere,
-  .accuracy-halo,
-  .stage-sweep {
+  .accuracy-halo {
     display: none;
   }
 

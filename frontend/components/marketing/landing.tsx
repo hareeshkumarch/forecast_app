@@ -27,19 +27,19 @@ const SHELL = "page-shell";
 
 const STEPS = [
   {
-    title: "Drop in a spreadsheet",
-    body: "Whatever your sales history already lives in.",
-    foot: "Nothing to set up",
+    title: "Upload sales history",
+    body: "Use a spreadsheet with dated sales quantities.",
+    foot: "CSV or Excel",
   },
   {
-    title: "We find the columns",
-    body: "The date and the quantity, shown back to you before anything runs.",
-    foot: "You confirm first",
+    title: "Confirm the columns",
+    body: "Review the detected date and quantity fields before running a forecast.",
+    foot: "Review before running",
   },
   {
-    title: "The forecast draws itself",
-    body: "Week by week, with the range it could move inside.",
-    foot: "About a minute",
+    title: "Review the weekly outlook",
+    body: "Inspect weekly estimates and their lower and upper bounds.",
+    foot: "Weekly estimates",
   },
 ];
 
@@ -48,7 +48,7 @@ const PROOF = [
     value: 94,
     unit: "%",
     count: true,
-    label: "Accuracy on held-out weeks",
+    label: "Illustrative holdout accuracy",
   },
   {
     value: 10,
@@ -72,16 +72,16 @@ const PROOF = [
 
 const FEATURES = [
   {
-    lede: "A forecast you can read.",
-    body: "The number, its range and the history behind it, in one view.",
+    lede: "Weekly estimates and ranges.",
+    body: "Compare each weekly estimate with historical sales and uncertainty bounds.",
   },
   {
-    lede: "Every level of the plan.",
-    body: "The whole business, or one product, region or channel.",
+    lede: "Product, region, or channel.",
+    body: "Inspect total demand or filter to a single sales series.",
   },
   {
-    lede: "Accuracy you can inspect.",
-    body: "Scored against your own past, never against a benchmark.",
+    lede: "Errors measured on past sales.",
+    body: "Compare predictions with sales withheld from model training.",
   },
 ];
 
@@ -177,21 +177,9 @@ function Hero() {
       id="top"
       className="hero-section relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]"
     >
-      <div className="hero-atmos" aria-hidden>
-        <span className="hero-wash depth-layer depth-wash absolute inset-x-0 top-[var(--nav-total)] mx-auto h-[min(54rem,76vw)] max-h-[620px] min-h-[360px] max-w-[1200px]" />
-        <span className="aurora aurora-a" />
-        <span className="aurora aurora-b" />
-        <span className="aurora aurora-c" />
-        <span className="hero-turn" />
-        <span className="hero-beam" />
-        <span className="hero-spot" />
-        <span className="hero-scrim" />
-        <span className="hero-vignette" />
-      </div>
-
       <div className="page-shell hero-masthead">
-        <span>Demand intelligence / built for what’s next</span>
-        <span className="hero-edition">History → foresight</span>
+        <span>Historical sales / weekly forecasts</span>
+        <span className="hero-edition">Sales / estimates / ranges</span>
       </div>
       <div className="page-shell hero-layout">
         <div className="hero-copy flex flex-col items-center text-center">
@@ -202,30 +190,30 @@ function Hero() {
               className="hero-eyebrow flex items-center justify-center gap-3"
             >
               <Eyebrow>
-                A clearer view of demand
+                Weekly demand forecasts
               </Eyebrow>
             </Reveal>
-  
+
             <SplitWords
               as="h1"
-              text="See your demand before it arrives."
+              text="Historical sales. Weekly outlooks."
               delay={70}
               stagger={78}
               motion="cinematic"
               className="hero-title mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
             />
-  
+
             <Reveal
               as="p"
               delay={150}
               duration={620}
               className="hero-description mt-5 max-w-[58ch] text-site-lead text-text-secondary"
             >
-              Turn your sales history into a clear weekly forecast.
-              See what’s ahead, understand the uncertainty, and plan with confidence.
+              Forecast weekly demand from historical sales.
+              Inspect each estimate, its range, and the weeks that fall outside your planning thresholds.
             </Reveal>
           </div>
-  
+
           <Reveal
             delay={240}
             duration={620}
@@ -233,7 +221,7 @@ function Hero() {
           >
             <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
             <SecondaryCta href="/dashboard" label="Open the dashboard">
-              Explore workspace
+              Open workspace
             </SecondaryCta>
           </Reveal>
           <Reveal
@@ -249,7 +237,7 @@ function Hero() {
             </Link>
           </Reveal>
         </div>
-  
+
         <Reveal
           delay={330}
           variant="scale"
@@ -257,18 +245,17 @@ function Hero() {
           className="depth-layer depth-stage hero-preview min-w-0"
         >
           <div className="hero-stage">
-            <span aria-hidden className="stage-sweep" />
             <div className="preview-heading">
               <div>
                 <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">
-                  From history to possibility
+                  Sales and forecast ranges
                 </p>
                 <h2 className="mt-1 text-site-h3 font-medium">Demand outlook</h2>
               </div>
-              <span className="stage-status"><span aria-hidden />Forecast in focus</span>
+              <span className="stage-status"><span aria-hidden />8-week outlook</span>
             </div>
             <div className="stage-caption" aria-hidden>
-              <span>01 / The shape of what’s next</span>
+              <span>01 / Weekly sales by product line</span>
               <span>16 weeks of history → 8 weeks ahead</span>
             </div>
             <DemandScape />
@@ -281,8 +268,8 @@ function Hero() {
       </div>
 
       <div className="page-shell hero-chapter">
-        <span>Less guesswork. More perspective.</span>
-        <a href="#how-it-works" className="chapter-link"><span className="scroll-stroke" aria-hidden />Scroll to discover</a>
+        <span>Historical quantities. Estimated demand.</span>
+        <a href="#how-it-works" className="chapter-link"><span className="scroll-stroke" aria-hidden />View forecast steps</a>
       </div>
       <Proof />
     </section>
@@ -323,11 +310,11 @@ function HowItWorks() {
           <Reveal variant="from-left" duration={640}>
             <Eyebrow>01 — Getting started</Eyebrow>
             <SplitWords
-              text="From a spreadsheet to a plan in three steps."
+              text="Upload, confirm, forecast."
               className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
             />
             <p className="mt-5 max-w-[42ch] text-site-lead text-text-secondary">
-              Nothing to configure. Nothing to maintain.
+              Review your data before the forecast runs.
             </p>
           </Reveal>
         </div>
@@ -378,7 +365,7 @@ function Features() {
       <ScrollStage screens={2.6} stage="filmstrip">
         <div className={cn(SHELL, "filmstrip")}>
           <Reveal variant="from-left" duration={640} className="filmstrip-head">
-            <Eyebrow as="h2">What you get</Eyebrow>
+            <Eyebrow as="h2">Forecast outputs</Eyebrow>
           </Reveal>
           <ol className="filmstrip-track">
             {FEATURES.map((feature, index) => (
@@ -421,13 +408,13 @@ function InsightsPreview() {
           <Reveal variant="from-left" duration={680}>
             <Eyebrow>Decision brief</Eyebrow>
             <SplitWords
-              text="Know what changed, why it matters, and what to do next."
+              text="Review demand changes and threshold breaches."
               stagger={54}
               motion="cinematic"
               className="mt-4 max-w-[22ch] text-balance font-display text-site-h2 font-normal"
             />
             <p className="mt-5 max-w-[46ch] text-site-lead text-text-secondary">
-              Every run comes back with the handful of things worth acting on.
+              Inspect changes from baseline and the orders affected by them.
             </p>
             <div className="mt-7 grid gap-3 text-site-body text-text-secondary sm:grid-cols-2 lg:grid-cols-1">
               <p className="flex gap-3">
@@ -436,7 +423,7 @@ function InsightsPreview() {
                   aria-hidden
                 />
                 <span>
-                  <strong className="text-text-primary">Prioritised.</strong>{" "}
+                  <strong className="text-text-primary">Ranked by impact.</strong>{" "}
                   Risks and opportunities appear in decision order.
                 </span>
               </p>
@@ -446,8 +433,8 @@ function InsightsPreview() {
                   aria-hidden
                 />
                 <span>
-                  <strong className="text-text-primary">Grounded.</strong> AI
-                  may refine the wording; it never invents the figures.
+                  <strong className="text-text-primary">Tied to the figures.</strong> Figures come from
+                  the forecast; AI may edit the wording.
                 </span>
               </p>
             </div>
@@ -471,7 +458,7 @@ function InsightsPreview() {
                     Decision brief · this run
                   </p>
                   <p className="signal-heading mt-1 text-site-h3 font-bold">
-                    Three signals need attention
+                    Three changes to review
                   </p>
                 </div>
                 <Sparkles
@@ -531,9 +518,9 @@ function Compare() {
       >
         <div data-drift style={{ "--drift": "-88px" } as CSSProperties}>
           <Reveal variant="from-left" duration={680}>
-            <Eyebrow>Built for a real decision</Eyebrow>
+            <Eyebrow>Uncertainty bounds</Eyebrow>
             <SplitWords
-              text="A range tells you more than a perfect-looking line."
+              text="Read the estimate and its range."
               stagger={58}
               motion="cinematic"
               className="mt-4 max-w-[24ch] text-balance font-display text-site-h2 font-normal"
@@ -543,7 +530,7 @@ function Compare() {
               the last run.
             </p>
             <p className="mt-7 font-mono text-site-caption uppercase tracking-[0.14em] text-land-dim">
-              One answer, with the uncertainty left in
+              Point estimate · lower bound · upper bound
             </p>
           </Reveal>
         </div>
@@ -565,8 +552,8 @@ function Compare() {
 }
 
 const ACCURACY_BEATS = [
-  "Measured against your own history, never a benchmark: we hide part of your past and check whether the forecast would have got it right.",
-  "And every run adds another real result to it — any product, any region, any week.",
+  "Sales from held-out weeks are compared with the model’s predictions for those weeks.",
+  "Review forecast errors by product, region, and week.",
 ];
 
 const BEAT_RAMP = 11;
@@ -598,7 +585,7 @@ function Accuracy() {
           </p>
 
           <h2 className="mt-6 max-w-[20ch] text-balance font-display text-site-h2 font-normal">
-            of the sales it had never seen.
+            on an illustrative holdout.
           </h2>
 
           <div className="accuracy-beats mt-8">
@@ -634,20 +621,20 @@ function Closing() {
       >
         <Eyebrow>Start with the data you have</Eyebrow>
         <SplitWords
-          text="See what is coming next."
+          text="Forecast from your sales history."
           stagger={80}
           motion="cinematic"
           className="mt-4 text-balance font-display text-site-h2 font-normal"
         />
         <p className="mx-auto mt-5 max-w-[42ch] text-site-lead text-text-secondary">
-          Bring the sales history you already have. The first forecast takes
-          about a minute.
+          Upload dated sales quantities. Review the weekly estimates
+          and uncertainty bounds.
         </p>
 
         <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 min-[430px]:mx-auto min-[430px]:w-auto min-[430px]:flex-row min-[430px]:items-center">
           <PrimaryCta href="/signin">Start forecasting</PrimaryCta>
           <SecondaryCta href="/dashboard">
-            Explore workspace
+            Open workspace
           </SecondaryCta>
         </div>
 

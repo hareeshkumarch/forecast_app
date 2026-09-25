@@ -9,7 +9,7 @@ export type Series = {
 
 export const SERIES: Series = {
   label: "Grocery",
-  caption: "One grocery plan, two product lines deep — Chilled in front, Ambient behind.",
+  caption: "Illustrative sales / Chilled in front / Ambient behind.",
   layers: [
     {
       id: "chilled",

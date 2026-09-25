@@ -21,7 +21,7 @@ test("scenario preview responds to assumptions and live motion preferences", asy
 test("the landing page is the root and the app has moved to /dashboard", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("See your demand");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Historical sales.");
   await expect(page.getByRole("heading", { name: "Overview" })).toBeHidden();
 });
 
@@ -59,11 +59,11 @@ test("every section is readable once scrolled to", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   for (const heading of [
-    "From a spreadsheet to a plan in three steps.",
-    "Know what changed, why it matters, and what to do next.",
-    "A range tells you more than a perfect-looking line.",
-    /of the sales it had never seen/,
-    "See what is coming next.",
+    "Upload, confirm, forecast.",
+    "Review demand changes and threshold breaches.",
+    "Read the estimate and its range.",
+    /on an illustrative holdout/,
+    "Forecast from your sales history.",
   ]) {
     const target = page.getByRole("heading", { name: heading });
     await target.scrollIntoViewIfNeeded();
@@ -178,7 +178,7 @@ test("with reduced motion the page is composed from the first paint", async ({ b
 
   await expect(page.locator(".motion-ready")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Know what changed, why it matters, and what to do next." }),
+    page.getByRole("heading", { name: "Review demand changes and threshold breaches." }),
   ).toBeVisible();
 
   await context.close();
@@ -187,7 +187,7 @@ test("with reduced motion the page is composed from the first paint", async ({ b
 test("a cold link to a section below the pinned one still lands on it", async ({ page }) => {
   await page.goto("/#compare");
   const heading = page.getByRole("heading", {
-    name: "A range tells you more than a perfect-looking line.",
+    name: "Read the estimate and its range.",
   });
 
   await expect

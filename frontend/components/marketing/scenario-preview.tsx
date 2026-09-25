@@ -7,9 +7,9 @@ import { Reveal } from "@/components/marketing/reveal";
 
 const BASE = [82, 91, 87, 103, 108, 99, 117, 126];
 const SCENARIOS = [
-  { label: "Base plan", change: 0, detail: "A starting point for the next eight weeks." },
-  { label: "Demand lift", change: 20, detail: "Explore what 20% more demand would mean for your plan." },
-  { label: "Softer demand", change: -15, detail: "Stress-test your plan with 15% less demand." },
+  { label: "Base plan", change: 0, detail: "Weekly quantities for the next eight weeks." },
+  { label: "Demand lift", change: 20, detail: "Weekly quantities increased by 20%." },
+  { label: "Softer demand", change: -15, detail: "Weekly quantities decreased by 15%." },
 ] as const;
 
 export function ScenarioPreview() {
@@ -22,10 +22,10 @@ export function ScenarioPreview() {
     <section id="scenario-preview" className="section-edge section-pad">
       <div className="page-shell grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
         <Reveal variant="from-left">
-          <p className="font-mono text-site-caption uppercase tracking-[0.2em] text-land-dim">Explore the possibilities</p>
-          <h2 className="mt-4 max-w-[20ch] text-balance font-display text-site-h2">One forecast. More ways to prepare.</h2>
-          <p className="mt-5 max-w-[43ch] text-site-lead text-text-secondary">Try a change in demand and watch the plan respond. In your workspace, build scenarios from your own forecast.</p>
-          <Link href="/scenarios" className="link-draw mt-6 inline-block text-accent">Explore scenarios →</Link>
+          <p className="font-mono text-site-caption uppercase tracking-[0.2em] text-land-dim">Demand assumptions</p>
+          <h2 className="mt-4 max-w-[20ch] text-balance font-display text-site-h2">Compare changes in weekly demand.</h2>
+          <p className="mt-5 max-w-[43ch] text-site-lead text-text-secondary">Compare the base forecast with a 20% increase or a 15% decrease in demand. Apply assumptions to your own forecast in the workspace.</p>
+          <Link href="/scenarios" className="link-draw mt-6 inline-block text-accent">Open scenarios →</Link>
         </Reveal>
         <Reveal variant="scale" className="scenario-preview border border-land-rule bg-land-brief p-5 sm:p-8">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Demand scenario">

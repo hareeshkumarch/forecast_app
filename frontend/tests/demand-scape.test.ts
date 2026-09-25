@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildScape, labelWidth, prismFaces, scapeVertices, type Layer } from "@/lib/demand-scape";
+import { buildScape, labelWidth, prismFaces, scapeVertices, projectPoint, type Layer } from "@/lib/demand-scape";
 
 function required<T>(value: T | undefined, what: string): T {
   if (value === undefined) throw new Error(`missing ${what}`);
@@ -81,35 +81,6 @@ describe("demand scape geometry", () => {
     }
   });
 
-  it("spends a fixed drift budget however many bars divide it", () => {
-    const drift = LENGTHS.map((n) => {
-      const scape = buildScape(layers(n - 9, 9));
-      const front = scape.prisms.filter((prism) => prism.row === 0);
-      const first = required(front[0], "first prism");
-      const last = required(front[front.length - 1], "last prism");
-      return {
-        down: last.baseY - first.baseY,
-        across: last.x + last.width + last.extrudeX - first.x,
-      };
-    });
-
-    const baseline = required(drift[0], "baseline drift");
-    for (const step of drift) {
-      expect(step.down).toBeCloseTo(baseline.down, 6);
-      expect(step.across).toBeCloseTo(baseline.across, 6);
-    }
-  });
-
-  it("walks no further at 120 bars than at 8", () => {
-    const reach = LENGTHS.map((n) => {
-      const scape = buildScape(layers(n - 9, 9));
-      const xs = scapeVertices(scape).map(([x]) => x);
-      return Math.max(...xs);
-    });
-    const baseline = required(reach[0], "baseline reach");
-    for (const far of reach) expect(far).toBeCloseTo(baseline, 6);
-  });
-
   it("adds bars without moving the frame", () => {
     const boxes = LENGTHS.map((n) => buildScape(layers(n - 9, 9)).viewBox);
     expect(new Set(boxes).size).toBe(1);
@@ -118,8 +89,8 @@ describe("demand scape geometry", () => {
   it.each(LENGTHS)("keeps whole captions, not just their anchors, off the bars at n = %i", (n) => {
     const scape = buildScape(layers(n - 9, 9));
     const box = parseViewBox(scape.viewBox);
-    const plotLeft = Math.min(...scape.prisms.map((prism) => prism.x));
-    const plotRight = Math.max(...scape.prisms.map((p) => p.x + p.width + p.extrudeX));
+    const plotLeft = Math.min(...scapeVertices(scape).map(([x]) => x));
+    const plotRight = Math.max(...scapeVertices(scape).map(([x]) => x));
 
     for (const label of scape.labels) {
       const width = labelWidth(label.text);
@@ -137,10 +108,10 @@ describe("demand scape geometry", () => {
 
   it("keeps labels out of the band the bars occupy", () => {
     const scape = buildScape(layers(26, 9));
-    const xs = scape.prisms.map((prism) => prism.x);
+    const xs = scapeVertices(scape).map(([x]) => x);
     const plotLeft = Math.min(...xs);
-    const plotRight = Math.max(...scape.prisms.map((p) => p.x + p.width + p.extrudeX));
-    const plotBottom = Math.max(...scape.prisms.map((prism) => prism.baseY));
+    const plotRight = Math.max(...scapeVertices(scape).map(([x]) => x));
+    const plotBottom = Math.max(...scapeVertices(scape).map(([, y]) => y));
 
     const past = scape.labels.find((label) => label.key === "past");
     const today = scape.labels.find((label) => label.key === "today");
@@ -162,7 +133,7 @@ describe("demand scape geometry", () => {
 
   it("names each row where that row begins, in the gutter beside it", () => {
     const scape = buildScape(layers(26, 9));
-    const plotLeft = Math.min(...scape.prisms.map((prism) => prism.x));
+    const plotLeft = Math.min(...scapeVertices(scape).map(([x]) => x));
 
     expect(scape.rowLabels.map((label) => label.text)).toEqual(["Front", "Behind"]);
     for (const label of scape.rowLabels) {
@@ -173,20 +144,8 @@ describe("demand scape geometry", () => {
     }
 
     const [front, behind] = scape.rowLabels;
-    const baselines = scape.prisms.filter((prism) => prism.step === 0);
-    const rowGap =
-      required(
-        baselines.find((prism) => prism.row === 0),
-        "front row",
-      ).baseY -
-      required(
-        baselines.find((prism) => prism.row === 1),
-        "back row",
-      ).baseY;
-    expect(required(front, "front name").y - required(behind, "back name").y).toBeCloseTo(
-      rowGap,
-      6,
-    );
+    expect(required(front, "front name").y).toBeGreaterThan(required(behind, "back name").y);
+
   });
 
   it("keeps the oldest-week caption clear of the row names", () => {
@@ -209,4 +168,42 @@ describe("demand scape geometry", () => {
       expect(face.split(" ")).toHaveLength(4);
     }
   });
+  it("makes equal volumes smaller as they recede from the camera", () => {
+    const projectedHeight = (z: number) =>
+      projectPoint({ x: 0, y: 0, z }).y - projectPoint({ x: 0, y: 100, z }).y;
+    expect(projectedHeight(300)).toBeLessThan(projectedHeight(0) * 0.9);
+    const projectedWidth = (z: number) =>
+      projectPoint({ x: 40, y: 0, z }).x - projectPoint({ x: 0, y: 0, z }).x;
+    expect(projectedWidth(300)).toBeLessThan(projectedWidth(0));
+  });
+
+  it("paints farther volumes first so near columns occlude them", () => {
+    const scape = buildScape(layers(16, 8));
+    for (let index = 1; index < scape.prisms.length; index++) {
+      expect(scape.prisms[index]!.cameraDepth).toBeLessThanOrEqual(scape.prisms[index - 1]!.cameraDepth);
+    }
+  });
+
+  it("keeps contact and cast shadows on the ground and inside the frame", () => {
+    const scape = buildScape(layers(16, 8));
+    const box = parseViewBox(scape.viewBox);
+    for (const prism of scape.prisms) {
+      const faces = prismFaces(prism);
+      expect(faces.shadow).not.toBe(faces.floor);
+      for (const point of `${faces.shadow} ${faces.floor}`.split(" ")) {
+        const [x = 0, y = 0] = point.split(",").map(Number);
+        expect(x).toBeGreaterThan(box.x);
+        expect(x).toBeLessThan(box.x + box.width);
+        expect(y).toBeGreaterThan(box.y);
+        expect(y).toBeLessThan(box.y + box.height);
+      }
+    }
+  });
+
+  it("has finite geometry for empty input", () => {
+    const scape = buildScape([]);
+    expect(scape.prisms).toHaveLength(0);
+    expect(scape.viewBox.split(" ").map(Number).every(Number.isFinite)).toBe(true);
+  });
+
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { buildScape, prismFaces, type Prism, type Tone } from "@/lib/demand-scape";
 import {
@@ -99,11 +99,13 @@ function Bar({
   timing,
   active,
   onEnter,
+  lightingId,
 }: {
   prism: Prism;
   timing: ScapeTiming;
   active: boolean;
   onEnter: () => void;
+  lightingId: string;
 }) {
   const faces = prismFaces(prism);
   const palette = faceFor(prism.tone, prism.row);
@@ -133,11 +135,17 @@ function Bar({
       <polygon points={faces.front} fill={palette.front} stroke={palette.stroke} />
       <polygon points={faces.side} fill={palette.side} stroke={palette.stroke} />
       <polygon points={faces.top} fill={palette.top} stroke={palette.stroke} />
+      {!shell ? <g pointerEvents="none">
+        <polygon points={faces.front} fill={`url(#${lightingId}-front)`} />
+        <polygon points={faces.side} fill={`url(#${lightingId}-side)`} />
+        <polygon points={faces.top} fill={`url(#${lightingId}-top)`} stroke="rgba(235,255,240,0.28)" strokeWidth="0.7" />
+      </g> : null}
     </g>
   );
 }
 
 export function DemandScape() {
+  const lightingId = useId().replace(/:/g, "");
   const [hovered, setHovered] = useState<number | null>(null);
   const [keyed, setKeyed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -270,10 +278,46 @@ export function DemandScape() {
           onTouchStart={take}
           data-reading={hovered === null ? undefined : "true"}
         >
+          <defs>
+            <linearGradient id={`${lightingId}-front`} x1="0" y1="0" x2="0.2" y2="1">
+              <stop offset="0" stopColor="#ffffff" stopOpacity="0.12" />
+              <stop offset="0.45" stopColor="#000000" stopOpacity="0.06" />
+              <stop offset="1" stopColor="#000000" stopOpacity="0.42" />
+            </linearGradient>
+            <linearGradient id={`${lightingId}-side`} x1="0" y1="0" x2="1" y2="0.7">
+              <stop offset="0" stopColor="#000000" stopOpacity="0.12" />
+              <stop offset="1" stopColor="#000000" stopOpacity="0.5" />
+            </linearGradient>
+            <linearGradient id={`${lightingId}-top`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#ffffff" stopOpacity="0.32" />
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0.02" />
+            </linearGradient>
+            <radialGradient id={`${lightingId}-ground`}>
+              <stop offset="0" stopColor="#75887a" stopOpacity="0.18" />
+              <stop offset="1" stopColor="#75887a" stopOpacity="0.02" />
+            </radialGradient>
+            <filter id={`${lightingId}-shadow`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4" />
+            </filter>
+            <filter id={`${lightingId}-contact`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.8" />
+            </filter>
+          </defs>
+          <polygon points={SCAPE.ground} fill={`url(#${lightingId}-ground)`} />
           <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
             {SCAPE.guides.map((guide) => (
               <line key={guide.key} x1={guide.x1} y1={guide.y1} x2={guide.x2} y2={guide.y2} />
             ))}
+          </g>
+
+          <g pointerEvents="none" aria-hidden>
+            {SCAPE.prisms.filter((prism) => prism.tone !== "range").map((prism) => {
+              const faces = prismFaces(prism);
+              return <g key={prism.key}>
+                <polygon points={faces.shadow} fill="#000000" opacity="0.24" filter={`url(#${lightingId}-shadow)`} />
+                <polygon points={faces.floor} fill="#000000" opacity="0.65" filter={`url(#${lightingId}-contact)`} />
+              </g>;
+            })}
           </g>
 
           {marked
@@ -297,6 +341,7 @@ export function DemandScape() {
                 prism={prism}
                 timing={TIMING}
                 active={prism.step === hovered}
+                lightingId={lightingId}
                 onEnter={() => {
                   take();
                   setHovered(prism.step);

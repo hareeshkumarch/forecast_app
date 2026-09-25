@@ -149,14 +149,14 @@ export function RangeVsLine() {
           withBand={false}
           tone="plain"
           label="A single line"
-          verdict="Looks precise. Says nothing about how wrong it might be, so a miss arrives with no warning."
+          verdict="A point estimate alone does not show the expected spread of weekly sales."
         />
         <Panel
           index={1}
           withBand
           tone="forest"
           label="A line and its range"
-          verdict="Same forecast, with the room for error drawn in. The week that came in low was already inside it."
+          verdict="The same estimate with uncertainty bounds. Observed sales fall within the range."
         />
       </div>
 
