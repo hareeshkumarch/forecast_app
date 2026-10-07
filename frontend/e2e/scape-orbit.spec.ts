@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-test("the scene rotates only when dragged and retains its angle", async ({ page }) => {
+test("dragging retains the chosen angle and keyboard inspection remains available", async ({ page }) => {
   await page.goto("/");
   const scene = page.locator(".scape-frame");
   await scene.scrollIntoViewIfNeeded();
-  await expect(scene.getByRole("button")).toHaveCount(0);
+  await expect(scene.getByRole("button", { name: "Reset view" })).toBeVisible();
   const svg = scene.getByRole("img");
   const face = scene.locator('.scape-bar[data-tone="history"] polygon').first();
   const initial = await face.getAttribute("points");
@@ -29,6 +29,45 @@ test("the scene rotates only when dragged and retains its angle", async ({ page 
   await expect(page.getByText("A single line", { exact: true })).toHaveCount(0);
   await expect(page.getByText("A line and its range", { exact: true })).toHaveCount(0);
   await expect(page.locator("#compare svg")).toHaveCount(0);
+});
+
+test("cursor perspective settles on leave, weeks can be held, and reset restores the scene", async ({ page }) => {
+  await page.goto("/");
+  const scene = page.locator(".scape-frame");
+  const svg = scene.getByRole("img");
+  await svg.scrollIntoViewIfNeeded();
+  const face = scene.locator('.scape-bar[data-tone="history"] polygon').first();
+  const initial = await face.getAttribute("points");
+  const box = (await svg.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.3);
+  await expect.poll(() => face.getAttribute("points")).not.toBe(initial);
+  await page.mouse.move(1, 1);
+  await expect.poll(() => face.getAttribute("points")).toBe(initial);
+
+  await svg.focus();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(scene).toHaveAttribute("data-pinned", "true");
+  await expect(scene.locator(".scape-readout")).toContainText("Week +8");
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.6);
+  await expect(scene.locator(".scape-readout")).toContainText("Week +8");
+  await scene.getByRole("button", { name: "Release week" }).click();
+  await expect(scene).not.toHaveAttribute("data-pinned", "true");
+  await scene.getByRole("button", { name: "Reset view" }).click();
+  await expect.poll(() => face.getAttribute("points")).toBe(initial);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await svg.scrollIntoViewIfNeeded();
+  const reducedBox = (await svg.boundingBox())!;
+  await page.mouse.move(reducedBox.x + reducedBox.width * 0.8, reducedBox.y + reducedBox.height * 0.3);
+  await page.waitForTimeout(250);
+  expect(await face.getAttribute("points")).toBe(initial);
+  await scene.locator('.scape-bar[data-tone="future"][data-row="0"][data-step="20"] polygon').first().click();
+  await expect(scene).toHaveAttribute("data-pinned", "true");
+  await expect(scene.locator(".scape-readout")).toContainText("Week +5");
+  await svg.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(scene.locator(".scape-readout")).toContainText("Week +6");
 });
 
 test("a horizontal touch gesture rotates the scene", async ({ browser }) => {

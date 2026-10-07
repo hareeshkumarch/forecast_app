@@ -35,6 +35,8 @@ function useMagnet(target: RefObject<HTMLElement>): void {
     };
 
     const onLeave = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
       node.style.setProperty("--magnet-x", "0px");
       node.style.setProperty("--magnet-y", "0px");
     };

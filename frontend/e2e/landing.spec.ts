@@ -1,21 +1,20 @@
 import { expect, test } from "@playwright/test";
 
-test("scenario preview responds to assumptions and live motion preferences", async ({ page }) => {
+test("forecast review links to the workspace and respects live motion preferences", async ({ page }) => {
   await page.goto("/");
   const preview = page.locator("#scenario-preview");
   await preview.scrollIntoViewIfNeeded();
-  await preview.getByRole("button", { name: "Demand lift" }).click();
-  await expect(preview.getByRole("button", { name: "Demand lift" })).toHaveAttribute("aria-pressed", "true");
-  await expect(preview.getByRole("img")).toHaveAttribute("aria-label", /Demand lift: week 1, 98 units/);
+  await expect(preview.getByRole("listitem")).toHaveCount(3);
+  await expect(preview.getByRole("link", { name: "Explore your sales series" })).toHaveAttribute("href", "/series");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator(".forecast-landing")).not.toHaveClass(/motion-ready/);
   await expect(page.locator(".scroll-track--live")).toHaveCount(0);
-  const duration = await preview.locator(".scenario-bar").first().evaluate(
-    (node) => parseFloat(getComputedStyle(node).transitionDuration),
+  const duration = await preview.locator(".forecast-review-item").first().evaluate(
+    (node) => parseFloat(getComputedStyle(node).animationDuration),
   );
   expect(duration).toBeLessThanOrEqual(0.001);
-  await preview.getByRole("button", { name: "Softer demand" }).click();
-  await expect(preview.getByRole("img")).toHaveAttribute("aria-label", /Softer demand: week 1, 70 units/);
+  await preview.getByRole("link", { name: "Review forecasts" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test("the landing page is the root and the app has moved to /dashboard", async ({ page }) => {

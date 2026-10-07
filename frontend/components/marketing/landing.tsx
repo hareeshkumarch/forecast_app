@@ -17,7 +17,7 @@ import { ParallaxField } from "@/components/marketing/parallax";
 import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
-import { ScenarioPreview } from "@/components/marketing/scenario-preview";
+import { ForecastReview } from "@/components/marketing/forecast-review";
 import { SplitWords } from "@/components/marketing/split-words";
 import { useTilt } from "@/components/marketing/tilt";
 import { cn } from "@/lib/utils";
@@ -128,7 +128,7 @@ export function Landing() {
         <HowItWorks />
         <Features />
         <InsightsPreview />
-        <ScenarioPreview />
+        <ForecastReview />
         <Compare />
         <Accuracy />
         <Questions />
@@ -177,7 +177,14 @@ function Hero() {
       id="top"
       className="hero-section relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(1.5rem,3vw,2.5rem))]"
     >
+      <div className="hero-grid" aria-hidden><span /><span /><span /></div>
+      <div className="hero-light" aria-hidden />
       <div className="page-shell hero-layout">
+        <Reveal variant="fade" className="hero-edition">
+          <span>Forecast Hub / Planning intelligence</span>
+          <span>From historical signals to the next move</span>
+          <span className="hero-edition-mark" aria-hidden>FH — 01</span>
+        </Reveal>
         <div className="hero-copy flex flex-col items-center text-center">
           <div className="depth-layer depth-title flex flex-col items-center">
             <Reveal
@@ -268,6 +275,10 @@ function Hero() {
 function Proof() {
   return (
     <div className="page-shell mt-14 sm:mt-16">
+      <div className="proof-intro">
+        <span>A clearer view. A considered decision.</span>
+        <span>Inside the forecasting workflow</span>
+      </div>
       <dl className="proof-band border-t border-land-rule">
         {PROOF.map((stat, index) => (
           <Reveal
@@ -350,11 +361,12 @@ function HowItWorks() {
 
 function Features() {
   return (
-    <section id="features" className="section-edge section-pad">
+    <section id="features" className="feature-section section-edge section-pad">
       <ScrollStage screens={2.6} stage="filmstrip" minWidth={1024}>
         <div className={cn(SHELL, "filmstrip")}>
           <Reveal variant="from-left" duration={640} className="filmstrip-head">
             <Eyebrow as="h2">02 — Forecast outputs</Eyebrow>
+            <p className="feature-intro font-display">The detail behind<br /><em>every decision.</em></p>
           </Reveal>
           <ol className="filmstrip-track">
             {FEATURES.map((feature, index) => (
@@ -531,7 +543,7 @@ function Compare() {
             className="tilt-scene"
           >
             <div ref={panels} className="tilt-plate">
-              <ol className="divide-y divide-land-rule border-y border-land-rule">
+              <ol className="planning-list divide-y divide-land-rule border-y border-land-rule">
                 {[
                   { title: "Start with the expected demand", body: "Use the weekly estimate as your planning baseline." },
                   { title: "Leave room for uncertainty", body: "Review lower and upper bounds before committing inventory." },
@@ -645,7 +657,8 @@ function Questions() {
 
 function Closing() {
   return (
-    <section className="section-pad">
+    <section className="closing-section section-pad">
+      <span className="closing-watermark" aria-hidden>What’s next.</span>
       <Reveal
         variant="scale"
         duration={700}
@@ -678,6 +691,7 @@ function Closing() {
 function Footer() {
   return (
     <footer className="border-t border-land-rule bg-surface/75">
+      <div className="footer-wordmark page-shell" aria-hidden>Forecast Hub<span>↗</span></div>
       <Reveal
         variant="fade"
         duration={520}

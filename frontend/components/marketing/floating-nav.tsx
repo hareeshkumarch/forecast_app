@@ -12,7 +12,7 @@ const SECTIONS = [
   { id: "how-it-works", label: "How it works" },
   { id: "features", label: "Features" },
   { id: "insights", label: "Insights" },
-  { id: "scenario-preview", label: "Scenarios" },
+  { id: "scenario-preview", label: "Review" },
   { id: "compare", label: "Planning" },
   { id: "accuracy", label: "Accuracy" },
 ];
@@ -123,7 +123,7 @@ export function FloatingNav() {
       <nav
         aria-label="Sections"
         className={cn(
-          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden rounded-xl border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
+          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
           lifted
             ? "shadow-[0_18px_38px_-22px_var(--land-nav-shadow)]"
             : "shadow-[0_4px_14px_-10px_var(--land-nav-shadow)]",
@@ -181,7 +181,7 @@ export function FloatingNav() {
                 : "hidden",
             )}
           >
-            <span className="hidden whitespace-nowrap sm:inline">{pastHero ? "Open the dashboard" : "Start forecasting"}</span>
+            <span className="hidden whitespace-nowrap sm:inline">{pastHero ? "Open workspace" : "Start forecasting"}</span>
             <span className="sm:hidden"><Arrow /></span>
             <span className="hidden sm:inline"><Arrow /></span>
           </Link>
