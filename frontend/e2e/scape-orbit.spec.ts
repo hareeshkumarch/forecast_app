@@ -1,0 +1,52 @@
+import { expect, test } from "@playwright/test";
+
+test("the scene rotates only when dragged and retains its angle", async ({ page }) => {
+  await page.goto("/");
+  const scene = page.locator(".scape-frame");
+  await scene.scrollIntoViewIfNeeded();
+  await expect(scene.getByRole("button")).toHaveCount(0);
+  const svg = scene.getByRole("img");
+  const face = scene.locator('.scape-bar[data-tone="history"] polygon').first();
+  const initial = await face.getAttribute("points");
+  await page.waitForTimeout(300);
+  expect(await face.getAttribute("points")).toBe(initial);
+  const box = (await svg.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.65, box.y + box.height * 0.55, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => face.getAttribute("points")).not.toBe(initial);
+  const rotated = await face.getAttribute("points");
+  await page.waitForTimeout(300);
+  expect(await face.getAttribute("points")).toBe(rotated);
+  await expect(scene).toHaveAttribute("data-dragging", "false");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await svg.focus();
+  await page.keyboard.press("Shift+ArrowLeft");
+  await expect.poll(() => face.getAttribute("points")).not.toBe(rotated);
+  await page.keyboard.press("End");
+  await expect(scene.locator('[aria-live="polite"]')).not.toBeEmpty();
+  await expect(page.getByText("A single line", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("A line and its range", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#compare svg")).toHaveCount(0);
+});
+
+test("a horizontal touch gesture rotates the scene", async ({ browser }) => {
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.goto("/");
+  const svg = page.locator('.scape-frame svg[role="img"]');
+  await svg.scrollIntoViewIfNeeded();
+  const face = svg.locator('.scape-bar[data-tone="history"] polygon').first();
+  const initial = await face.getAttribute("points");
+  const box = (await svg.boundingBox())!;
+  const session = await context.newCDPSession(page);
+  const x = box.x + box.width * 0.4;
+  const y = box.y + box.height * 0.5;
+  await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+  await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + 70, y }] });
+  await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(() => face.getAttribute("points")).not.toBe(initial);
+  await expect(page.locator(".scape-frame")).toHaveAttribute("data-dragging", "false");
+  await context.close();
+});

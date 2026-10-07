@@ -22,7 +22,7 @@ export function ScenarioPreview() {
     <section id="scenario-preview" className="section-edge section-pad">
       <div className="page-shell grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
         <Reveal variant="from-left">
-          <p className="font-mono text-site-caption uppercase tracking-[0.2em] text-land-dim">Demand assumptions</p>
+          <p className="font-mono text-site-caption uppercase tracking-[0.2em] text-land-dim">04 — Demand assumptions</p>
           <h2 className="mt-4 max-w-[20ch] text-balance font-display text-site-h2">Compare changes in weekly demand.</h2>
           <p className="mt-5 max-w-[43ch] text-site-lead text-text-secondary">Compare the base forecast with a 20% increase or a 15% decrease in demand. Apply assumptions to your own forecast in the workspace.</p>
           <Link href="/scenarios" className="link-draw mt-6 inline-block text-accent">Open scenarios →</Link>

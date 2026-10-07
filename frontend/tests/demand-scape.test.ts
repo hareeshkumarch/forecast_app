@@ -200,6 +200,27 @@ describe("demand scape geometry", () => {
     }
   });
 
+  it.each([
+    { yaw: 0.2, pitch: 0.39 },
+    { yaw: 0.2, pitch: 0.57 },
+    { yaw: 0.56, pitch: 0.39 },
+    { yaw: 0.56, pitch: 0.57 },
+  ])("keeps orbiting geometry inside its projected frame at %o", (camera) => {
+    const scape = buildScape(layers(16, 8), undefined, camera);
+    const box = parseViewBox(scape.viewBox);
+    for (const [x, y] of scapeVertices(scape, camera)) {
+      expect(x).toBeGreaterThanOrEqual(box.x);
+      expect(x).toBeLessThanOrEqual(box.x + box.width);
+      expect(y).toBeGreaterThanOrEqual(box.y);
+      expect(y).toBeLessThanOrEqual(box.y + box.height);
+    }
+    const prism = required(scape.prisms[0], "orbit prism");
+    expect(prismFaces(prism, camera).front).not.toBe(prismFaces(prism).front);
+    for (let index = 1; index < scape.prisms.length; index++) {
+      expect(scape.prisms[index]!.cameraDepth).toBeLessThanOrEqual(scape.prisms[index - 1]!.cameraDepth);
+    }
+  });
+
   it("has finite geometry for empty input", () => {
     const scape = buildScape([]);
     expect(scape.prisms).toHaveLength(0);

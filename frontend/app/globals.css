@@ -182,10 +182,6 @@
   --land-brief-warn: #8a6a31;
 
   /* The line-versus-range panels. */
-  --compare-ink: #111512;
-  --compare-forecast: #287b59;
-  --compare-rule: #cfd6cf;
-  --compare-outcome: #747b74;
 
   /* Row heights and padding step down together in compact mode. */
   --density-cell-y: 9px;
@@ -364,10 +360,6 @@
   --land-brief-act: #1d2b23;
   --land-brief-warn: #c8a468;
 
-  --compare-ink: #e4e7e3;
-  --compare-forecast: #7fbea1;
-  --compare-rule: #3a423c;
-  --compare-outcome: #9aa09b;
 
   color-scheme: dark;
 }
@@ -632,10 +624,7 @@ body {
   position: relative;
   isolation: isolate;
   background-color: var(--canvas);
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--grid-line) 55%, transparent) 1px, transparent 1px);
-  background-size: 80px 80px;
+  background-image: radial-gradient(ellipse at 100% 40%, var(--land-glow), transparent 45%);
   font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -673,7 +662,7 @@ body {
   margin-inline: auto;
 }
 
-.scape-frame > svg {
+.scape-frame svg[role="img"] {
   display: block;
   width: 100%;
   height: auto;
@@ -681,12 +670,6 @@ body {
 
 .scape-frame svg[role="img"] {
   touch-action: pan-y;
-}
-
-@media (max-width: 639px) {
-  .forecast-landing {
-    background-size: 42px 42px;
-  }
 }
 
 @keyframes grow-x {
@@ -699,118 +682,65 @@ body {
 }
 
 .hero-stage {
-  --text-primary: #edf3ed;
-  --text-secondary: #b0bfb5;
-  --land-dim: #a2b4a8;
-  --land-rule: #405b4c;
-  --land-rule-soft: #2c4235;
-  --accent: #a6e9bc;
-  --scape-sold-near: #d0dbce;
-  --scape-sold-near-side: #9aaf9e;
-  --scape-sold-near-top: #e5ece0;
-  --scape-sold-far: #657d6c;
-  --scape-sold-far-side: #7b9381;
-  --scape-sold-far-top: #a3b6a6;
-  --scape-next-near: #98dbaa;
-  --scape-next-near-side: #5caa7a;
-  --scape-next-near-top: #c5f5c9;
-  --scape-next-far: #387e58;
-  --scape-next-far-side: #519569;
-  --scape-next-far-top: #75b68a;
-  --scape-shell-near: rgba(157, 230, 181, 0.1);
-  --scape-shell-near-side: rgba(157, 230, 181, 0.14);
-  --scape-shell-near-top: rgba(157, 230, 181, 0.18);
-  --scape-shell-near-line: #689779;
-  --scape-shell-far: rgba(157, 230, 181, 0.06);
-  --scape-shell-far-side: rgba(157, 230, 181, 0.09);
-  --scape-shell-far-top: rgba(157, 230, 181, 0.12);
-  --scape-shell-far-line: #466d53;
-  --scape-shell-key: #527f60;
-  --scape-guide: #36503e;
-  --scape-axis: #b0c3b5;
-  --scape-week: #93ab99;
-  --scape-row-name: #c5d5c7;
-  --scape-marker: rgba(192, 241, 199, 0.07);
-  color: var(--text-primary);
-  border: 1px solid #405b4c;
-  border-top: 2px solid #9bceaa;
-  background: radial-gradient(ellipse at 60% 15%, rgba(166, 233, 188, 0.06), transparent 60%), #101a14;
-  padding: clamp(1rem, 2.5vw, 2rem);
-  box-shadow: 0 12px 24px -18px rgba(0, 0, 0, 0.2);
   position: relative;
   isolation: isolate;
+  padding: 0;
 }
 
-:root[data-theme="dark"] .hero-stage {
-  --scape-sold-near: #eef3df;
-  background: radial-gradient(ellipse at 60% 15%, rgba(166, 233, 188, 0.06), transparent 60%), #132019;
+.hero-stage::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 8% -12% 12%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 65% 50%, var(--land-glow), transparent 65%);
 }
 
 .hero-section {
   overflow: hidden;
-  background: #ffffff;
-}
-
-:root[data-theme="dark"] .hero-section {
-  background: #111512;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--canvas) 88%);
 }
 
 .hero-layout {
   display: grid;
   align-items: center;
-  gap: 40px;
+  gap: clamp(32px, 4vw, 56px);
 }
 
-.hero-masthead,
-.hero-chapter,
-.stage-caption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--land-dim);
-}
-
-.hero-masthead {
-  padding-bottom: 18px;
-  margin-bottom: 36px;
-  border-bottom: 1px solid var(--land-rule);
-}
-
-.hero-chapter {
-  margin-top: 42px;
-}
-
-.chapter-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-}
-
-.scroll-stroke {
+.hero-copy {
   position: relative;
-  overflow: hidden;
-  height: 32px;
-  width: 1px;
-  background: var(--land-rule);
+  z-index: 1;
 }
 
-.scroll-stroke::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--accent);
+.hero-copy .hero-title {
+  max-width: 17ch;
+  font-size: clamp(3.2rem, 6.3vw, 6.3rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
 }
 
-.stage-caption {
-  padding-top: 20px;
-  font-size: 8px;
-  letter-spacing: 0.06em;
+.hero-preview {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+.hero-preview .scape-frame {
+  max-width: none;
+}
+
+.hero-preview .scape-frame > .relative {
+  margin-inline: -4%;
+}
+
+.hero-preview .scape-note {
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.hero-preview .scape-legend {
+  font-size: 12px;
+  gap: 12px 28px;
 }
 
 .stage-status {
@@ -832,66 +762,24 @@ body {
 }
 
 .hero-description {
-  max-width: 40ch;
+  max-width: 60ch;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .motion-ready .scroll-stroke::after {
-    animation: scroll-stroke 2.4s var(--ease-out) infinite;
-  }
-
   .motion-ready .stage-status > span {
     animation: status-glow 3s ease-in-out infinite;
   }
 
-  .forecast-landing[data-ambient="off"] .scroll-stroke::after,
   .forecast-landing[data-ambient="off"] .stage-status > span {
     animation-play-state: paused;
   }
-}
-
-@keyframes scroll-stroke {
-  0% { transform: translateY(-110%); }
-  60%, 100% { transform: translateY(110%); }
 }
 
 @keyframes status-glow {
   50% { opacity: 0.4; }
 }
 
-@media (max-width: 1099px) {
-  .hero-copy .hero-title {
-    max-width: 15ch;
-    font-size: clamp(3.4rem, 9vw, 6rem);
-    line-height: 1.02;
-    letter-spacing: -0.045em;
-  }
-
-  .hero-preview {
-    width: 100%;
-    max-width: 820px;
-    margin-inline: auto;
-  }
-}
-
 @media (max-width: 639px) {
-  .hero-masthead {
-    font-size: 8px;
-    letter-spacing: 0.08em;
-    margin-bottom: 32px;
-  }
-
-  .hero-edition,
-  .stage-caption > span:last-child {
-    display: none;
-  }
-
-  .hero-chapter {
-    flex-wrap: wrap;
-    gap: 8px;
-    font-size: 8px;
-  }
-
   .stage-status {
     font-size: 8px;
   }
@@ -927,8 +815,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--land-rule-soft);
-  padding-bottom: 18px;
+  padding-bottom: 0;
 }
 
 .preview-heading > div > p {
@@ -950,42 +837,15 @@ body {
 }
 
 @media (min-width: 1100px) {
-  .hero-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-    gap: clamp(32px, 4vw, 64px);
-    min-height: min(740px, 78svh);
-    padding-block: 44px;
+  .hero-preview .preview-heading {
+    position: absolute;
+    top: 22px;
+    left: 0;
+    right: 0;
   }
 
-  .hero-copy,
-  .hero-copy .depth-title {
-    align-items: flex-start;
-    text-align: left;
-  }
-
-  .hero-copy h1 {
-    max-width: 12ch;
-    font-size: clamp(4.75rem, 6.4vw, 6.5rem);
-    line-height: 0.98;
-    letter-spacing: -0.055em;
-  }
-
-  .hero-actions,
-  .hero-reassurance {
-    justify-content: flex-start;
-  }
-
-  .hero-actions {
-    flex-wrap: wrap;
-  }
-
-  .hero-preview .scape-legend {
-    gap: 12px 20px;
-    font-size: 12px;
-  }
-
-  .hero-preview .scape-note {
-    font-size: 13px;
+  .hero-preview .scape-frame > .relative {
+    margin-top: -24px;
   }
 }
 
@@ -1150,66 +1010,6 @@ body {
 
 .motion-ready [data-shown="true"] .eyebrow-rule {
   animation: grow-x 520ms var(--ease-out) calc(var(--reveal-delay, 0ms) + 90ms) forwards;
-}
-
-/*
- * The comparison panels draw themselves in the order the argument is made:
- * the history both panels share, then the forecast each one draws its own way
- * with the range that belongs to it. A clipped wipe rather than a dash offset,
- * because the line-only panel's forecast is itself dashed — `stroke-dasharray`
- * cannot be both the drawing and the thing being drawn.
- *
- * The wipe also keeps the range honest. Scaling the band instead would show
- * its full final spread at week one, which is the one thing this section is
- * arguing against.
- */
-.draw-wipe {
-  transform-box: fill-box;
-  transform-origin: left center;
-}
-
-.motion-ready .draw-wipe {
-  transform: scaleX(0);
-}
-
-.motion-ready [data-shown="true"] .draw-wipe {
-  animation: grow-x var(--draw-duration, 340ms) var(--ease-draw) var(--draw-delay, 0ms) forwards;
-}
-
-/* What actually happened arrives last, and drops onto the chart. */
-@keyframes outcome-land {
-  from {
-    opacity: 0;
-    transform: translate(0, -7px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(0, 0);
-  }
-}
-
-@keyframes outcome-ring {
-  from {
-    opacity: 0;
-    transform: scale(0.35);
-  }
-  to {
-    opacity: 0.35;
-    transform: scale(1);
-  }
-}
-
-.outcome-ring {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.motion-ready [data-shown="true"] .outcome-dot {
-  animation: outcome-land var(--draw-duration, 260ms) var(--ease-out) var(--draw-delay, 0ms) both;
-}
-
-.motion-ready [data-shown="true"] .outcome-ring {
-  animation: outcome-ring var(--draw-duration, 260ms) var(--ease-out) var(--draw-delay, 0ms) both;
 }
 
 @keyframes scape-rise {
@@ -1486,9 +1286,6 @@ svg[role="img"]:focus-visible {
     will-change: auto;
   }
 
-  .motion-ready [data-shown="true"] .draw-wipe,
-  .motion-ready [data-shown="true"] .outcome-dot,
-  .motion-ready [data-shown="true"] .outcome-ring,
   .motion-ready .scape-running .scape-bar,
   .motion-ready .scape-running .scape-shell,
   .motion-ready .scape-running .scape-caption {
@@ -1574,8 +1371,8 @@ svg[role="img"]:focus-visible {
     --nav-height: 56px;
   }
 
-  .hero-stage {
-    padding-inline: 12px;
+  .hero-copy .hero-title {
+    font-size: 2.8rem;
   }
 }
 
@@ -1623,7 +1420,8 @@ svg[role="img"]:focus-visible {
  */
 .proof-band {
   display: grid;
-  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px 20px;
   padding-top: clamp(2rem, 4vw, 2.75rem);
 }
 
@@ -1699,6 +1497,73 @@ svg[role="img"]:focus-visible {
 
 .motion-ready .proof-figure[data-shown="true"]::before {
   transform: scaleY(1);
+}
+
+@media (max-width: 639px) {
+  .proof-figure dt {
+    font-size: clamp(2.8rem, 13vw, 4rem);
+  }
+
+  .proof-label {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}
+
+.landing-questions details {
+  border-top: 1px solid var(--land-rule);
+}
+
+.landing-questions details:last-child {
+  border-bottom: 1px solid var(--land-rule);
+}
+
+.landing-questions summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 0;
+  list-style: none;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.landing-questions summary::-webkit-details-marker {
+  display: none;
+}
+
+.landing-questions summary span {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.landing-questions details[open] summary span {
+  transform: rotate(45deg);
+}
+
+.landing-questions details p {
+  max-width: 58ch;
+  padding: 0 36px 24px 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.forecast-landing .scenario-preview,
+.forecast-landing .tilt-plate.border {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.forecast-landing .hero-actions a,
+.forecast-landing .closing-panel a {
+  border-radius: 6px;
 }
 
 /* --------------------------------------------------- landing: the filmstrip
@@ -2068,32 +1933,44 @@ svg[role="img"]:focus-visible {
 
 /* ------------------------------------------------- landing: the 3D scene */
 
-/*
- * The lean towards the pointer, driven by two custom properties the component
- * writes on pointermove. Perspective sits on the frame and the transform on
- * the drawing inside it, which is the only arrangement where the far end of
- * the scene recedes rather than the whole picture skewing.
- *
- * The transition is long and eased out on purpose: matching the pointer
- * frame-for-frame reads as a jitter, while a second of catching up reads as
- * weight.
- */
-.scape-frame {
-  --scape-tilt-x: 0deg;
-  --scape-tilt-y: 0deg;
-  perspective: 1400px;
+.scape-frame svg[role="img"] {
+  cursor: grab;
 }
 
-.motion-ready .scape-frame > .relative {
-  transform: rotateX(var(--scape-tilt-x)) rotateY(var(--scape-tilt-y));
-  transform-style: preserve-3d;
-  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+.scape-frame[data-dragging="true"] svg[role="img"] {
+  cursor: grabbing;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .motion-ready .scape-frame > .relative {
-    transform: none;
+.scape-streams {
+  opacity: 0.8;
+}
+
+.scape-crown {
+  opacity: 0.5;
+}
+
+@keyframes scape-current {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes scape-crown {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.85; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-ready .scape-current {
+    animation: scape-current 6s linear var(--pulse-delay) infinite;
+  }
+
+  .motion-ready .scape-crown {
+    animation: scape-crown 4s ease-in-out var(--pulse-delay) infinite;
+  }
+
+  .scape-frame[data-moving="false"] .scape-current,
+  .scape-frame[data-moving="false"] .scape-crown {
+    animation-play-state: paused;
   }
 }
 

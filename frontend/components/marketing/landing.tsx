@@ -18,7 +18,6 @@ import { Reveal, useMotionReady } from "@/components/marketing/reveal";
 import { ScrollStage } from "@/components/marketing/scroll-stage";
 import { ScrollDepth } from "@/components/marketing/scroll-depth";
 import { ScenarioPreview } from "@/components/marketing/scenario-preview";
-import { RangeVsLine } from "@/components/marketing/range-vs-line";
 import { SplitWords } from "@/components/marketing/split-words";
 import { useTilt } from "@/components/marketing/tilt";
 import { cn } from "@/lib/utils";
@@ -132,6 +131,7 @@ export function Landing() {
         <ScenarioPreview />
         <Compare />
         <Accuracy />
+        <Questions />
         <Closing />
       </main>
       <Footer />
@@ -175,12 +175,8 @@ function Hero() {
   return (
     <section
       id="top"
-      className="hero-section relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(2.5rem,5vw,4.5rem))]"
+      className="hero-section relative isolate overflow-hidden pb-[var(--section-gap)] pt-[calc(var(--nav-total)+clamp(1.5rem,3vw,2.5rem))]"
     >
-      <div className="page-shell hero-masthead">
-        <span>Historical sales / weekly forecasts</span>
-        <span className="hero-edition">Sales / estimates / ranges</span>
-      </div>
       <div className="page-shell hero-layout">
         <div className="hero-copy flex flex-col items-center text-center">
           <div className="depth-layer depth-title flex flex-col items-center">
@@ -200,7 +196,7 @@ function Hero() {
               delay={70}
               stagger={78}
               motion="cinematic"
-              className="hero-title mt-6 max-w-[17ch] text-balance font-display text-site-display font-normal sm:mt-7"
+              className="hero-title mt-6 text-balance font-display font-normal sm:mt-7"
             />
 
             <Reveal
@@ -209,8 +205,8 @@ function Hero() {
               duration={620}
               className="hero-description mt-5 max-w-[58ch] text-site-lead text-text-secondary"
             >
-              Forecast weekly demand from historical sales.
-              Inspect each estimate, its range, and the weeks that fall outside your planning thresholds.
+              Turn your sales history into a clearer view of what comes next.
+              Explore weekly demand, see the range, and plan with perspective.
             </Reveal>
           </div>
 
@@ -229,6 +225,7 @@ function Hero() {
             duration={520}
             className="hero-reassurance mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-site-caption text-land-dim"
           >
+            <span>CSV or Excel to get started</span>
             <Link
               href="#how-it-works"
               className="link-draw text-accent hover:text-accent-hover"
@@ -248,29 +245,21 @@ function Hero() {
             <div className="preview-heading">
               <div>
                 <p className="font-mono text-site-caption uppercase tracking-[0.15em] text-land-dim">
-                  Sales and forecast ranges
+                  A new perspective on demand
                 </p>
-                <h2 className="mt-1 text-site-h3 font-medium">Demand outlook</h2>
+                <h2 className="mt-2 font-display text-2xl font-normal">Demand, in dimension</h2>
               </div>
               <span className="stage-status"><span aria-hidden />8-week outlook</span>
             </div>
-            <div className="stage-caption" aria-hidden>
-              <span>01 / Weekly sales by product line</span>
-              <span>16 weeks of history → 8 weeks ahead</span>
-            </div>
             <DemandScape />
             <div className="preview-footer">
-              <span>8 weeks ahead. A range for every forecast.</span>
+              <span>16 weeks of history → 8 weeks of forecasts</span>
               <span className="font-mono text-site-caption">Illustrative data</span>
             </div>
           </div>
         </Reveal>
       </div>
 
-      <div className="page-shell hero-chapter">
-        <span>Historical quantities. Estimated demand.</span>
-        <a href="#how-it-works" className="chapter-link"><span className="scroll-stroke" aria-hidden />View forecast steps</a>
-      </div>
       <Proof />
     </section>
   );
@@ -362,10 +351,10 @@ function HowItWorks() {
 function Features() {
   return (
     <section id="features" className="section-edge section-pad">
-      <ScrollStage screens={2.6} stage="filmstrip">
+      <ScrollStage screens={2.6} stage="filmstrip" minWidth={1024}>
         <div className={cn(SHELL, "filmstrip")}>
           <Reveal variant="from-left" duration={640} className="filmstrip-head">
-            <Eyebrow as="h2">Forecast outputs</Eyebrow>
+            <Eyebrow as="h2">02 — Forecast outputs</Eyebrow>
           </Reveal>
           <ol className="filmstrip-track">
             {FEATURES.map((feature, index) => (
@@ -406,7 +395,7 @@ function InsightsPreview() {
       >
         <div data-drift style={{ "--drift": "-88px" } as CSSProperties}>
           <Reveal variant="from-left" duration={680}>
-            <Eyebrow>Decision brief</Eyebrow>
+            <Eyebrow>03 — Decision brief</Eyebrow>
             <SplitWords
               text="Review demand changes and threshold breaches."
               stagger={54}
@@ -455,7 +444,7 @@ function InsightsPreview() {
               <div className="flex items-center justify-between gap-4 border-b border-land-brief-rule px-5 py-4 sm:px-6">
                 <div>
                   <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-land-dim">
-                    Decision brief · this run
+                    Decision brief · illustrative example
                   </p>
                   <p className="signal-heading mt-1 text-site-h3 font-bold">
                     Three changes to review
@@ -518,7 +507,7 @@ function Compare() {
       >
         <div data-drift style={{ "--drift": "-88px" } as CSSProperties}>
           <Reveal variant="from-left" duration={680}>
-            <Eyebrow>Uncertainty bounds</Eyebrow>
+            <Eyebrow>05 — Planning with ranges</Eyebrow>
             <SplitWords
               text="Read the estimate and its range."
               stagger={58}
@@ -542,7 +531,21 @@ function Compare() {
             className="tilt-scene"
           >
             <div ref={panels} className="tilt-plate">
-              <RangeVsLine />
+              <ol className="divide-y divide-land-rule border-y border-land-rule">
+                {[
+                  { title: "Start with the expected demand", body: "Use the weekly estimate as your planning baseline." },
+                  { title: "Leave room for uncertainty", body: "Review lower and upper bounds before committing inventory." },
+                  { title: "Explore your next move", body: "Try a scenario and see how a change in demand affects the plan." },
+                ].map((item, index) => (
+                  <li key={item.title} className="flex gap-5 py-7 sm:gap-7">
+                    <span className="pt-1 font-mono text-site-caption text-accent">0{index + 1}</span>
+                    <div>
+                      <h3 className="font-display text-site-h3-display">{item.title}</h3>
+                      <p className="mt-2 max-w-[42ch] text-site-body text-text-secondary">{item.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
             </div>
           </Reveal>
         </div>
@@ -577,7 +580,7 @@ function Accuracy() {
       <ScrollStage screens={2.6} stage="accuracy">
         <div className={cn(SHELL, "accuracy-hold")}>
           <Reveal variant="fade" duration={680}>
-            <Eyebrow light>Accuracy</Eyebrow>
+            <Eyebrow light>06 — Model evaluation</Eyebrow>
           </Reveal>
 
           <p className="accuracy-figure mt-7 font-display text-accuracy font-normal leading-[0.86] tracking-[-0.03em] text-land-invert-accent">
@@ -607,6 +610,35 @@ function Accuracy() {
           </ol>
         </div>
       </ScrollStage>
+    </section>
+  );
+}
+
+const QUESTIONS = [
+  { question: "What data do I need to get started?", answer: "Upload a CSV or Excel spreadsheet with dates and sales quantities. You can review the detected columns before running your forecast." },
+  { question: "Can I explore demand by product or region?", answer: "Yes. Inspect total demand or focus on an individual sales series, such as a product, region, or channel, when those fields are included in your data." },
+  { question: "What does the forecast range tell me?", answer: "The estimate is a planning baseline. The lower and upper bounds show uncertainty around it, helping you consider both softer and stronger demand." },
+  { question: "Are the examples on this page my data?", answer: "No. The diagrams, scenarios, and accuracy figures here use illustrative data. Your own results depend on your sales history and the forecast run." },
+];
+
+function Questions() {
+  return (
+    <section id="questions" className="section-edge section-pad">
+      <div className="page-shell grid gap-10 lg:grid-cols-[0.8fr_1fr] lg:gap-16">
+        <Reveal variant="from-left">
+          <Eyebrow>Before you begin</Eyebrow>
+          <h2 className="mt-4 font-display text-site-h2">A few useful answers.</h2>
+          <p className="mt-5 max-w-[35ch] text-site-lead text-text-secondary">Everything you need to take the first step.</p>
+        </Reveal>
+        <Reveal className="landing-questions">
+          {QUESTIONS.map((item) => (
+            <details key={item.question}>
+              <summary>{item.question}<span aria-hidden>+</span></summary>
+              <p>{item.answer}</p>
+            </details>
+          ))}
+        </Reveal>
+      </div>
     </section>
   );
 }

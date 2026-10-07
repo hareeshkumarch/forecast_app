@@ -12,7 +12,8 @@ const SECTIONS = [
   { id: "how-it-works", label: "How it works" },
   { id: "features", label: "Features" },
   { id: "insights", label: "Insights" },
-  { id: "compare", label: "Compare" },
+  { id: "scenario-preview", label: "Scenarios" },
+  { id: "compare", label: "Planning" },
   { id: "accuracy", label: "Accuracy" },
 ];
 
@@ -104,7 +105,7 @@ export function FloatingNav() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileOpen(false);
     };
-    const desktop = window.matchMedia("(min-width: 1024px)");
+    const desktop = window.matchMedia("(min-width: 1440px)");
     const onDesktop = () => {
       if (desktop.matches) setMobileOpen(false);
     };
@@ -122,7 +123,7 @@ export function FloatingNav() {
       <nav
         aria-label="Sections"
         className={cn(
-          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
+          "page-shell relative flex h-[var(--nav-height)] items-center overflow-hidden rounded-xl border border-border bg-surface/95 px-3 backdrop-blur-xl transition-shadow duration-300 sm:px-5",
           lifted
             ? "shadow-[0_18px_38px_-22px_var(--land-nav-shadow)]"
             : "shadow-[0_4px_14px_-10px_var(--land-nav-shadow)]",
@@ -133,7 +134,7 @@ export function FloatingNav() {
           <span className="hidden text-site-h3 font-bold text-text-primary min-[360px]:inline">Forecast Hub</span>
         </Link>
 
-        <ul ref={listRef} className="relative mx-auto hidden items-center gap-0.5 lg:flex">
+        <ul ref={listRef} className="relative mx-auto hidden items-center gap-0.5 min-[1440px]:flex">
           <span
             aria-hidden
             data-placing={placed.current ? undefined : "true"}
@@ -191,7 +192,7 @@ export function FloatingNav() {
             aria-controls="mobile-section-navigation"
             aria-label={mobileOpen ? "Close section navigation" : "Open section navigation"}
             onClick={() => setMobileOpen((open) => !open)}
-            className="nav-control inline-flex size-10 shrink-0 items-center justify-center border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted lg:hidden"
+            className="nav-control inline-flex size-10 shrink-0 items-center justify-center border border-land-rule bg-surface text-text-primary transition-colors hover:border-text-muted hover:bg-surface-muted min-[1440px]:hidden"
           >
             {mobileOpen ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
           </button>
@@ -202,7 +203,7 @@ export function FloatingNav() {
         id="mobile-section-navigation"
         aria-hidden={!mobileOpen}
         className={cn(
-          "page-shell mt-2 max-h-[calc(100dvh-var(--nav-total)-24px)] overflow-y-auto border border-border bg-surface/98 p-2 shadow-[0_20px_45px_-24px_var(--land-nav-shadow)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 lg:hidden",
+          "page-shell mt-2 max-h-[calc(100dvh-var(--nav-total)-24px)] overflow-y-auto border border-border bg-surface/98 p-2 shadow-[0_20px_45px_-24px_var(--land-nav-shadow)] backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 min-[1440px]:hidden",
           mobileOpen
             ? "visible translate-y-0 opacity-100"
             : "pointer-events-none invisible -translate-y-2 opacity-0",

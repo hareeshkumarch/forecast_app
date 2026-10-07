@@ -1,5 +1,7 @@
 export type Tone = "history" | "future" | "range";
 export type Layer = { id: string; label: string; history: number[]; future: number[] };
+export type Camera = { yaw: number; pitch: number };
+export const DEFAULT_CAMERA: Camera = { yaw: 0.38, pitch: 0.48 };
 export type Point3 = { x: number; y: number; z: number };
 export type Point2 = { x: number; y: number; depth: number };
 export type Prism = {
@@ -43,8 +45,6 @@ export const LONGEST_ROW_NAME = 12;
 const SPAN = 880;
 const ROW_GAP = 145;
 const PLOT_HEIGHT = 260;
-const YAW = 0.38;
-const PITCH = 0.48;
 const FOCAL = 1250;
 const LABEL_ADVANCE = 10.2;
 
@@ -52,22 +52,23 @@ export function rangeLift(horizon: number, growth: number = RANGE_GROWTH): numbe
   return 1.05 + growth * horizon;
 }
 
-export function projectPoint({ x, y, z }: Point3): Point2 {
-  const horizontal = x * Math.cos(YAW) + z * Math.sin(YAW);
-  const distance = -x * Math.sin(YAW) + z * Math.cos(YAW);
-  const vertical = y * Math.cos(PITCH) + distance * Math.sin(PITCH);
-  const depth = FOCAL + distance * Math.cos(PITCH) - y * Math.sin(PITCH);
+export function projectPoint({ x, y, z }: Point3, camera: Camera = DEFAULT_CAMERA): Point2 {
+  const horizontal = x * Math.cos(camera.yaw) + z * Math.sin(camera.yaw);
+  const distance = -x * Math.sin(camera.yaw) + z * Math.cos(camera.yaw);
+  const vertical = y * Math.cos(camera.pitch) + distance * Math.sin(camera.pitch);
+  const depth = FOCAL + distance * Math.cos(camera.pitch) - y * Math.sin(camera.pitch);
   return { x: horizontal * FOCAL / depth, y: -vertical * FOCAL / depth, depth };
 }
 
-function polygon(points: Point3[]): string {
+function polygon(points: Point3[], camera: Camera = DEFAULT_CAMERA): string {
   return points.map((point) => {
-    const projected = projectPoint(point);
+    const projected = projectPoint(point, camera);
     return `${projected.x.toFixed(2)},${projected.y.toFixed(2)}`;
   }).join(" ");
 }
 
-export function prismFaces(prism: Prism): { front: string; side: string; top: string; floor: string; shadow: string } {
+export function prismFaces(prism: Prism, camera: Camera = DEFAULT_CAMERA): { front: string; side: string; top: string; floor: string; shadow: string } {
+  const face = (points: Point3[]) => polygon(points, camera);
   const { x, z, width, height, depth } = prism;
   const a = { x, y: 0, z };
   const b = { x: x + width, y: 0, z };
@@ -76,11 +77,11 @@ export function prismFaces(prism: Prism): { front: string; side: string; top: st
   const top = (point: Point3) => ({ ...point, y: height });
   const shadow = (point: Point3) => ({ x: point.x + height * 0.32, y: 0, z: point.z + height * 0.45 });
   return {
-    front: polygon([top(a), top(b), b, a]),
-    side: polygon([top(b), top(c), c, b]),
-    top: polygon([top(a), top(d), top(c), top(b)]),
-    floor: polygon([a, b, c, d]),
-    shadow: polygon([a, b, shadow(c), shadow(d)]),
+    front: face([top(a), top(b), b, a]),
+    side: face([top(b), top(c), c, b]),
+    top: face([top(a), top(d), top(c), top(b)]),
+    floor: face([a, b, c, d]),
+    shadow: face([a, b, shadow(c), shadow(d)]),
   };
 }
 
@@ -91,7 +92,9 @@ function facePoints(faces: string[]): Array<[number, number]> {
   }));
 }
 
-export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scape {
+export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH, camera: Camera = DEFAULT_CAMERA): Scape {
+  const project = (point: Point3) => projectPoint(point, camera);
+  const face = (points: Point3[]) => polygon(points, camera);
   const rows = Math.max(layers.length, 1);
   const historyLength = Math.max(0, ...layers.map((layer) => layer.history.length));
   const futureLength = Math.max(0, ...layers.map((layer) => layer.future.length));
@@ -112,7 +115,7 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
       const value = Math.max(0, (historical ? layer.history[step] : layer.future[step - historyLength]) ?? 0);
       const x = -SPAN / 2 + step * spacing;
       const z = row * ROW_GAP;
-      const base = { row, step, horizon, x, z, width, depth: 48, cameraDepth: projectPoint({ x: x + width / 2, y: 0, z: z + 24 }).depth };
+      const base = { row, step, horizon, x, z, width, depth: 48, cameraDepth: project({ x: x + width / 2, y: 0, z: z + 24 }).depth };
       if (!historical) {
         const lift = rangeLift(horizon, growth);
         prisms.push({ ...base, key: `range-${row}-${step}`, tone: "range", height: value * scale * lift, shellFloor: 1 / lift });
@@ -123,11 +126,11 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   prisms.sort((a, b) => b.cameraDepth - a.cameraDepth || (a.tone === "range" ? -1 : b.tone === "range" ? 1 : 0));
 
   const back = (rows - 1) * ROW_GAP + 100;
-  const ground = polygon([
+  const ground = face([
     { x: -SPAN / 2 - 30, y: 0, z: -32 }, { x: SPAN / 2 + 110, y: 0, z: -32 },
     { x: SPAN / 2 + 110, y: 0, z: back + 100 }, { x: -SPAN / 2 - 30, y: 0, z: back + 100 },
   ]);
-  const envelope = facePoints([ground, polygon([
+  const envelope = facePoints([ground, face([
     { x: -SPAN / 2, y: PLOT_HEIGHT, z: 0 }, { x: SPAN / 2, y: PLOT_HEIGHT, z: 0 },
     { x: -SPAN / 2, y: PLOT_HEIGHT, z: back }, { x: SPAN / 2, y: PLOT_HEIGHT, z: back },
   ])]);
@@ -140,8 +143,8 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   const boxWidth = maxX - minX + 280;
   const boxHeight = maxY - minY + 110;
   const guide = (key: string, a: Point3, b: Point3): Guide => {
-    const start = projectPoint(a);
-    const end = projectPoint(b);
+    const start = project(a);
+    const end = project(b);
     return { key, x1: start.x, y1: start.y, x2: end.x, y2: end.y };
   };
   const guides = Array.from({ length: rows + 1 }, (_, row) => guide(`floor-${row}`,
@@ -150,7 +153,7 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
   const boundary = guide("today", { x: boundaryX, y: 0, z: -25 }, { x: boundaryX, y: 0, z: back });
   const rowLabels: Label[] = layers.map((layer, row) => ({
     key: `row-${layer.id}`, x: minX - 15,
-    y: projectPoint({ x: -SPAN / 2, y: 0, z: row * ROW_GAP }).y + 5,
+    y: project({ x: -SPAN / 2, y: 0, z: row * ROW_GAP }).y + 5,
     text: layer.label, anchor: "end",
   }));
   const labels: Label[] = [
@@ -162,7 +165,7 @@ export function buildScape(layers: Layer[], growth: number = RANGE_GROWTH): Scap
     step,
     bands: Array.from({ length: layers.length }, (_, row) => {
       const points = prisms.filter((prism) => prism.step === step && prism.row === row).flatMap((prism) => {
-        const faces = prismFaces(prism);
+        const faces = prismFaces(prism, camera);
         return facePoints([faces.front, faces.side, faces.top]);
       });
       const x = Math.min(...points.map(([px]) => px));
@@ -178,9 +181,9 @@ export function labelWidth(text: string): number {
   return text.length * LABEL_ADVANCE;
 }
 
-export function scapeVertices(scape: Scape): Array<[number, number]> {
+export function scapeVertices(scape: Scape, camera: Camera = DEFAULT_CAMERA): Array<[number, number]> {
   return scape.prisms.flatMap((prism) => {
-    const faces = prismFaces(prism);
+    const faces = prismFaces(prism, camera);
     return facePoints([faces.front, faces.side, faces.top]);
   });
 }

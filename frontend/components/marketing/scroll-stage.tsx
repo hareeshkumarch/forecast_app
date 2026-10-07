@@ -12,12 +12,13 @@ const MIN_HEIGHT = 600;
 
 export type ScrollStageProps = {
   screens?: number;
+  minWidth?: number;
   stage?: string;
   className?: string;
   children: ReactNode;
 };
 
-export function ScrollStage({ screens = 3, stage, className, children }: ScrollStageProps) {
+export function ScrollStage({ screens = 3, minWidth = 0, stage, className, children }: ScrollStageProps) {
   const [track, setTrack] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef<HTMLDivElement>(null);
@@ -29,7 +30,7 @@ export function ScrollStage({ screens = 3, stage, className, children }: ScrollS
     let measured = "";
     const media = window.matchMedia(REDUCED_MOTION);
     const decide = () => {
-      if (media.matches || window.innerHeight < MIN_HEIGHT) {
+      if (media.matches || window.innerHeight < MIN_HEIGHT || window.innerWidth < minWidth) {
         measured = "";
         setTrack(0);
         return;
@@ -47,7 +48,7 @@ export function ScrollStage({ screens = 3, stage, className, children }: ScrollS
       window.removeEventListener("resize", decide);
       media.removeEventListener("change", decide);
     };
-  }, [screens]);
+  }, [screens, minWidth]);
 
   const corrected = useRef(false);
   useEffect(() => {

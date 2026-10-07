@@ -1,9 +1,9 @@
 "use client";
 
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { useEffect, useId, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { buildScape, prismFaces, type Prism, type Tone } from "@/lib/demand-scape";
+import { buildScape, DEFAULT_CAMERA, prismFaces, projectPoint, type Camera, type Prism, type Tone } from "@/lib/demand-scape";
 import {
   FUTURE_WEEKS,
   HISTORY_WEEKS,
@@ -15,12 +15,22 @@ import {
 import { barDelay, demoWalk, scapeTiming, shellDelay, type ScapeTiming } from "@/lib/scape-motion";
 import { useMotionReady } from "@/components/marketing/reveal";
 
-const HINT = "Hover any week, or focus the chart and use the arrow keys";
-const TOUCH_HINT = "Tap any week to inspect its forecast";
+const HINT = "Drag to rotate · Hover a week to inspect";
+const TOUCH_HINT = "Swipe sideways to rotate · Tap a week to inspect";
 
 const SCAPE = buildScape(SERIES.layers, SERIES.growth);
 const TIMING = scapeTiming(HISTORY_WEEKS, FUTURE_WEEKS, SCAPE.rows);
 const WALK = demoWalk(HISTORY_WEEKS, FUTURE_WEEKS, TIMING);
+const CAMERA_SWING = { yaw: 0.18, pitch: 0.09 };
+const ORBIT_BOUNDS = [-1, 1].flatMap((yaw) => [-1, 1].map((pitch) =>
+  buildScape(SERIES.layers, SERIES.growth, {
+    yaw: DEFAULT_CAMERA.yaw + yaw * CAMERA_SWING.yaw,
+    pitch: DEFAULT_CAMERA.pitch + pitch * CAMERA_SWING.pitch,
+  }).viewBox.split(" ").map(Number),
+));
+const LEFT = Math.min(...ORBIT_BOUNDS.map((box) => box[0]!)) - 20;
+const TOP = Math.min(...ORBIT_BOUNDS.map((box) => box[1]!)) - 30;
+const VIEW_BOX = `${LEFT} ${TOP} ${Math.max(...ORBIT_BOUNDS.map((box) => box[0]! + box[2]!)) - LEFT + 20} ${Math.max(...ORBIT_BOUNDS.map((box) => box[1]! + box[3]!)) - TOP + 30}`;
 
 type Face = { front: string; side: string; top: string; stroke: string };
 
@@ -100,14 +110,16 @@ function Bar({
   active,
   onEnter,
   lightingId,
+  camera,
 }: {
   prism: Prism;
   timing: ScapeTiming;
   active: boolean;
   onEnter: () => void;
   lightingId: string;
+  camera: Camera;
 }) {
-  const faces = prismFaces(prism);
+  const faces = prismFaces(prism, camera);
   const palette = faceFor(prism.tone, prism.row);
   const shell = prism.tone === "range";
   const delay = shell
@@ -116,7 +128,7 @@ function Bar({
 
   return (
     <g
-      className={shell ? "scape-bar scape-shell cursor-default" : "scape-bar cursor-default"}
+      className={shell ? "scape-bar scape-shell" : "scape-bar"}
       data-active={active ? "true" : undefined}
       data-tone={prism.tone}
       data-row={prism.row}
@@ -135,6 +147,7 @@ function Bar({
       <polygon points={faces.front} fill={palette.front} stroke={palette.stroke} />
       <polygon points={faces.side} fill={palette.side} stroke={palette.stroke} />
       <polygon points={faces.top} fill={palette.top} stroke={palette.stroke} />
+      {shell ? <polygon className="scape-crown" points={faces.top} fill="none" stroke="var(--accent)" strokeWidth="1.5" style={{ "--pulse-delay": `${prism.horizon * -220}ms` } as CSSProperties} /> : null}
       {!shell ? <g pointerEvents="none">
         <polygon points={faces.front} fill={`url(#${lightingId}-front)`} />
         <polygon points={faces.side} fill={`url(#${lightingId}-side)`} />
@@ -149,9 +162,22 @@ export function DemandScape() {
   const [hovered, setHovered] = useState<number | null>(null);
   const [keyed, setKeyed] = useState(false);
   const [running, setRunning] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
+  const drag = useRef<{ id: number; x: number; y: number; camera: Camera } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const motionReady = useMotionReady();
   const taken = useRef(false);
+  const viewCamera = camera;
+  const scape = useMemo(() => buildScape(SERIES.layers, SERIES.growth, viewCamera), [viewCamera]);
+  const moving = motionReady && visible;
+  const trails = useMemo(() => SERIES.layers.map((_, row) => {
+    const points = scape.prisms.filter((prism) => prism.row === row && prism.tone !== "range")
+      .sort((a, b) => a.step - b.step)
+      .map((prism) => projectPoint({ x: prism.x + prism.width / 2, y: prism.height + 14, z: prism.z + prism.depth / 2 }, viewCamera));
+    return points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+  }), [scape, viewCamera]);
 
   useEffect(() => {
     const node = ref.current;
@@ -159,9 +185,8 @@ export function DemandScape() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry?.isIntersecting) return;
-        setRunning(true);
-        observer.disconnect();
+        setVisible(Boolean(entry?.isIntersecting));
+        if (entry?.isIntersecting) setRunning(true);
       },
       { threshold: 0.2 },
     );
@@ -169,37 +194,6 @@ export function DemandScape() {
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || !motionReady) return;
-    if (window.matchMedia("(hover: none)").matches) return;
-
-    let frame = 0;
-    const onMove = (event: PointerEvent) => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        const box = node.getBoundingClientRect();
-        const x = (event.clientX - box.left) / box.width - 0.5;
-        const y = (event.clientY - box.top) / box.height - 0.5;
-        node.style.setProperty("--scape-tilt-x", `${(-y * 1.5).toFixed(3)}deg`);
-        node.style.setProperty("--scape-tilt-y", `${(x * 1.5).toFixed(3)}deg`);
-      });
-    };
-    const onLeave = () => {
-      node.style.setProperty("--scape-tilt-x", "0deg");
-      node.style.setProperty("--scape-tilt-y", "0deg");
-    };
-
-    node.addEventListener("pointermove", onMove);
-    node.addEventListener("pointerleave", onLeave);
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      node.removeEventListener("pointermove", onMove);
-      node.removeEventListener("pointerleave", onLeave);
-    };
-  }, [motionReady]);
 
   useEffect(() => {
     if (!running || !motionReady || taken.current) return;
@@ -226,7 +220,7 @@ export function DemandScape() {
   const stage = motionReady ? (running ? "scape-running" : "scape-armed") : "";
   const spoken = hovered === null ? null : readoutFor(hovered);
   const readout = spoken === null ? null : columned(spoken);
-  const marked = hovered === null ? null : SCAPE.columns[hovered];
+  const marked = hovered === null ? null : scape.columns[hovered];
 
   const step = (delta: number) => {
     setKeyed(true);
@@ -236,8 +230,44 @@ export function DemandScape() {
     });
   };
 
+  const rotate = (yaw: number, pitch: number) => setCamera({
+    yaw: Math.max(DEFAULT_CAMERA.yaw - CAMERA_SWING.yaw, Math.min(DEFAULT_CAMERA.yaw + CAMERA_SWING.yaw, yaw)),
+    pitch: Math.max(DEFAULT_CAMERA.pitch - CAMERA_SWING.pitch, Math.min(DEFAULT_CAMERA.pitch + CAMERA_SWING.pitch, pitch)),
+  });
+
+  const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    take();
+    drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, camera };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const start = drag.current;
+    if (!start || start.id !== event.pointerId) return;
+    const width = event.currentTarget.getBoundingClientRect().width;
+    const dx = (event.clientX - start.x) / width;
+    const dy = event.pointerType === "touch" ? 0 : (event.clientY - start.y) / width;
+    if (Math.abs(dx) + Math.abs(dy) > 0.005) setHovered(null);
+    rotate(start.camera.yaw + dx * 1.4, start.camera.pitch - dy * 1.4);
+  };
+
+  const endDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (drag.current?.id !== event.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const onKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
     take();
+    if (event.shiftKey && event.key.startsWith("Arrow")) {
+      event.preventDefault();
+      rotate(camera.yaw + (event.key === "ArrowRight" ? 0.03 : event.key === "ArrowLeft" ? -0.03 : 0),
+        camera.pitch + (event.key === "ArrowUp" ? 0.03 : event.key === "ArrowDown" ? -0.03 : 0));
+      return;
+    }
     const jump: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
     if (event.key in jump) {
       event.preventDefault();
@@ -256,15 +286,21 @@ export function DemandScape() {
   };
 
   return (
-    <div className="scape-frame" ref={ref}>
+    <div className="scape-frame" ref={ref} data-moving={moving ? "true" : "false"} data-dragging={dragging ? "true" : "false"}>
       <div className="relative">
         <svg
-          viewBox={SCAPE.viewBox}
+          viewBox={VIEW_BOX}
           className={stage}
           role="img"
           aria-label={seriesDescription()}
           tabIndex={0}
           onKeyDown={onKeyDown}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
+          aria-describedby={`${lightingId}-instructions`}
           onFocus={() => {
             take();
             setKeyed(true);
@@ -280,7 +316,8 @@ export function DemandScape() {
         >
           <defs>
             <linearGradient id={`${lightingId}-front`} x1="0" y1="0" x2="0.2" y2="1">
-              <stop offset="0" stopColor="#ffffff" stopOpacity="0.12" />
+              <stop offset="0" stopColor="#ffffff" stopOpacity="0.35" />
+              <stop offset="0.25" stopColor="#ffffff" stopOpacity="0.02" />
               <stop offset="0.45" stopColor="#000000" stopOpacity="0.06" />
               <stop offset="1" stopColor="#000000" stopOpacity="0.42" />
             </linearGradient>
@@ -294,7 +331,7 @@ export function DemandScape() {
             </linearGradient>
             <radialGradient id={`${lightingId}-ground`}>
               <stop offset="0" stopColor="#75887a" stopOpacity="0.18" />
-              <stop offset="1" stopColor="#75887a" stopOpacity="0.02" />
+              <stop offset="1" stopColor="#75887a" stopOpacity="0" />
             </radialGradient>
             <filter id={`${lightingId}-shadow`} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur stdDeviation="4" />
@@ -303,16 +340,17 @@ export function DemandScape() {
               <feGaussianBlur stdDeviation="1.8" />
             </filter>
           </defs>
-          <polygon points={SCAPE.ground} fill={`url(#${lightingId}-ground)`} />
+          <polygon points={scape.ground} fill="var(--scape-guide)" opacity="0.16" transform="translate(0 12)" />
+          <polygon points={scape.ground} fill={`url(#${lightingId}-ground)`} stroke="var(--scape-guide)" strokeWidth="0.8" />
           <g stroke="var(--scape-guide)" strokeWidth="1" opacity=".95">
-            {SCAPE.guides.map((guide) => (
+            {scape.guides.map((guide) => (
               <line key={guide.key} x1={guide.x1} y1={guide.y1} x2={guide.x2} y2={guide.y2} />
             ))}
           </g>
 
           <g pointerEvents="none" aria-hidden>
-            {SCAPE.prisms.filter((prism) => prism.tone !== "range").map((prism) => {
-              const faces = prismFaces(prism);
+            {scape.prisms.filter((prism) => prism.tone !== "range").map((prism) => {
+              const faces = prismFaces(prism, viewCamera);
               return <g key={prism.key}>
                 <polygon points={faces.shadow} fill="#000000" opacity="0.24" filter={`url(#${lightingId}-shadow)`} />
                 <polygon points={faces.floor} fill="#000000" opacity="0.65" filter={`url(#${lightingId}-contact)`} />
@@ -335,19 +373,27 @@ export function DemandScape() {
             : null}
 
           <g>
-            {SCAPE.prisms.map((prism) => (
+            {scape.prisms.map((prism) => (
               <Bar
                 key={prism.key}
                 prism={prism}
                 timing={TIMING}
                 active={prism.step === hovered}
                 lightingId={lightingId}
+                camera={viewCamera}
                 onEnter={() => {
                   take();
-                  setHovered(prism.step);
+                  if (!drag.current) setHovered(prism.step);
                 }}
               />
             ))}
+          </g>
+
+          <g className="scape-streams" fill="none" pointerEvents="none" aria-hidden>
+            {trails.map((path, row) => <g key={row}>
+              <path d={path} stroke="var(--accent)" strokeWidth="1" opacity="0.25" />
+              <path className="scape-current" d={path} pathLength="100" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="3 97" style={{ "--pulse-delay": `${row * -2400}ms` } as CSSProperties} />
+            </g>)}
           </g>
 
           <g
@@ -360,23 +406,23 @@ export function DemandScape() {
             }
           >
             <line
-              x1={SCAPE.boundary.x1}
-              y1={SCAPE.boundary.y1}
-              x2={SCAPE.boundary.x2}
-              y2={SCAPE.boundary.y2}
+              x1={scape.boundary.x1}
+              y1={scape.boundary.y1}
+              x2={scape.boundary.x2}
+              y2={scape.boundary.y2}
               stroke="var(--scape-axis)"
               strokeDasharray="5 5"
               strokeWidth="1.5"
             />
             <g fill="var(--scape-week)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
-              {SCAPE.labels.map((label) => (
+              {scape.labels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
                   {label.text}
                 </text>
               ))}
             </g>
             <g fill="var(--scape-row-name)" fontFamily="var(--font-plex-mono)" fontSize="15" letterSpacing="1.2">
-              {SCAPE.rowLabels.map((label) => (
+              {scape.rowLabels.map((label) => (
                 <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor}>
                   {label.text}
                 </text>
@@ -385,6 +431,8 @@ export function DemandScape() {
           </g>
         </svg>
       </div>
+
+      <p id={`${lightingId}-instructions`} className="sr-only">Drag to rotate. Swipe horizontally on touch screens. Use Shift and arrow keys to rotate, or arrow keys alone to inspect weeks.</p>
 
       <div className="mt-1 flex min-h-[58px] items-center justify-center sm:h-[46px] sm:min-h-0">
         <p className="scape-readout w-full text-center font-mono text-site-caption" aria-hidden>
